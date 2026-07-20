@@ -613,55 +613,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setDemoRules(data.demoRules || []);
         setSignupRequests(data.signupRequests || []);
 
-        // Fetch demo swap requests
-        try {
-          const swapRes = await fetch("/api/requests/demo-swap");
-          const swapData = await swapRes.json();
-          if (swapData.success) {
-            setDemoSwapRequests(swapData.requests || []);
+        // Parallel fetch for secondary metadata endpoints for fast page load / refresh
+        Promise.allSettled([
+          fetch("/api/requests/demo-swap").then(r => r.json()),
+          fetch("/api/tasks").then(r => r.json()),
+          fetch("/api/issues").then(r => r.json()),
+          fetch("/api/academic-calendar").then(r => r.json()),
+          fetch("/api/faculty-constraints").then(r => r.json()),
+          fetch("/api/colleges").then(r => r.json())
+        ]).then(([swapRes, tasksRes, issuesRes, calRes, constRes, collegesRes]) => {
+          if (swapRes.status === "fulfilled" && swapRes.value?.success) setDemoSwapRequests(swapRes.value.requests || []);
+          if (tasksRes.status === "fulfilled" && tasksRes.value?.success) setKamTasks(tasksRes.value.tasks || []);
+          if (issuesRes.status === "fulfilled" && issuesRes.value?.success) setCampusIssues(issuesRes.value.issues || []);
+          if (calRes.status === "fulfilled" && calRes.value?.success) {
+            setAcademicYears(calRes.value.academicYears || []);
+            setAcademicEvents(calRes.value.academicEvents || []);
           }
-        } catch (_) {}
-
-        // Fetch tasks
-        try {
-          const tasksRes = await fetch("/api/tasks");
-          const tasksData = await tasksRes.json();
-          if (tasksData.success) setKamTasks(tasksData.tasks || []);
-        } catch (_) {}
-
-        // Fetch issues
-        try {
-          const issuesRes = await fetch("/api/issues");
-          const issuesData = await issuesRes.json();
-          if (issuesData.success) setCampusIssues(issuesData.issues || []);
-        } catch (_) {}
-
-        // Fetch academic calendar
-        try {
-          const calRes = await fetch("/api/academic-calendar");
-          const calData = await calRes.json();
-          if (calData.success) {
-            setAcademicYears(calData.academicYears || []);
-            setAcademicEvents(calData.academicEvents || []);
+          if (constRes.status === "fulfilled" && constRes.value?.success) {
+            setFacultyWorkloadLimits(constRes.value.workloadLimits || {});
+            setFacultyShifts(constRes.value.shifts || {});
           }
-        } catch (_) {}
-
-        // Fetch faculty constraints
-        try {
-          const constRes = await fetch("/api/faculty-constraints");
-          const constData = await constRes.json();
-          if (constData.success) {
-            setFacultyWorkloadLimits(constData.workloadLimits || {});
-            setFacultyShifts(constData.shifts || {});
-          }
-        } catch (_) {}
-
-        // Also fetch colleges
-        try {
-          const collegesRes = await fetch("/api/colleges");
-          const collegesData = await collegesRes.json();
-          if (collegesData.success) setColleges(collegesData.colleges || []);
-        } catch (_) {}
+          if (collegesRes.status === "fulfilled" && collegesRes.value?.success) setColleges(collegesRes.value.colleges || []);
+        }).catch(err => console.error("Error in parallel metadata fetch:", err));
 
         return {
           mentors: data.mentors || [] as Mentor[],

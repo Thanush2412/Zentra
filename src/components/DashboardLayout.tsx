@@ -190,7 +190,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       <header className="floating-header w-[92%] sm:w-[85%] md:w-[80%] lg:w-[75%] max-w-[1200px] mx-auto self-center mt-3 md:mt-4 px-3 sm:px-6 py-3 md:py-4 flex items-center justify-between z-30 transition-all rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-md bg-white/80 dark:bg-slate-900/80 backdrop-blur-md">
         {/* Left: Brand */}
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="Zentra Logo" className="h-12 md:h-14 w-auto object-contain shrink-0 max-h-14" />
+          <img src="/logo.svg" alt="Zentra Logo" className="h-8 sm:h-9 md:h-10 w-auto object-contain shrink-0 max-h-10" />
           <div>
             <span className="text-[13px] font-bold tracking-tight text-gray-900 dark:text-white leading-none block">
               Zentra
@@ -510,29 +510,47 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 export function ProfessionalLoader({ message = "Loading your workspace..." }: { message?: string }) {
   return (
     <div className="flex-1 flex items-center justify-center min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 relative overflow-hidden">
-      {/* Soft glowing background orbs */}
-      <div className="absolute top-[30%] left-[30%] h-[300px] w-[300px] rounded-full bg-indigo-500/10 blur-[100px] pointer-events-none animate-pulse-gentle" />
-      <div className="absolute bottom-[30%] right-[30%] h-[300px] w-[300px] rounded-full bg-[#D528A2]/5 blur-[100px] pointer-events-none animate-float-slow" />
+      {/* Background Soft Orbs */}
+      <div className="absolute top-[35%] left-[35%] h-[320px] w-[320px] rounded-full bg-indigo-500/10 blur-[120px] pointer-events-none animate-pulse" />
+      <div className="absolute bottom-[35%] right-[35%] h-[320px] w-[320px] rounded-full bg-[#D528A2]/10 blur-[120px] pointer-events-none animate-pulse" />
 
-      {/* Glassmorphic Loader Container */}
-      <div className="relative z-10 flex flex-col items-center p-8 rounded-3xl border border-white/20 dark:border-slate-800/40 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md shadow-xl max-w-sm w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-300">
-        {/* Custom Premium Logo Loader */}
+      {/* Glassmorphic Card */}
+      <div className="relative z-10 flex flex-col items-center p-8 sm:p-10 rounded-3xl border border-white/70 dark:border-slate-800/80 bg-white/75 dark:bg-slate-900/75 backdrop-blur-xl shadow-2xl max-w-sm w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-300">
+        
+        {/* Zentra Logo Header */}
         <div className="relative mb-6 flex items-center justify-center">
-          <div className="absolute -inset-4 rounded-full bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-pink-500/20 blur-lg animate-pulse" />
-          <div className="relative flex items-center justify-center p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/60 dark:border-slate-800 shadow-md">
-            <img src="/logo.png" alt="Zentra Logo" className="h-16 w-auto object-contain animate-pulse duration-1000" />
+          <div className="absolute -inset-3 rounded-2xl bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-[#D528A2]/20 blur-md animate-pulse" />
+          <div className="relative flex items-center justify-center px-6 py-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-md">
+            <img src="/logo.svg" alt="Zentra Logo" className="h-10 w-auto object-contain" />
           </div>
         </div>
 
-        {/* Text */}
-        <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5 block">
-          Zentra by FPC
-        </span>
-        <h3 className="text-sm font-extrabold text-slate-850 dark:text-slate-200 tracking-tight animate-pulse">
+        {/* 4-Dot Bouncing Wave Animation with Vibrant Glowing Brand Colors */}
+        <div className="flex items-center justify-center gap-3 my-5">
+          <div 
+            className="h-4 w-4 rounded-full bg-indigo-600 shadow-[0_0_12px_rgba(79,70,229,0.7)] animate-bounce" 
+            style={{ animationDelay: "0s", animationDuration: "0.9s" }} 
+          />
+          <div 
+            className="h-4 w-4 rounded-full bg-purple-600 shadow-[0_0_12px_rgba(147,51,234,0.7)] animate-bounce" 
+            style={{ animationDelay: "0.15s", animationDuration: "0.9s" }} 
+          />
+          <div 
+            className="h-4 w-4 rounded-full bg-[#D528A2] shadow-[0_0_12px_rgba(213,40,162,0.7)] animate-bounce" 
+            style={{ animationDelay: "0.30s", animationDuration: "0.9s" }} 
+          />
+          <div 
+            className="h-4 w-4 rounded-full bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.7)] animate-bounce" 
+            style={{ animationDelay: "0.45s", animationDuration: "0.9s" }} 
+          />
+        </div>
+
+        {/* Loading Message */}
+        <h3 className="text-sm font-extrabold text-slate-850 dark:text-white tracking-tight mt-2 mb-1">
           {message}
         </h3>
-        <p className="text-[11px] text-slate-500 dark:text-slate-450 mt-1">
-          Please wait while we secure your session.
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+          Please wait while your environment is loaded...
         </p>
       </div>
     </div>

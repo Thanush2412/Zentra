@@ -192,9 +192,9 @@ export default function Home() {
         {/* Left panel main wrapper */}
         <div className="relative z-10 flex flex-col h-full px-12 xl:px-16 py-12 justify-between">
           {/* Header Logo */}
-          <div className="flex items-center gap-4">
-            <img src="/logo.png" alt="Zentra Logo" className="h-20 md:h-24 lg:h-28 w-auto object-contain max-w-[280px]" />
-            <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+          <div className="flex items-center gap-3">
+            <img src="/logo.svg" alt="Zentra Logo" className="h-12 sm:h-14 md:h-16 w-auto object-contain max-w-[220px]" />
+            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-[9px] font-bold text-slate-600 uppercase tracking-wider">
               v2.0
             </span>
           </div>
@@ -237,7 +237,7 @@ export default function Home() {
         {/* Mobile top bar */}
         <div className="lg:hidden flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white/80 backdrop-blur-md z-20">
           <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="Zentra Logo" className="h-9 w-auto object-contain" />
+            <img src="/logo.svg" alt="Zentra Logo" className="h-9 w-auto object-contain" />
           </div>
           <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-[9px] font-bold text-slate-550 uppercase tracking-widest flex items-center gap-1">
             <Sparkles className="h-2.5 w-2.5 text-amber-500" /> Live Database

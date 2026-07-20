@@ -1539,7 +1539,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       const row = wsSubjects.getRow(rowNum);
       if (prePopulated) {
         row.getCell(1).value = prePopulated.name;
-        row.getCell(2).value = prePopulated.type || "Theory";
+        row.getCell(2).value = prePopulated.type || "SKILL";
         row.getCell(3).value = prePopulated.weekly_hours || 4;
       } else {
         row.getCell(1).value = "";
@@ -1555,7 +1555,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       wsSubjects.getCell(`B${i}`).dataValidation = {
         type: "list",
         allowBlank: true,
-        formulae: ['"Theory,Skill"']
+        formulae: ['"SKILL,ACADEMIC,LAB,GENERAL"']
       };
     }
 
@@ -3303,10 +3303,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
                   <select value={subjectTypeFilter} onChange={e => setSubjectTypeFilter(e.target.value)} className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm">
                     <option value="all">All Types</option>
-                    <option value="theory">Theory</option>
-                    <option value="practical">Practical</option>
-                    <option value="elective">Elective</option>
-                    <option value="laboratory">Laboratory</option>
+                    <option value="SKILL">SKILL</option>
+                    <option value="ACADEMIC">ACADEMIC</option>
+                    <option value="LAB">LAB</option>
+                    <option value="GENERAL">GENERAL</option>
                   </select>
                   <span className="ml-auto text-[10px] text-slate-400 font-semibold">{subjectsList.length} subjects · {coursesList.length} departments</span>
                 </div>
@@ -4492,10 +4492,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                             onChange={e => setQuickSubType(e.target.value)}
                                             className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold text-xs cursor-pointer"
                                           >
-                                            <option value="theory">Theory</option>
-                                            <option value="practical">Practical</option>
-                                            <option value="elective">Elective</option>
-                                            <option value="laboratory">Laboratory</option>
+                                            <option value="SKILL">SKILL (Practical Training)</option>
+                                            <option value="ACADEMIC">ACADEMIC (Core Theory)</option>
+                                            <option value="LAB">LAB (Practical Laboratory)</option>
+                                            <option value="GENERAL">GENERAL (Elective / Foundational)</option>
                                           </select>
                                         </div>
                                         <div className="space-y-1">

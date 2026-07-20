@@ -6230,15 +6230,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Type</label>
+                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Subject Type / Domain</label>
                       <select
                         required
                         value={subjectForm.type}
                         onChange={(e) => setSubjectForm({ ...subjectForm, type: e.target.value })}
                         className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
                       >
-                        <option value="theory">Theory</option>
-                        <option value="skill">Skill / Lab</option>
+                        <option value="SKILL">SKILL (Practical Training)</option>
+                        <option value="ACADEMIC">ACADEMIC (Core Theory)</option>
+                        <option value="LAB">LAB (Practical Laboratory)</option>
+                        <option value="GENERAL">GENERAL (Elective / Foundational)</option>
                       </select>
                     </div>
 
@@ -6350,19 +6352,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* ── Course Modal ── */}
       {showDeptModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-lg w-full overflow-hidden animate-slideUp">
-            <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
-              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                <Layers className="h-5 w-5 text-indigo-655" />
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-gray-150 shadow-2xl max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden animate-slideUp">
+            {/* Header (Fixed) */}
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/80 shrink-0">
+              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
+                <div className="h-8 w-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                  <Layers className="h-4 w-4 text-indigo-650" />
+                </div>
                 {editingDept ? "Edit Course Details" : "Add Course"}
               </h3>
-              <button onClick={() => setShowDeptModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
+              <button onClick={() => setShowDeptModal(false)} className="p-1.5 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
                 <X className="h-4 w-4" />
               </button>
             </div>
             
-            <form onSubmit={handleDeptSubmit} className="p-6 space-y-4 text-xs font-semibold">
+            {/* Scrollable Form Body */}
+            <form onSubmit={handleDeptSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-semibold">
               {modalError && (
                 <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
                   <ShieldAlert className="h-4 w-4 shrink-0" />
@@ -6372,7 +6378,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1 sm:col-span-2">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Course Name</label>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Course Name</label>
                   <input
                     type="text"
                     required
@@ -6384,7 +6390,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Course Duration</label>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Course Duration</label>
                   <select
                     value={deptForm.years || 4}
                     onChange={(e) => handleCourseYearsChange(Number(e.target.value))}
@@ -6398,7 +6404,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Status</label>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Status</label>
                   <select
                     value={deptForm.status || "Active"}
                     onChange={(e) => setDeptForm({ ...deptForm, status: e.target.value })}
@@ -6409,8 +6415,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </select>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Assigned Campus</label>
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Assigned Campus</label>
                   <select
                     required
                     value={deptForm.college_id || ""}
@@ -6426,7 +6432,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <div className="space-y-1 sm:grid grid-cols-2 gap-3 sm:col-span-2">
                   <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Start Date</label>
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Start Date</label>
                     <input
                       type="date"
                       value={deptForm.start_date || ""}
@@ -6435,7 +6441,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">End Date</label>
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">End Date</label>
                     <input
                       type="date"
                       value={deptForm.end_date || ""}
@@ -6543,7 +6549,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1 sm:col-span-2">
                   <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Default Shift / Timing</label>
                   <select
                     value={deptForm.default_shift || "general"}
@@ -6557,18 +6563,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <div className="space-y-1 sm:col-span-2">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Description</label>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Description</label>
                   <textarea
                     placeholder="Enter course summary or notes..."
                     value={deptForm.description || ""}
                     onChange={(e) => setDeptForm({ ...deptForm, description: e.target.value })}
-                    rows={3}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800 resize-none font-semibold"
+                    rows={2}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800 resize-none font-semibold"
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+              {/* Sticky Footer */}
+              <div className="flex justify-end gap-2.5 pt-4 mt-4 border-t border-gray-100 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowDeptModal(false)}
