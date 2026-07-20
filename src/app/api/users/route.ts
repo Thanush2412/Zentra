@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       const defaultPassword = "password123";
       const nowStr = new Date().toISOString();
 
-      await db.run("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?", [defaultPassword, nowStr, user.id]);
+      await db.run("UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = ? WHERE id = ?", [defaultPassword, nowStr, user.id]);
 
       // Sync password to role specific tables
       if (user.role === "student") {

@@ -45,8 +45,12 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
+  const isFirstLoginRequired = typeof window !== "undefined" && localStorage.getItem("fp_must_change_pass") === "true";
+
   // Change Password Modal State
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(() => {
+    return typeof window !== "undefined" && localStorage.getItem("fp_must_change_pass") === "true";
+  });
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -108,6 +112,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
         setPassError(data.message || "Failed to update password.");
       } else {
         setPassSuccess("Password updated successfully!");
+        localStorage.removeItem("fp_must_change_pass");
         setTimeout(() => {
           setShowPasswordModal(false);
           setCurrentPassword("");
@@ -125,6 +130,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
   // Sync dark mode on mount
   useEffect(() => {
+    if (localStorage.getItem("fp_must_change_pass") === "true") {
+      setShowPasswordModal(true);
+    }
     const isDark = localStorage.getItem("fp_dark_mode") === "true";
     setDarkMode(isDark);
     if (isDark) {
@@ -165,6 +173,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
   const handleLogout = () => {
     localStorage.removeItem("fp_logged_in");
+    localStorage.removeItem("fp_must_change_pass");
     localStorage.removeItem("fp_current_role");
     localStorage.removeItem("fp_mentor_id");
     localStorage.removeItem("fp_header_id");
@@ -349,21 +358,36 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
-                    Change Password
+                    {isFirstLoginRequired ? "Password Change Required" : "Change Password"}
                   </h3>
                   <p className="text-[11px] text-slate-400 font-medium">
-                    Update your account login security credentials
+                    {isFirstLoginRequired ? "First login security requirement" : "Update your account login security credentials"}
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowPasswordModal(false)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              {!isFirstLoginRequired && (
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordModal(false)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </div>
+
+            {/* Mandatory First Login Notice */}
+            {isFirstLoginRequired && (
+              <div className="mb-4 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 flex items-start gap-3 text-xs text-amber-800 dark:text-amber-300">
+                <Lock className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                <div>
+                  <p className="font-bold">First Login Security Requirement</p>
+                  <p className="text-[11px] opacity-90 mt-0.5 leading-relaxed">
+                    Because this is your initial sign-in (or your password was reset), security policy requires you to set a new password before continuing.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Notifications */}
             {passError && (
@@ -478,13 +502,24 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
               {/* Action Buttons */}
               <div className="pt-3 flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowPasswordModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
-                >
-                  Cancel
-                </button>
+                {isFirstLoginRequired ? (
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="flex-1 py-2.5 rounded-xl border border-rose-200 dark:border-rose-900/50 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    Log out
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordModal(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                )}
                 <button
                   type="submit"
                   disabled={isSavingPass}

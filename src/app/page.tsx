@@ -101,6 +101,11 @@ export default function Home() {
       if (data.success) {
         setRole(data.role, data.userId);
         localStorage.setItem("fp_logged_in", "true");
+        if (data.mustChangePassword) {
+          localStorage.setItem("fp_must_change_pass", "true");
+        } else {
+          localStorage.removeItem("fp_must_change_pass");
+        }
         
         // Redirect based on role
         const target = "/" + (data.role === "fee_manager" ? "fee-manager" : data.role);

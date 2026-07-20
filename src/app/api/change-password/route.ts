@@ -57,7 +57,7 @@ export async function POST(request: Request) {
 
     // Update main users table
     await db.run(
-      "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+      "UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
       [trimmedNewPass, nowStr, user.id]
     );
 

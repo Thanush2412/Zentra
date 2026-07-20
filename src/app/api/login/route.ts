@@ -40,6 +40,10 @@ export async function POST(request: Request) {
       collegeId = mentor ? mentor.college_id : null;
     }
 
+    // Check if this is user's first login, password change is enforced, or password is default 'password123'
+    const isDefaultPassword = user.password_hash === "password123";
+    const mustChangePassword = user.must_change_password === 1 || !user.last_login || isDefaultPassword;
+
     // Record login history
     const logId = "log_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
     await db.run(
@@ -60,7 +64,8 @@ export async function POST(request: Request) {
       success: true,
       role: user.role,
       userId: user.reference_id,
-      collegeId: collegeId
+      collegeId: collegeId,
+      mustChangePassword: !!mustChangePassword
     });
   } catch (error: any) {
     console.error("API POST Login error:", error);

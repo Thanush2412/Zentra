@@ -263,6 +263,7 @@ export function getDb(): Promise<TursoDbAdapter> {
       role TEXT NOT NULL,
       reference_id TEXT,
       status TEXT DEFAULT 'Active',
+      must_change_password INTEGER DEFAULT 0,
       last_login TEXT,
       created_at TEXT,
       updated_at TEXT
@@ -771,9 +772,6 @@ export function getDb(): Promise<TursoDbAdapter> {
     await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN working_days INTEGER DEFAULT 5;`);
   } catch (_) {}
   try {
-    await dbInstance.exec(`ALTER TABLE courses ADD COLUMN working_days INTEGER DEFAULT 6;`);
-  } catch (_) {}
-  try {
     await dbInstance.exec(`ALTER TABLE campus_daily_configs ADD COLUMN session_mode TEXT DEFAULT 'Offline';`);
   } catch (_) {}
   try {
@@ -947,6 +945,9 @@ export function getDb(): Promise<TursoDbAdapter> {
   } catch (_) {}
   try {
     await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN updated_at TEXT;`);
+  } catch (_) {}
+  try {
+    await dbInstance.exec(`ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0;`);
   } catch (_) {}
 
   // 14. Migration: Add extended fields to students
