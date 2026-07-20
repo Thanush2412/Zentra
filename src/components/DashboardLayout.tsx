@@ -39,7 +39,8 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   } = useApp();
 
   const isLoggedInClient = typeof window !== "undefined" && localStorage.getItem("fp_logged_in") === "true";
-  const isAuthorized = !isLoading && isLoggedInClient && currentRole === requiredRole;
+  const storedRoleClient = typeof window !== "undefined" ? localStorage.getItem("fp_current_role") : null;
+  const isAuthorized = isLoggedInClient && (currentRole === requiredRole || storedRoleClient === requiredRole);
 
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [darkMode, setDarkMode] = useState(false);

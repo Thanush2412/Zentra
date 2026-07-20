@@ -517,7 +517,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [facultyShifts, setFacultyShifts] = useState<{ [key: string]: string }>({});
   const [signupRequests, setSignupRequests] = useState<any[]>([]);
 
-  const [currentRole, setCurrentRoleState] = useState<Role>("mentor");
+  const [currentRole, setCurrentRoleState] = useState<Role>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("fp_current_role");
+      if (saved) return saved as Role;
+    }
+    return "mentor";
+  });
   const [currentMentor, setCurrentMentor] = useState<Mentor | null>(null);
   const [currentHR, setCurrentHR] = useState<HRUser | null>(null);
   const [currentCAM, setCurrentCAM] = useState<CampusManager | null>(null);
