@@ -516,15 +516,11 @@ export function ProfessionalLoader({ message = "Loading your workspace..." }: { 
 
       {/* Glassmorphic Loader Container */}
       <div className="relative z-10 flex flex-col items-center p-8 rounded-3xl border border-white/20 dark:border-slate-800/40 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md shadow-xl max-w-sm w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-300">
-        {/* Custom Premium Spinner */}
-        <div className="relative h-16 w-16 mb-6">
-          {/* Outer Ring */}
-          <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-indigo-500 border-b-indigo-500 animate-spin duration-1000" />
-          {/* Middle Ring */}
-          <div className="absolute inset-1.5 rounded-full border-2 border-transparent border-l-[#D528A2] border-r-[#D528A2] animate-spin-reverse duration-700" />
-          {/* Inner Glowing Center */}
-          <div className="absolute inset-4 rounded-full bg-indigo-600/20 dark:bg-indigo-400/20 flex items-center justify-center animate-pulse">
-            <div className="h-2 w-2 rounded-full bg-indigo-500 dark:bg-indigo-455 shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
+        {/* Custom Premium Logo Loader */}
+        <div className="relative mb-6 flex items-center justify-center">
+          <div className="absolute -inset-4 rounded-full bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-pink-500/20 blur-lg animate-pulse" />
+          <div className="relative flex items-center justify-center p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/60 dark:border-slate-800 shadow-md">
+            <img src="/logo.png" alt="Zentra Logo" className="h-16 w-auto object-contain animate-pulse duration-1000" />
           </div>
         </div>
 

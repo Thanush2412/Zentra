@@ -17,6 +17,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Zentra by FPC - Timetable & Slot Booking Dashboard",
   description: "Advanced Slot Booking, Conversions, and HR Audit Log Dashboard",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({
