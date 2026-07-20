@@ -1,4 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   --background: #ffffff;
@@ -8,7 +11,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: 'Outfit', 'Plus Jakarta Sans', var(--font-geist-sans), sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
@@ -22,5 +25,603 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
 }
+
+/* Brand Button & Text Gradient Utilities */
+.btn-gradient {
+  background-image: linear-gradient(to right, #D528A2 0%, #F4A863 51%, #D528A2 100%) !important;
+  background-size: 200% auto !important;
+  background-position: 0% 50% !important;
+  color: #ffffff !important;
+  border: none !important;
+  transition: background-position .4s ease, box-shadow .3s ease, transform .2s ease !important;
+  box-shadow: 0 4px 14px rgba(213, 40, 162, 0.28) !important;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-gradient:hover:not(:disabled) {
+  background-position: 100% 50% !important;
+  box-shadow: 0 8px 24px rgba(213, 40, 162, 0.35) !important;
+  transform: translateY(-1px) !important;
+}
+
+.btn-gradient:active:not(:disabled) {
+  transform: translateY(0) !important;
+}
+
+.text-gradient {
+  color: #0f172a !important;
+  background: none !important;
+  -webkit-text-fill-color: initial !important;
+  background-clip: initial !important;
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+/* Redesigned Premium CSS Animations */
+@keyframes float-slow {
+
+  0%,
+  100% {
+    transform: translateY(0px) scale(1);
+  }
+
+  50% {
+    transform: translateY(-20px) scale(1.05);
+  }
+}
+
+@keyframes float-reverse {
+
+  0%,
+  100% {
+    transform: translateY(0px) scale(1);
+  }
+
+  50% {
+    transform: translateY(20px) scale(0.95);
+  }
+}
+
+@keyframes pulse-gentle {
+
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 0.65;
+  }
+}
+
+.animate-float-slow {
+  animation: float-slow 8s ease-in-out infinite;
+}
+
+.animate-float-reverse {
+  animation: float-reverse 10s ease-in-out infinite;
+}
+
+.animate-pulse-gentle {
+  animation: pulse-gentle 6s ease-in-out infinite;
+}
+
+/* Warm Pastel Theme & Dribbble Aesthetics */
+.bg-warm-canvas {
+  background-color: #F5F7FB !important;
+}
+
+.sidebar-active-item {
+  background-color: #eef2ff !important;
+  background-image: none !important;
+  color: #4f46e5 !important;
+  border: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  transition: all 0.2s ease-in-out;
+}
+
+/* Floating Sidebar & Header Styles with Glassmorphism & Soft Neomorphism */
+.floating-sidebar {
+  height: calc(100vh - 9.5rem) !important;
+  margin: 1.5rem 0 1.5rem 1.5rem !important;
+  border-radius: 2rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 6px 6px 18px rgba(165, 175, 190, 0.1),
+    -6px -6px 18px rgba(255, 255, 255, 0.85) !important;
+  background-color: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+
+.floating-header {
+  margin: 1.5rem 1.5rem 0 1.5rem !important;
+  border-radius: 1.5rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 6px 6px 18px rgba(165, 175, 190, 0.08),
+    -6px -6px 18px rgba(255, 255, 255, 0.85) !important;
+  background-color: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+
+
+.bg-pastel-cream {
+  background-color: #FDFBF7 !important;
+  border: 1px solid #F6EFE2 !important;
+}
+
+.bg-pastel-blue {
+  background-color: #F5F8FC !important;
+  border: 1px solid #E5EDF9 !important;
+}
+
+.bg-pastel-purple {
+  background-color: #FAF6FC !important;
+  border: 1px solid #EFE3F7 !important;
+}
+
+.bg-pastel-green {
+  background-color: #F2FAF5 !important;
+  border: 1px solid #E1F2E4 !important;
+}
+
+/* Custom rounded corners matching Dribbble style */
+.rounded-dribbble-card {
+  border-radius: 1.75rem !important;
+}
+
+.rounded-dribbble-panel {
+  border-radius: 2rem !important;
+}
+
+/* Custom checkbox / indicator colors */
+.attendance-dot-check {
+  background-color: #22c55e;
+  color: white;
+}
+
+.attendance-dot-cross {
+  background-color: #ef4444;
+  color: white;
+}
+
+/* ── Dark Mode & Theme Variables ─────────────────── */
+:root {
+  --canvas-bg: #F5F7FB;
+  --panel-bg: rgba(255, 255, 255, 0.75);
+  --card-bg: #ffffff;
+  --border-color: rgba(255, 255, 255, 0.5);
+  --border-card: rgba(230, 235, 245, 0.8);
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --sidebar-active-bg: #eef2ff;
+  --sidebar-active-text: #4f46e5;
+  --sidebar-bg: rgba(255, 255, 255, 0.75);
+}
+
+.dark {
+  --canvas-bg: #070708;
+  --panel-bg: #131317 !important;
+  --card-bg: #131317 !important;
+  --border-color: rgba(255, 255, 255, 0.05) !important;
+  --border-card: #1f1f27 !important;
+  --text-primary: #f3f4f6 !important;
+  --text-secondary: #8e9aa8 !important;
+  --sidebar-active-bg: #1d152a !important;
+  --sidebar-active-text: #a78bfa !important;
+  --sidebar-bg: #0d0d10 !important;
+}
+
+/* Apply CSS Variables to Layout */
+.bg-warm-canvas {
+  background-color: var(--canvas-bg) !important;
+}
+
+.floating-sidebar {
+  background-color: var(--sidebar-bg) !important;
+  border-color: var(--border-color) !important;
+  box-shadow: 6px 6px 18px rgba(0, 0, 0, 0.05), -6px -6px 18px rgba(255, 255, 255, 0.02) !important;
+}
+.dark .floating-sidebar {
+  box-shadow: 6px 6px 18px rgba(0, 0, 0, 0.25), -6px -6px 18px rgba(255, 255, 255, 0.01) !important;
+}
+
+.floating-header {
+  background-color: var(--sidebar-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* ── Sidebar Active State = Brand Gradient ──────── */
+.sidebar-active-item {
+  background-image: linear-gradient(to right, #D528A2 0%, #F4A863 51%, #D528A2 100%) !important;
+  background-size: 200% auto !important;
+  background-position: 0% 50% !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(213, 40, 162, 0.22) !important;
+}
+.sidebar-active-item * {
+  color: #ffffff !important;
+}
+
+/* ── Layout containers use CSS Variables ────────── */
+.bg-warm-canvas   { background-color: var(--canvas-bg) !important; }
+.floating-sidebar { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
+.floating-header  { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
+
+.dark .floating-sidebar {
+  box-shadow: 4px 0 24px rgba(0,0,0,0.45) !important;
+}
+
+/* ═══════════════════════════════════════════════
+   DARK MODE — derived from scanning all component
+   inline className props across the codebase
+   ═══════════════════════════════════════════════ */
+
+/* 1) Root chrome */
+.dark {
+  color-scheme: dark;
+  background-color: #070708 !important;
+}
+
+/* 2) Global top header */
+.dark header,
+.dark .floating-header {
+  background: linear-gradient(180deg, #0f0f12 0%, #090909 100%) !important;
+  border-bottom: 1px solid #1e1e26 !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5) !important;
+}
+
+/* ─── BACKGROUNDS ─────────────────────────────── */
+
+/* White card surfaces */
+.dark .bg-white { background-color: #131317 !important; }
+
+/* bg-gray-50, bg-gray-55 — subtle inner panels */
+.dark .bg-gray-50  { background-color: #0f0f13 !important; }
+.dark .bg-gray-55  { background-color: #0f0f13 !important; }
+.dark .bg-gray-100 { background-color: #1c1c24 !important; }
+.dark .bg-gray-105 { background-color: #1c1c24 !important; }
+.dark .bg-gray-150 { background-color: #1c1c24 !important; }
+.dark .bg-gray-200 { background-color: #25252f !important; }
+.dark .bg-gray-250 { background-color: #25252f !important; }
+.dark .bg-gray-350 { background-color: #2e2e3a !important; }
+.dark .bg-gray-900 { background-color: #050506 !important; }
+
+.dark .bg-slate-50  { background-color: #0f0f13 !important; }
+.dark .bg-slate-100 { background-color: #1c1c24 !important; }
+.dark .bg-slate-105 { background-color: #1c1c24 !important; }
+.dark .bg-slate-200 { background-color: #25252f !important; }
+.dark .bg-slate-300 { background-color: #2e2e3a !important; }
+.dark .bg-slate-900 { background-color: #050506 !important; }
+.dark .bg-slate-905 { background-color: #050506 !important; }
+
+/* ─── BORDERS ─────────────────────────────────── */
+.dark .border-gray-50,
+.dark .border-gray-100,
+.dark .border-gray-150,
+.dark .border-gray-200,
+.dark .border-gray-205,
+.dark .border-gray-250,
+.dark .border-gray-255,
+.dark .border-gray-300 { border-color: #1e1e26 !important; }
+
+.dark .border-slate-50,
+.dark .border-slate-100,
+.dark .border-slate-101,
+.dark .border-slate-105,
+.dark .border-slate-150,
+.dark .border-slate-200,
+.dark .border-slate-202,
+.dark .border-slate-205,
+.dark .border-slate-250,
+.dark .border-slate-300 { border-color: #1e1e26 !important; }
+
+/* ─── TEXT — Primary (dark → very light) ────────── */
+.dark .text-gray-700,  .dark .text-gray-705,
+.dark .text-gray-750,  .dark .text-gray-755,
+.dark .text-gray-800,  .dark .text-gray-805,
+.dark .text-gray-850,  .dark .text-gray-855,
+.dark .text-gray-900,  .dark .text-gray-905,
+.dark .text-gray-955  { color: #f0f0f5 !important; }
+
+.dark .text-slate-700, .dark .text-slate-705,
+.dark .text-slate-755,
+.dark .text-slate-800, .dark .text-slate-805,
+.dark .text-slate-808,
+.dark .text-slate-850,
+.dark .text-slate-900, .dark .text-slate-905 { color: #f0f0f5 !important; }
+
+/* ─── TEXT — Secondary / muted ───────────────────── */
+.dark .text-gray-500,  .dark .text-gray-505  { color: #9ca3af !important; }
+.dark .text-gray-550,  .dark .text-gray-555  { color: #9ca3af !important; }
+.dark .text-gray-600,  .dark .text-gray-650,
+.dark .text-gray-655                          { color: #8e9aa8 !important; }
+
+.dark .text-slate-500, .dark .text-slate-505 { color: #9ca3af !important; }
+.dark .text-slate-550                        { color: #9ca3af !important; }
+.dark .text-slate-600, .dark .text-slate-650,
+.dark .text-slate-655, .dark .text-slate-700 { color: #8e9aa8 !important; }
+
+/* ─── TEXT — Dim / placeholder ───────────────────── */
+.dark .text-gray-300,  .dark .text-gray-305,
+.dark .text-gray-350,  .dark .text-gray-355  { color: #5b6575 !important; }
+.dark .text-gray-400,  .dark .text-gray-450  { color: #6b7a8d !important; }
+
+.dark .text-slate-300, .dark .text-slate-350 { color: #5b6575 !important; }
+.dark .text-slate-400, .dark .text-slate-405,
+.dark .text-slate-450, .dark .text-slate-455 { color: #6b7a8d !important; }
+
+/* ─── TEXT — Light (already white, keep) ────────── */
+.dark .text-slate-100 { color: #f1f5f9 !important; }
+.dark .text-slate-200 { color: #e2e8f0 !important; }
+.dark .text-gray-707  { color: #ebebf0 !important; }
+
+/* ─── HOVER — Backgrounds (no light flash) ──────── */
+.dark .hover\:bg-white:hover,
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-55:hover,
+.dark .hover\:bg-gray-100:hover,
+.dark .hover\:bg-gray-150:hover,
+.dark .hover\:bg-gray-200:hover,
+.dark .hover\:bg-gray-250:hover,
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-slate-100:hover { background-color: rgba(255,255,255,0.06) !important; }
+
+.dark .hover\:bg-slate-800:hover,
+.dark .hover\:bg-slate-850:hover { background-color: #1e1e2a !important; }
+
+/* ─── HOVER — Text colours ───────────────────────── */
+.dark .hover\:text-gray-800:hover,
+.dark .hover\:text-gray-655:hover,
+.dark .hover\:text-slate-600:hover,
+.dark .hover\:text-slate-650:hover,
+.dark .hover\:text-slate-700:hover,
+.dark .hover\:text-slate-850:hover { color: #ffffff !important; }
+
+/* ─── INPUTS / SELECTS / TEXTAREAS ──────────────── */
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #0d0d11 !important;
+  border-color: #1e1e26 !important;
+  color: #f0f0f5 !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder { color: #4a5568 !important; }
+
+/* ─── TABLES ─────────────────────────────────────── */
+.dark th {
+  background-color: #0d0d11 !important;
+  color: #8e9aa8 !important;
+  border-color: #1e1e26 !important;
+}
+.dark td { border-color: #1e1e26 !important; color: #f0f0f5 !important; }
+.dark tr:hover td { background-color: rgba(255,255,255,0.03) !important; }
+
+/* ─── ACCENT BADGE fills ─────────────────────────── */
+.dark .bg-indigo-50  { background-color: rgba(99,102,241,0.12) !important; }
+.dark .bg-emerald-50 { background-color: rgba(16,185,129,0.12) !important; }
+.dark .bg-amber-50   { background-color: rgba(245,158,11,0.12) !important; }
+.dark .bg-red-50     { background-color: rgba(239,68,68,0.12) !important; }
+.dark .bg-violet-50  { background-color: rgba(139,92,246,0.12) !important; }
+.dark .bg-purple-50  { background-color: rgba(168,85,247,0.12) !important; }
+.dark .bg-blue-50    { background-color: rgba(59,130,246,0.12) !important; }
+.dark .bg-rose-50    { background-color: rgba(244,63,94,0.12) !important; }
+
+/* ─── ACCENT BADGE text ──────────────────────────── */
+.dark .text-indigo-600, .dark .text-indigo-650,
+.dark .text-indigo-700 { color: #a5b4fc !important; }
+.dark .text-emerald-600,.dark .text-emerald-700,
+.dark .text-emerald-800 { color: #6ee7b7 !important; }
+.dark .text-red-500,    .dark .text-red-600,
+.dark .text-red-700     { color: #fca5a5 !important; }
+.dark .text-amber-500,  .dark .text-amber-600,
+.dark .text-amber-700   { color: #fde047 !important; }
+.dark .text-violet-600, .dark .text-violet-700 { color: #c4b5fd !important; }
+.dark .text-blue-600,   .dark .text-blue-700   { color: #93c5fd !important; }
+.dark .text-rose-500,   .dark .text-rose-600   { color: #fda4af !important; }
+
+/* ─── ACCENT BADGE hovers ────────────────────────── */
+.dark .hover\:bg-indigo-50:hover,
+.dark .hover\:bg-indigo-100\/50:hover  { background-color: rgba(99,102,241,0.2) !important; }
+.dark .hover\:bg-emerald-50:hover      { background-color: rgba(16,185,129,0.2) !important; }
+.dark .hover\:bg-red-50:hover,
+.dark .hover\:bg-rose-50:hover         { background-color: rgba(239,68,68,0.2) !important; }
+.dark .hover\:bg-amber-50:hover        { background-color: rgba(245,158,11,0.2) !important; }
+
+/* ─── PASTEL CARD fills ──────────────────────────── */
+.dark .bg-pastel-cream  { background-color: rgba(244,168,99,0.07) !important; border-color: rgba(244,168,99,0.15) !important; }
+.dark .bg-pastel-blue   { background-color: rgba(99,102,241,0.07) !important; border-color: rgba(99,102,241,0.15) !important; }
+.dark .bg-pastel-purple { background-color: rgba(168,85,247,0.07) !important; border-color: rgba(168,85,247,0.15) !important; }
+.dark .bg-pastel-green  { background-color: rgba(34,197,94,0.07) !important;  border-color: rgba(34,197,94,0.15) !important; }
+
+/* btn-gradient is always vivid — never override */
+
+/* ─── SVG TEXT in dark mode ──────────────────────── */
+.dark svg text { fill: #f0f0f5 !important; }
+
+/* ─── Sidebar section labels (MAIN NAVIGATION etc) ── */
+.dark .floating-sidebar p[class*="text-slate-4"] { color: #4a5568 !important; }
+
+/* ─── System Secure card dark ───────────────────── */
+.dark .bg-indigo-50  { background-color: rgba(99,102,241,0.1) !important; }
+.dark .border-indigo-100 { border-color: rgba(99,102,241,0.2) !important; }
+.dark .text-indigo-700 { color: #a5b4fc !important; }
+.dark .text-indigo-400 { color: #818cf8 !important; }
+
+/* end of globals.css */
+
+/* ─── Custom Spin Reverse Animation ──────────────── */
+@keyframes spin-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+.animate-spin-reverse {
+  animation: spin-reverse 0.8s linear infinite;
+}
+
+/* ─── Mobile Bottom Navigation Bar ─────────────────── */
+.mobile-bottom-nav {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(230, 235, 245, 0.9);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.07);
+}
+.dark .mobile-bottom-nav {
+  background: rgba(13, 13, 17, 0.92);
+  border-top: 1px solid rgba(30, 30, 38, 0.9);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* ─── Premium Styled Scrollbars ──────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.55);
+}
+
+/* On elements with .no-scrollbar, show an ultra-thin 4px indicator instead of fully hiding it */
+.no-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+  display: block !important;
+}
+.no-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.25);
+  border-radius: 9999px;
+}
+.no-scrollbar {
+  -ms-overflow-style: auto;
+  scrollbar-width: thin;
+}
+
+/* ─── Touch scroll momentum ─────────────────────────── */
+.scroll-touch {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* ─── Touch tap delay fix on all interactive elements ── */
+button, a, [role="button"] {
+  touch-action: manipulation;
+}
+
+/* ─── Main content bottom padding on mobile (for bottom nav) ── */
+@media (max-width: 767px) {
+  .floating-sidebar {
+    display: none !important;
+  }
+  .floating-header {
+    margin: 0.75rem 0.75rem 0 0.75rem !important;
+    border-radius: 1rem !important;
+  }
+}
+
+/* ─── Safe-area inset for phones with notches / home bar ─────── */
+.mobile-bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ─── Responsive table scroll wrapper ─────────────────────────── */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* ─── Extra-small screen: tighter default spacing ─────────────── */
+@media (max-width: 480px) {
+  /* Reduce main padding on very small phones */
+  .floating-main-panel {
+    padding: 0.75rem !important;
+    padding-bottom: 5rem !important;
+  }
+  /* Admin page header: switch stacked on xs */
+  .admin-page-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 0.5rem !important;
+  }
+  /* KPI stat card: reduce huge font on xs */
+  .admin-kpi-value {
+    font-size: 2rem !important;
+  }
+}
+
+/* ─── Premium Icon Micro-Interactions on Hover ── */
+.hover-spin-icon {
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+button:hover .hover-spin-icon,
+a:hover .hover-spin-icon {
+  transform: rotate(360deg);
+}
+
+.hover-arrow-icon {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+button:hover .hover-arrow-icon,
+a:hover .hover-arrow-icon {
+  transform: translateX(4px);
+}
+
+.hover-tilt-icon {
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+button:hover .hover-tilt-icon,
+a:hover .hover-tilt-icon {
+  transform: rotate(-15deg) scale(1.1);
+}
+
+/* ─── Mobile Typography Scaling (all dashboards) ─────── */
+@media (max-width: 640px) {
+  /* Reduce font weights to standard bold on mobile to avoid clunky looks */
+  .font-black, .font-extrabold {
+    font-weight: 700 !important;
+  }
+
+  /* Scale down oversized header typography */
+  h1 {
+    font-size: 1.35rem !important;
+    font-weight: 700 !important;
+  }
+  h2 {
+    font-size: 1.15rem !important;
+    font-weight: 700 !important;
+  }
+  h3 {
+    font-size: 0.95rem !important;
+    font-weight: 700 !important;
+  }
+
+  /* Stats numbers / KPI cards values */
+  .text-3xl, .text-4xl, .text-\[48px\], .text-\[36px\] {
+    font-size: 1.5rem !important;
+    font-weight: 700 !important;
+    line-height: 1.2 !important;
+  }
+}
+

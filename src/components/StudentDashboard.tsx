@@ -34,9 +34,10 @@ import {
   GraduationCap,
   Upload,
   RefreshCw,
-  Menu
+  Menu,
+  Edit2
 } from "lucide-react";
-import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState } from "@/lib/utils";
+import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate } from "@/lib/utils";
 
 // Mock Library Books database for OPAC
 interface BookItem {
@@ -111,6 +112,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [studentTrackerWeek, setStudentTrackerWeek] = useState<number>(1);
   const [submittingUrlMap, setSubmittingUrlMap] = useState<Record<number, boolean>>({});
   const [studentUploadType, setStudentUploadType] = useState<Record<number, "url" | "file">>({});
+  const [editSubmissionMode, setEditSubmissionMode] = useState<Record<number, boolean>>({});
 
   // State for Leave Submission Form
   const [leaveType, setLeaveType] = useState<"leave" | "od">("leave");
@@ -123,6 +125,21 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   
   // State for Dues payment
   const [paidFees, setPaidFees] = useState<Record<string, boolean>>({});
+
+  const [dailyConfigsList, setDailyConfigsList] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (currentStudent?.college_id) {
+      fetch(`/api/daily-configs?college_id=${currentStudent.college_id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.configs) {
+            setDailyConfigsList(data.configs);
+          }
+        })
+        .catch(err => console.error("Error fetching daily configs:", err));
+    }
+  }, [currentStudent]);
   const [payingFeeId, setPayingFeeId] = useState<string | null>(null);
 
   // Profile edit state
@@ -469,10 +486,36 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     };
   };
 
+  // Helper to resolve the active day for a calendar date, accounting for CAM Day Order overrides
+  const getMappedDayForDate = (dateStr: string, defaultDay: string) => {
+    const dailyConfig = dailyConfigsList.find((c: any) => c.dateStr === dateStr);
+    
+    // If it's a holiday, return a special holiday flag
+    if (dailyConfig && dailyConfig.day_type === "holiday") {
+      return "holiday";
+    }
+
+    if (dailyConfig && dailyConfig.day_order && dailyConfig.day_order !== "None") {
+      const match = dailyConfig.day_order.match(/^Day (\d+)$/);
+      if (match) {
+        const orderNum = parseInt(match[1]);
+        const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        if (orderNum >= 1 && orderNum <= dayNames.length) {
+          return dayNames[orderNum - 1];
+        }
+      }
+    }
+    return defaultDay;
+  };
+
   // Helper to find slot attendance for a specific day/date and time slot
   const getAttendanceForCell = (day: string, dateStr: string, time: string) => {
+    const queryDay = getMappedDayForDate(dateStr, day);
+    if (queryDay === "holiday") {
+      return null;
+    }
     // Find the slot for this class group at this time
-    const slot = myClassSlots.find((s) => s.day === day && s.time === time);
+    const slot = myClassSlots.find((s) => s.day === queryDay && s.time === time);
     if (!slot) return null;
 
     // Check if there is an approved handover (substitution) for this slot on this date
@@ -1244,7 +1287,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </button>
                 <span className="text-[10px] font-bold text-slate-755 px-2 min-w-[130px] text-center select-none font-sans">
-                  {weekOffset === 0 ? "Current Week" : `${weekDates[0]?.formatted} – ${weekDates[4]?.formatted}`}
+                  {weekOffset === 0 ? "Current Week" : `${weekDates[0]?.formatted} – ${weekDates[weekDates.length - 1]?.formatted}`}
                 </span>
                 <button
                   type="button"
@@ -1255,42 +1298,44 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
-                 <div className="overflow-x-auto rounded-2xl border border-slate-200 max-h-[600px] overflow-y-auto scroll-touch">
-               <table className="w-full table-fixed border-collapse text-left min-w-[800px]">
-                 <thead>
-                   <tr className="bg-slate-55 border-b border-slate-200 text-xs text-slate-550 font-bold uppercase">
-                     <th className="p-4 w-[12%] text-slate-700 sticky left-0 top-0 z-20 bg-slate-50 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Day / Date</th>
-                     {(() => {
-                       let slotCounter = 0;
-                       return rows.map((col, idx) => {
-                         if (col.type === "break" || col.type === "lunch") {
-                           return (
-                             <th key={idx} className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-center select-none bg-slate-50 w-[8%] sticky top-0 z-10 border-b border-slate-200">
-                               <div>{col.label}</div>
-                               <div className="text-[9px] text-slate-450 font-normal mt-0.5">{formatTimeLabel(col.timeRange)}</div>
-                             </th>
-                           );
-                         }
-                         if (col.type === "slot") {
-                           slotCounter++;
-                           return (
-                             <th key={col.time} className="p-4 text-xs font-bold text-slate-700 w-[12%] sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
-                               <div>Period {slotCounter}</div>
-                               <div className="text-[10px] text-slate-400 font-normal mt-0.5">{formatTimeLabel(col.time)}</div>
-                             </th>
-                           );
-                         }
-                         return null;
-                       });
-                     })()}
-                   </tr>
-                 </thead>
-                 <tbody className="divide-y divide-slate-150 bg-white">
-                   {weekDates.map((date) => {
-                     return (
-                       <tr key={date.day} className="h-24 hover:bg-slate-55/10 transition-colors">
-                         {/* First Cell: Day / Date */}
-                         <td className="p-3 text-xs font-bold text-slate-705 border-r border-slate-200 bg-slate-50 align-middle sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">
+            </div>
+
+            <div className="overflow-auto max-h-[70vh] rounded-2xl border border-slate-200 shadow-sm relative no-scrollbar">
+              <table className="w-full table-fixed border-collapse text-left min-w-[800px]">
+                <thead>
+                  <tr className="text-xs text-slate-550 font-bold uppercase">
+                    <th className="sticky top-0 left-0 z-30 p-4 w-[12%] text-slate-700 bg-slate-100/95 backdrop-blur-xs border-r border-b border-slate-200">Day / Date</th>
+                    {(() => {
+                      let slotCounter = 0;
+                      return rows.map((col, idx) => {
+                        if (col.type === "break" || col.type === "lunch") {
+                          return (
+                            <th key={idx} className="sticky top-0 z-20 p-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-center select-none bg-slate-55/95 backdrop-blur-xs border-b border-slate-200 w-[8%]">
+                              <div>{col.label}</div>
+                              <div className="text-[9px] text-slate-450 font-normal mt-0.5">{formatTimeLabel(col.timeRange)}</div>
+                            </th>
+                          );
+                        }
+                        if (col.type === "slot") {
+                          slotCounter++;
+                          return (
+                            <th key={col.time} className="sticky top-0 z-20 p-4 text-xs font-bold text-slate-700 bg-slate-55/95 backdrop-blur-xs border-b border-slate-200 w-[12%]">
+                              <div>Period {slotCounter}</div>
+                              <div className="text-[10px] text-slate-400 font-normal mt-0.5">{formatTimeLabel(col.time)}</div>
+                            </th>
+                          );
+                        }
+                        return null;
+                      });
+                    })()}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-150 bg-white">
+                  {weekDates.map((date) => {
+                    return (
+                      <tr key={date.day} className="h-24 hover:bg-slate-55/10 transition-colors">
+                        {/* First Cell: Day / Date */}
+                        <td className="sticky left-0 z-10 p-3 text-xs font-bold text-slate-705 border-r border-slate-200 bg-slate-50/95 backdrop-blur-xs align-middle">
                           <div className="flex flex-col justify-center items-center">
                             <span className="text-sm font-black text-slate-900 leading-none">{date.day}</span>
                             <span className="text-[9px] text-slate-400 font-extrabold uppercase mt-1 leading-none">{date.formatted}</span>
@@ -1935,7 +1980,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                     {task ? (
                       (() => {
-                        const assignedDate = new Date(task.created_at || task.updated_at || Date.now());
+                        const assignedDate = parseDbDate(task.created_at || task.updated_at);
                         const deadlineDate = new Date(assignedDate.getTime() + 3 * 24 * 60 * 60 * 1000);
                         const isPastDeadline = new Date() > deadlineDate;
 
@@ -1959,153 +2004,225 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                   </span>
                                 </div>
                               </div>
-                              {task.task_pdf_url && (
-                                <a
-                                  href={task.task_pdf_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-650 hover:underline cursor-pointer mt-2"
-                                >
-                                  <BookOpen className="h-3 w-3 shrink-0" /> Download Reference Document / PDF
-                                </a>
-                              )}
+                               <div className="pt-2">
+                                 <a
+                                   href={task.task_pdf_url}
+                                   target="_blank"
+                                   rel="noreferrer"
+                                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/20 dark:hover:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 shadow-xs hover:shadow-sm cursor-pointer"
+                                 >
+                                   <FileText className="h-4 w-4 shrink-0 text-indigo-500 animate-pulse-gentle" />
+                                   <span>Download Reference Document / PDF</span>
+                                 </a>
+                               </div>
                             </div>
 
-                            {/* Submission Form */}
-                             <div className="space-y-4 lg:border-l lg:border-slate-100 lg:pl-6">
+                                              <div className="space-y-4 lg:border-l lg:border-slate-100 lg:pl-6">
                                <div className="space-y-1.5">
                                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">Your Submission</span>
-                                 
-                                 {/* Toggle Selection */}
-                                 <div className="flex gap-2">
-                                   <button
-                                     type="button"
-                                     disabled={isPastDeadline || isSubmitting}
-                                     onClick={() => setStudentUploadType(prev => ({ ...prev, [wk]: "url" }))}
-                                     className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all ${
-                                       (studentUploadType[wk] || "url") === "url" 
-                                         ? "bg-[#D528A2]/10 border-[#D528A2]/30 text-[#D528A2]" 
-                                         : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                                     }`}
-                                   >
-                                     URL Link
-                                   </button>
-                                   <button
-                                     type="button"
-                                     disabled={isPastDeadline || isSubmitting}
-                                     onClick={() => setStudentUploadType(prev => ({ ...prev, [wk]: "file" }))}
-                                     className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all ${
-                                       (studentUploadType[wk] || "url") === "file" 
-                                         ? "bg-[#D528A2]/10 border-[#D528A2]/30 text-[#D528A2]" 
-                                         : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                                     }`}
-                                   >
-                                     Upload File
-                                   </button>
-                                 </div>
 
-                                 {(studentUploadType[wk] || "url") === "url" ? (
-                                   <form
-                                     onSubmit={async (e) => {
-                                       e.preventDefault();
-                                       if (isPastDeadline) return;
-                                       const form = e.target as HTMLFormElement;
-                                       const urlInput = form.elements.namedItem("submissionUrl") as HTMLInputElement;
-                                       const url = urlInput.value.trim();
-                                       if (!url) return;
-                                       setSubmittingUrlMap(prev => ({ ...prev, [wk]: true }));
-                                       const res = await gradeStudentTask({
-                                         studentId: currentStudent?.id || "",
-                                         classGroup: currentStudent?.classGroup || "",
-                                         subject: studentTrackerSubject,
-                                         weekNumber: wk,
-                                         submissionUrl: url
-                                       });
-                                       setSubmittingUrlMap(prev => ({ ...prev, [wk]: false }));
-                                       if (!res.success) {
-                                         toast(res.message || "Submission failed.", "error");
-                                       } else {
-                                         toast("Submission URL saved!", "success");
-                                       }
-                                     }}
-                                     className="flex flex-col sm:flex-row gap-2 mt-2"
-                                   >
-                                     <input
-                                       type="url"
-                                       required
-                                       name="submissionUrl"
-                                       defaultValue={currentUrl.startsWith("https://example.com/simulated-upload/") ? "" : currentUrl}
-                                       disabled={isPastDeadline || isSubmitting}
-                                       placeholder="e.g. GitHub Repository link, Drive PDF link"
-                                       className="flex-1 text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-205 focus:outline-none focus:border-[#D528A2] bg-white text-slate-805 disabled:bg-slate-50 disabled:text-slate-400"
-                                     />
-                                     <button
-                                       type="submit"
-                                       disabled={isPastDeadline || isSubmitting}
-                                       className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm shrink-0 ${
-                                         isPastDeadline 
-                                           ? "bg-slate-200 text-slate-500 cursor-not-allowed" 
-                                           : "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
-                                       }`}
-                                     >
-                                       {isPastDeadline ? "Deadline Passed" : isSubmitting ? "Submitting..." : currentUrl ? "Update" : "Submit"}
-                                     </button>
-                                   </form>
-                                 ) : (
-                                   <div className="space-y-2 mt-2">
-                                     <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 hover:bg-slate-100 hover:border-[#D528A2]/45 transition-all">
-                                       <div className="flex flex-col items-center justify-center pt-4 pb-4">
-                                         <Upload className="w-5 h-5 mb-1 text-slate-400 animate-pulse-gentle" />
-                                         <p className="text-[10px] text-slate-500 font-medium">Click to upload answer file</p>
-                                         <p className="text-[9px] text-slate-400 font-semibold mt-0.5">PDF, DOCX, ZIP (MAX. 10MB)</p>
+                                 {currentUrl && !editSubmissionMode[wk] ? (
+                                   <div className="space-y-3 mt-2">
+                                     <div className="rounded-2xl border border-slate-150 p-4 bg-slate-50/50 space-y-3 shadow-xs">
+                                       <div className="flex items-start justify-between gap-3">
+                                         <div className="space-y-1 truncate">
+                                           <span className="text-[8px] text-slate-400 font-extrabold uppercase tracking-wider block">Submitted Link / File</span>
+                                           {currentUrl.startsWith("https://example.com/simulated-upload/") ? (
+                                             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                                               <FileText className="h-4 w-4 text-indigo-500 shrink-0" />
+                                               <span className="truncate">{decodeURIComponent(currentUrl.replace("https://example.com/simulated-upload/", ""))}</span>
+                                             </div>
+                                           ) : (
+                                             <a
+                                               href={currentUrl}
+                                               target="_blank"
+                                               rel="noreferrer"
+                                               className="inline-flex items-center gap-1 text-xs font-bold text-indigo-650 hover:underline truncate"
+                                             >
+                                               <span className="truncate">{currentUrl}</span>
+                                               <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
+                                             </a>
+                                           )}
+                                         </div>
+                                         <button
+                                           type="button"
+                                           disabled={isPastDeadline}
+                                           onClick={() => setEditSubmissionMode(prev => ({ ...prev, [wk]: true }))}
+                                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 font-bold text-[10px] transition-colors cursor-pointer disabled:opacity-50 shrink-0 shadow-xs"
+                                         >
+                                           <Edit2 className="h-3 w-3 text-slate-400" />
+                                           <span>Edit</span>
+                                         </button>
                                        </div>
-                                       <input 
-                                         type="file" 
-                                         className="hidden" 
-                                         accept=".pdf,.docx,.doc,.zip,.rar" 
+
+                                       {entry?.updated_at && (
+                                         <div className="flex items-center gap-1.5 text-[9px] text-slate-500 font-medium border-t border-slate-150/60 pt-2.5">
+                                           <Clock className="h-3.5 w-3.5 text-slate-400" />
+                                           <span>Submitted on:</span>
+                                           <span className="font-bold text-slate-700">{parseDbDate(entry.updated_at).toLocaleString()}</span>
+                                         </div>
+                                       )}
+                                     </div>
+                                   </div>
+                                 ) : (
+                                   <div className="space-y-3 mt-2">
+                                     {/* Toggle Selection */}
+                                     <div className="flex gap-2">
+                                       <button
+                                         type="button"
                                          disabled={isPastDeadline || isSubmitting}
-                                         onChange={async (e) => {
-                                           if (e.target.files && e.target.files[0]) {
-                                             const file = e.target.files[0];
-                                             setSubmittingUrlMap(prev => ({ ...prev, [wk]: true }));
-                                             // Simulate upload by generating url path
-                                             const simulatedUrl = "https://example.com/simulated-upload/" + encodeURIComponent(file.name);
-                                             const res = await gradeStudentTask({
-                                               studentId: currentStudent?.id || "",
-                                               classGroup: currentStudent?.classGroup || "",
-                                               subject: studentTrackerSubject,
-                                               weekNumber: wk,
-                                               submissionUrl: simulatedUrl
-                                             });
-                                             setSubmittingUrlMap(prev => ({ ...prev, [wk]: false }));
-                                             if (!res.success) {
-                                               toast(res.message || "File upload failed.", "error");
-                                             } else {
-                                               toast(`Uploaded: ${file.name} successfully!`, "success");
-                                             }
+                                         onClick={() => setStudentUploadType(prev => ({ ...prev, [wk]: "url" }))}
+                                         className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all ${
+                                           (studentUploadType[wk] || "url") === "url" 
+                                             ? "bg-[#D528A2]/10 border-[#D528A2]/30 text-[#D528A2]" 
+                                             : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+                                         }`}
+                                       >
+                                         URL Link
+                                       </button>
+                                       <button
+                                         type="button"
+                                         disabled={isPastDeadline || isSubmitting}
+                                         onClick={() => setStudentUploadType(prev => ({ ...prev, [wk]: "file" }))}
+                                         className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all ${
+                                           (studentUploadType[wk] || "url") === "file" 
+                                             ? "bg-[#D528A2]/10 border-[#D528A2]/30 text-[#D528A2]" 
+                                             : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+                                         }`}
+                                       >
+                                         Upload File
+                                       </button>
+                                     </div>
+
+                                     {(studentUploadType[wk] || "url") === "url" ? (
+                                       <form
+                                         onSubmit={async (e) => {
+                                           e.preventDefault();
+                                           if (isPastDeadline) return;
+                                           const form = e.target as HTMLFormElement;
+                                           const urlInput = form.elements.namedItem("submissionUrl") as HTMLInputElement;
+                                           const url = urlInput.value.trim();
+                                           if (!url) return;
+                                           setSubmittingUrlMap(prev => ({ ...prev, [wk]: true }));
+                                           const res = await gradeStudentTask({
+                                             studentId: currentStudent?.id || "",
+                                             classGroup: currentStudent?.classGroup || "",
+                                             subject: studentTrackerSubject,
+                                             weekNumber: wk,
+                                             submissionUrl: url
+                                           });
+                                           setSubmittingUrlMap(prev => ({ ...prev, [wk]: false }));
+                                           if (!res.success) {
+                                             toast(res.message || "Submission failed.", "error");
+                                           } else {
+                                             toast("Submission URL saved!", "success");
+                                             setEditSubmissionMode(prev => ({ ...prev, [wk]: false }));
                                            }
                                          }}
-                                       />
-                                     </label>
-                                     {currentUrl.startsWith("https://example.com/simulated-upload/") && (
-                                       <div className="text-[10px] text-emerald-600 font-bold flex items-center justify-between bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-250">
-                                         <div className="flex items-center gap-1.5 truncate">
-                                           <span>Yes File:</span>
-                                           <span className="text-slate-700 truncate">{decodeURIComponent(currentUrl.replace("https://example.com/simulated-upload/", ""))}</span>
+                                         className="flex flex-col sm:flex-row gap-2 mt-2"
+                                       >
+                                         <input
+                                           type="url"
+                                           required
+                                           name="submissionUrl"
+                                           defaultValue={currentUrl.startsWith("https://example.com/simulated-upload/") ? "" : currentUrl}
+                                           disabled={isPastDeadline || isSubmitting}
+                                           placeholder="e.g. GitHub Repository link, Drive PDF link"
+                                           className="flex-1 text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-205 focus:outline-none focus:border-[#D528A2] bg-white text-slate-805 disabled:bg-slate-50 disabled:text-slate-400"
+                                         />
+                                         <div className="flex gap-2 shrink-0">
+                                           <button
+                                             type="submit"
+                                             disabled={isPastDeadline || isSubmitting}
+                                             className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                                               isPastDeadline 
+                                                 ? "bg-slate-200 text-slate-500 cursor-not-allowed" 
+                                                 : "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                                             }`}
+                                           >
+                                             {isPastDeadline ? "Deadline Passed" : isSubmitting ? "Submitting..." : currentUrl ? "Update" : "Submit"}
+                                           </button>
+                                           {currentUrl && (
+                                             <button
+                                               type="button"
+                                               onClick={() => setEditSubmissionMode(prev => ({ ...prev, [wk]: false }))}
+                                               className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-all border border-slate-200 cursor-pointer"
+                                             >
+                                               Cancel
+                                             </button>
+                                           )}
                                          </div>
-                                         <a 
-                                           href={currentUrl} 
-                                           target="_blank" 
-                                           rel="noreferrer" 
-                                           className="text-[10px] text-[#D528A2] hover:underline shrink-0 ml-2"
-                                         >
-                                           View Document
-                                         </a>
+                                       </form>
+                                     ) : (
+                                       <div className="space-y-2 mt-2">
+                                         <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 hover:bg-slate-100 hover:border-[#D528A2]/45 transition-all">
+                                           <div className="flex flex-col items-center justify-center pt-4 pb-4">
+                                             <Upload className="w-5 h-5 mb-1 text-slate-400 animate-pulse-gentle" />
+                                             <p className="text-[10px] text-slate-500 font-medium">Click to upload answer file</p>
+                                             <p className="text-[9px] text-slate-400 font-semibold mt-0.5">PDF, DOCX, ZIP (MAX. 10MB)</p>
+                                           </div>
+                                           <input 
+                                             type="file" 
+                                             className="hidden" 
+                                             accept=".pdf,.docx,.doc,.zip,.rar" 
+                                             disabled={isPastDeadline || isSubmitting}
+                                             onChange={async (e) => {
+                                               if (e.target.files && e.target.files[0]) {
+                                                 const file = e.target.files[0];
+                                                 setSubmittingUrlMap(prev => ({ ...prev, [wk]: true }));
+                                                 const simulatedUrl = "https://example.com/simulated-upload/" + encodeURIComponent(file.name);
+                                                 const res = await gradeStudentTask({
+                                                   studentId: currentStudent?.id || "",
+                                                   classGroup: currentStudent?.classGroup || "",
+                                                   subject: studentTrackerSubject,
+                                                   weekNumber: wk,
+                                                   submissionUrl: simulatedUrl
+                                                 });
+                                                 setSubmittingUrlMap(prev => ({ ...prev, [wk]: false }));
+                                                 if (!res.success) {
+                                                   toast(res.message || "File upload failed.", "error");
+                                                 } else {
+                                                   toast(`Uploaded: ${file.name} successfully!`, "success");
+                                                   setEditSubmissionMode(prev => ({ ...prev, [wk]: false }));
+                                                 }
+                                               }
+                                             }}
+                                           />
+                                         </label>
+                                         
+                                         {currentUrl.startsWith("https://example.com/simulated-upload/") && (
+                                           <div className="text-[10px] text-emerald-600 font-bold flex items-center justify-between bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-250">
+                                             <div className="flex items-center gap-1.5 truncate">
+                                               <span>Current File:</span>
+                                               <span className="text-slate-700 truncate">{decodeURIComponent(currentUrl.replace("https://example.com/simulated-upload/", ""))}</span>
+                                             </div>
+                                             <a 
+                                               href={currentUrl} 
+                                               target="_blank" 
+                                               rel="noreferrer" 
+                                               className="text-[10px] text-[#D528A2] hover:underline shrink-0 ml-2"
+                                             >
+                                               View Document
+                                             </a>
+                                           </div>
+                                         )}
+
+                                         {currentUrl && (
+                                           <div className="flex justify-end pt-1">
+                                             <button
+                                               type="button"
+                                               onClick={() => setEditSubmissionMode(prev => ({ ...prev, [wk]: false }))}
+                                               className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-all border border-slate-200 cursor-pointer"
+                                             >
+                                               Cancel Editing
+                                             </button>
+                                           </div>
+                                         )}
                                        </div>
                                      )}
                                    </div>
                                  )}
-                               </div>
+                                </div>
 
 
                           {/* Feedback */}
