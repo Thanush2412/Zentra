@@ -614,14 +614,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [workingDays, setWorkingDays] = useState<string[]>(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
   
   useEffect(() => {
+    const currentCourseObj = coursesList.find(c => c.name.trim().toLowerCase() === (selectedCohortCourse || "").trim().toLowerCase());
     const activeCollege = colleges.find(c => c.id === activeCollegeId);
-    const daysCount = activeCollege?.working_days !== undefined ? Number(activeCollege.working_days) : 5;
+    
+    const courseWorkingDays = (currentCourseObj as any)?.working_days;
+    const daysCount = courseWorkingDays !== undefined ? Number(courseWorkingDays) : (activeCollege?.working_days !== undefined ? Number(activeCollege.working_days) : 6);
+
     if (daysCount === 6) {
       setWorkingDays(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]);
     } else {
       setWorkingDays(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
     }
-  }, [activeCollegeId, colleges]);
+  }, [activeCollegeId, colleges, selectedCohortCourse, coursesList]);
 
   const [collegeHours, setCollegeHours] = useState({ start: "08:30 AM", end: "04:30 PM" });
 

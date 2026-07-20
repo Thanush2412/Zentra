@@ -771,6 +771,9 @@ export function getDb(): Promise<TursoDbAdapter> {
     await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN working_days INTEGER DEFAULT 5;`);
   } catch (_) {}
   try {
+    await dbInstance.exec(`ALTER TABLE courses ADD COLUMN working_days INTEGER DEFAULT 6;`);
+  } catch (_) {}
+  try {
     await dbInstance.exec(`ALTER TABLE campus_daily_configs ADD COLUMN session_mode TEXT DEFAULT 'Offline';`);
   } catch (_) {}
   try {

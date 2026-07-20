@@ -319,6 +319,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     end_year?: string;
     default_room?: string;
     default_shift?: string;
+    working_days?: number;
   }>({
     id: "",
     name: "",
@@ -326,13 +327,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     code: "",
     description: "",
     status: "Active",
-    years: 4,
+    years: 3,
     start_date: "",
     end_date: "",
     start_year: "",
     end_year: "",
     default_room: "",
-    default_shift: "general"
+    default_shift: "general",
+    working_days: 6
   });
   const [editingDept, setEditingDept] = useState<boolean>(false);
   const [newDeptNames, setNewDeptNames] = useState<Record<string, string>>({});
@@ -1557,7 +1559,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         start_year: dept.start_year || "",
         end_year: dept.end_year || "",
         default_room: dept.default_room || "",
-        default_shift: dept.default_shift || "general"
+        default_shift: dept.default_shift || "general",
+        working_days: (dept as any).working_days !== undefined ? Number((dept as any).working_days) : 6
       });
       setEditingDept(true);
     } else {
@@ -1568,13 +1571,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         code: "",
         description: "",
         status: "Active",
-        years: 4,
+        years: 3,
         start_date: "",
         end_date: "",
         start_year: "",
         end_year: "",
         default_room: "",
-        default_shift: "general"
+        default_shift: "general",
+        working_days: 6
       });
       setEditingDept(false);
     }
@@ -2958,6 +2962,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                           <div>
                                             <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">End Date</span>
                                             <span className="text-gray-900 font-extrabold">{dept.end_date || "N/A"}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Weekly Schedule</span>
+                                            <span className="inline-flex items-center gap-1 text-[10px] text-indigo-700 font-black bg-indigo-50 border border-indigo-150 px-2 py-0.5 rounded-lg">
+                                              {(dept as any).working_days === 5 ? "5 Days (Mon–Fri)" : "6 Days (Mon–Sat)"}
+                                            </span>
                                           </div>
                                           <div className="col-span-2">
                                             <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Assigned Classrooms</span>
@@ -6412,6 +6422,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   >
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Weekly Schedule</label>
+                  <select
+                    value={deptForm.working_days ?? 6}
+                    onChange={(e) => setDeptForm({ ...deptForm, working_days: Number(e.target.value) })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                  >
+                    <option value={6}>6 Days Working (Mon – Sat)</option>
+                    <option value={5}>5 Days Working (Mon – Fri)</option>
                   </select>
                 </div>
 

@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { name, college_id, code, description, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based } = body;
+    const { name, college_id, code, description, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based, working_days } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json({ success: false, message: "Course name is required" }, { status: 400 });
@@ -32,8 +32,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "A course with a similar name already exists (ID conflict)." }, { status: 400 });
     }
 
+    const workingDaysVal = working_days !== undefined ? Number(working_days) : 6;
+
     await db.run(
-      "INSERT INTO courses (id, name, college_id, code, description, hod_name, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO courses (id, name, college_id, code, description, hod_name, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based, working_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       id,
       cleanName,
       college_id || "college_1",
@@ -42,14 +44,15 @@ export async function POST(request: Request) {
       "",
       established_year || "",
       status || "Active",
-      years !== undefined ? Number(years) : 4,
+      years !== undefined ? Number(years) : 3,
       start_date || "",
       end_date || "",
       start_year || "",
       end_year || "",
       default_room || null,
       default_shift || null,
-      shift_based === undefined ? 0 : Number(shift_based)
+      shift_based === undefined ? 0 : Number(shift_based),
+      workingDaysVal
     );
 
     return NextResponse.json({
@@ -63,14 +66,15 @@ export async function POST(request: Request) {
         description: description || "",
         established_year: established_year || "",
         status: status || "Active",
-        years: years !== undefined ? Number(years) : 4,
+        years: years !== undefined ? Number(years) : 3,
         start_date: start_date || "",
         end_date: end_date || "",
         start_year: start_year || "",
         end_year: end_year || "",
         default_room: default_room || null,
         default_shift: default_shift || null,
-        shift_based: shift_based === undefined ? 0 : Number(shift_based)
+        shift_based: shift_based === undefined ? 0 : Number(shift_based),
+        working_days: workingDaysVal
       }
     });
   } catch (error: any) {
@@ -83,7 +87,7 @@ export async function PUT(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { id, name, college_id, code, description, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based } = body;
+    const { id, name, college_id, code, description, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based, working_days } = body;
 
     if (!id || !name || !name.trim()) {
       return NextResponse.json({ success: false, message: "ID and name are required." }, { status: 400 });
@@ -104,13 +108,14 @@ export async function PUT(request: Request) {
     }
 
     const oldName = currentCourse.name;
+    const workingDaysVal = working_days !== undefined ? Number(working_days) : (currentCourse.working_days || 6);
 
     // Run transaction to rename course and cascade changes
     await db.run("BEGIN TRANSACTION;");
     try {
       // 1. Rename course in master list
       await db.run(
-        "UPDATE courses SET name = ?, college_id = ?, code = ?, description = ?, hod_name = ?, established_year = ?, status = ?, years = ?, start_date = ?, end_date = ?, start_year = ?, end_year = ?, default_room = ?, default_shift = ?, shift_based = ? WHERE id = ?",
+        "UPDATE courses SET name = ?, college_id = ?, code = ?, description = ?, hod_name = ?, established_year = ?, status = ?, years = ?, start_date = ?, end_date = ?, start_year = ?, end_year = ?, default_room = ?, default_shift = ?, shift_based = ?, working_days = ? WHERE id = ?",
         cleanName,
         college_id || currentCourse.college_id,
         code || "",
@@ -118,7 +123,7 @@ export async function PUT(request: Request) {
         "",
         established_year || "",
         status || "Active",
-        years !== undefined ? Number(years) : 4,
+        years !== undefined ? Number(years) : 3,
         start_date || "",
         end_date || "",
         start_year || "",
@@ -126,6 +131,7 @@ export async function PUT(request: Request) {
         default_room || null,
         default_shift || null,
         shift_based === undefined ? (currentCourse.shift_based || 0) : Number(shift_based),
+        workingDaysVal,
         id
       );
 
