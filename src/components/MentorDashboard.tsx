@@ -37,7 +37,8 @@ import {
   Check,
   Menu,
   Download,
-  Lock
+  Lock,
+  Trash2
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate } from "@/lib/utils";
@@ -81,6 +82,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     studentTracker,
     assignWeeklyTask,
     gradeStudentTask,
+    deleteWeeklyTask,
     demoSessions,
     demoSwapRequests,
     resolveDemoSwap,
@@ -425,7 +427,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [editingTask, setEditingTask] = useState(false);
   const [trackerSearchTerm, setTrackerSearchTerm] = useState("");
   const [trackerStatusFilter, setTrackerStatusFilter] = useState("all");
+  const [trackerPage, setTrackerPage] = useState<number>(1);
+  const [trackerPageSize, setTrackerPageSize] = useState<number>(10);
   const [saveStatusMap, setSaveStatusMap] = useState<Record<string, "idle" | "saving" | "saved" | "error">>({});
+
+  useEffect(() => {
+    setTrackerPage(1);
+  }, [trackerSearchTerm, trackerStatusFilter, trackerClassGroup, trackerSubject, trackerWeek]);
 
   const filteredMentorSubjects = useMemo(() => {
     if (!trackerClassGroup) return mentorSubjects;
@@ -3555,16 +3563,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
               const approvedReq = approvedHandovers.find(h => h.slotId === selectedCell.slot!.id && h.dateStr === selectedCell.dateStr);
 
-              // 1. If it's a future class, they cannot mark attendance
-              if (isFuture) {
-                return (
-                  <div className="py-8 px-4 bg-amber-50 border border-amber-100 rounded-2xl text-center text-xs text-amber-805 space-y-2 shrink-0">
-                    <AlertCircle className="h-8 w-8 mx-auto text-amber-500" />
-                    <p className="font-bold">Attendance cannot be marked yet</p>
-                    <p className="text-gray-500 font-medium">You can only mark attendance for classes that have already started or are in the past.</p>
-                  </div>
-                );
-              }
+
 
               // 1b. If the attendance window has expired (Locked)
               if (isLocked) {
@@ -3815,6 +3814,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <div className="p-3 bg-amber-50/50 border border-amber-200 text-amber-800 text-xs rounded-lg flex items-center gap-1.5 font-medium shadow-xs shrink-0 mb-3">
                       <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
                       <span>Warning: Attendance for past dates is in View-Only mode.</span>
+                    </div>
+                  )}
+
+                  {/* Informative banner for upcoming dates */}
+                  {isFuture && (
+                    <div className="p-3 bg-indigo-50/80 border border-indigo-200 text-indigo-900 text-xs rounded-xl flex items-center justify-between gap-2 font-medium shadow-xs shrink-0 mb-3">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-indigo-600 shrink-0" />
+                        <span><strong>Upcoming Session Roster:</strong> Viewing registered student roster for this class session.</span>
+                      </div>
+                      <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-extrabold rounded-md uppercase border border-indigo-200 shrink-0">
+                        Upcoming Class
+                      </span>
                     </div>
                   )}
 
@@ -4549,9 +4561,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 );
                 rowObj[`W${wk} Status`] = entry?.submission_url ? "Submitted" : "Not Submitted";
                 rowObj[`W${wk} Link`] = entry?.submission_url || "—";
-                if (wk % 2 === 0) {
-                  rowObj[`W${wk} Eval Type`] = entry?.viva_assessment || "—";
-                }
+                rowObj[`W${wk} Eval / Spot Topic`] = entry?.viva_assessment || "—";
                 rowObj[`W${wk} Marks`] = entry?.marks !== undefined && entry?.marks !== null ? entry.marks : "—";
               }
 
@@ -4678,17 +4688,59 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => {
-                      setTrackerTaskName(currentTask?.task_name || "");
-                      setTrackerTaskPdf(currentTask?.task_pdf_url || "");
-                      setEditingTask(true);
-                    }}
-                    className="btn-gradient px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
-                  >
-                    <BookOpen className="h-3.5 w-3.5" />
-                    <span>{currentTask ? "Edit Assignment" : "Assign Task"}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {currentTask ? (
+                      <>
+                        <button
+                          onClick={() => {
+                            setTrackerTaskName(currentTask.task_name || "");
+                            setTrackerTaskPdf(currentTask.task_pdf_url || "");
+                            setEditingTask(true);
+                          }}
+                          className="px-3.5 py-1.5 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-50 text-slate-700 bg-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+                        >
+                          <BookOpen className="h-3.5 w-3.5 text-indigo-600" />
+                          <span>Edit Task</span>
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            const confirmed = await showConfirm({
+                              title: `Delete Week ${trackerWeek} Task?`,
+                              message: `Are you sure you want to delete the task "${currentTask.task_name}" for ${trackerSubject} (Week ${trackerWeek})? This will remove the task assignment and student tracker data for this week.`,
+                              confirmLabel: "Delete Task",
+                              cancelLabel: "Cancel",
+                              danger: true
+                            });
+                            if (!confirmed) return;
+
+                            const res = await deleteWeeklyTask(trackerClassGroup, trackerSubject, trackerWeek);
+                            if (res.success) {
+                              toast(`Week ${trackerWeek} task deleted successfully.`, "success");
+                            } else {
+                              toast(res.message || "Failed to delete task.", "error");
+                            }
+                          }}
+                          className="px-3.5 py-1.5 rounded-xl text-xs font-bold border border-rose-200 hover:bg-rose-50 text-rose-600 bg-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                          <span>Delete Task</span>
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setTrackerTaskName("");
+                          setTrackerTaskPdf("");
+                          setEditingTask(true);
+                        }}
+                        className="btn-gradient px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>Assign Task</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {currentTask ? (
@@ -4760,12 +4812,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           })()}
 
           {/* Student Submissions & Evaluation */}
-          {weeklyTasks.some(
-            t => t.class_group === trackerClassGroup &&
-                 t.subject === trackerSubject &&
-                 t.week_number === trackerWeek
-          ) && (
-            <div className="bg-white border border-slate-250/60 rounded-3xl p-6 shadow-xs space-y-5">
+          <div className="bg-white border border-slate-250/60 rounded-3xl p-6 shadow-xs space-y-5">
             {/* Student Submissions Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
@@ -4886,6 +4933,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 return matchesSearch;
               });
 
+              // Paginate filtered students
+              const totalItems = filteredClassStudents.length;
+              const totalPages = trackerPageSize === -1 ? 1 : Math.ceil(totalItems / trackerPageSize);
+              const validPage = Math.min(Math.max(1, trackerPage), totalPages || 1);
+
+              const paginatedStudents = trackerPageSize === -1
+                ? filteredClassStudents
+                : filteredClassStudents.slice((validPage - 1) * trackerPageSize, validPage * trackerPageSize);
+
               return (
                 <div className="space-y-4">
                   {/* Filters Header Bar */}
@@ -4912,7 +4968,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
 
                     <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">
-                      Showing {filteredClassStudents.length} of {classStudents.length} Students
+                      Showing {paginatedStudents.length} of {filteredClassStudents.length} Filtered ({classStudents.length} Total)
                     </div>
                   </div>
 
@@ -4925,14 +4981,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           <th className="p-4 border-r border-slate-100/60 min-w-[260px]">15-Week Progress Matrix</th>
                           <th className="p-4 border-r border-slate-100/60 w-[130px]">W{trackerWeek} Status</th>
                           <th className="p-4 text-center border-r border-slate-100/60 w-[130px]">Submission Link</th>
-                          {trackerWeek % 2 === 0 && (
-                            <th className="p-4 border-r border-slate-100/60 w-[180px]">Evaluation Type</th>
-                          )}
+                          <th className="p-4 border-r border-slate-100/60 min-w-[210px]">Evaluation / Spot Topic</th>
                           <th className="p-4 text-center w-[110px]">Marks (0-10)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                        {filteredClassStudents.map((student, idx) => {
+                        {paginatedStudents.map((student, idx) => {
+                          const absoluteIdx = trackerPageSize === -1 ? idx : (validPage - 1) * trackerPageSize + idx;
                           const entry = studentTracker.find(
                             e => e.student_id === student.id &&
                                  e.class_group === trackerClassGroup &&
@@ -4948,7 +5003,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           return (
                             <tr key={`${student.id}_wk${trackerWeek}`} className="hover:bg-slate-50/50 transition-colors">
                               <td className="p-4 text-center font-bold text-slate-400 border-r border-slate-100/60">
-                                {idx + 1}
+                                {absoluteIdx + 1}
                               </td>
                               <td className="p-4 border-r border-slate-100/60">
                                 <div className="font-bold text-slate-805">{student.name}</div>
@@ -5061,34 +5116,95 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   <span className="text-slate-350 text-xs">—</span>
                                 )}
                               </td>
-                              {trackerWeek % 2 === 0 && (
-                                <td className="p-4 border-r border-slate-100/60">
-                                  <select
-                                    defaultValue={currentFeedback === "VIVA conducted" ? "viva" : currentFeedback === "Assessment completed" ? "assessment" : ""}
-                                    onChange={async (e) => {
-                                      const val = e.target.value;
-                                      setSaveStatusMap(prev => ({ ...prev, [student.id]: "saving" }));
-                                      const res = await gradeStudentTask({
-                                        studentId: student.id,
-                                        classGroup: trackerClassGroup,
-                                        subject: trackerSubject,
-                                        weekNumber: trackerWeek,
-                                        vivaAssessment: val === "viva" ? "VIVA conducted" : val === "assessment" ? "Assessment completed" : "",
-                                        gradedBy: currentMentor?.id || ""
-                                      });
-                                      setSaveStatusMap(prev => ({ ...prev, [student.id]: res.success ? "saved" : "error" }));
-                                      setTimeout(() => {
-                                        setSaveStatusMap(prev => ({ ...prev, [student.id]: "idle" }));
-                                      }, 2000);
-                                    }}
-                                    className="w-full text-xs font-bold px-2 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-[#D528A2] bg-white text-slate-700 cursor-pointer"
-                                  >
-                                    <option value="">Select Type...</option>
-                                    <option value="viva"> VIVA</option>
-                                    <option value="assessment"> Assessment</option>
-                                  </select>
-                                </td>
-                              )}
+                              <td className="p-3 border-r border-slate-100/60 space-y-1.5 min-w-[210px]">
+                                {(() => {
+                                  const isEnglishSubject = trackerSubject.toLowerCase().includes("english") ||
+                                                           trackerSubject.toLowerCase().includes("communication") ||
+                                                           trackerSubject.toLowerCase().includes("soft skills") ||
+                                                           trackerSubject.toLowerCase().includes("tamil");
+                                  const isSpotTopic = currentFeedback.startsWith("Spot Topic") || isEnglishSubject;
+                                  return (
+                                    <>
+                                      <select
+                                        value={
+                                          currentFeedback.startsWith("Spot Topic")
+                                            ? "spot_topic"
+                                            : currentFeedback === "VIVA conducted"
+                                            ? "viva"
+                                            : currentFeedback === "Assessment completed"
+                                            ? "assessment"
+                                            : currentFeedback === "Practical Lab"
+                                            ? "practical"
+                                            : ""
+                                        }
+                                        onChange={async (e) => {
+                                          const val = e.target.value;
+                                          let newFeedback = "";
+                                          if (val === "viva") newFeedback = "VIVA conducted";
+                                          else if (val === "assessment") newFeedback = "Assessment completed";
+                                          else if (val === "practical") newFeedback = "Practical Lab";
+                                          else if (val === "spot_topic") {
+                                            const existingTopic = currentFeedback.replace(/^Spot Topic:\s*/i, "").replace(/^Spot Topic$/i, "").trim();
+                                            newFeedback = existingTopic ? `Spot Topic: ${existingTopic}` : "Spot Topic";
+                                          }
+
+                                          setSaveStatusMap(prev => ({ ...prev, [student.id]: "saving" }));
+                                          const res = await gradeStudentTask({
+                                            studentId: student.id,
+                                            classGroup: trackerClassGroup,
+                                            subject: trackerSubject,
+                                            weekNumber: trackerWeek,
+                                            vivaAssessment: newFeedback,
+                                            gradedBy: currentMentor?.id || ""
+                                          });
+                                          setSaveStatusMap(prev => ({ ...prev, [student.id]: res.success ? "saved" : "error" }));
+                                          setTimeout(() => {
+                                            setSaveStatusMap(prev => ({ ...prev, [student.id]: "idle" }));
+                                          }, 2000);
+                                        }}
+                                        className="w-full text-xs font-bold px-2 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-[#D528A2] bg-white text-slate-700 cursor-pointer"
+                                      >
+                                        <option value="">Select Evaluation...</option>
+                                        <option value="spot_topic">Spot Topic (English/Speaking)</option>
+                                        <option value="viva">VIVA Voice</option>
+                                        <option value="assessment">Written Assessment</option>
+                                        <option value="practical">Practical Lab</option>
+                                      </select>
+
+                                      {isSpotTopic && (
+                                        <div className="relative mt-1">
+                                          <input
+                                            type="text"
+                                            key={`${student.id}_spot_${currentFeedback}`}
+                                            defaultValue={currentFeedback.replace(/^Spot Topic:\s*/i, "").replace(/^Spot Topic$/i, "")}
+                                            onBlur={async (e) => {
+                                              const topicName = e.target.value.trim();
+                                              const newFeedback = topicName ? `Spot Topic: ${topicName}` : "Spot Topic";
+                                              if (newFeedback === currentFeedback) return;
+
+                                              setSaveStatusMap(prev => ({ ...prev, [student.id]: "saving" }));
+                                              const res = await gradeStudentTask({
+                                                studentId: student.id,
+                                                classGroup: trackerClassGroup,
+                                                subject: trackerSubject,
+                                                weekNumber: trackerWeek,
+                                                vivaAssessment: newFeedback,
+                                                gradedBy: currentMentor?.id || ""
+                                              });
+                                              setSaveStatusMap(prev => ({ ...prev, [student.id]: res.success ? "saved" : "error" }));
+                                              setTimeout(() => {
+                                                setSaveStatusMap(prev => ({ ...prev, [student.id]: "idle" }));
+                                              }, 2000);
+                                            }}
+                                            placeholder="Enter Spot Topic title..."
+                                            className="w-full text-[11px] font-semibold px-2.5 py-1 rounded-md border border-amber-250 bg-amber-50/70 text-amber-900 focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-amber-400/80"
+                                          />
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </td>
                               <td className="p-4">
                                 <input
                                   type="number"
@@ -5127,11 +5243,61 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Pagination Bar */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-150 text-xs font-bold text-slate-700">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider">Rows per page:</span>
+                      <select
+                        value={trackerPageSize}
+                        onChange={(e) => {
+                          setTrackerPageSize(parseInt(e.target.value, 10));
+                          setTrackerPage(1);
+                        }}
+                        className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:border-[#D528A2] cursor-pointer shadow-xs"
+                      >
+                        <option value={10}>10 per page</option>
+                        <option value={25}>25 per page</option>
+                        <option value={50}>50 per page</option>
+                        <option value={-1}>Show All</option>
+                      </select>
+
+                      <span className="text-slate-500 font-bold">
+                        Showing {totalItems > 0 ? (validPage - 1) * (trackerPageSize === -1 ? totalItems : trackerPageSize) + 1 : 0}–
+                        {trackerPageSize === -1 ? totalItems : Math.min(validPage * trackerPageSize, totalItems)} of {totalItems} Students
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setTrackerPage(p => Math.max(1, p - 1))}
+                        disabled={validPage === 1}
+                        className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 font-bold shadow-xs transition-all cursor-pointer"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        <span>Previous</span>
+                      </button>
+
+                      <span className="px-3.5 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-150 font-black text-xs">
+                        Page {validPage} of {totalPages || 1}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => setTrackerPage(p => Math.min(totalPages, p + 1))}
+                        disabled={validPage >= totalPages}
+                        className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 font-bold shadow-xs transition-all cursor-pointer"
+                      >
+                        <span>Next</span>
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               );
             })()}
           </div>
-          )}
         </div>
       );
     })()}

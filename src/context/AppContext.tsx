@@ -391,6 +391,7 @@ interface AppContextProps {
   studentTracker: StudentTrackerEntry[];
   assignWeeklyTask: (taskData: { classGroup: string; subject: string; weekNumber: number; taskName: string; taskPdfUrl?: string; mentorId: string }) => Promise<{ success: boolean; task?: WeeklyTask; message?: string }>;
   gradeStudentTask: (entryData: { studentId: string; classGroup: string; subject: string; weekNumber: number; submissionUrl?: string; vivaAssessment?: string; marks?: number; gradedBy?: string }) => Promise<{ success: boolean; entry?: StudentTrackerEntry; message?: string }>;
+  deleteWeeklyTask: (classGroup: string, subject: string, weekNumber: number) => Promise<{ success: boolean; message?: string }>;
   subjectGroups: Array<{ id: string; name: string; description: string }>;
   createSubjectGroup: (name: string, description: string, subjectIds?: string[]) => Promise<{ success: boolean; message: string }>;
   updateSubjectGroup: (id: string, name: string, description: string, subjectIds?: string[]) => Promise<{ success: boolean; message: string }>;
@@ -2234,6 +2235,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const deleteWeeklyTask = async (classGroup: string, subject: string, weekNumber: number) => {
+    try {
+      const res = await fetch(
+        `/api/student-tracker?classGroup=${encodeURIComponent(classGroup)}&subject=${encodeURIComponent(subject)}&weekNumber=${weekNumber}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json();
+      if (data.success) {
+        setWeeklyTasks(prev =>
+          prev.filter(
+            t => !(
+              t.class_group.toLowerCase().trim() === classGroup.toLowerCase().trim() &&
+              t.subject.toLowerCase().trim() === subject.toLowerCase().trim() &&
+              t.week_number === weekNumber
+            )
+          )
+        );
+        setStudentTracker(prev =>
+          prev.filter(
+            e => !(
+              e.class_group.toLowerCase().trim() === classGroup.toLowerCase().trim() &&
+              e.subject.toLowerCase().trim() === subject.toLowerCase().trim() &&
+              e.week_number === weekNumber
+            )
+          )
+        );
+        return { success: true, message: data.message };
+      }
+      return { success: false, message: data.message || "Failed to delete task." };
+    } catch (e: any) {
+      console.error("deleteWeeklyTask error:", e);
+      return { success: false, message: e.message };
+    }
+  };
+
   const saveKamTask = async (task: any) => {
     try {
       const res = await fetch("/api/tasks", {
@@ -2558,6 +2594,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         studentTracker,
         assignWeeklyTask,
         gradeStudentTask,
+        deleteWeeklyTask,
         subjectGroups,
         createSubjectGroup,
         updateSubjectGroup,

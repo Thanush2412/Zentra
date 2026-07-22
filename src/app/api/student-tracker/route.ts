@@ -148,3 +148,45 @@ export async function PUT(request: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    const classGroup = searchParams.get("classGroup");
+    const subject = searchParams.get("subject");
+    const weekNumber = searchParams.get("weekNumber");
+
+    if (!classGroup || !subject || !weekNumber) {
+      return NextResponse.json(
+        { success: false, message: "Missing classGroup, subject, or weekNumber" },
+        { status: 400 }
+      );
+    }
+
+    const wk = parseInt(weekNumber, 10);
+
+    // Delete task from weekly_tasks
+    await db.run(
+      `DELETE FROM weekly_tasks 
+       WHERE LOWER(TRIM(class_group)) = LOWER(TRIM(?)) 
+         AND LOWER(TRIM(subject)) = LOWER(TRIM(?)) 
+         AND week_number = ?`,
+      [classGroup, subject, wk]
+    );
+
+    // Delete associated tracker entries
+    await db.run(
+      `DELETE FROM student_tracker 
+       WHERE LOWER(TRIM(class_group)) = LOWER(TRIM(?)) 
+         AND LOWER(TRIM(subject)) = LOWER(TRIM(?)) 
+         AND week_number = ?`,
+      [classGroup, subject, wk]
+    );
+
+    return NextResponse.json({ success: true, message: "Task deleted successfully." });
+  } catch (error: any) {
+    console.error("API DELETE student-tracker error:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}

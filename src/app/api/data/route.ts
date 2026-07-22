@@ -81,21 +81,23 @@ export async function GET(request: Request) {
 
     if (collegeId) {
       filteredColleges = colleges.filter((c: any) => c.id === collegeId);
-      filteredCourses = courses.filter((c: any) => c.college_id === collegeId);
+      filteredCourses = courses.filter((c: any) => c.college_id === collegeId || !c.college_id);
       filteredMentors = mentors.filter((m: any) => m.college_id === collegeId);
       filteredSlots = slots.filter((s: any) => s.college_id === collegeId);
-      filteredSubjects = subjects.filter((s: any) => s.college_id === collegeId);
+      filteredSubjects = subjects.filter((s: any) => s.college_id === collegeId || !s.college_id);
       filteredStudents = students.filter((s: any) => s.college_id === collegeId);
       
       const studentIds = new Set(filteredStudents.map((s: any) => s.id));
       filteredStudentAttendance = studentAttendance.filter((sa: any) => studentIds.has(sa.studentId || sa.student_id));
       filteredLeaveRequests = leaveRequests.filter((lr: any) => studentIds.has(lr.studentId || lr.student_id));
-      filteredStudentTracker = studentTracker.filter((st: any) => studentIds.has(st.student_id || st.studentId));
+      
+      // Ensure all weekly tasks and tracker entries are preserved across class groups
+      filteredWeeklyTasks = weeklyTasks;
+      filteredStudentTracker = studentTracker;
 
       const mentorIds = new Set(filteredMentors.map((m: any) => m.id));
       filteredRequests = requests.filter((r: any) => mentorIds.has(r.requestorId) || mentorIds.has(r.targetStaffId));
       filteredApprovedHandovers = approvedHandovers.filter((h: any) => mentorIds.has(h.originalMentorId) || mentorIds.has(h.coverStaffId));
-      filteredWeeklyTasks = weeklyTasks.filter((wt: any) => mentorIds.has(wt.mentor_id || wt.mentorId));
 
       filteredHolidays = holidays.filter((h: any) => h.college_id === collegeId || !h.college_id);
       filteredAnnouncements = announcements.filter((a: any) => a.college_id === collegeId || !a.college_id);
