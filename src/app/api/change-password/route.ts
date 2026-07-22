@@ -56,10 +56,33 @@ export async function POST(request: Request) {
     const nowStr = new Date().toISOString();
 
     // Update main users table
-    await db.run(
-      "UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
-      [trimmedNewPass, nowStr, user.id]
-    );
+    try {
+      // Try with the must_change_password column
+      await db.run(
+        "UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
+        [trimmedNewPass, nowStr, user.id]
+      );
+    } catch (error: any) {
+      if (error.message?.includes('no such column: must_change_password')) {
+        // Fallback: Update without the must_change_password column
+        console.log("Column must_change_password doesn't exist, updating without it");
+        await db.run(
+          "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+          [trimmedNewPass, nowStr, user.id]
+        );
+        
+        // Try to add the column now
+        try {
+          await db.exec("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0;");
+          await db.exec("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL;");
+          console.log("Successfully added missing columns to users table");
+        } catch (migrationError: any) {
+          console.log("Migration attempt failed:", migrationError.message);
+        }
+      } else {
+        throw error; // Re-throw if it's a different error
+      }
+    }
 
     // Sync to role-specific tables
     if (user.role === "student") {

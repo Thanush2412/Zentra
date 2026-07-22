@@ -2179,7 +2179,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.success && data.task) {
         setWeeklyTasks(prev => {
           const filtered = prev.filter(
-            t => !(t.class_group === taskData.classGroup && t.subject === taskData.subject && t.week_number === taskData.weekNumber)
+            t => !(
+              t.class_group.toLowerCase().trim() === taskData.classGroup.toLowerCase().trim() &&
+              t.subject.toLowerCase().trim() === taskData.subject.toLowerCase().trim() &&
+              t.week_number === taskData.weekNumber
+            )
           );
           return [...filtered, data.task];
         });
@@ -2212,7 +2216,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.success && data.entry) {
         setStudentTracker(prev => {
           const filtered = prev.filter(
-            e => !(e.student_id === entryData.studentId && e.class_group === entryData.classGroup && e.subject === entryData.subject && e.week_number === entryData.weekNumber)
+            e => !(
+              e.student_id === entryData.studentId &&
+              e.class_group.toLowerCase().trim() === entryData.classGroup.toLowerCase().trim() &&
+              e.subject.toLowerCase().trim() === entryData.subject.toLowerCase().trim() &&
+              e.week_number === entryData.weekNumber
+            )
           );
           return [...filtered, data.entry];
         });

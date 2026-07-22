@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb, resolveClassGroupDetails } from "@/lib/db";
+import { getDb, resolveClassGroupDetails, syncMentorSubjectsAndClasses } from "@/lib/db";
 
 export async function POST(request: Request) {
   try {
@@ -88,6 +88,7 @@ export async function POST(request: Request) {
       department,
       resolvedCollegeId
     );
+    await syncMentorSubjectsAndClasses(db, mentorId, course, cleanClassGroup);
 
     // 4. Log Audit Event
     const mentor = await db.get("SELECT name FROM mentors WHERE id = ?", mentorId);
@@ -269,6 +270,7 @@ export async function PUT(request: Request) {
       resolvedCollegeId,
       id
     );
+    await syncMentorSubjectsAndClasses(db, mentorId, course, cleanClassGroup);
 
     // 4. Log Audit Event
     const oldMentor = await db.get("SELECT name FROM mentors WHERE id = ?", slotToUpdate.mentorId);

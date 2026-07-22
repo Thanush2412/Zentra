@@ -12,7 +12,7 @@ import { Card } from "./Card";
 import { Panel } from "./Panel";
 import { Input } from "./Input";
 import { Select } from "./Select";
-import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate } from "../lib/utils";
+import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList } from "../lib/utils";
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,
@@ -227,7 +227,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const activeCollegeName = currentCAM?.college_name || colleges.find(c => c.id === activeCollegeId)?.name || "Primary Campus";
 
   // Tab State
-  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "more_menu">("overview");
+  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu">("overview");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
@@ -343,7 +343,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       setExpandedGroups(prev => ({ ...prev, faculty: true }));
     } else if (["timetable", "monitoring"].includes(activeTab)) {
       setExpandedGroups(prev => ({ ...prev, schedules: true }));
-    } else if (["tracker", "fees"].includes(activeTab)) {
+    } else if (["tracker", "fees", "students_list"].includes(activeTab)) {
       setExpandedGroups(prev => ({ ...prev, students: true }));
     } else if (["reports", "tasks", "profile"].includes(activeTab)) {
       setExpandedGroups(prev => ({ ...prev, management: true }));
@@ -365,6 +365,284 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [showImportModal, setShowImportModal] = useState(false);
   const [importPreview, setImportPreview] = useState<{ slots: any[]; warnings: any[]; targetClassGroup?: string; targetShift?: string } | null>(null);
   const [isImportSubmitting, setIsImportSubmitting] = useState(false);
+
+  // Student Directory & Import States
+  const [showStudentImportModal, setShowStudentImportModal] = useState(false);
+  const [studentImportPreview, setStudentImportPreview] = useState<{ parsed: any[]; warnings: string[]; targetClassGroup: string } | null>(null);
+  const [isStudentImportSubmitting, setIsStudentImportSubmitting] = useState(false);
+  const [studentDirSearch, setStudentDirSearch] = useState("");
+  const [studentDirDeptFilter, setStudentDirDeptFilter] = useState("all");
+  const [studentClassFilter, setStudentClassFilter] = useState("all");
+  const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<any | null>(null);
+  // Template download selectors (3 separate pickers)
+  const [templateDept, setTemplateDept] = useState<string>("");
+  const [templateShift, setTemplateShift] = useState<string>("Shift 1");
+  const [templateSem, setTemplateSem] = useState<string>("Semester 1");
+
+  // Download Student Excel Template matching requested headers
+  const handleDownloadStudentTemplate = (classGroupOverride?: string) => {
+    const campusDepts = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
+    const deptList = campusDepts.length > 0 ? campusDepts : FACULTY_DEPARTMENTS;
+    const resolvedDept = templateDept || deptList[0] || "Computer Science";
+    const resolvedShift = templateShift || "Shift 1";
+    const resolvedSem = templateSem || "Semester 1";
+    const resolvedClass = classGroupOverride || `${resolvedDept} - ${resolvedShift} - ${resolvedSem}`;
+    const selectedClass = resolvedClass;
+    const headers = [
+      "Sl. No.",
+      "Roll No",
+      "Department",
+      "Shift",
+      "Name",
+      "10th Mark(%)",
+      "11th Mark(%)",
+      "12th Mark(%)",
+      "Group",
+      "Medium",
+      "Blood Group",
+      "DOB",
+      "Student Phone Number",
+      "Parent Phone Number (WhatsApp Number)",
+      "Aadhar Card Number",
+      "Email ID",
+      "LinkedIn Link",
+      "GitHub link",
+      "HackerRank Profile Link",
+      "LeetCode Profile Link",
+      "Figma Profile"
+    ];
+
+    const sampleRows = [
+      [
+        "1",
+        "21CS001",
+        resolvedDept,
+        resolvedShift,
+        "Anitha R",
+        "92",
+        "88",
+        "94",
+        "MPC",
+        "English",
+        "O+",
+        "2004-05-14",
+        "9876543210",
+        "9876543211",
+        "123456789012",
+        "anitha@university.edu",
+        "https://linkedin.com/in/anitha",
+        "https://github.com/anitha",
+        "https://hackerrank.com/anitha",
+        "https://leetcode.com/anitha",
+        "https://figma.com/@anitha"
+      ],
+      [
+        "2",
+        "21CS002",
+        resolvedDept,
+        resolvedShift,
+        "Bala Kumar M",
+        "85",
+        "82",
+        "89",
+        "Biology",
+        "English",
+        "B+",
+        "2004-09-20",
+        "9876543220",
+        "9876543221",
+        "987654321098",
+        "bala@university.edu",
+        "https://linkedin.com/in/bala",
+        "https://github.com/bala",
+        "https://hackerrank.com/bala",
+        "https://leetcode.com/bala",
+        "https://figma.com/@bala"
+      ]
+    ];
+
+    const wsData = [headers, ...sampleRows];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Students");
+    const safeClassName = selectedClass.replace(/[^a-zA-Z0-9\-_ ]/g, "").replace(/\s+/g, "_").slice(0, 40);
+    XLSX.writeFile(wb, `Student_Template_${safeClassName}.xlsx`);
+  };
+
+  // Helper to map spreadsheet row headers to DB student model fields
+  const mapRowToStudentObject = (row: Record<string, any>, defaultCG: string, activeCollegeId: string) => {
+    let mapped: Record<string, any> = {};
+
+    Object.keys(row).forEach((colHeader) => {
+      const norm = colHeader.toString().toLowerCase().replace(/[^a-z0-9]/g, "");
+      const val = row[colHeader] !== undefined && row[colHeader] !== null ? row[colHeader].toString().trim() : "";
+
+      if (norm === "slno" || norm === "sno" || norm === "serialno" || norm === "sl") {
+        // Skip Serial No column
+      } else if (norm.includes("roll") || norm === "rollno") {
+        mapped.roll_number = val;
+        mapped.register_number = val;
+      } else if (norm === "department" || norm === "dept") {
+        mapped.department = val;
+      } else if (norm === "name" || norm === "studentname") {
+        mapped.name = val;
+      } else if (norm.includes("10th") || norm.includes("tenth")) {
+        mapped.tenth_mark = val;
+      } else if (norm.includes("11th") || norm.includes("eleventh")) {
+        mapped.eleventh_mark = val;
+      } else if (norm.includes("12th") || norm.includes("twelfth")) {
+        mapped.twelfth_mark = val;
+      } else if (norm === "group" || norm.includes("academicgroup")) {
+        mapped.academic_group = val;
+      } else if (norm === "medium") {
+        mapped.medium = val;
+      } else if (norm.includes("blood")) {
+        mapped.blood_group = val;
+      } else if (norm === "dob" || norm.includes("dateofbirth")) {
+        mapped.dob = val;
+      } else if (norm.includes("studentphone") || (norm.includes("phone") && !norm.includes("parent"))) {
+        mapped.phone = val;
+      } else if (norm.includes("parentphone") || norm.includes("whatsapp")) {
+        mapped.parent_phone = val;
+      } else if (norm.includes("aadhar")) {
+        mapped.aadhar_number = val;
+      } else if (norm.includes("email") || norm === "emailid") {
+        mapped.email = val;
+      } else if (norm.includes("linkedin")) {
+        mapped.linkedin_link = val;
+      } else if (norm.includes("github")) {
+        mapped.github_id = val;
+      } else if (norm.includes("hackerrank")) {
+        mapped.hackerrank_link = val;
+      } else if (norm.includes("leetcode")) {
+        mapped.leetcode_link = val;
+      } else if (norm.includes("figma")) {
+        mapped.figma_link = val;
+      } else if (norm === "shift" || norm.includes("shift")) {
+        mapped.shift = val;
+      } else if (norm.includes("class") || norm.includes("cohort")) {
+        mapped.classGroup = val;
+      }
+    });
+
+    const rollOrId = mapped.roll_number || mapped.email || "";
+    mapped.id = rollOrId;
+    if (!mapped.classGroup) mapped.classGroup = defaultCG;
+    mapped.college_id = activeCollegeId;
+
+    // Auto-derive department from classGroup if not in sheet
+    if (!mapped.department && mapped.classGroup) {
+      mapped.department = getDeptFromClassGroup(mapped.classGroup);
+    }
+
+    // If department was in sheet, stamp classGroup from dept+shift to keep consistency
+    if (mapped.department && (!mapped.classGroup || mapped.classGroup === defaultCG)) {
+      const shiftPart = mapped.shift && mapped.shift !== "General"
+        ? mapped.shift
+        : defaultCG.includes("Shift 2") ? "Shift 2" : defaultCG.includes("Shift 1") ? "Shift 1" : "Shift 1";
+      const semPart = defaultCG.split(" - ").find((p: string) => p.toLowerCase().startsWith("semester")) || "Semester 1";
+      mapped.classGroup = `${mapped.department} - ${shiftPart} - ${semPart}`;
+    }
+
+    // Derive shift from classGroup
+    if (!mapped.shift && mapped.classGroup) {
+      if (mapped.classGroup.toLowerCase().includes("shift 1") || mapped.classGroup.toLowerCase().includes("shift_1")) {
+        mapped.shift = "Shift 1";
+      } else if (mapped.classGroup.toLowerCase().includes("shift 2") || mapped.classGroup.toLowerCase().includes("shift_2")) {
+        mapped.shift = "Shift 2";
+      } else {
+        mapped.shift = "General";
+      }
+    }
+
+    return mapped;
+  };
+
+  const handleStudentFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const sheetName = wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+        if (rawRows.length === 0) {
+          toast("The uploaded spreadsheet is empty.", "warning");
+          return;
+        }
+
+        const defaultCG = (() => {
+          // Prefer the cohort the user already picked in the template download selectors
+          const campusDepts = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
+          const deptList = campusDepts.length > 0 ? campusDepts : FACULTY_DEPARTMENTS;
+          const dept = templateDept || deptList[0] || "Computer Science";
+          const shift = templateShift || "Shift 1";
+          const sem = templateSem || "Semester 1";
+          return `${dept} - ${shift} - ${sem}`;
+        })();
+        const warnings: string[] = [];
+        const parsedStudents = rawRows.map((row, idx) => {
+          const student = mapRowToStudentObject(row, defaultCG, activeCollegeId);
+          if (!student.name) {
+            warnings.push(`Row ${idx + 2}: Missing student name.`);
+          }
+          if (!student.roll_number && !student.id) {
+            warnings.push(`Row ${idx + 2}: Missing Roll No / Student ID.`);
+          }
+          return student;
+        }).filter(s => s.name || s.id);
+
+        setStudentImportPreview({
+          parsed: parsedStudents,
+          warnings,
+          targetClassGroup: defaultCG
+        });
+        setShowStudentImportModal(true);
+      } catch (err: any) {
+        toast("Failed to parse Excel file: " + err.message, "error");
+      }
+    };
+    reader.readAsBinaryString(file);
+    // Reset file input value so re-uploading same file triggers change
+    e.target.value = "";
+  };
+
+  const handleConfirmStudentImportSubmit = async () => {
+    if (!studentImportPreview || studentImportPreview.parsed.length === 0) return;
+    setIsStudentImportSubmitting(true);
+    try {
+      const targetCG = studentImportPreview.targetClassGroup || "General Class";
+      const payload = studentImportPreview.parsed.map(s => ({
+        ...s,
+        classGroup: s.classGroup || targetCG,
+        college_id: activeCollegeId
+      }));
+
+      const res = await fetch("/api/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(`Successfully imported ${payload.length} student records!`, "success");
+        setShowStudentImportModal(false);
+        setStudentImportPreview(null);
+        await refreshData();
+      } else {
+        toast(data.message || "Failed to import students.", "error");
+      }
+    } catch (err: any) {
+      toast("Error submitting student import: " + err.message, "error");
+    } finally {
+      setIsStudentImportSubmitting(false);
+    }
+  };
 
 
   const openCorrectionModal = async (student: any) => {
@@ -592,12 +870,35 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   };
 
-  const distinctClasses = Array.from(new Set(students.map(s => s.classGroup).filter(Boolean)));
+  const distinctClasses = useMemo(() => {
+    const fromStudents = students.map(s => s.classGroup).filter(Boolean);
+    const fromSlots = slots.map(s => s.classGroup).filter(Boolean);
+
+    const campusCourses = coursesList.filter(c => c.college_id === activeCollegeId);
+    const activeDeptNames = campusCourses.length > 0
+      ? campusCourses.map(c => c.name)
+      : (coursesList.length > 0 ? coursesList.map(c => c.name) : FACULTY_DEPARTMENTS);
+
+    const sems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"];
+    const shifts = ["Shift 1", "Shift 2"];
+
+    const generated: string[] = [];
+    activeDeptNames.forEach(deptName => {
+      sems.forEach(sem => {
+        generated.push(`${deptName} - ${sem}`);
+        shifts.forEach(sh => {
+          generated.push(`${deptName} - ${sh} - ${sem}`);
+        });
+      });
+    });
+
+    return Array.from(new Set([...fromStudents, ...fromSlots, ...generated])).sort();
+  }, [students, slots, coursesList, activeCollegeId]);
   const collegeSubjects = subjectsList.filter(s => s.college_id === activeCollegeId);
 
   useEffect(() => {
     if (distinctClasses.length > 0 && !camTrackerClass) {
-      setCamTrackerClass(distinctClasses[0]);
+      setCamTrackerClass(distinctClasses[0] || "");
     }
     if (collegeSubjects.length > 0 && !camTrackerSubject) {
       setCamTrackerSubject(collegeSubjects[0].name);
@@ -843,8 +1144,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   }, [collegeSlots]);
 
   const classrooms = useMemo(() => {
-    return Array.from(new Set(collegeSlots.map(s => s.location).filter(Boolean)));
-  }, [collegeSlots]);
+    const activeCol = colleges.find(c => c.id === activeCollegeId);
+    const colRooms = activeCol?.rooms ? parseRoomsList(activeCol.rooms) : [];
+    const slotRooms = collegeSlots.map(s => s.location).filter(Boolean);
+    return Array.from(new Set([...colRooms, ...slotRooms])).map(r => r.replace(/[\[\]"]/g, "").trim()).filter(Boolean);
+  }, [collegeSlots, colleges, activeCollegeId]);
 
   const facultyDepts = useMemo(() => {
     return Array.from(new Set(collegeMentors.map(m => m.department?.trim()).filter(Boolean))).sort();
@@ -1022,30 +1326,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       const startYear = courseObj?.start_year || "";
       const endYear = courseObj?.end_year || "";
       const batchSuffix = startYear && endYear ? ` (${startYear}-${endYear})` : "";
+      const shiftText = genShift === "shift_1" ? " - Shift 1" : genShift === "shift_2" ? " - Shift 2" : "";
 
-      setGenClassGroup(`${defaultCourse} - ${calculatedSem}${batchSuffix}`);
+      setGenClassGroup(`${defaultCourse}${shiftText} - ${calculatedSem}${batchSuffix}`);
       
-      if (courseObj?.default_room) {
-        if (courseObj.default_room.startsWith("{")) {
-          try {
-            const parsed = JSON.parse(courseObj.default_room);
-            const yrNum = getYearFromSemester(calculatedSem);
-            const targetRoom = parsed[yrNum] || parsed[1] || "";
-            if (targetRoom) {
-              setGenRoom(targetRoom);
-            }
-          } catch (_) {
-            setGenRoom(courseObj.default_room);
-          }
-        } else {
-          setGenRoom(courseObj.default_room);
-        }
-      } else {
-        setGenRoom(classrooms[0]);
-      }
+      setGenRoom(resolveCourseRoom(courseObj, calculatedSem));
       setInitializedCollegeId(activeCollegeId);
     }
-  }, [activeCollegeId, collegeCourses, classrooms, initializedCollegeId]);
+  }, [activeCollegeId, collegeCourses, classrooms, initializedCollegeId, genShift]);
+
+
 
   const getStudentAttendanceStats = (studentId: string) => {
     const records = (studentAttendance || []).filter(a => a.studentId === studentId);
@@ -1611,7 +1901,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       { header: "Room / Location", key: "room", width: 25 }
     ];
     const campusRooms = activeCollege?.rooms 
-      ? activeCollege.rooms.split(",").map(r => r.trim()).filter(Boolean)
+      ? parseRoomsList(activeCollege.rooms)
       : Array.from(new Set(collegeSlots.map(s => s.location).filter(Boolean)));
     campusRooms.forEach(r => {
       wsRooms.addRow({ room: r });
@@ -2042,6 +2332,61 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     return 1;
   };
 
+  const resolveCourseRoom = (courseObj: any, sem: string, targetShift?: string): string => {
+    if (!courseObj || !courseObj.default_room) return classrooms[0] || "";
+    const rawRoom = String(courseObj.default_room).trim();
+    const activeSh = targetShift || genShift || "shift_1";
+
+    let roomValStr = rawRoom;
+    if (rawRoom.startsWith("{") || rawRoom.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(rawRoom);
+        if (Array.isArray(parsed)) {
+          const yrNum = getYearFromSemester(sem);
+          roomValStr = String(parsed[yrNum - 1] || parsed[0] || "");
+        } else {
+          const yrNum = getYearFromSemester(sem);
+          roomValStr = String(
+            parsed[yrNum] ||
+            parsed[String(yrNum)] ||
+            parsed[`Year ${yrNum}`] ||
+            parsed[`year_${yrNum}`] ||
+            parsed[sem] ||
+            parsed[1] ||
+            parsed["1"] ||
+            Object.values(parsed)[0] ||
+            ""
+          );
+        }
+      } catch (_) {
+        roomValStr = rawRoom;
+      }
+    }
+
+    // Clean shift annotations if present in room string like "B4 (Shift 1) / C2 (Shift 2)"
+    if (roomValStr.includes("/") || roomValStr.toLowerCase().includes("shift")) {
+      const parts = roomValStr.split("/");
+      const isShift2 = activeSh === "shift_2" || activeSh.toLowerCase().includes("2");
+      let matchedPart = "";
+      for (const part of parts) {
+        const partLower = part.toLowerCase();
+        if (isShift2 && (partLower.includes("shift 2") || partLower.includes("shift_2") || partLower.includes("shift2"))) {
+          matchedPart = part;
+          break;
+        }
+        if (!isShift2 && (partLower.includes("shift 1") || partLower.includes("shift_1") || partLower.includes("shift1"))) {
+          matchedPart = part;
+          break;
+        }
+      }
+      if (!matchedPart) matchedPart = parts[0] || roomValStr;
+      const cleanCode = matchedPart.replace(/\(.*\)/g, "").replace(/[^a-zA-Z0-9\-_ ]/g, "").trim().split(" ")[0];
+      if (cleanCode) return cleanCode;
+    }
+
+    return roomValStr.replace(/[\[\]"]/g, "").trim();
+  };
+
   const handleGenCourseChange = (course: string) => {
     setGenSelectedCourse(course);
     setShowCustomTarget(false);
@@ -2050,31 +2395,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       const calculatedSem = calculateSemesterForCourse(courseObj);
       setGenSelectedSemester(calculatedSem);
 
-      const startYear = courseObj?.start_year || "";
-      const endYear = courseObj?.end_year || "";
-      const batchSuffix = startYear && endYear ? ` (${startYear}-${endYear})` : "";
-      
-      setGenClassGroup(`${course} - ${calculatedSem}${batchSuffix}`);
-      
-      if (courseObj?.default_room) {
-        if (courseObj.default_room.startsWith("{")) {
-          try {
-            const parsed = JSON.parse(courseObj.default_room);
-            const yrNum = getYearFromSemester(calculatedSem);
-            const targetRoom = parsed[yrNum] || parsed[1] || "";
-            if (targetRoom) {
-              setGenRoom(targetRoom);
-            }
-          } catch (_) {
-            setGenRoom(courseObj.default_room);
-          }
-        } else {
-          setGenRoom(courseObj.default_room);
-        }
-      }
+      const targetShift = courseObj?.default_shift || genShift;
       if (courseObj?.default_shift) {
         setGenShift(courseObj.default_shift as any);
       }
+
+      const startYear = courseObj?.start_year || "";
+      const endYear = courseObj?.end_year || "";
+      const batchSuffix = startYear && endYear ? ` (${startYear}-${endYear})` : "";
+      const shiftText = targetShift === "shift_1" ? " - Shift 1" : targetShift === "shift_2" ? " - Shift 2" : "";
+      
+      setGenClassGroup(`${course}${shiftText} - ${calculatedSem}${batchSuffix}`);
+      setGenRoom(resolveCourseRoom(courseObj, calculatedSem, targetShift));
     } else {
       setGenClassGroup("");
     }
@@ -2087,24 +2419,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       const startYear = courseObj?.start_year || "";
       const endYear = courseObj?.end_year || "";
       const batchSuffix = startYear && endYear ? ` (${startYear}-${endYear})` : "";
-      setGenClassGroup(`${genSelectedCourse} - ${sem}${batchSuffix}`);
+      const shiftText = genShift === "shift_1" ? " - Shift 1" : genShift === "shift_2" ? " - Shift 2" : "";
+      setGenClassGroup(`${genSelectedCourse}${shiftText} - ${sem}${batchSuffix}`);
+      setGenRoom(resolveCourseRoom(courseObj, sem, genShift));
+    }
+  };
 
-      if (courseObj?.default_room) {
-        if (courseObj.default_room.startsWith("{")) {
-          try {
-            const parsed = JSON.parse(courseObj.default_room);
-            const yrNum = getYearFromSemester(sem);
-            const targetRoom = parsed[yrNum] || parsed[1] || "";
-            if (targetRoom) {
-              setGenRoom(targetRoom);
-            }
-          } catch (_) {
-            setGenRoom(courseObj.default_room);
-          }
-        } else {
-          setGenRoom(courseObj.default_room);
-        }
-      }
+  const handleGenShiftChange = (sh: "shift_1" | "shift_2" | "general") => {
+    setGenShift(sh);
+    if (genSelectedCourse) {
+      const courseObj = collegeCourses.find(c => c.name === genSelectedCourse);
+      const startYear = courseObj?.start_year || "";
+      const endYear = courseObj?.end_year || "";
+      const batchSuffix = startYear && endYear ? ` (${startYear}-${endYear})` : "";
+      const shiftText = sh === "shift_1" ? " - Shift 1" : sh === "shift_2" ? " - Shift 2" : "";
+      setGenClassGroup(`${genSelectedCourse}${shiftText} - ${genSelectedSemester}${batchSuffix}`);
+      setGenRoom(resolveCourseRoom(courseObj, genSelectedSemester, sh));
     }
   };
 
@@ -2461,6 +2791,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     title: "Students",
                     icon: GraduationCap,
                     items: [
+                      { id: "students_list", label: "Student Directory & Import", icon: Users },
                       { id: "tracker", label: "Student Tracker", icon: GraduationCap },
                       { id: "fees", label: "Fee Collection", icon: IndianRupee }
                     ]
@@ -3873,16 +4204,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                                 {hasShifts && (
                                   <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200 shadow-sm">
-                                    {((["shift_1", "shift_2", "general"] as const).filter(sh => {
-                                      if (!viewerClassGroup) return false;
-                                      const hasSlots = collegeSlots.some(s => s.classGroup === viewerClassGroup && s.shift === sh);
-                                      if (hasSlots) return true;
-                                      const nameLower = viewerClassGroup.toLowerCase();
-                                      if (sh === "shift_1" && (nameLower.includes("shift 1") || nameLower.includes("shift_1") || nameLower.includes("shift1"))) return true;
-                                      if (sh === "shift_2" && (nameLower.includes("shift 2") || nameLower.includes("shift_2") || nameLower.includes("shift2"))) return true;
-                                      if (sh === "general" && (nameLower.includes("general") || (!nameLower.includes("shift 1") && !nameLower.includes("shift 2") && !nameLower.includes("shift1") && !nameLower.includes("shift2")))) return true;
-                                      return false;
-                                    })).map(sh => (
+                                    {(["shift_1", "shift_2", "general"] as const).map(sh => (
                                       <button
                                         key={sh}
                                         type="button"
@@ -4198,7 +4520,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                               <button
                                                 key={sh}
                                                 type="button"
-                                                onClick={() => setGenShift(sh)}
+                                                onClick={() => handleGenShiftChange(sh)}
                                                 className={`p-2 rounded-xl text-xs font-bold border transition-all text-center cursor-pointer ${
                                                   genShift === sh
                                                     ? "bg-indigo-600 text-white border-indigo-650 shadow-sm"
@@ -4215,29 +4537,26 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Default Classroom / Room</label>
                                           {(() => {
                                             const campus = colleges.find(c => c.id === activeCollegeId);
-                                            const campusRooms = campus && campus.rooms ? campus.rooms.split(",").map(r => r.trim()).filter(Boolean) : [];
-                                            if (campusRooms.length > 0) {
-                                              return (
-                                                <select
-                                                  value={genRoom}
-                                                  onChange={e => setGenRoom(e.target.value)}
-                                                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer text-gray-800"
-                                                >
-                                                  <option value="">Select Room</option>
-                                                  {campusRooms.map(r => (
-                                                    <option key={r} value={r}>{r}</option>
-                                                  ))}
-                                                </select>
-                                              );
-                                            }
+                                            const campusRooms = campus && campus.rooms ? parseRoomsList(campus.rooms) : [];
+                                            const courseObj = collegeCourses.find(c => c.name === genSelectedCourse);
+                                            const designatedRoom = courseObj ? resolveCourseRoom(courseObj, genSelectedSemester, genShift) : "";
+
                                             return (
-                                              <input
-                                                type="text"
-                                                placeholder="e.g. Room 302, Lab A"
+                                              <select
                                                 value={genRoom}
                                                 onChange={e => setGenRoom(e.target.value)}
-                                                className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm"
-                                              />
+                                                className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer text-slate-800"
+                                              >
+                                                {!genRoom && <option value="">Select Room</option>}
+                                                {designatedRoom && (
+                                                  <option value={designatedRoom}>
+                                                    {designatedRoom} (Assigned Course Room)
+                                                  </option>
+                                                )}
+                                                {campusRooms.filter(r => r !== designatedRoom).map(r => (
+                                                  <option key={r} value={r}>{r}</option>
+                                                ))}
+                                              </select>
                                             );
                                           })()}
                                         </div>
@@ -5732,7 +6051,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             onChange={(e) => setCamTrackerWeek(parseInt(e.target.value, 10))}
                             className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
                           >
-                            {Array.from({ length: 4 }, (_, i) => i + 1).map(wk => (
+                            {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
                               <option key={wk} value={wk}>Week {wk}</option>
                             ))}
                           </select>
@@ -5822,8 +6141,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   {classStudents.map(student => {
                                     const entry = studentTracker.find(
                                       e => e.student_id === student.id &&
-                                           e.class_group === camTrackerClass &&
-                                           e.subject === camTrackerSubject &&
+                                           e.class_group.toLowerCase().trim() === camTrackerClass.toLowerCase().trim() &&
+                                           e.subject.toLowerCase().trim() === camTrackerSubject.toLowerCase().trim() &&
                                            e.week_number === camTrackerWeek
                                     );
 
@@ -5875,6 +6194,274 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       </tr>
                                     );
                                   })}
+                                </tbody>
+                              </table>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tab: Student Directory & Bulk Import */}
+                  {activeTab === "students_list" && (
+                    <div className="space-y-6 font-sans">
+                      {/* Console Header */}
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-150 pb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                            <Users className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h2 className="text-lg font-black text-slate-800 leading-tight">Student Directory &amp; Import Console</h2>
+                            <p className="text-xs text-slate-455 font-medium mt-0.5">
+                              Manage student records, view academic marks, and bulk import students using pre-mapped Excel files.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Top Actions */}
+                        <div className="flex items-center gap-2 flex-wrap">
+
+                          {/* Download Template: 3-part selector (Dept + Shift + Sem) + Download button */}
+                          {(() => {
+                            const campusDeptNames = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
+                            const deptOptions = campusDeptNames.length > 0 ? campusDeptNames : FACULTY_DEPARTMENTS;
+                            const shiftOptions = ["Shift 1", "Shift 2", "General"];
+                            const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"];
+                            const composedClass = `${templateDept || deptOptions[0] || "Dept"} - ${templateShift} - ${templateSem}`;
+                            return (
+                              <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl px-1.5 py-1 shadow-xs">
+                                <select
+                                  value={templateDept || deptOptions[0] || ""}
+                                  onChange={(e) => setTemplateDept(e.target.value)}
+                                  className="text-[11px] font-bold px-2 py-1.5 rounded-lg bg-white border border-slate-200 outline-none cursor-pointer text-slate-700"
+                                >
+                                  {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                                <select
+                                  value={templateShift}
+                                  onChange={(e) => setTemplateShift(e.target.value)}
+                                  className="text-[11px] font-bold px-2 py-1.5 rounded-lg bg-white border border-slate-200 outline-none cursor-pointer text-slate-700"
+                                >
+                                  {shiftOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                                <select
+                                  value={templateSem}
+                                  onChange={(e) => setTemplateSem(e.target.value)}
+                                  className="text-[11px] font-bold px-2 py-1.5 rounded-lg bg-white border border-slate-200 outline-none cursor-pointer text-slate-700"
+                                >
+                                  {semOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadStudentTemplate(composedClass)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap"
+                                >
+                                  <Download className="h-3 w-3" />
+                                  Download
+                                </button>
+                              </div>
+                            );
+                          })()}
+
+                          <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold transition-all shadow-sm cursor-pointer active:scale-95">
+                            <Upload className="h-3.5 w-3.5" />
+                            Import Students (Excel)
+                            <input
+                              type="file"
+                              accept=".xlsx, .xls, .csv"
+                              onChange={handleStudentFileSelect}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Metric Summary Cards */}
+                      {(() => {
+                        const campusStudents = students.filter(s => s.college_id === activeCollegeId || (!s.college_id && activeCollegeId === "college_1"));
+                        const classGroupsCount = new Set(campusStudents.map(s => s.classGroup).filter(Boolean)).size;
+                        const completeProfilesCount = campusStudents.filter(s => s.tenth_mark || s.twelfth_mark || s.phone || s.linkedin_link).length;
+
+                        return (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xs flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                                <GraduationCap className="h-5 w-5" />
+                              </div>
+                              <div>
+                                <span className="text-xl font-extrabold text-slate-900 block leading-tight">{campusStudents.length}</span>
+                                <span className="text-[10px] text-slate-455 font-bold uppercase tracking-wider">Total Registered Students</span>
+                              </div>
+                            </div>
+
+                            <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xs flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0">
+                                <BookOpen className="h-5 w-5" />
+                              </div>
+                              <div>
+                                <span className="text-xl font-extrabold text-slate-900 block leading-tight">{classGroupsCount}</span>
+                                <span className="text-[10px] text-slate-455 font-bold uppercase tracking-wider">Active Cohorts / Batches</span>
+                              </div>
+                            </div>
+
+                            <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xs flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                                <Sparkles className="h-5 w-5" />
+                              </div>
+                              <div>
+                                <span className="text-xl font-extrabold text-slate-900 block leading-tight">{completeProfilesCount}</span>
+                                <span className="text-[10px] text-slate-455 font-bold uppercase tracking-wider">Detailed Profiles Mapped</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Filters & Search Controls */}
+                      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-wrap gap-4 items-center justify-between">
+                        <div className="relative flex-1 min-w-[220px]">
+                          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search by Name, Roll No, Email, Phone..."
+                            value={studentDirSearch}
+                            onChange={(e) => setStudentDirSearch(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-slate-50/50"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <select
+                            value={studentDirDeptFilter}
+                            onChange={(e) => setStudentDirDeptFilter(e.target.value)}
+                            className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 bg-white cursor-pointer outline-none shadow-xs"
+                          >
+                            <option value="all">All Departments</option>
+                            {Array.from(new Set(students.map(s => s.department).filter(Boolean))).map(d => (
+                              <option key={d} value={d}>{d}</option>
+                            ))}
+                          </select>
+
+                          <select
+                            value={studentClassFilter}
+                            onChange={(e) => setStudentClassFilter(e.target.value)}
+                            className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 bg-white cursor-pointer outline-none shadow-xs"
+                          >
+                            <option value="all">All Class Cohorts</option>
+                            {distinctClasses.map(c => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Students Table */}
+                      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
+                        {(() => {
+                          const campusStudents = students.filter(s => s.college_id === activeCollegeId || (!s.college_id && activeCollegeId === "college_1"));
+                          const filtered = campusStudents.filter(s => {
+                            const matchSearch = !studentDirSearch ||
+                              s.name?.toLowerCase().includes(studentDirSearch.toLowerCase()) ||
+                              s.roll_number?.toLowerCase().includes(studentDirSearch.toLowerCase()) ||
+                              s.id?.toLowerCase().includes(studentDirSearch.toLowerCase()) ||
+                              s.email?.toLowerCase().includes(studentDirSearch.toLowerCase()) ||
+                              s.phone?.includes(studentDirSearch);
+
+                            const matchDept = studentDirDeptFilter === "all" || s.department === studentDirDeptFilter;
+                            const matchClass = studentClassFilter === "all" || s.classGroup === studentClassFilter;
+
+                            return matchSearch && matchDept && matchClass;
+                          });
+
+                          if (filtered.length === 0) {
+                            return (
+                              <div className="text-center py-12 border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                                <GraduationCap className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                                <p className="text-sm font-bold text-slate-600">No students found</p>
+                                <p className="text-xs text-slate-400 mt-1">Try adjusting search filters or use &ldquo;Import Students (Excel)&rdquo; above to load records.</p>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-xs">
+                              <table className="w-full border-collapse text-left text-xs font-semibold min-w-[900px]">
+                                <thead>
+                                  <tr className="bg-gradient-to-r from-slate-50 to-indigo-50/30 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider">
+                                    <th className="p-3">Roll No / ID</th>
+                                    <th className="p-3">Student Name</th>
+                                    <th className="p-3">Dept &amp; Class</th>
+                                    <th className="p-3">Academic Marks</th>
+                                    <th className="p-3">Group / Medium</th>
+                                    <th className="p-3">Contact</th>
+                                    <th className="p-3">Social Profiles</th>
+                                    <th className="p-3 text-center">Action</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                                  {filtered.map(st => (
+                                    <tr key={st.id} className="hover:bg-indigo-50/20 transition-colors">
+                                      <td className="p-3 font-mono font-bold text-indigo-700">
+                                        {st.roll_number || st.id}
+                                      </td>
+                                      <td className="p-3">
+                                        <div className="font-bold text-slate-900">{st.name}</div>
+                                        <div className="text-[10px] text-slate-400 font-normal truncate max-w-[160px]">{st.email}</div>
+                                      </td>
+                                      <td className="p-3">
+                                        <div className="font-bold text-slate-800">{st.department || "General"}</div>
+                                        <div className="text-[10px] text-indigo-600 font-semibold">{st.classGroup}</div>
+                                      </td>
+                                      <td className="p-3">
+                                        <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="10th Mark">10th: {st.tenth_mark || "—"}%</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="11th Mark">11th: {st.eleventh_mark || "—"}%</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="12th Mark">12th: {st.twelfth_mark || "—"}%</span>
+                                        </div>
+                                      </td>
+                                      <td className="p-3">
+                                        <div className="text-slate-800 font-bold">{st.academic_group || "—"}</div>
+                                        <div className="text-[10px] text-slate-400">{st.medium || "—"} medium</div>
+                                      </td>
+                                      <td className="p-3 text-[11px]">
+                                        <div className="text-slate-800 font-semibold">{st.phone || "—"}</div>
+                                        {st.parent_phone && <div className="text-[9.5px] text-emerald-600 font-medium">WhatsApp: {st.parent_phone}</div>}
+                                      </td>
+                                      <td className="p-3">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          {st.linkedin_link && (
+                                            <a href={st.linkedin_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 text-[10px] font-bold">LinkedIn</a>
+                                          )}
+                                          {st.github_id && (
+                                            <a href={st.github_id.startsWith("http") ? st.github_id : `https://github.com/${st.github_id}`} target="_blank" rel="noreferrer" className="p-1 rounded bg-slate-100 text-slate-800 hover:bg-slate-200 text-[10px] font-bold">GitHub</a>
+                                          )}
+                                          {st.hackerrank_link && (
+                                            <a href={st.hackerrank_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-[10px] font-bold">HackerRank</a>
+                                          )}
+                                          {st.leetcode_link && (
+                                            <a href={st.leetcode_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-amber-50 text-amber-600 hover:bg-amber-100 text-[10px] font-bold">LeetCode</a>
+                                          )}
+                                          {st.figma_link && (
+                                            <a href={st.figma_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-purple-50 text-purple-600 hover:bg-purple-100 text-[10px] font-bold">Figma</a>
+                                          )}
+                                          {!st.linkedin_link && !st.github_id && !st.hackerrank_link && !st.leetcode_link && !st.figma_link && (
+                                            <span className="text-[10px] text-slate-350 italic">—</span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedStudentForDetail(st)}
+                                          className="p-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10.5px] font-extrabold transition-colors cursor-pointer"
+                                        >
+                                          View Full Profile
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
                                 </tbody>
                               </table>
                             </div>
@@ -6579,6 +7166,334 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         }`}
                       >
                         {isImportSubmitting ? "Importing..." : "Commit Schedule"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Excel Student Import Preview Modal */}
+              {showStudentImportModal && studentImportPreview && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-xl max-w-4xl w-full p-6 space-y-4 animate-in fade-in duration-150 max-h-[90vh] flex flex-col">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3 shrink-0">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
+                          Excel Student Import Preview
+                        </h3>
+                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                          Mapped {studentImportPreview.parsed.length} student records from spreadsheet
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowStudentImportModal(false);
+                          setStudentImportPreview(null);
+                        }}
+                        className="text-slate-400 hover:text-slate-600 font-bold text-lg cursor-pointer transition-colors"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs font-semibold">
+                      {/* Controls bar */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
+                        <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-2xl flex flex-col gap-1 shadow-xs">
+                          <span className="text-[10px] uppercase font-bold text-indigo-700 tracking-wider">Parsed Students</span>
+                          <span className="text-xl font-extrabold text-indigo-850">{studentImportPreview.parsed.length}</span>
+                          <span className="text-[10px] text-indigo-600">Ready to save to SQLite database</span>
+                        </div>
+
+                        <div className={`p-3 rounded-2xl border flex flex-col gap-1 shadow-xs ${
+                          studentImportPreview.warnings.length > 0 ? "bg-amber-50 border-amber-100" : "bg-slate-50 border-slate-100"
+                        }`}>
+                          <span className={`text-[10px] uppercase font-bold tracking-wider ${
+                            studentImportPreview.warnings.length > 0 ? "text-amber-700" : "text-slate-500"
+                          }`}>Validation Warnings</span>
+                          <span className={`text-xl font-extrabold ${
+                            studentImportPreview.warnings.length > 0 ? "text-amber-850" : "text-slate-600"
+                          }`}>{studentImportPreview.warnings.length}</span>
+                          <span className={`text-[10px] ${
+                            studentImportPreview.warnings.length > 0 ? "text-amber-600" : "text-slate-400"
+                          }`}>Rows with missing names or roll numbers</span>
+                        </div>
+
+                        <div className="p-3 bg-white border border-slate-200 rounded-2xl flex flex-col justify-center gap-1.5 shadow-xs sm:col-span-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Target Class Cohort</label>
+                          {(() => {
+                            const campusDeptNames = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
+                            const deptOptions = campusDeptNames.length > 0 ? campusDeptNames : FACULTY_DEPARTMENTS;
+                            const shiftOptions = ["Shift 1", "Shift 2", "General"];
+                            const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"];
+                            // Parse existing targetClassGroup into parts
+                            const current = studentImportPreview.targetClassGroup || "";
+                            const updateCohort = (dept: string, shift: string, sem: string) => {
+                              setStudentImportPreview({ ...studentImportPreview, targetClassGroup: `${dept} - ${shift} - ${sem}` });
+                            };
+                            // Detect current parts
+                            const currentShift = shiftOptions.find(s => current.includes(s)) || "Shift 1";
+                            const currentSem = semOptions.find(s => current.includes(s)) || "Semester 1";
+                            const currentDept = deptOptions.find(d => current.startsWith(d)) || deptOptions[0] || "Computer Science";
+                            return (
+                              <div className="flex flex-col gap-1">
+                                <select
+                                  value={currentDept}
+                                  onChange={(e) => updateCohort(e.target.value, currentShift, currentSem)}
+                                  className="w-full text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
+                                >
+                                  {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                                <div className="flex gap-1">
+                                  <select
+                                    value={currentShift}
+                                    onChange={(e) => updateCohort(currentDept, e.target.value, currentSem)}
+                                    className="flex-1 text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
+                                  >
+                                    {shiftOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                  <select
+                                    value={currentSem}
+                                    onChange={(e) => updateCohort(currentDept, currentShift, e.target.value)}
+                                    className="flex-1 text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
+                                  >
+                                    {semOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                </div>
+                                <p className="text-[9px] text-indigo-600 font-bold mt-0.5 truncate">→ {studentImportPreview.targetClassGroup}</p>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* Warnings List */}
+                      {studentImportPreview.warnings.length > 0 && (
+                        <div className="space-y-1.5 border border-amber-200 rounded-2xl p-3.5 bg-amber-50/50">
+                          <h4 className="text-[10px] font-black text-amber-800 uppercase tracking-widest flex items-center gap-1.5">
+                            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                            Validation Warning Log ({studentImportPreview.warnings.length})
+                          </h4>
+                          <div className="max-h-[15vh] overflow-y-auto space-y-1 pr-1 text-[11px] text-amber-900">
+                            {studentImportPreview.warnings.map((w, idx) => (
+                              <div key={idx} className="font-semibold">{w}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Parsed Preview Table */}
+                      <div className="space-y-2">
+                        <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                          Mapped Student Records Preview
+                        </h4>
+                        <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-xs max-h-[35vh]">
+                          <table className="w-full border-collapse text-left text-xs font-semibold min-w-[850px]">
+                            <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9px] tracking-wider z-10">
+                              <tr>
+                                <th className="p-2.5">Roll No</th>
+                                <th className="p-2.5">Name</th>
+                                <th className="p-2.5">Dept</th>
+                                <th className="p-2.5">10th %</th>
+                                <th className="p-2.5">11th %</th>
+                                <th className="p-2.5">12th %</th>
+                                <th className="p-2.5">Group</th>
+                                <th className="p-2.5">Medium</th>
+                                <th className="p-2.5">Blood</th>
+                                <th className="p-2.5">Phone</th>
+                                <th className="p-2.5">Email</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white">
+                              {studentImportPreview.parsed.map((st, idx) => (
+                                <tr key={idx} className="hover:bg-indigo-50/20">
+                                  <td className="p-2.5 font-mono font-bold text-indigo-700">{st.roll_number || "—"}</td>
+                                  <td className="p-2.5 font-bold text-slate-900">{st.name || "—"}</td>
+                                  <td className="p-2.5 text-slate-700">{st.department || "—"}</td>
+                                  <td className="p-2.5">{st.tenth_mark ? `${st.tenth_mark}%` : "—"}</td>
+                                  <td className="p-2.5">{st.eleventh_mark ? `${st.eleventh_mark}%` : "—"}</td>
+                                  <td className="p-2.5">{st.twelfth_mark ? `${st.twelfth_mark}%` : "—"}</td>
+                                  <td className="p-2.5 text-slate-800 font-bold">{st.academic_group || "—"}</td>
+                                  <td className="p-2.5">{st.medium || "—"}</td>
+                                  <td className="p-2.5">{st.blood_group || "—"}</td>
+                                  <td className="p-2.5 font-mono text-[11px]">{st.phone || "—"}</td>
+                                  <td className="p-2.5 text-[10px] text-slate-500 truncate max-w-[160px]">{st.email || "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowStudentImportModal(false);
+                          setStudentImportPreview(null);
+                        }}
+                        className="px-4 py-2 hover:bg-slate-100 text-slate-600 rounded-xl transition-all font-bold cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmStudentImportSubmit}
+                        disabled={isStudentImportSubmitting || studentImportPreview.parsed.length === 0}
+                        className={`px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer border border-indigo-650 ${
+                          isStudentImportSubmitting || studentImportPreview.parsed.length === 0
+                            ? "bg-slate-300 border-slate-300 text-slate-400 cursor-not-allowed"
+                            : "btn-gradient hover:opacity-95 active:scale-95"
+                        }`}
+                      >
+                        {isStudentImportSubmitting ? "Importing Records..." : "Confirm & Import Students"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Student Full Profile Detail Modal */}
+              {selectedStudentForDetail && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-xl max-w-2xl w-full p-6 space-y-5 animate-in fade-in duration-150 max-h-[90vh] overflow-y-auto">
+                    {/* Header */}
+                    <div className="flex justify-between items-start border-b border-slate-100 pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-12 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-lg font-black shadow-md">
+                          {selectedStudentForDetail.name.substring(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <h3 className="text-base font-extrabold text-slate-900 leading-snug">{selectedStudentForDetail.name}</h3>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 uppercase">
+                              Roll No: {selectedStudentForDetail.roll_number || selectedStudentForDetail.id}
+                            </span>
+                            <span className="text-xs font-semibold text-slate-500">{selectedStudentForDetail.classGroup}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentForDetail(null)}
+                        className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    {/* Details Sections */}
+                    <div className="space-y-4 text-xs">
+                      {/* Academic & Class Details */}
+                      <div className="bg-slate-50/70 border border-slate-200/80 p-4 rounded-2xl space-y-3">
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Academic Info &amp; Marks</h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Department</span>
+                            <span className="text-xs font-extrabold text-slate-800">{selectedStudentForDetail.department || "General"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Academic Group</span>
+                            <span className="text-xs font-extrabold text-slate-800">{selectedStudentForDetail.academic_group || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Medium</span>
+                            <span className="text-xs font-extrabold text-slate-800">{selectedStudentForDetail.medium || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Blood Group</span>
+                            <span className="text-xs font-extrabold text-rose-600">{selectedStudentForDetail.blood_group || "—"}</span>
+                          </div>
+
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">10th Mark (%)</span>
+                            <span className="text-sm font-black text-indigo-600">{selectedStudentForDetail.tenth_mark ? `${selectedStudentForDetail.tenth_mark}%` : "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">11th Mark (%)</span>
+                            <span className="text-sm font-black text-indigo-600">{selectedStudentForDetail.eleventh_mark ? `${selectedStudentForDetail.eleventh_mark}%` : "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">12th Mark (%)</span>
+                            <span className="text-sm font-black text-indigo-600">{selectedStudentForDetail.twelfth_mark ? `${selectedStudentForDetail.twelfth_mark}%` : "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Date of Birth</span>
+                            <span className="text-xs font-extrabold text-slate-800">{selectedStudentForDetail.dob || "—"}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Contact & Identity Details */}
+                      <div className="bg-slate-50/70 border border-slate-200/80 p-4 rounded-2xl space-y-3">
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Contact Information &amp; Identity</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Student Email</span>
+                            <span className="text-xs font-bold text-slate-800 truncate block">{selectedStudentForDetail.email}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Aadhar Card Number</span>
+                            <span className="text-xs font-mono font-bold text-slate-800">{selectedStudentForDetail.aadhar_number || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Student Phone Number</span>
+                            <span className="text-xs font-bold text-slate-800">{selectedStudentForDetail.phone || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Parent Phone Number (WhatsApp)</span>
+                            <span className="text-xs font-bold text-emerald-700">{selectedStudentForDetail.parent_phone || "—"}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Portfolio & Coding Profiles */}
+                      <div className="bg-slate-50/70 border border-slate-200/80 p-4 rounded-2xl space-y-3">
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Social &amp; Development Profiles</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200">
+                            <span className="font-bold text-slate-600">LinkedIn Profile</span>
+                            {selectedStudentForDetail.linkedin_link ? (
+                              <a href={selectedStudentForDetail.linkedin_link} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-bold text-[11px]">View Link ↗</a>
+                            ) : <span className="text-slate-400 text-[10.5px]">Not mapped</span>}
+                          </div>
+                          <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200">
+                            <span className="font-bold text-slate-600">GitHub Profile</span>
+                            {selectedStudentForDetail.github_id ? (
+                              <a href={selectedStudentForDetail.github_id.startsWith("http") ? selectedStudentForDetail.github_id : `https://github.com/${selectedStudentForDetail.github_id}`} target="_blank" rel="noreferrer" className="text-slate-800 hover:underline font-bold text-[11px]">View Link ↗</a>
+                            ) : <span className="text-slate-400 text-[10.5px]">Not mapped</span>}
+                          </div>
+                          <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200">
+                            <span className="font-bold text-slate-600">HackerRank Profile</span>
+                            {selectedStudentForDetail.hackerrank_link ? (
+                              <a href={selectedStudentForDetail.hackerrank_link} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline font-bold text-[11px]">View Link ↗</a>
+                            ) : <span className="text-slate-400 text-[10.5px]">Not mapped</span>}
+                          </div>
+                          <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200">
+                            <span className="font-bold text-slate-600">LeetCode Profile</span>
+                            {selectedStudentForDetail.leetcode_link ? (
+                              <a href={selectedStudentForDetail.leetcode_link} target="_blank" rel="noreferrer" className="text-amber-600 hover:underline font-bold text-[11px]">View Link ↗</a>
+                            ) : <span className="text-slate-400 text-[10.5px]">Not mapped</span>}
+                          </div>
+                          <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 sm:col-span-2">
+                            <span className="font-bold text-slate-600">Figma Profile</span>
+                            {selectedStudentForDetail.figma_link ? (
+                              <a href={selectedStudentForDetail.figma_link} target="_blank" rel="noreferrer" className="text-purple-600 hover:underline font-bold text-[11px]">View Link ↗</a>
+                            ) : <span className="text-slate-400 text-[10.5px]">Not mapped</span>}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-3 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentForDetail(null)}
+                        className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Close Profile
                       </button>
                     </div>
                   </div>

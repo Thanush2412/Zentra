@@ -1910,7 +1910,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
             {/* Weeks List */}
             <div className="space-y-4">
-              {Array.from({ length: 4 }, (_, i) => i + 1).map(wk => {
+              {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => {
                 const task = weeklyTasks.find(
                   t => t.class_group.toLowerCase().trim() === (currentStudent?.classGroup || "").toLowerCase().trim() &&
                        t.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim() &&
@@ -1935,46 +1935,44 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           {wk}
                         </span>
                         <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Week {wk} Task</h4>
+                        {wk % 2 === 0 && (
+                          <span className="px-2 py-0.5 bg-rose-100 text-rose-700 rounded-lg text-[9px] font-bold tracking-wide border border-rose-200">
+                            ASSESSMENT / VIVA
+                          </span>
+                        )}
                       </div>
 
                       {/* Grades / Status Badge */}
-                      {wk === 4 ? (
-                        entry?.marks !== undefined && entry?.marks !== null ? (
-                          <div className="flex items-center gap-2">
-                            <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">Graded</span>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg border text-xs font-black uppercase tracking-wider ${
-                              entry.marks >= 8
-                                ? "bg-teal-50 border-teal-150 text-teal-700"
-                                : entry.marks >= 5
-                                  ? "bg-amber-50 border-amber-150 text-amber-700"
-                                  : "bg-rose-50 border-rose-150 text-rose-700"
-                            }`}>
-                              {entry.marks} / 10
+                      {entry?.marks !== undefined && entry?.marks !== null ? (
+                        <div className="flex items-center gap-2">
+                          {entry?.viva_assessment && (
+                            <span className="text-[9px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-md">
+                              {entry.viva_assessment}
                             </span>
-                          </div>
-                        ) : task ? (
-                          <span className="text-[9.5px] font-black text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-lg border border-amber-200/50 uppercase tracking-wide">
-                            Awaiting Grading
+                          )}
+                          <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">Graded</span>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg border text-xs font-black uppercase tracking-wider ${
+                            entry.marks >= 8
+                              ? "bg-teal-50 border-teal-150 text-teal-700"
+                              : entry.marks >= 5
+                                ? "bg-amber-50 border-amber-150 text-amber-700"
+                                : "bg-rose-50 border-rose-150 text-rose-700"
+                          }`}>
+                            {entry.marks} / 10
                           </span>
-                        ) : (
-                          <span className="text-[9.5px] font-black text-slate-400 bg-slate-50 px-2.5 py-0.5 rounded-lg border border-slate-200/50 uppercase tracking-wide">
-                            No Task Assigned
-                          </span>
-                        )
+                        </div>
+                      ) : currentUrl ? (
+                        <span className="text-[9.5px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200/50 uppercase tracking-wide">
+                          Submitted
+                        </span>
+                      ) : task ? (
+                        <span className="text-[9.5px] font-black text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-lg border border-amber-200/50 uppercase tracking-wide">
+                          {wk % 2 === 0 ? "Awaiting Assessment / Viva" : "Pending Submission"}
+                        </span>
                       ) : (
-                        currentUrl ? (
-                          <span className="text-[9.5px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200/50 uppercase tracking-wide">
-                            Submitted
-                          </span>
-                        ) : task ? (
-                          <span className="text-[9.5px] font-black text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-lg border border-amber-200/50 uppercase tracking-wide">
-                            Pending Submission
-                          </span>
-                        ) : (
-                          <span className="text-[9.5px] font-black text-slate-400 bg-slate-50 px-2.5 py-0.5 rounded-lg border border-slate-200/50 uppercase tracking-wide">
-                            No Task Assigned
-                          </span>
-                        )
+                        <span className="text-[9.5px] font-black text-slate-400 bg-slate-50 px-2.5 py-0.5 rounded-lg border border-slate-200/50 uppercase tracking-wide">
+                          No Task Assigned
+                        </span>
                       )}
                     </div>
 

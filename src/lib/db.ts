@@ -799,6 +799,28 @@ export function getDb(): Promise<TursoDbAdapter> {
     await dbInstance.exec(`ALTER TABLE audit_logs ADD COLUMN changed_by TEXT;`);
   } catch (_) {}
 
+  // Add missing columns to users table
+  try {
+    await dbInstance.exec(`ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0;`);
+    console.log("Successfully added must_change_password column to users table");
+  } catch (error: any) {
+    if (error.message?.includes('duplicate column name')) {
+      console.log("Column must_change_password already exists");
+    } else {
+      console.error("Error adding must_change_password column:", error.message);
+    }
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL;`);
+    console.log("Successfully added last_login column to users table");
+  } catch (error: any) {
+    if (error.message?.includes('duplicate column name')) {
+      console.log("Column last_login already exists");
+    } else {
+      console.error("Error adding last_login column:", error.message);
+    }
+  }
+
   // Populate college_id in departments based on name
   try {
     await dbInstance.run(`
@@ -946,9 +968,6 @@ export function getDb(): Promise<TursoDbAdapter> {
   try {
     await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN updated_at TEXT;`);
   } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0;`);
-  } catch (_) {}
 
   // 14. Migration: Add extended fields to students
   try {
@@ -1087,6 +1106,42 @@ export function getDb(): Promise<TursoDbAdapter> {
     }
   } catch (err) {
     console.error("Migration error populating users table:", err);
+  }
+
+  // 16. Clean up duplicate and synonym class group strings in mentors table
+  try {
+    const allMentors = await dbInstance.all("SELECT id, classes, email FROM mentors WHERE classes IS NOT NULL AND classes != ''");
+    for (const m of allMentors) {
+      if (m.classes.includes(",")) {
+        const rawItems = m.classes.split(/,|\n/).map((c: string) => c.trim()).filter(Boolean);
+        const seenSignatures = new Set<string>();
+        const cleanedItems: string[] = [];
+
+        // Sort items by length descending so longer/more detailed canonical names come first
+        const sortedItems = [...rawItems].sort((a, b) => b.length - a.length);
+
+        for (const item of sortedItems) {
+          const lower = item.toLowerCase();
+          const semMatch = lower.match(/sem(?:ester)?\s*([0-9ivx]+)/i);
+          const semKey = semMatch ? semMatch[1] : "";
+          const shiftKey = lower.includes("shift 1") || lower.includes("shift_1") ? "s1" : lower.includes("shift 2") || lower.includes("shift_2") ? "s2" : "";
+          const deptKey = lower.includes("cs") || lower.includes("computer") ? "cs" : lower.includes("ds") || lower.includes("data") ? "ds" : lower.includes("it") ? "it" : lower.includes("com") ? "com" : lower.slice(0, 10);
+
+          const sig = `${deptKey}_${shiftKey}_${semKey}`;
+          if (!seenSignatures.has(sig)) {
+            seenSignatures.add(sig);
+            cleanedItems.push(item);
+          }
+        }
+
+        const newClassesStr = cleanedItems.join(", ");
+        if (newClassesStr !== m.classes) {
+          await dbInstance.run("UPDATE mentors SET classes = ? WHERE id = ?", [newClassesStr, m.id]);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Migration error cleaning mentor classes:", err);
   }
 
   // Migrate existing departments from subjects if empty
@@ -1427,6 +1482,38 @@ export async function syncMentorSubjectGroups(db: any) {
     } else {
       await db.run("UPDATE mentors SET subject_group = NULL WHERE id = ?", [mentor.id]);
     }
+  }
+}
+
+export async function syncMentorSubjectsAndClasses(db: TursoDbAdapter, mentorId: string, course?: string, classGroup?: string) {
+  if (!mentorId) return;
+  const mentorRecord = await db.get("SELECT subjects, classes FROM mentors WHERE id = ?", mentorId);
+  if (!mentorRecord) return;
+
+  const existingSubjs = mentorRecord.subjects
+    ? mentorRecord.subjects.split(/,|\n/).map((s: string) => s.trim()).filter(Boolean)
+    : [];
+  const existingClasses = mentorRecord.classes
+    ? mentorRecord.classes.split(/,|\n/).map((c: string) => c.trim()).filter(Boolean)
+    : [];
+
+  let updated = false;
+  if (course && course.trim() && !existingSubjs.includes(course.trim())) {
+    existingSubjs.push(course.trim());
+    updated = true;
+  }
+  if (classGroup && classGroup.trim() && !existingClasses.includes(classGroup.trim())) {
+    existingClasses.push(classGroup.trim());
+    updated = true;
+  }
+
+  if (updated) {
+    await db.run(
+      "UPDATE mentors SET subjects = ?, classes = ? WHERE id = ?",
+      existingSubjs.join(", "),
+      existingClasses.join(", "),
+      mentorId
+    );
   }
 }
 

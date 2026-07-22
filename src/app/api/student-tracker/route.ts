@@ -42,7 +42,7 @@ export async function POST(request: Request) {
         const mentor = await db.get("SELECT name, email FROM mentors WHERE id = ?", mentorId);
         const mentorName = mentor?.name || "Faculty Mentor";
         
-        const studentsInClass = await db.all("SELECT email FROM students WHERE classGroup = ?", classGroup);
+        const studentsInClass = await db.all("SELECT email FROM students WHERE LOWER(TRIM(classGroup)) = LOWER(TRIM(?))", [classGroup]);
         const studentEmails = studentsInClass.map((s: any) => s.email).filter(Boolean);
         const recipientList = studentEmails.length > 0 ? studentEmails.join(",") : "thanush@faceprep.in";
 

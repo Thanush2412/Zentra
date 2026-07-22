@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb, resolveClassGroupDetails } from "@/lib/db";
+import { getDb, resolveClassGroupDetails, syncMentorSubjectsAndClasses } from "@/lib/db";
 
 export async function POST(request: Request) {
   try {
@@ -63,6 +63,7 @@ export async function POST(request: Request) {
         department,
         collegeId
       );
+      await syncMentorSubjectsAndClasses(db, mentorId, course, cleanClassGroup);
       addedCount++;
     }
 

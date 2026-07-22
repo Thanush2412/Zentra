@@ -114,7 +114,7 @@ export async function POST(request: Request) {
     
     for (const student of students) {
       const {
-        id,
+        id: rawId,
         name,
         email,
         classGroup,
@@ -122,31 +122,74 @@ export async function POST(request: Request) {
         college_id,
         register_number,
         roll_number,
+        tenth_mark,
+        eleventh_mark,
+        twelfth_mark,
+        academic_group,
+        medium,
+        blood_group,
+        dob,
+        phone,
+        parent_phone,
+        aadhar_number,
+        linkedin_link,
+        github_id,
+        project_drive_link,
+        hackerrank_link,
+        leetcode_link,
+        figma_link,
         semester,
         shift
       } = student;
       
-      if (!id || !name) {
+      const stId = (rawId || roll_number || register_number || "").toString().trim();
+      const stName = (name || "").toString().trim();
+      
+      if (!stId || !stName) {
         continue;
       }
+
+      const stEmail = (email || `${stId.toLowerCase()}@university.edu`).toString().trim();
+      const stRoll = (roll_number || stId).toString().trim();
+      const stReg = (register_number || stId).toString().trim();
       
       await db.run(
         `INSERT OR REPLACE INTO students (
           id, name, email, classGroup, department, college_id, 
           register_number, roll_number, semester, shift,
+          tenth_mark, eleventh_mark, twelfth_mark, academic_group,
+          medium, blood_group, dob, phone, parent_phone, aadhar_number,
+          linkedin_link, github_id, project_drive_link, hackerrank_link,
+          leetcode_link, figma_link,
           status, password_hash, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', 'password123', ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', 'password123', ?, ?)`,
         [
-          id,
-          name,
-          email || `${id.toLowerCase()}@university.edu`,
+          stId,
+          stName,
+          stEmail,
           classGroup || "General Class",
           department || "General",
           college_id || "college_1",
-          register_number || id,
-          roll_number || id,
+          stReg,
+          stRoll,
           semester || "Semester 1",
           shift || "General",
+          tenth_mark ? tenth_mark.toString() : null,
+          eleventh_mark ? eleventh_mark.toString() : null,
+          twelfth_mark ? twelfth_mark.toString() : null,
+          academic_group ? academic_group.toString() : null,
+          medium ? medium.toString() : null,
+          blood_group ? blood_group.toString() : null,
+          dob ? dob.toString() : null,
+          phone ? phone.toString() : null,
+          parent_phone ? parent_phone.toString() : null,
+          aadhar_number ? aadhar_number.toString() : null,
+          linkedin_link ? linkedin_link.toString() : null,
+          github_id ? github_id.toString() : null,
+          project_drive_link ? project_drive_link.toString() : null,
+          hackerrank_link ? hackerrank_link.toString() : null,
+          leetcode_link ? leetcode_link.toString() : null,
+          figma_link ? figma_link.toString() : null,
           nowStr,
           nowStr
         ]
@@ -158,9 +201,9 @@ export async function POST(request: Request) {
           id, email, password_hash, role, reference_id, created_at, updated_at
         ) VALUES (?, ?, 'password123', 'student', ?, ?, ?)`,
         [
-          id,
-          email || `${id.toLowerCase()}@university.edu`,
-          id,
+          stId,
+          stEmail,
+          stId,
           nowStr,
           nowStr
         ]

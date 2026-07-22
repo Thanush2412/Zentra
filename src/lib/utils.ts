@@ -5,6 +5,29 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function parseRoomsList(roomsStr?: string | null): string[] {
+  if (!roomsStr || !roomsStr.trim()) return [];
+  const raw = roomsStr.trim();
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map(r => String(r).replace(/[\[\]"]/g, "").trim()).filter(Boolean);
+      }
+    } catch (_) {}
+  }
+  if (raw.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Object.values(parsed).map(r => String(r).replace(/[\[\]"]/g, "").trim()).filter(Boolean);
+    } catch (_) {}
+  }
+  return raw
+    .split(",")
+    .map(r => r.replace(/[\[\]"]/g, "").trim())
+    .filter(Boolean);
+}
+
 export function formatDate(dateString: string): string {
   try {
     const d = parseDbDate(dateString);

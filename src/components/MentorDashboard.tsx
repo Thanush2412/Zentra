@@ -311,12 +311,110 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   }, []);
 
   // Student Tracker filter and management states
-  const mentorClasses = currentMentor?.classes
-    ? currentMentor.classes.split(/,|\n/).map((c: string) => c.trim()).filter(Boolean)
-    : [];
-  const mentorSubjects = currentMentor?.subjects
-    ? currentMentor.subjects.split(/,|\n/).map((s: string) => s.trim()).filter(Boolean)
-    : [];
+  const mentorClasses = useMemo(() => {
+    let rawItems: string[] = [];
+    if (currentMentor?.classes) {
+      rawItems = currentMentor.classes.split(/,|\n/).map((c: string) => c.trim()).filter(Boolean);
+    }
+
+    // Fallback 1: Check slots assigned to this mentor
+    if (rawItems.length === 0 && currentMentor?.id) {
+      const slotClasses = slots
+        .filter(s => s.mentorId === currentMentor.id)
+        .map(s => s.classGroup)
+        .filter((cg): cg is string => Boolean(cg));
+      rawItems = Array.from(new Set(slotClasses));
+    }
+
+    // Fallback 2: Check active student class groups in students table
+    if (rawItems.length === 0 && students.length > 0) {
+      const deptLower = currentMentor?.department ? currentMentor.department.toLowerCase().trim() : "";
+      const studentClasses = students
+        .filter(s => {
+          if (!s.classGroup) return false;
+          if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+          if (!deptLower) return true;
+          const sDept = (s.department || "").toLowerCase().trim();
+          const sCg = s.classGroup.toLowerCase();
+          return sDept.includes(deptLower) || deptLower.includes(sDept) || sCg.includes(deptLower) || deptLower.includes(sCg);
+        })
+        .map(s => s.classGroup)
+        .filter((cg): cg is string => Boolean(cg));
+
+      if (studentClasses.length > 0) {
+        rawItems = Array.from(new Set(studentClasses));
+      }
+    }
+
+    // Fallback 3: Check courses/departments in campus matching mentor's department
+    if (rawItems.length === 0 && currentMentor?.department) {
+      const deptLower = currentMentor.department.toLowerCase().trim();
+      const matchingCourses = coursesList
+        .filter(c => c.college_id === currentMentor.college_id || !c.college_id)
+        .filter(c => c.name.toLowerCase().includes(deptLower) || deptLower.includes(c.name.toLowerCase()));
+
+      const deptNames = matchingCourses.length > 0 ? matchingCourses.map(c => c.name) : [currentMentor.department];
+      const sems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"];
+      const shifts = currentMentor.shift === "shift_2" ? ["Shift 2"] : currentMentor.shift === "shift_1" ? ["Shift 1"] : ["Shift 1", "Shift 2"];
+
+      deptNames.forEach(d => {
+        shifts.forEach(sh => {
+          sems.forEach(sem => {
+            rawItems.push(`${d} - ${sh} - ${sem}`);
+          });
+        });
+      });
+    }
+
+    const seenSignatures = new Set<string>();
+    const cleaned: string[] = [];
+
+    // Sort by length descending to prioritize most specific, full canonical names
+    const sortedItems = [...rawItems].sort((a, b) => b.length - a.length);
+
+    for (const item of sortedItems) {
+      const lower = item.toLowerCase();
+      const semMatch = lower.match(/sem(?:ester)?\s*([0-9ivx]+)/i);
+      const semKey = semMatch ? semMatch[1] : "";
+      const shiftKey = lower.includes("shift 1") || lower.includes("shift_1") ? "s1" : lower.includes("shift 2") || lower.includes("shift_2") ? "s2" : "";
+      const deptKey = lower.includes("cs") || lower.includes("computer") ? "cs" : lower.includes("ds") || lower.includes("data") ? "ds" : lower.includes("it") ? "it" : lower.includes("com") ? "com" : lower.slice(0, 10);
+
+      const sig = `${deptKey}_${shiftKey}_${semKey}`;
+      if (!seenSignatures.has(sig)) {
+        seenSignatures.add(sig);
+        cleaned.push(item);
+      }
+    }
+    return cleaned;
+  }, [currentMentor, slots, coursesList]);
+
+  const mentorSubjects = useMemo(() => {
+    let rawSubjects: string[] = [];
+    if (currentMentor?.subjects) {
+      rawSubjects = currentMentor.subjects.split(/,|\n/).map((s: string) => s.trim()).filter(Boolean);
+    }
+
+    // Fallback 1: Check slots assigned to this mentor
+    if (rawSubjects.length === 0 && currentMentor?.id) {
+      const slotSubjs = slots
+        .filter(s => s.mentorId === currentMentor.id)
+        .map(s => s.course)
+        .filter(Boolean);
+      rawSubjects = Array.from(new Set(slotSubjs));
+    }
+
+    // Fallback 2: Check subjects matching mentor's department in subjectsList
+    if (rawSubjects.length === 0 && currentMentor?.department) {
+      const deptLower = currentMentor.department.toLowerCase().trim();
+      const deptSubjs = subjectsList
+        .filter(s => (s.college_id === currentMentor.college_id || !s.college_id) &&
+                     s.department && (s.department.toLowerCase().includes(deptLower) || deptLower.includes(s.department.toLowerCase())))
+        .map(s => s.name);
+      rawSubjects = Array.from(new Set(deptSubjs));
+    }
+
+    return Array.from(new Set(rawSubjects));
+  }, [currentMentor, slots, subjectsList]);
 
   const [trackerClassGroup, setTrackerClassGroup] = useState<string>("");
   const [trackerSubject, setTrackerSubject] = useState<string>("");
@@ -329,14 +427,52 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [trackerStatusFilter, setTrackerStatusFilter] = useState("all");
   const [saveStatusMap, setSaveStatusMap] = useState<Record<string, "idle" | "saving" | "saved" | "error">>({});
 
+  const filteredMentorSubjects = useMemo(() => {
+    if (!trackerClassGroup) return mentorSubjects;
+    
+    // 1. Check slots for this mentor in this exact classGroup
+    if (currentMentor?.id) {
+      const slotSubjs = slots
+        .filter(s => s.mentorId === currentMentor.id && s.classGroup === trackerClassGroup)
+        .map(s => s.course)
+        .filter(Boolean);
+      const uniqueSlotSubjs = Array.from(new Set(slotSubjs));
+      if (uniqueSlotSubjs.length > 0) return uniqueSlotSubjs;
+    }
+
+    // 2. Filter mentorSubjects by semester of trackerClassGroup
+    const semMatch = trackerClassGroup.toLowerCase().match(/sem(?:ester)?\s*([0-9ivx]+)/i);
+    const semNum = semMatch ? semMatch[1] : "";
+    
+    if (semNum) {
+      const matchedBySem = mentorSubjects.filter(subName => {
+        const subObj = subjectsList.find(s => s.name.toLowerCase() === subName.toLowerCase());
+        if (!subObj || !subObj.semester) return true;
+        const subSemMatch = subObj.semester.toLowerCase().match(/sem(?:ester)?\s*([0-9ivx]+)/i);
+        const subSemNum = subSemMatch ? subSemMatch[1] : "";
+        return !subSemNum || subSemNum === semNum;
+      });
+      if (matchedBySem.length > 0) return matchedBySem;
+    }
+
+    return mentorSubjects;
+  }, [trackerClassGroup, currentMentor, slots, mentorSubjects, subjectsList]);
+
+  // Keep trackerSubject in sync whenever trackerClassGroup changes
+  useEffect(() => {
+    if (filteredMentorSubjects.length > 0 && !filteredMentorSubjects.includes(trackerSubject)) {
+      setTrackerSubject(filteredMentorSubjects[0]);
+    }
+  }, [trackerClassGroup, filteredMentorSubjects, trackerSubject]);
+
   useEffect(() => {
     if (mentorClasses.length > 0 && !trackerClassGroup) {
       setTrackerClassGroup(mentorClasses[0]);
     }
-    if (mentorSubjects.length > 0 && !trackerSubject) {
-      setTrackerSubject(mentorSubjects[0]);
+    if (filteredMentorSubjects.length > 0 && !trackerSubject) {
+      setTrackerSubject(filteredMentorSubjects[0]);
     }
-  }, [currentMentor, mentorClasses, mentorSubjects, trackerClassGroup, trackerSubject]);
+  }, [currentMentor, mentorClasses, filteredMentorSubjects, trackerClassGroup, trackerSubject]);
 
   // Attendance Search and Range Select States
   const [attendanceSearchTerm, setAttendanceSearchTerm] = useState("");
@@ -4403,8 +4539,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 "Student Name": student.name,
               };
 
-              // Add columns for weeks 1 to 4
-              for (let wk = 1; wk <= 4; wk++) {
+              // Add columns for weeks 1 to 15
+              for (let wk = 1; wk <= 15; wk++) {
                 const entry = studentTracker.find(
                   e => e.student_id === student.id &&
                        e.class_group === trackerClassGroup &&
@@ -4413,7 +4549,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 );
                 rowObj[`W${wk} Status`] = entry?.submission_url ? "Submitted" : "Not Submitted";
                 rowObj[`W${wk} Link`] = entry?.submission_url || "—";
-                if (wk === 4) {
+                if (wk % 2 === 0) {
                   rowObj[`W${wk} Eval Type`] = entry?.viva_assessment || "—";
                 }
                 rowObj[`W${wk} Marks`] = entry?.marks !== undefined && entry?.marks !== null ? entry.marks : "—";
@@ -4452,50 +4588,66 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             </div>
           </div>
 
-          {/* Selectors and Filters Bar - Brand Theme */}
-          <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="p-3 rounded-2xl bg-[#D528A2]/5 border border-[#D528A2]/15 text-[#D528A2]">
-                <GraduationCap className="h-5 w-5" />
-              </div>
-              <div className="space-y-1">
-                <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Currently Tracking</span>
-                <div className="flex flex-wrap items-center gap-2 text-sm font-black text-slate-800">
-                  <span className="text-[#D528A2]">{trackerClassGroup || "No Class Selected"}</span>
-                  <span className="text-slate-300 font-medium">•</span>
-                  <span className="text-[#F4A863]">{trackerSubject || "No Subject"}</span>
-                  <span className="text-slate-300 font-medium">•</span>
-                  <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-black border border-indigo-150">Week {trackerWeek}</span>
+          {/* Interactive Class, Subject & Week Selector Bar */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-4 font-sans">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              {/* Left: Responsive Class, Subject & Week Selectors */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+                {/* Class Group Select - Flex Grow for long names */}
+                <div className="space-y-1 sm:flex-[2.5] min-w-0">
+                  <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Class Group</label>
+                  <select
+                    value={trackerClassGroup}
+                    onChange={(e) => setTrackerClassGroup(e.target.value)}
+                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-slate-50/50 text-slate-800 cursor-pointer truncate"
+                  >
+                    {mentorClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+
+                {/* Subject Select */}
+                <div className="space-y-1 sm:flex-1 min-w-0">
+                  <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Subject</label>
+                  <select
+                    value={trackerSubject}
+                    onChange={(e) => setTrackerSubject(e.target.value)}
+                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-slate-50/50 text-slate-800 cursor-pointer truncate"
+                  >
+                    {filteredMentorSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+
+                {/* Week Select */}
+                <div className="space-y-1 sm:flex-1 min-w-[130px]">
+                  <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Week Number</label>
+                  <select
+                    value={trackerWeek}
+                    onChange={(e) => setTrackerWeek(parseInt(e.target.value, 10))}
+                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-slate-50/50 text-slate-800 cursor-pointer"
+                  >
+                    {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
+                      <option key={wk} value={wk}>Week {wk} {wk % 2 === 0 ? "(Assessment)" : ""}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
-            </div>
-            
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={exportTrackerData}
-                disabled={classStudents.length === 0}
-                className="px-5 py-3 rounded-2xl text-xs font-black border border-slate-200 hover:bg-slate-50 text-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-white"
-              >
-                <Download className="h-4 w-4 text-slate-500" />
-                <span>Export Report</span>
-              </button>
 
-              <button
-                onClick={() => {
-                  setTrackerTaskName(currentTask?.task_name || "");
-                  setTrackerTaskPdf(currentTask?.task_pdf_url || "");
-                  setEditingTask(true);
-                }}
-                className="btn-gradient px-6 py-3 rounded-2xl text-xs font-bold shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all shrink-0"
-              >
-                <BookOpen className="h-4 w-4" />
-                <span>Change Class / Assign Task</span>
-              </button>
+              {/* Right: Export Button */}
+              <div className="flex items-center gap-2 shrink-0 pt-2 lg:pt-0">
+                <button
+                  type="button"
+                  onClick={exportTrackerData}
+                  disabled={classStudents.length === 0}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-50 text-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-white shadow-xs"
+                >
+                  <Download className="h-4 w-4 text-slate-500" />
+                  <span>Export Report</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Task Assignment Section */}
+          {/* Task Assignment Feature Card */}
           {(() => {
             const currentTask = weeklyTasks.find(
               t => t.class_group === trackerClassGroup &&
@@ -4504,52 +4656,103 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             );
 
             return (
-              <div className="bg-gradient-to-r from-indigo-500/5 via-teal-500/5 to-transparent border border-indigo-100 rounded-3xl p-6 shadow-xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <BookOpen className="h-4.5 w-4.5 text-indigo-500" />
-                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-                      Week {trackerWeek} Task Assignment
-                      {trackerWeek % 4 === 0 && (
-                        <span className="px-2 py-0.5 bg-rose-100 text-rose-700 rounded-lg text-[9px] tracking-wide border border-rose-200">
-                          ASSESSMENT / VIVA
-                        </span>
-                      )}
-                    </h3>
+              <div className="bg-gradient-to-r from-indigo-500/5 via-teal-500/5 to-transparent border border-indigo-100 rounded-3xl p-5 shadow-xs space-y-3 font-sans">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100/50 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600">
+                      <BookOpen className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                        Week {trackerWeek} Task Assignment
+                        {trackerWeek % 2 === 0 ? (
+                          <span className="px-2 py-0.5 bg-rose-100 text-rose-700 rounded-md text-[9px] font-extrabold tracking-wide border border-rose-200">
+                            BI-WEEKLY VIVA &amp; ASSESSMENT
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-md text-[9px] font-extrabold tracking-wide border border-emerald-200">
+                            REGULAR TASK
+                          </span>
+                        )}
+                      </h3>
+                    </div>
                   </div>
+
+                  <button
+                    onClick={() => {
+                      setTrackerTaskName(currentTask?.task_name || "");
+                      setTrackerTaskPdf(currentTask?.task_pdf_url || "");
+                      setEditingTask(true);
+                    }}
+                    className="btn-gradient px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+                  >
+                    <BookOpen className="h-3.5 w-3.5" />
+                    <span>{currentTask ? "Edit Assignment" : "Assign Task"}</span>
+                  </button>
                 </div>
 
                 {currentTask ? (
-                  <div className="bg-white/80 border border-white/50 p-4 rounded-2xl flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                    <div className="space-y-1">
-                      <div className="text-xs font-extrabold text-slate-800">{currentTask.task_name}</div>
-                      {currentTask.task_pdf_url && (
+                  <div className="bg-white border border-slate-150 p-4 rounded-2xl flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-xs">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold font-mono rounded border border-indigo-150">
+                          Week {trackerWeek}
+                        </span>
+                        <div className="text-sm font-extrabold text-slate-900 leading-snug">
+                          {currentTask.task_name}
+                        </div>
+                      </div>
+                      {currentTask.task_pdf_url ? (
                         <a
                           href={currentTask.task_pdf_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1"
+                          className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-150 px-3 py-1 rounded-lg hover:bg-indigo-100 transition-colors"
                         >
-                          <BookOpen className="h-3 w-3" /> View Reference Document
+                          <FileText className="h-3.5 w-3.5 text-indigo-600" />
+                          <span>View Reference Document</span>
                         </a>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic block">No reference document attached</span>
                       )}
                     </div>
-                    <div className="flex flex-col items-end text-[9px] text-slate-500 font-mono gap-1">
+
+                    <div className="flex flex-col md:items-end text-[10px] text-slate-500 font-medium gap-1 shrink-0 border-t md:border-t-0 pt-2 md:pt-0 border-slate-100">
                       {(() => {
                         const assigned = parseDbDate(currentTask.created_at || currentTask.updated_at);
-                        const deadline = new Date(assigned.getTime() + 3*24*60*60*1000);
+                        const deadline = new Date(assigned.getTime() + 3 * 24 * 60 * 60 * 1000);
+                        const isExpired = new Date() > deadline;
                         return (
                           <>
-                            <div className="flex items-center gap-1"><span className="text-slate-400">Assigned:</span> <span className="font-bold text-slate-700">{assigned.toLocaleString()}</span></div>
-                            <div className="flex items-center gap-1"><span className="text-slate-400">Deadline:</span> <span className="font-bold text-indigo-600">{deadline.toLocaleString()}</span></div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-400 font-semibold">Assigned Date:</span>
+                              <span className="font-bold text-slate-700">{assigned.toLocaleDateString()} {assigned.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-400 font-semibold">Submission Deadline:</span>
+                              <span className={`font-extrabold ${isExpired ? "text-rose-600" : "text-emerald-600"}`}>
+                                {deadline.toLocaleDateString()} ({isExpired ? "Expired" : "3 Days"})
+                              </span>
+                            </div>
                           </>
                         );
                       })()}
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-4 bg-white/50 border border-dashed border-indigo-200 rounded-2xl">
-                    <p className="text-xs text-slate-455 italic">No task assigned for Week {trackerWeek} yet.</p>
+                  <div className="text-center py-6 bg-white/60 border border-dashed border-indigo-200 rounded-2xl flex flex-col items-center justify-center gap-2">
+                    <p className="text-xs text-slate-500 font-medium">No task assigned for Week {trackerWeek} in {trackerSubject} yet.</p>
+                    <button
+                      onClick={() => {
+                        setTrackerTaskName("");
+                        setTrackerTaskPdf("");
+                        setEditingTask(true);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Assign Week {trackerWeek} Task</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -4577,7 +4780,38 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 const classStudents = students.filter(
                   s => s.classGroup && s.classGroup.toLowerCase().trim() === trackerClassGroup.toLowerCase().trim()
                 );
-                const submittedCount = classStudents.filter(s => {
+                
+                // Calculate 15-week class metrics
+                const assignedWeeksList = Array.from({ length: 15 }, (_, i) => i + 1).filter(wk =>
+                  weeklyTasks.some(t => t.class_group === trackerClassGroup && t.subject === trackerSubject && t.week_number === wk)
+                );
+                const assignedWeeksCount = assignedWeeksList.length;
+
+                let totalSubmissionsCount = 0;
+                let totalMarksSum = 0;
+                let totalGradedEntriesCount = 0;
+
+                classStudents.forEach(st => {
+                  for (let wk = 1; wk <= 15; wk++) {
+                    const entry = studentTracker.find(
+                      e => e.student_id === st.id &&
+                           e.class_group === trackerClassGroup &&
+                           e.subject === trackerSubject &&
+                           e.week_number === wk
+                    );
+                    if (entry?.submission_url) totalSubmissionsCount++;
+                    if (entry?.marks !== undefined && entry?.marks !== null && !isNaN(entry.marks)) {
+                      totalMarksSum += entry.marks;
+                      totalGradedEntriesCount++;
+                    }
+                  }
+                });
+
+                const totalPossible = classStudents.length * (assignedWeeksCount || 1);
+                const overallPct = totalPossible > 0 ? Math.round((totalSubmissionsCount / totalPossible) * 100) : 0;
+                const avgScore = totalGradedEntriesCount > 0 ? (totalMarksSum / totalGradedEntriesCount).toFixed(1) : "—";
+
+                const currentWeekSubmittedCount = classStudents.filter(s => {
                   const entry = studentTracker.find(
                     e => e.student_id === s.id &&
                          e.class_group === trackerClassGroup &&
@@ -4588,13 +4822,28 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 }).length;
 
                 return classStudents.length > 0 ? (
-                  <div className="flex items-center gap-2 text-[10px] font-bold">
-                    <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full border border-emerald-200">
-                      Submitted: {submittedCount} / {classStudents.length}
-                    </span>
-                    <span className="bg-rose-100 text-rose-700 px-3 py-1.5 rounded-full border border-rose-200">
-                      Not Submitted: {classStudents.length - submittedCount}
-                    </span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[10px] font-bold">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full border border-indigo-150 flex items-center gap-1.5">
+                        <Sparkles className="h-3 w-3 text-indigo-500" />
+                        <span>15-Wk Completion: <strong className="text-indigo-900">{overallPct}%</strong></span>
+                      </span>
+                      <span className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-full border border-emerald-200">
+                        Avg Marks: <strong className="text-emerald-900">{avgScore} / 10</strong>
+                      </span>
+                      <span className="bg-amber-50 text-amber-700 px-3 py-1.5 rounded-full border border-amber-200">
+                        Tasks Assigned: <strong className="text-amber-900">{assignedWeeksCount} / 15 Weeks</strong>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full border border-emerald-200">
+                        W{trackerWeek} Submitted: {currentWeekSubmittedCount} / {classStudents.length}
+                      </span>
+                      <span className="bg-rose-100 text-rose-700 px-3 py-1.5 rounded-full border border-rose-200">
+                        Not Submitted: {classStudents.length - currentWeekSubmittedCount}
+                      </span>
+                    </div>
                   </div>
                 ) : null;
               })()}
@@ -4603,6 +4852,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               const classStudents = students.filter(
                 s => s.classGroup && s.classGroup.toLowerCase().trim() === trackerClassGroup.toLowerCase().trim()
               );
+              const assignedWeeksCount = Array.from({ length: 15 }, (_, i) => i + 1).filter(wk =>
+                weeklyTasks.some(t => t.class_group === trackerClassGroup && t.subject === trackerSubject && t.week_number === wk)
+              ).length;
 
               if (classStudents.length === 0) {
                 return (
@@ -4665,17 +4917,18 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   </div>
 
                   <div className="overflow-x-auto rounded-2xl border border-slate-205 shadow-xs bg-white scroll-touch">
-                    <table className="w-full border-collapse text-left text-xs font-semibold min-w-[800px]">
+                    <table className="w-full border-collapse text-left text-xs font-semibold min-w-[980px]">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9.5px] whitespace-nowrap">
-                          <th className="p-4 w-[60px] text-center border-r border-slate-100/60">S.No</th>
-                          <th className="p-4 border-r border-slate-100/60">Student Name / Roll</th>
-                          <th className="p-4 border-r border-slate-100/60">Submission Status</th>
-                          <th className="p-4 text-center border-r border-slate-100/60 w-[140px]">Submission Link</th>
-                          {trackerWeek === 4 && (
+                          <th className="p-4 w-[50px] text-center border-r border-slate-100/60">S.No</th>
+                          <th className="p-4 border-r border-slate-100/60 min-w-[180px]">Student Name / Roll</th>
+                          <th className="p-4 border-r border-slate-100/60 min-w-[260px]">15-Week Progress Matrix</th>
+                          <th className="p-4 border-r border-slate-100/60 w-[130px]">W{trackerWeek} Status</th>
+                          <th className="p-4 text-center border-r border-slate-100/60 w-[130px]">Submission Link</th>
+                          {trackerWeek % 2 === 0 && (
                             <th className="p-4 border-r border-slate-100/60 w-[180px]">Evaluation Type</th>
                           )}
-                          <th className="p-4 text-center w-[120px]">Marks (0-10)</th>
+                          <th className="p-4 text-center w-[110px]">Marks (0-10)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
@@ -4700,6 +4953,74 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               <td className="p-4 border-r border-slate-100/60">
                                 <div className="font-bold text-slate-805">{student.name}</div>
                                 <div className="text-[10px] text-slate-400 font-mono mt-0.5">{student.id}</div>
+                              </td>
+                              <td className="p-3 border-r border-slate-100/60">
+                                {(() => {
+                                  let studentSubmittedWeeks = 0;
+                                  let studentGradedWeeks = 0;
+
+                                  const dots = Array.from({ length: 15 }, (_, i) => i + 1).map(wk => {
+                                    const isAssigned = weeklyTasks.some(
+                                      t => t.class_group === trackerClassGroup && t.subject === trackerSubject && t.week_number === wk
+                                    );
+                                    const stEntry = studentTracker.find(
+                                      e => e.student_id === student.id &&
+                                           e.class_group === trackerClassGroup &&
+                                           e.subject === trackerSubject &&
+                                           e.week_number === wk
+                                    );
+                                    const isSubmitted = !!stEntry?.submission_url;
+                                    const isGraded = stEntry?.marks !== undefined && stEntry?.marks !== null;
+
+                                    if (isSubmitted) studentSubmittedWeeks++;
+                                    if (isGraded) studentGradedWeeks++;
+
+                                    let colorClass = "bg-slate-100 text-slate-400 hover:bg-slate-200";
+                                    if (isGraded) colorClass = "bg-indigo-600 text-white font-bold shadow-xs";
+                                    else if (isSubmitted) colorClass = "bg-emerald-500 text-white font-bold shadow-xs";
+                                    else if (isAssigned) colorClass = "bg-rose-100 text-rose-700 font-bold border border-rose-200";
+
+                                    const isCurrent = trackerWeek === wk;
+
+                                    return (
+                                      <button
+                                        key={wk}
+                                        type="button"
+                                        onClick={() => setTrackerWeek(wk)}
+                                        title={`Week ${wk}: ${isSubmitted ? (isGraded ? `Graded (${stEntry?.marks}/10)` : "Submitted") : isAssigned ? "Pending Submission" : "Unassigned"} - Click to view`}
+                                        className={`h-5 w-5 rounded-md text-[8.5px] font-black transition-all flex items-center justify-center cursor-pointer ${colorClass} ${
+                                          isCurrent ? "ring-2 ring-[#D528A2] scale-110 z-10 shadow-sm" : ""
+                                        }`}
+                                      >
+                                        {wk}
+                                      </button>
+                                    );
+                                  });
+
+                                  const completionPct = assignedWeeksCount > 0 ? Math.round((studentSubmittedWeeks / assignedWeeksCount) * 100) : 0;
+
+                                  return (
+                                    <div className="space-y-1.5 min-w-[220px]">
+                                      <div className="flex items-center justify-between text-[10px]">
+                                        <span className="font-extrabold text-slate-700">{studentSubmittedWeeks} / {assignedWeeksCount || 15} Wks ({completionPct}%)</span>
+                                        {studentGradedWeeks > 0 && (
+                                          <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-150">
+                                            {studentGradedWeeks} Graded
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                                        <div
+                                          className="bg-gradient-to-r from-emerald-500 to-indigo-600 h-1.5 rounded-full transition-all duration-300"
+                                          style={{ width: `${Math.min(100, completionPct)}%` }}
+                                        />
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                                        {dots}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </td>
                               <td className="p-4 border-r border-slate-100/60">
                                 <div className="flex items-center gap-2">
@@ -4740,7 +5061,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   <span className="text-slate-350 text-xs">—</span>
                                 )}
                               </td>
-                              {trackerWeek === 4 && (
+                              {trackerWeek % 2 === 0 && (
                                 <td className="p-4 border-r border-slate-100/60">
                                   <select
                                     defaultValue={currentFeedback === "VIVA conducted" ? "viva" : currentFeedback === "Assessment completed" ? "assessment" : ""}
@@ -5110,7 +5431,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           onChange={(e) => setTrackerSubject(e.target.value)}
                           className="w-full text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-250 focus:outline-none focus:ring-1 focus:ring-[#D528A2] bg-slate-50"
                         >
-                          {mentorSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+                          {filteredMentorSubjects.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </div>
                       <div className="space-y-1">
@@ -5120,7 +5441,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           onChange={(e) => setTrackerWeek(parseInt(e.target.value, 10))}
                           className="w-full text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-250 focus:outline-none focus:ring-1 focus:ring-[#D528A2] bg-slate-50"
                         >
-                          {Array.from({ length: 4 }, (_, i) => i + 1).map(wk => <option key={wk} value={wk}>Week {wk}</option>)}
+                          {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => <option key={wk} value={wk}>Week {wk}</option>)}
                         </select>
                       </div>
                     </div>
@@ -5201,7 +5522,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
                     <div className="flex justify-between items-center text-[10px]">
                       <span className="font-bold text-slate-600">Week Type:</span>
-                      {trackerWeek % 4 === 0 ? (
+                      {trackerWeek % 2 === 0 ? (
                         <span className="font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-lg border border-rose-200">ASSESSMENT / VIVA</span>
                       ) : (
                         <span className="font-black text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200">REGULAR WEEK</span>
