@@ -52,6 +52,19 @@ const getSemesterFromClassGroup = (cg: string): string => {
   return "All Semesters";
 };
 
+const formatYearWiseRooms = (defaultRoomStr?: string) => {
+  if (!defaultRoomStr) return "None";
+  if (!defaultRoomStr.startsWith("{")) return defaultRoomStr;
+  try {
+    const parsed = JSON.parse(defaultRoomStr);
+    return Object.keys(parsed)
+      .map(year => `Year ${year}: ${parsed[year]}`)
+      .join(" | ");
+  } catch (_) {
+    return defaultRoomStr;
+  }
+};
+
 
 /* ─── CAM Fee Collection Panel ─── */
 const fmt = (n: number) => "₹" + n.toLocaleString("en-IN", { maximumFractionDigits: 0 });
@@ -1487,15 +1500,131 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   };
 
+  const [showSubjectModal, setShowSubjectModal] = useState(false);
+  const [editingSubject, setEditingSubject] = useState<any>(null);
+  const [subjectModalError, setSubjectModalError] = useState<string | null>(null);
+  const [lockDeptAndYear, setLockDeptAndYear] = useState(false);
+  const [subjectForm, setSubjectForm] = useState({
+    id: "",
+    name: "",
+    department: "",
+    semester: "Semester 1",
+    type: "SKILL",
+    college_id: activeCollegeId || (colleges && colleges[0]?.id) || "",
+    year: "Year 1",
+    weekly_hours: 4,
+    shift: "General",
+    subject_group: "General",
+    mentorIds: [] as string[]
+  });
+
+  const handleOpenSubjectModal = (sub?: any, defaultDept?: string, defaultYear?: string) => {
+    setSubjectModalError(null);
+    if (sub) {
+      setEditingSubject(sub);
+      setSubjectForm({
+        id: sub.id,
+        name: sub.name,
+        department: sub.department || defaultDept || "",
+        semester: sub.semester || "Semester 1",
+        type: sub.type || "SKILL",
+        college_id: sub.college_id || activeCollegeId || (colleges && colleges[0]?.id) || "",
+        year: sub.year || defaultYear || "Year 1",
+        weekly_hours: sub.weekly_hours || 4,
+        shift: sub.shift || "General",
+        subject_group: sub.subject_group || "General",
+        mentorIds: []
+      });
+      setLockDeptAndYear(false);
+    } else {
+      let defaultSem = "Semester 1";
+      if (defaultYear === "Year 2") defaultSem = "Semester 3";
+      else if (defaultYear === "Year 3") defaultSem = "Semester 5";
+      else if (defaultYear === "Year 4") defaultSem = "Semester 7";
+
+      setEditingSubject(null);
+      setSubjectForm({
+        id: "",
+        name: "",
+        department: defaultDept || "",
+        semester: defaultSem,
+        type: "SKILL",
+        college_id: activeCollegeId || (colleges && colleges[0]?.id) || "",
+        year: defaultYear || "Year 1",
+        weekly_hours: 4,
+        shift: "General",
+        subject_group: "General",
+        mentorIds: []
+      });
+      setLockDeptAndYear(!!defaultDept);
+    }
+    setShowSubjectModal(true);
+  };
+
+  const handleSubjectModalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubjectModalError(null);
+    if (!subjectForm.name.trim() || !subjectForm.department.trim()) {
+      setSubjectModalError("Subject Name and Department are required.");
+      return;
+    }
+
+    const matchedDept = coursesList.find((c: any) => c.name === subjectForm.department);
+    const derivedShift = matchedDept?.default_shift === "shift_1" ? "Shift 1" : matchedDept?.default_shift === "shift_2" ? "Shift 2" : "General";
+
+    if (editingSubject) {
+      const res = await updateSubject({
+        ...editingSubject,
+        name: subjectForm.name.trim(),
+        department: subjectForm.department,
+        semester: subjectForm.semester,
+        type: subjectForm.type,
+        year: subjectForm.year,
+        weekly_hours: Number(subjectForm.weekly_hours),
+        shift: derivedShift,
+        subject_group: subjectForm.subject_group,
+        college_id: subjectForm.college_id || activeCollegeId
+      });
+      if (res.success) {
+        setShowSubjectModal(false);
+        toast("Subject updated successfully.", "success");
+      } else {
+        setSubjectModalError("Error updating subject: " + res.message);
+      }
+    } else {
+      const res = await createSubject({
+        name: subjectForm.name.trim(),
+        department: subjectForm.department,
+        semester: subjectForm.semester,
+        type: subjectForm.type,
+        year: subjectForm.year,
+        weekly_hours: Number(subjectForm.weekly_hours),
+        shift: derivedShift,
+        subject_group: subjectForm.subject_group,
+        college_id: subjectForm.college_id || activeCollegeId
+      });
+      if (res.success) {
+        if (subjectForm.mentorIds && subjectForm.mentorIds.length > 0) {
+          for (const mId of subjectForm.mentorIds) {
+            const mentor = mentors.find((m: any) => m.id === mId);
+            if (!mentor) continue;
+            const existingSubs = mentor.subjects ? mentor.subjects.split(/\n|,|;/).map((s: string) => s.trim()).filter(Boolean) : [];
+            if (!existingSubs.includes(subjectForm.name.trim())) {
+              existingSubs.push(subjectForm.name.trim());
+            }
+            await updateMentor({ ...mentor, subjects: existingSubs.join("\n") });
+          }
+        }
+        setShowSubjectModal(false);
+        toast("Subject created successfully.", "success");
+      } else {
+        setSubjectModalError("Error creating subject: " + res.message);
+      }
+    }
+  };
+
   const handleStartEditSubject = (sub: any) => {
-    setEditingSubjectId(sub.id);
-    setEditSubName(sub.name);
-    setEditSubHours(sub.weekly_hours || 4);
-    setEditSubType(sub.type || "theory");
-    setEditSubDept(sub.department || "General");
-    setEditSubSemester(sub.semester || "Semester I");
-    setEditSubYear(sub.year || selectedYear);
-    setEditSubShift(sub.shift || "General");
+    handleOpenSubjectModal(sub);
   };
 
   const handleSaveInlineSubject = async (e: React.FormEvent, id: string) => {
@@ -1538,9 +1667,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     e.preventDefault();
     if (!deptName.trim()) return;
 
+    const autoCode = deptCode.trim() || deptName.replace(/with|and|for/gi, "").split(/\s+/).filter(Boolean).map(w => {
+      const clean = w.replace(/[^a-zA-Z]/g, "");
+      if (!clean) return "";
+      if (clean.toLowerCase() === "bsc") return "BSC";
+      if (clean.toLowerCase() === "bba") return "BBA";
+      if (clean.toLowerCase() === "bcom") return "BCOM";
+      return clean[0].toUpperCase();
+    }).filter(Boolean).join("-");
+
     const deptData = {
       name: deptName.trim(),
-      code: deptCode.trim(),
+      code: autoCode,
       description: deptDesc.trim(),
       college_id: activeCollegeId,
       hod_name: "",
@@ -1579,10 +1717,19 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     e.preventDefault();
     if (!editDeptName.trim()) return;
 
+    const autoCode = editDeptCode.trim() || editDeptName.replace(/with|and|for/gi, "").split(/\s+/).filter(Boolean).map(w => {
+      const clean = w.replace(/[^a-zA-Z]/g, "");
+      if (!clean) return "";
+      if (clean.toLowerCase() === "bsc") return "BSC";
+      if (clean.toLowerCase() === "bba") return "BBA";
+      if (clean.toLowerCase() === "bcom") return "BCOM";
+      return clean[0].toUpperCase();
+    }).filter(Boolean).join("-");
+
     const res = await updateCourse({
       id,
       name: editDeptName.trim(),
-      code: editDeptCode.trim(),
+      code: autoCode,
       description: editDeptDesc.trim(),
       college_id: activeCollegeId,
       hod_name: "",
@@ -3596,8 +3743,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 subtitle="View subjects organised by Department → Year → Semester. Register departments and map subjects."
                 headerActions={
                   <>
-                    <Button variant="primary" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowAddSubjectForm(v => !v)}>
-                      {showAddSubjectForm ? "Cancel" : "+ Subject"}
+                    <Button variant="primary" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => handleOpenSubjectModal()}>
+                      + Subject
                     </Button>
                     <Button variant="secondary" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowAddDeptForm(v => !v)}>
                       {showAddDeptForm ? "Cancel" : "+ Department"}
@@ -3605,35 +3752,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </>
                 }
               >
-                {/* Add Subject Form */}
-                {showAddSubjectForm && (
-                  <div className="mb-5 bg-indigo-50/40 border border-indigo-100 rounded-2xl p-5 shadow-sm animate-fade-in">
-                    <h3 className="text-xs font-black text-indigo-700 uppercase tracking-wider border-b border-indigo-100 pb-2 mb-3">Map New Subject</h3>
-                    <form onSubmit={async (e) => { await handleSaveSubject(e); setShowAddSubjectForm(false); }} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      <div className="sm:col-span-2 lg:col-span-3">
-                        <Input label="Subject Name" placeholder="e.g. CS403: Artificial Intelligence" value={currName} onChange={e => setCurrName(e.target.value)} required />
-                      </div>
-                      <Select label="Department" value={currDept} onChange={e => setCurrDept(e.target.value)} options={coursesList.map(d => ({ value: d.name, label: d.name }))} />
-                      <Select label="Semester" value={currSemester} onChange={e => setCurrSemester(e.target.value)} options={["Semester 1","Semester 2","Semester 3","Semester 4","Semester 5","Semester 6","Semester 7","Semester 8"].map(s => ({ value: s, label: s }))} />
-                      <Select label="Academic Year" value={currYear} onChange={e => setCurrYear(e.target.value)} options={(academicYears || []).map((yr: any) => { const str = typeof yr === "string" ? yr : yr.year || yr.year_name || String(yr); return { value: str, label: str }; })} />
-                      <Select label="Shift" value={currShift} onChange={e => setCurrShift(e.target.value)} options={[{value:"General",label:"General (Both Shifts)"},{value:"Shift 1",label:"Shift 1 (Day)"},{value:"Shift 2",label:"Shift 2 (Evening)"},{value:"Both",label:"Both Shifts"}]} />
-                      <Input label="Weekly Hours" type="number" min={1} max={10} value={currHours} onChange={e => setCurrHours(parseInt(e.target.value) || 4)} required />
-                      <Select label="Subject Type" value={currType} onChange={e => setCurrType(e.target.value)} options={[{value:"theory",label:"Theory"},{value:"practical",label:"Practical"},{value:"elective",label:"Elective"},{value:"laboratory",label:"Laboratory"}]} />
-                      <div className="sm:col-span-2 lg:col-span-3 flex gap-2 pt-1">
-                        <Button type="submit" variant="primary" size="md" className="flex-1">Map Subject</Button>
-                        <Button type="button" variant="secondary" size="md" onClick={() => setShowAddSubjectForm(false)}>Cancel</Button>
-                      </div>
-                    </form>
-                  </div>
-                )}
-
                 {/* Add Department Form */}
                 {showAddDeptForm && (
                   <div className="mb-5 bg-slate-50 border border-slate-200 rounded-2xl p-5 shadow-sm animate-fade-in">
                     <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mb-3">Register New Department</h3>
                     <form onSubmit={async (e) => { await handleSaveDept(e); setShowAddDeptForm(false); }} className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                       <Input label="Department Name" placeholder="e.g. Information Technology" value={deptName} onChange={e => setDeptName(e.target.value)} required />
-                      <Input label="Department Code" placeholder="e.g. IT" value={deptCode} onChange={e => setDeptCode(e.target.value)} required />
+                      <Input label="Department Code" placeholder="e.g. IT (Auto-generated if blank)" value={deptCode} onChange={e => setDeptCode(e.target.value)} />
                       <Select label="Shift Scope" value={deptShift} onChange={e => setDeptShift(e.target.value)} options={[{value:"shift_1",label:"Shift 1 (Day)"},{value:"shift_2",label:"Shift 2 (Evening)"},{value:"both",label:"Both Shifts (Shift 1 & 2)"},{value:"general",label:"General (Full Day)"}]} />
                       <div className="sm:col-span-3 lg:col-span-4 space-y-1">
                         <label className="text-slate-400 text-[10px] uppercase font-bold">Description</label>
@@ -3744,7 +3869,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <div className="bg-indigo-50/40 border-b border-indigo-100 p-4">
                                 <form onSubmit={(ev) => handleSaveInlineDept(ev, registeredDept!.id)} className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                                   <Input label="Dept Name" value={editDeptName} onChange={ev => setEditDeptName(ev.target.value)} required />
-                                  <Input label="Dept Code" value={editDeptCode} onChange={ev => setEditDeptCode(ev.target.value)} required />
+                                  <Input label="Dept Code" placeholder="Auto-generated if blank" value={editDeptCode} onChange={ev => setEditDeptCode(ev.target.value)} />
                                   <Select label="Shift Scope" value={editDeptShift} onChange={ev => setEditDeptShift(ev.target.value)} options={[{value:"shift_1",label:"Shift 1 (Day)"},{value:"shift_2",label:"Shift 2 (Evening)"},{value:"both",label:"Both Shifts (Shift 1 & 2)"},{value:"general",label:"General (Full Day)"}]} />
                                   <div className="space-y-1">
                                     <label className="text-[9px] uppercase font-bold text-slate-400">Description</label>
@@ -3803,135 +3928,137 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               </div>
                             )}
 
-                            {/* ── COLLAPSIBLE DEPARTMENT CONTENT ── */}
+                            {/* ── COLLAPSIBLE DEPARTMENT CONTENT (ADMIN-STYLE OVERVIEW + YEAR-WISE CARDS) ── */}
                             {isDeptExpanded && (
-                              <div className="divide-y divide-slate-100 bg-white animate-fade-in">
-                                {yearGroups.length > 0 || ungrouped.length > 0 ? (
-                                  <>
-                                    {yearGroups.map(({ yr, sems }) => (
-                                      <div key={yr} className="p-4 bg-slate-50/30">
-                                        {/* Year Sub-section Row */}
-                                        <div className="flex items-center gap-2 mb-3 px-1">
-                                          <div className="h-1.5 w-1.5 rounded-full bg-indigo-500"></div>
-                                          <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider">{yr}</span>
-                                          <span className="text-[9px] text-slate-400 font-medium">· {sems.reduce((a,s)=>a+s.subjects.length,0)} mapped subjects</span>
-                                        </div>
+                              <div className="p-4 bg-slate-50/40 space-y-4 border-t border-slate-200/60 animate-fade-in">
+                                {/* Course Overview Details Card */}
+                                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-col md:flex-row justify-between gap-4">
+                                  <div className="space-y-1.5 flex-1">
+                                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Course Overview</span>
+                                    <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+                                      {registeredDept?.description || "No description provided for this course."}
+                                    </p>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-[11px] font-bold text-slate-600 shrink-0 md:border-l md:border-slate-150 md:pl-6 md:min-w-[280px]">
+                                    <div>
+                                      <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Course Duration</span>
+                                      <span className="text-slate-900 font-black">
+                                        {registeredDept?.years || 4} Year(s) ({Number(registeredDept?.years || 4) * 2} Semesters)
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Code Prefix</span>
+                                      <span className="text-indigo-650 font-black">{registeredDept?.code || "None"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Offerings</span>
+                                      <span className="text-slate-900 font-black">{registeredDept?.default_shift === "both" ? "Shift 1 & 2" : registeredDept?.default_shift === "shift_2" ? "Shift 2" : "Shift 1 / General"}</span>
+                                    </div>
+                                    <div className="col-span-2">
+                                      <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Assigned Classrooms (Year-wise)</span>
+                                      <span className="text-indigo-700 font-black block">
+                                        {formatYearWiseRooms(registeredDept?.default_room)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
 
-                                        {/* Collapsible Semester Cards */}
-                                        <div className="space-y-2 pl-3">
-                                          {sems.map(({ sem, subjects }) => {
-                                            const semKey = `${deptName}-${yr}-${sem}`;
-                                            const isSemExpanded = !!expandedSems[semKey];
+                                {/* 4 Year Cards Grid (Year 1, Year 2, Year 3, Year 4) */}
+                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                  {Array.from({ length: registeredDept?.years ? Number(registeredDept.years) : 4 }, (_, i) => `Year ${i + 1}`).map((yr, i) => {
+                                    const yrSubjects = deptSubjects.filter(s => s.year === yr || s.semester === `Semester ${2 * (i + 1) - 1}` || s.semester === `Semester ${2 * (i + 1)}`);
+                                    const semOdd = `Semester ${2 * (i + 1) - 1}`;
+                                    const semEven = `Semester ${2 * (i + 1)}`;
+                                    const oddSubjects = yrSubjects.filter(s => s.semester === semOdd);
+                                    const evenSubjects = yrSubjects.filter(s => s.semester === semEven);
 
-                                            return (
-                                              <div key={sem} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-xs hover:border-slate-300 transition-all duration-200">
-                                                {/* Semester Card Header */}
-                                                <div
-                                                  onClick={() => setExpandedSems(prev => ({ ...prev, [semKey]: !prev[semKey] }))}
-                                                  className="flex items-center justify-between px-4 py-2.5 bg-slate-50/50 hover:bg-slate-50 cursor-pointer select-none transition-colors"
-                                                >
-                                                  <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">{sem}</span>
-                                                  <div className="flex items-center gap-2">
-                                                    <span className="text-[9px] font-bold px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-full">{subjects.length} Subjects</span>
-                                                    <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${isSemExpanded ? "rotate-180 text-indigo-500" : ""}`} />
-                                                  </div>
-                                                </div>
-
-                                                {/* Collapsible Subjects Table inside Semester Card */}
-                                                {isSemExpanded && (
-                                                  <div className="border-t border-slate-100 animate-fade-in">
-                                                    <div className="grid grid-cols-12 gap-2 px-4 py-1.5 bg-slate-50/40 text-[8px] uppercase font-black text-slate-400 tracking-wider border-b border-slate-50">
-                                                      <span className="col-span-5">Subject Name</span>
-                                                      <span className="col-span-2">Type</span>
-                                                      <span className="col-span-2">Shift</span>
-                                                      <span className="col-span-2 text-right">Target Hrs</span>
-                                                      <span className="col-span-1"></span>
-                                                    </div>
-
-                                                    <div className="divide-y divide-slate-50">
-                                                      {subjects.map(sub => {
-                                                        const isEditing = editingSubjectId === sub.id;
-                                                        return isEditing ? (
-                                                          <div key={sub.id} className="bg-indigo-50/30 px-4 py-3">
-                                                            <form onSubmit={(ev) => handleSaveInlineSubject(ev, sub.id)} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                                                              <div className="sm:col-span-2 lg:col-span-3">
-                                                                <Input label="Subject Name" value={editSubName} onChange={ev => setEditSubName(ev.target.value)} required />
-                                                              </div>
-                                                              <Select label="Semester" value={editSubSemester} onChange={ev => setEditSubSemester(ev.target.value)} options={["Semester 1","Semester 2","Semester 3","Semester 4","Semester 5","Semester 6","Semester 7","Semester 8"].map(s => ({ value: s, label: s }))} />
-                                                              <Select label="Type" value={editSubType} onChange={ev => setEditSubType(ev.target.value)} options={[{value:"theory",label:"Theory"},{value:"practical",label:"Practical"},{value:"elective",label:"Elective"},{value:"laboratory",label:"Laboratory"}]} />
-                                                              <Input label="Weekly Hours" type="number" value={editSubHours} onChange={ev => setEditSubHours(parseInt(ev.target.value) || 4)} required />
-                                                              <Select label="Department" value={editSubDept} onChange={ev => setEditSubDept(ev.target.value)} options={coursesList.map(d => ({ value: d.name, label: d.name }))} />
-                                                              <Select label="Shift" value={editSubShift} onChange={ev => setEditSubShift(ev.target.value)} options={[{value:"General",label:"General"},{value:"Shift 1",label:"Shift 1 (Day)"},{value:"Shift 2",label:"Shift 2 (Evening)"}]} />
-                                                              <Select label="Academic Year" value={editSubYear} onChange={ev => setEditSubYear(ev.target.value)} options={(academicYears || []).map((yr2: any) => { const str = typeof yr2 === "string" ? yr2 : yr2.year || yr2.year_name || String(yr2); return { value: str, label: str }; })} />
-                                                              <div className="sm:col-span-2 lg:col-span-3 flex gap-2">
-                                                                <Button type="submit" variant="success" size="xs" className="flex-1">Save</Button>
-                                                                <Button type="button" variant="secondary" size="xs" onClick={() => setEditingSubjectId(null)}>Cancel</Button>
-                                                              </div>
-                                                            </form>
-                                                          </div>
-                                                        ) : (
-                                                          <div key={sub.id} className="grid grid-cols-12 gap-2 items-center px-4 py-2 hover:bg-slate-50/50 transition-all group">
-                                                            <div className="col-span-5 font-semibold text-slate-700 text-[11px] truncate pr-2">{sub.name}</div>
-                                                            <div className="col-span-2">
-                                                              <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] uppercase font-bold ${
-                                                                sub.type === "practical" ? "bg-amber-50 border border-amber-200 text-amber-700" :
-                                                                sub.type === "laboratory" ? "bg-rose-50 border border-rose-200 text-rose-700" :
-                                                                sub.type === "elective" ? "bg-violet-50 border border-violet-200 text-violet-700" :
-                                                                "bg-indigo-50 border border-indigo-200 text-indigo-700"
-                                                              }`}>{sub.type}</span>
-                                                            </div>
-                                                            <div className="col-span-2">
-                                                              <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] uppercase font-bold ${
-                                                                sub.shift === "Shift 1" ? "bg-blue-50 border border-blue-200 text-blue-700" :
-                                                                sub.shift === "Shift 2" ? "bg-purple-50 border border-purple-200 text-purple-700" :
-                                                                "bg-gray-50 border border-gray-200 text-gray-700"
-                                                              }`}>{sub.shift || "General"}</span>
-                                                            </div>
-                                                            <div className="col-span-2 text-right font-extrabold text-indigo-600">{sub.weekly_hours || 4}</div>
-                                                            <div className="col-span-1 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                                              <Button variant="secondary" size="xs" onClick={() => handleStartEditSubject(sub)} className="p-1"><Edit2 className="h-3 w-3" /></Button>
-                                                              <Button variant="danger" size="xs" onClick={() => handleDeleteSubject(sub.id)} className="p-1"><Trash2 className="h-3 w-3" /></Button>
-                                                            </div>
-                                                          </div>
-                                                        );
-                                                      })}
-                                                    </div>
-                                                  </div>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    ))}
-
-                                    {ungrouped.length > 0 && (
-                                      <div className="p-4 bg-slate-50/10">
-                                        <div className="flex items-center gap-2 mb-2 px-1">
-                                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Other Semesters</span>
-                                        </div>
-                                        <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl bg-white overflow-hidden pl-3">
-                                          {ungrouped.map(sub => (
-                                            <div key={sub.id} className="grid grid-cols-12 gap-2 items-center px-4 py-2 hover:bg-indigo-50/20 transition-all group">
-                                              <div className="col-span-4 font-semibold text-slate-700 text-[11px] truncate">{sub.name}</div>
-                                              <div className="col-span-2 text-[9px] text-slate-400">{sub.semester}</div>
-                                              <div className="col-span-3">
-                                                <span className="inline-flex px-1.5 py-0.5 rounded text-[8px] uppercase font-bold bg-indigo-50 border border-indigo-200 text-indigo-700">{sub.type}</span>
-                                              </div>
-                                              <div className="col-span-1 text-right font-extrabold text-indigo-600">{sub.weekly_hours || 4}</div>
-                                              <div className="col-span-2 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                                <Button variant="secondary" size="xs" onClick={() => handleStartEditSubject(sub)} className="p-1"><Edit2 className="h-3 w-3" /></Button>
-                                                <Button variant="danger" size="xs" onClick={() => handleDeleteSubject(sub.id)} className="p-1"><Trash2 className="h-3 w-3" /></Button>
-                                              </div>
+                                    return (
+                                      <div key={yr} className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs flex flex-col">
+                                        {/* Year Header */}
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 bg-slate-50/80 border-b border-slate-200 font-bold text-slate-800 text-xs gap-2">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <GraduationCap className="h-4 w-4 text-indigo-600 shrink-0" />
+                                            <span className="font-extrabold text-slate-900">{yr}</span>
+                                            <span className="text-[10px] text-slate-400 font-semibold lowercase">(sem {2 * (i + 1) - 1}/{2 * (i + 1)})</span>
+                                            <div className="flex gap-1.5 ml-1">
+                                              <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[9px] font-extrabold">Sem {2 * (i + 1) - 1}: {oddSubjects.length}</span>
+                                              <span className="bg-purple-50 border border-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[9px] font-extrabold">Sem {2 * (i + 1)}: {evenSubjects.length}</span>
                                             </div>
-                                          ))}
+                                          </div>
+                                          <Button
+                                            variant="secondary"
+                                            size="xs"
+                                            onClick={() => handleOpenSubjectModal(undefined, deptName, yr)}
+                                            className="flex items-center gap-1 text-[10px] bg-indigo-50 border border-indigo-150 text-indigo-700 hover:bg-indigo-600 hover:text-white px-2 py-1 rounded-lg font-bold shrink-0"
+                                          >
+                                            <Plus className="h-3 w-3" /> Add Subject
+                                          </Button>
+                                        </div>
+
+                                        {/* Year Card Body: Odd & Even Semester Columns */}
+                                        <div className="p-3.5 flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/20">
+                                          {/* Odd Semester Column */}
+                                          <div className="flex flex-col border border-slate-200 rounded-xl p-3 bg-white shadow-2xs">
+                                            <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-2">
+                                              <span className="font-extrabold text-[10px] uppercase tracking-wider text-indigo-700">{semOdd}</span>
+                                              <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{oddSubjects.length} subject(s)</span>
+                                            </div>
+                                            {oddSubjects.length === 0 ? (
+                                              <div className="text-center py-6 text-slate-400 italic text-[10px] my-auto">No subjects mapped to {semOdd} yet.</div>
+                                            ) : (
+                                              <div className="space-y-1.5">
+                                                {oddSubjects.map(sub => (
+                                                  <div key={sub.id} className="p-2 border border-slate-100 rounded-lg hover:border-indigo-100 hover:bg-indigo-50/30 transition-all flex items-center justify-between gap-2 group">
+                                                    <div>
+                                                      <div className="font-bold text-slate-800 text-[11px]">{sub.name}</div>
+                                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                                        <span className="text-[8px] px-1.5 py-0.2 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold uppercase">{sub.type}</span>
+                                                        <span className="text-[8px] text-slate-400 font-semibold">{sub.weekly_hours || 4} hrs/wk</span>
+                                                      </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                      <button onClick={() => handleStartEditSubject(sub)} className="p-1 text-slate-400 hover:text-indigo-600 cursor-pointer"><Edit2 className="h-3 w-3" /></button>
+                                                      <button onClick={() => handleDeleteSubject(sub.id)} className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="h-3 w-3" /></button>
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          {/* Even Semester Column */}
+                                          <div className="flex flex-col border border-slate-200 rounded-xl p-3 bg-white shadow-2xs">
+                                            <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-2">
+                                              <span className="font-extrabold text-[10px] uppercase tracking-wider text-purple-700">{semEven}</span>
+                                              <span className="bg-purple-50 border border-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{evenSubjects.length} subject(s)</span>
+                                            </div>
+                                            {evenSubjects.length === 0 ? (
+                                              <div className="text-center py-6 text-slate-400 italic text-[10px] my-auto">No subjects mapped to {semEven} yet.</div>
+                                            ) : (
+                                              <div className="space-y-1.5">
+                                                {evenSubjects.map(sub => (
+                                                  <div key={sub.id} className="p-2 border border-slate-100 rounded-lg hover:border-purple-100 hover:bg-purple-50/30 transition-all flex items-center justify-between gap-2 group">
+                                                    <div>
+                                                      <div className="font-bold text-slate-800 text-[11px]">{sub.name}</div>
+                                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                                        <span className="text-[8px] px-1.5 py-0.2 rounded bg-purple-50 border border-purple-100 text-purple-700 font-bold uppercase">{sub.type}</span>
+                                                        <span className="text-[8px] text-slate-400 font-semibold">{sub.weekly_hours || 4} hrs/wk</span>
+                                                      </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                      <button onClick={() => handleStartEditSubject(sub)} className="p-1 text-slate-400 hover:text-purple-600 cursor-pointer"><Edit2 className="h-3 w-3" /></button>
+                                                      <button onClick={() => handleDeleteSubject(sub.id)} className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="h-3 w-3" /></button>
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
                                         </div>
                                       </div>
-                                    )}
-                                  </>
-                                ) : (
-                                  <div className="px-5 py-6 text-center text-[11px] text-slate-400 italic bg-white">No subjects mapped for this department</div>
-                                )}
+                                    );
+                                  })}
+                                </div>
                               </div>
                             )}
                           </div>
@@ -7591,6 +7718,256 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         Close Profile
                       </button>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Add / Edit Subject Modal Popup (Admin-Style 2-Column Layout) ── */}
+              {showSubjectModal && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className={`bg-white rounded-3xl border border-slate-200 shadow-xl w-full overflow-hidden animate-slideUp transition-all ${editingSubject ? "max-w-md" : "max-w-3xl"}`}>
+                    <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50">
+                      <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
+                        <GraduationCap className="h-5 w-5 text-indigo-600" />
+                        {editingSubject ? "Edit Subject Details" : "Add Subject to Catalog"}
+                      </h3>
+                      <button onClick={() => setShowSubjectModal(false)} className="p-1 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer text-slate-500 hover:text-slate-800">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleSubjectModalSubmit} className="p-5 space-y-4 text-xs font-semibold">
+                      {subjectModalError && (
+                        <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                          <ShieldAlert className="h-4 w-4 shrink-0" />
+                          {subjectModalError}
+                        </div>
+                      )}
+
+                      <div className={editingSubject ? "space-y-3" : "grid grid-cols-1 md:grid-cols-2 gap-6"}>
+                        {/* Left Column: Form Fields */}
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Subject Name</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. Modern Natural Language Processing"
+                              value={subjectForm.name}
+                              onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Course Name</label>
+                              <select
+                                required
+                                disabled={lockDeptAndYear}
+                                value={subjectForm.department}
+                                onChange={(e) => setSubjectForm({ ...subjectForm, department: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                              >
+                                <option value="">— Select Course —</option>
+                                {coursesList.map(dept => (
+                                  <option key={dept.id} value={dept.name}>{dept.name}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Assigned Campus</label>
+                              <select
+                                required
+                                value={subjectForm.college_id}
+                                onChange={(e) => setSubjectForm({ ...subjectForm, college_id: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
+                              >
+                                <option value="">— Campus —</option>
+                                {colleges.map(c => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Academic Year</label>
+                              <select
+                                required
+                                disabled={lockDeptAndYear}
+                                value={subjectForm.year}
+                                onChange={(e) => {
+                                  const newYear = e.target.value;
+                                  let newSem = "Semester 1";
+                                  if (newYear === "Year 2") newSem = "Semester 3";
+                                  else if (newYear === "Year 3") newSem = "Semester 5";
+                                  else if (newYear === "Year 4") newSem = "Semester 7";
+                                  setSubjectForm({ ...subjectForm, year: newYear, semester: newSem });
+                                }}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                              >
+                                <option value="Year 1">Year 1</option>
+                                <option value="Year 2">Year 2</option>
+                                <option value="Year 3">Year 3</option>
+                                <option value="Year 4">Year 4</option>
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Semester</label>
+                              <select
+                                required
+                                value={subjectForm.semester}
+                                onChange={(e) => setSubjectForm({ ...subjectForm, semester: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
+                              >
+                                {subjectForm.year === "Year 1" && (
+                                  <>
+                                    <option value="Semester 1">Semester 1</option>
+                                    <option value="Semester 2">Semester 2</option>
+                                  </>
+                                )}
+                                {subjectForm.year === "Year 2" && (
+                                  <>
+                                    <option value="Semester 3">Semester 3</option>
+                                    <option value="Semester 4">Semester 4</option>
+                                  </>
+                                )}
+                                {subjectForm.year === "Year 3" && (
+                                  <>
+                                    <option value="Semester 5">Semester 5</option>
+                                    <option value="Semester 6">Semester 6</option>
+                                  </>
+                                )}
+                                {subjectForm.year === "Year 4" && (
+                                  <>
+                                    <option value="Semester 7">Semester 7</option>
+                                    <option value="Semester 8">Semester 8</option>
+                                  </>
+                                )}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Subject Type / Domain</label>
+                              <select
+                                required
+                                value={subjectForm.type}
+                                onChange={(e) => setSubjectForm({ ...subjectForm, type: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
+                              >
+                                <option value="SKILL">SKILL (Practical Training)</option>
+                                <option value="ACADEMIC">ACADEMIC (Core Theory)</option>
+                                <option value="LAB">LAB (Practical Laboratory)</option>
+                                <option value="GENERAL">GENERAL (Elective / Foundational)</option>
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Weekly Hours</label>
+                              <input
+                                type="number"
+                                required
+                                min={1}
+                                max={20}
+                                value={subjectForm.weekly_hours}
+                                onChange={(e) => setSubjectForm({ ...subjectForm, weekly_hours: parseInt(e.target.value) || 4 })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Subject Group / Category</label>
+                            <select
+                              required
+                              value={subjectForm.subject_group}
+                              onChange={(e) => setSubjectForm({ ...subjectForm, subject_group: e.target.value })}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
+                            >
+                              {subjectGroups.map(sg => (
+                                <option key={sg.id} value={sg.name}>{sg.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Right Column: Staff Assignment Checklist */}
+                        {!editingSubject && (() => {
+                          const campusMentors = mentors.filter(m => m.college_id === subjectForm.college_id);
+                          if (campusMentors.length === 0) {
+                            return (
+                              <div className="flex flex-col items-center justify-center p-8 bg-slate-50 border border-dashed border-slate-200 rounded-2xl h-full text-center">
+                                <Users className="h-8 w-8 text-slate-300 mb-2" />
+                                <span className="text-[11px] font-bold text-slate-400">No staff registered for this campus yet.</span>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="space-y-2 flex flex-col h-full">
+                              <div className="flex justify-between items-center">
+                                <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">
+                                  Assign Staff <span className="text-slate-300 font-medium">(optional)</span>
+                                </label>
+                                <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                                  {subjectForm.mentorIds.length} Selected
+                                </span>
+                              </div>
+                              
+                              <div className="border border-slate-200 rounded-2xl bg-slate-50/50 p-3 flex-1 max-h-[300px] overflow-y-auto space-y-1.5">
+                                {campusMentors.map(m => {
+                                  const isChecked = subjectForm.mentorIds.includes(m.id);
+                                  return (
+                                    <label key={m.id} className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                      isChecked ? "bg-indigo-50/60 border-indigo-200 shadow-2xs" : "bg-white border-slate-150 hover:border-slate-250"
+                                    }`}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                          let next;
+                                          if (e.target.checked) next = [...subjectForm.mentorIds, m.id];
+                                          else next = subjectForm.mentorIds.filter(id => id !== m.id);
+                                          setSubjectForm({ ...subjectForm, mentorIds: next });
+                                        }}
+                                        className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                                      />
+                                      <div className="leading-tight flex-1">
+                                        <div className="font-bold text-slate-800 text-[11px]">{m.name}</div>
+                                        <div className="text-[9px] text-slate-400 font-semibold">{m.department || "Faculty"}</div>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="md"
+                          onClick={() => setShowSubjectModal(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="submit"
+                          variant="primary"
+                          size="md"
+                        >
+                          {editingSubject ? "Save Changes" : "Create Subject"}
+                        </Button>
+                      </div>
+                    </form>
                   </div>
                 </div>
               )}

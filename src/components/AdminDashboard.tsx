@@ -675,9 +675,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setModalError(null);
     setActiveConfigShift("general");
     
-    let s1Params: ShiftParams = { label: "Shift 1", startTime: "08:30 AM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] };
-    let s2Params: ShiftParams = { label: "Shift 2", startTime: "01:00 PM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] };
-    let genParams: ShiftParams = { label: "General Shift", startTime: "09:00 AM", periodDuration: 50, periodsCount: 6, mode: "duration", breaks: [] };
+    const defaultShift1Breaks = [
+      { id: "b1", name: "Tea Break", afterPeriod: 2, duration: 15 },
+      { id: "b2", name: "Lunch Break", afterPeriod: 4, duration: 35 }
+    ];
+    const defaultShift2Breaks = [
+      { id: "b1", name: "Tea Break", afterPeriod: 2, duration: 15 },
+      { id: "b2", name: "Dinner Break", afterPeriod: 4, duration: 35 }
+    ];
+    const defaultGenBreaks = [
+      { id: "b1", name: "Break", afterPeriod: 2, duration: 15 },
+      { id: "b2", name: "Lunch", afterPeriod: 3, duration: 35 }
+    ];
+
+    let s1Params: ShiftParams = { label: "Shift 1", startTime: "08:30 AM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: defaultShift1Breaks };
+    let s2Params: ShiftParams = { label: "Shift 2", startTime: "01:00 PM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: defaultShift2Breaks };
+    let genParams: ShiftParams = { label: "General Shift", startTime: "09:00 AM", periodDuration: 50, periodsCount: 6, mode: "duration", breaks: defaultGenBreaks };
 
     const initialMap: Record<string, Record<"shift_1" | "shift_2" | "general", ShiftParams>> = {};
 
@@ -693,9 +706,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           if (Array.isArray(parsed.general)) gen = parsed.general.join("\n");
 
           if (parsed.custom_shift_params) {
-            if (parsed.custom_shift_params.shift_1) s1Params = { ...parsed.custom_shift_params.shift_1, label: parsed.custom_shift_params.shift_1.label || "Shift 1" };
-            if (parsed.custom_shift_params.shift_2) s2Params = { ...parsed.custom_shift_params.shift_2, label: parsed.custom_shift_params.shift_2.label || "Shift 2" };
-            if (parsed.custom_shift_params.general) genParams = { ...parsed.custom_shift_params.general, label: parsed.custom_shift_params.general.label || "General Shift" };
+            if (parsed.custom_shift_params.shift_1) s1Params = { ...parsed.custom_shift_params.shift_1, label: parsed.custom_shift_params.shift_1.label || "Shift 1", breaks: (parsed.custom_shift_params.shift_1.breaks && parsed.custom_shift_params.shift_1.breaks.length > 0) ? parsed.custom_shift_params.shift_1.breaks : defaultShift1Breaks };
+            if (parsed.custom_shift_params.shift_2) s2Params = { ...parsed.custom_shift_params.shift_2, label: parsed.custom_shift_params.shift_2.label || "Shift 2", breaks: (parsed.custom_shift_params.shift_2.breaks && parsed.custom_shift_params.shift_2.breaks.length > 0) ? parsed.custom_shift_params.shift_2.breaks : defaultShift2Breaks };
+            if (parsed.custom_shift_params.general) genParams = { ...parsed.custom_shift_params.general, label: parsed.custom_shift_params.general.label || "General Shift", breaks: (parsed.custom_shift_params.general.breaks && parsed.custom_shift_params.general.breaks.length > 0) ? parsed.custom_shift_params.general.breaks : defaultGenBreaks };
           } else {
             // Legacy fallbacks
             if (Array.isArray(parsed.shift_1) && parsed.shift_1.length > 0) {
@@ -720,9 +733,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             Object.keys(parsed.semester_configs).forEach(sem => {
               const semData = parsed.semester_configs[sem];
               initialMap[sem] = {
-                shift_1: semData.custom_shift_params?.shift_1 || { label: "Shift 1", startTime: "08:30 AM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] },
-                shift_2: semData.custom_shift_params?.shift_2 || { label: "Shift 2", startTime: "01:00 PM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] },
-                general: semData.custom_shift_params?.general || { label: "General Shift", startTime: "09:00 AM", periodDuration: 50, periodsCount: 6, mode: "duration", breaks: [] }
+                shift_1: semData.custom_shift_params?.shift_1 || { label: "Shift 1", startTime: "08:30 AM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: defaultShift1Breaks },
+                shift_2: semData.custom_shift_params?.shift_2 || { label: "Shift 2", startTime: "01:00 PM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: defaultShift2Breaks },
+                general: semData.custom_shift_params?.general || { label: "General Shift", startTime: "09:00 AM", periodDuration: 50, periodsCount: 6, mode: "duration", breaks: defaultGenBreaks }
               };
             });
           }
@@ -5563,17 +5576,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           if (campusWizardStep === 3) {
                             if (campusForm.has_shifts === 1) {
                               if (!shiftConfigsParams.shift_1.breaks || shiftConfigsParams.shift_1.breaks.length === 0) {
-                                setModalError("Shift 1: Please add at least one break before continuing.");
-                                return;
+                                setShiftConfigsParams(prev => ({
+                                  ...prev,
+                                  shift_1: { ...prev.shift_1, breaks: [{ id: "b1", name: "Tea Break", afterPeriod: 2, duration: 15 }] }
+                                }));
                               }
                               if (!shiftConfigsParams.shift_2.breaks || shiftConfigsParams.shift_2.breaks.length === 0) {
-                                setModalError("Shift 2: Please add at least one break before continuing.");
-                                return;
+                                setShiftConfigsParams(prev => ({
+                                  ...prev,
+                                  shift_2: { ...prev.shift_2, breaks: [{ id: "b1", name: "Tea Break", afterPeriod: 2, duration: 15 }] }
+                                }));
                               }
                             } else {
                               if (!shiftConfigsParams.general.breaks || shiftConfigsParams.general.breaks.length === 0) {
-                                setModalError("General Shift: Please add at least one break before continuing.");
-                                return;
+                                setShiftConfigsParams(prev => ({
+                                  ...prev,
+                                  general: { ...prev.general, breaks: [{ id: "b1", name: "Break", afterPeriod: 2, duration: 15 }] }
+                                }));
                               }
                             }
                           }
@@ -6503,140 +6522,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-2 sm:col-span-2 bg-indigo-50/60 dark:bg-slate-900/60 p-4 rounded-2xl border border-indigo-100 dark:border-slate-800">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[10px] text-indigo-900 dark:text-indigo-300 uppercase tracking-wider block font-black flex items-center gap-1.5">
-                      <Clock className="h-3.5 w-3.5 text-indigo-600" />
-                      Course Shift Scope & Period Time Schedule
-                    </label>
-                    <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
-                      {deptForm.default_shift === "both" ? "Shift 1 & 2 Dual Offerings" : deptForm.default_shift === "shift_2" ? "Shift 2 Evening" : deptForm.default_shift === "shift_1" ? "Shift 1 Day" : "General Full Day"}
-                    </span>
-                  </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Offering</label>
                   <select
                     value={deptForm.default_shift || "shift_1"}
                     onChange={(e) => setDeptForm({ ...deptForm, default_shift: e.target.value })}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 text-xs shadow-xs"
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
                   >
-                    <option value="shift_1">Shift 1 — Morning / Day (08:20 AM - 12:50 PM)</option>
-                    <option value="shift_2">Shift 2 — Evening (01:00 PM - 05:30 PM)</option>
-                    <option value="both">Both Shifts — Dual Offerings (Shift 1 & Shift 2)</option>
-                    <option value="general">General — Full Day (09:00 AM - 04:00 PM)</option>
+                    <option value="shift_1">Shift 1 (Day)</option>
+                    <option value="shift_2">Shift 2 (Evening)</option>
+                    <option value="both">Both Shifts (Dual Offerings)</option>
+                    <option value="general">General Shift</option>
                   </select>
-
-                  {/* Active Period Timings Preview */}
-                  <div className="mt-2.5 pt-2.5 border-t border-indigo-100/80 dark:border-slate-800/80 space-y-1.5">
-                    <span className="text-[9.5px] font-extrabold uppercase text-slate-500 block tracking-wider">Configured Timings & Period Schedule:</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(!deptForm.default_shift || deptForm.default_shift === "shift_1") && (
-                        <>
-                          <span className="px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-bold">P1: 8.20 AM - 9.10 AM</span>
-                          <span className="px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-bold">P2: 9.10 AM - 10.00 AM</span>
-                          <span className="px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-bold">P3: 10.20 AM - 11.10 AM</span>
-                          <span className="px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-bold">P4: 11.10 AM - 12.00 PM</span>
-                          <span className="px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-bold">P5: 12.00 PM - 12.50 PM</span>
-                        </>
-                      )}
-                      {deptForm.default_shift === "shift_2" && (
-                        <>
-                          <span className="px-2 py-0.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9.5px] font-bold">P1: 1.00 PM - 1.50 PM</span>
-                          <span className="px-2 py-0.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9.5px] font-bold">P2: 1.50 PM - 2.40 PM</span>
-                          <span className="px-2 py-0.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9.5px] font-bold">P3: 3.00 PM - 3.50 PM</span>
-                          <span className="px-2 py-0.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9.5px] font-bold">P4: 3.50 PM - 4.40 PM</span>
-                          <span className="px-2 py-0.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9.5px] font-bold">P5: 4.40 PM - 5.30 PM</span>
-                        </>
-                      )}
-                      {deptForm.default_shift === "both" && (
-                        <div className="space-y-2.5 w-full pt-1">
-                          <div className="p-2.5 rounded-xl bg-white dark:bg-slate-950 border border-indigo-150 space-y-1.5 shadow-2xs">
-                            <span className="text-[9.5px] font-black uppercase text-indigo-700 dark:text-indigo-400 block tracking-wider flex items-center gap-1.5">
-                              <Sun className="h-3 w-3 text-amber-500" />
-                              Shift 1 (Morning Section Periods):
-                            </span>
-                            <div className="flex flex-wrap gap-1.5">
-                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[9px] font-bold">P1: 8.20 AM - 9.10 AM</span>
-                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[9px] font-bold">P2: 9.10 AM - 10.00 AM</span>
-                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[9px] font-bold">P3: 10.20 AM - 11.10 AM</span>
-                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[9px] font-bold">P4: 11.10 AM - 12.00 PM</span>
-                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[9px] font-bold">P5: 12.00 PM - 12.50 PM</span>
-                            </div>
-                          </div>
-
-                          <div className="p-2.5 rounded-xl bg-white dark:bg-slate-950 border border-purple-150 space-y-1.5 shadow-2xs">
-                            <span className="text-[9.5px] font-black uppercase text-purple-700 dark:text-purple-400 block tracking-wider flex items-center gap-1.5">
-                              <Moon className="h-3 w-3 text-purple-500" />
-                              Shift 2 (Evening Section Periods):
-                            </span>
-                            <div className="flex flex-wrap gap-1.5">
-                              <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-bold">P1: 1.00 PM - 1.50 PM</span>
-                              <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-bold">P2: 1.50 PM - 2.40 PM</span>
-                              <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-bold">P3: 3.00 PM - 3.50 PM</span>
-                              <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-bold">P4: 3.50 PM - 4.40 PM</span>
-                              <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-bold">P5: 4.40 PM - 5.30 PM</span>
-                            </div>
-                          </div>
-
-                          <p className="text-[9px] text-slate-500 font-bold italic">
-                            * Dual cohort course synced with campus Shift 1 and Shift 2 period schedules.
-                          </p>
-                        </div>
-                      )}
-                      {deptForm.default_shift === "general" && (
-                        <>
-                          <span className="px-2 py-0.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-[9.5px] font-bold">General Full Day (09:00 AM - 04:00 PM)</span>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Custom Shift Period Slot Timing Adjustments */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-indigo-100 dark:border-slate-800">
-                      {(deptForm.default_shift === "shift_1" || deptForm.default_shift === "both" || !deptForm.default_shift) && (
-                        <div className="space-y-1 bg-white dark:bg-slate-950 p-2.5 rounded-xl border border-indigo-100 dark:border-slate-800">
-                          <label className="text-[9.5px] font-black uppercase text-indigo-700 dark:text-indigo-300 block flex items-center gap-1">
-                            <Sun className="h-3 w-3 text-amber-500" /> Shift 1 Hours (Morning)
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              defaultValue="08:20 AM"
-                              placeholder="08:20 AM"
-                              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-200"
-                            />
-                            <span className="text-[10px] text-slate-400 font-bold">to</span>
-                            <input
-                              type="text"
-                              defaultValue="12:50 PM"
-                              placeholder="12:50 PM"
-                              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-200"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {(deptForm.default_shift === "shift_2" || deptForm.default_shift === "both") && (
-                        <div className="space-y-1 bg-white dark:bg-slate-950 p-2.5 rounded-xl border border-purple-100 dark:border-slate-800">
-                          <label className="text-[9.5px] font-black uppercase text-purple-700 dark:text-purple-300 block flex items-center gap-1">
-                            <Moon className="h-3 w-3 text-purple-500" /> Shift 2 Hours (Evening)
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              defaultValue="01:00 PM"
-                              placeholder="01:00 PM"
-                              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-200"
-                            />
-                            <span className="text-[10px] text-slate-400 font-bold">to</span>
-                            <input
-                              type="text"
-                              defaultValue="05:30 PM"
-                              placeholder="05:30 PM"
-                              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-200"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
                 </div>
 
                 <div className="space-y-1 sm:col-span-2">
