@@ -36,11 +36,11 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col transition-colors duration-250">
-        <AppProvider>
-          <ToastProvider>
+        <ToastProvider>
+          <AppProvider>
             {children}
-          </ToastProvider>
-        </AppProvider>
+          </AppProvider>
+        </ToastProvider>
       </body>
     </html>
   );

@@ -32,7 +32,10 @@ import {
   CalendarDays,
   LayoutDashboard,
   BookOpen,
-  Menu
+  Menu,
+  Sparkles,
+  Sun,
+  Moon
 } from "lucide-react";
 import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
@@ -476,7 +479,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setUsersList(dataJson.users || []);
         setNotifications(dataJson.notifications || []);
       }
-      await refreshData();
     } catch (e) {
       console.error("Failed to fetch admin stats:", e);
     } finally {
@@ -2556,7 +2558,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="flex items-center justify-between border-b border-gray-150 pb-3 flex-wrap gap-4">
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-indigo-655" />
-                <h2 className="text-lg font-bold text-gray-900">Campus Managers (CAM) Directory</h2>
+                <h2 className="text-lg font-bold text-gray-900">Campus Managers (CM) Directory</h2>
               </div>
               <button
                 onClick={() => handleOpenCamModal()}
@@ -2952,12 +2954,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                             <span className="text-indigo-650 font-extrabold">{dept.code || "None"}</span>
                                           </div>
                                           <div>
-                                            <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Start Date</span>
-                                            <span className="text-gray-900 font-extrabold">{dept.start_date || "N/A"}</span>
-                                          </div>
-                                          <div>
-                                            <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">End Date</span>
-                                            <span className="text-gray-900 font-extrabold">{dept.end_date || "N/A"}</span>
+                                            <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Offerings</span>
+                                            <span className="text-gray-900 font-extrabold">{dept.default_shift === "both" ? "Shift 1 & 2" : dept.default_shift === "shift_2" ? "Shift 2" : "Shift 1 / General"}</span>
                                           </div>
                                           <div className="col-span-2">
                                             <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Assigned Classrooms</span>
@@ -6430,50 +6428,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </select>
                 </div>
 
-                <div className="space-y-1 sm:grid grid-cols-2 gap-3 sm:col-span-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Start Date</label>
-                    <input
-                      type="date"
-                      value={deptForm.start_date || ""}
-                      onChange={(e) => handleCourseStartDateChange(e.target.value)}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">End Date</label>
-                    <input
-                      type="date"
-                      value={deptForm.end_date || ""}
-                      onChange={(e) => setDeptForm({ ...deptForm, end_date: e.target.value })}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1 sm:grid grid-cols-2 gap-3 sm:col-span-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Start Year</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 2026"
-                      value={deptForm.start_year || ""}
-                      onChange={(e) => setDeptForm({ ...deptForm, start_year: e.target.value })}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">End Year</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 2029"
-                      value={deptForm.end_year || ""}
-                      onChange={(e) => setDeptForm({ ...deptForm, end_year: e.target.value })}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
-                    />
-                  </div>
-                </div>
-
                 <div className="space-y-3 sm:col-span-2 border-t border-gray-150 pt-4 mt-2">
                   <h4 className="text-[10px] font-black text-indigo-650 uppercase tracking-wider">
                     Classroom Allocations (Year-wise)
@@ -6549,17 +6503,140 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Default Shift / Timing</label>
+                <div className="space-y-2 sm:col-span-2 bg-indigo-50/60 dark:bg-slate-900/60 p-4 rounded-2xl border border-indigo-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] text-indigo-900 dark:text-indigo-300 uppercase tracking-wider block font-black flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-indigo-600" />
+                      Course Shift Scope & Period Time Schedule
+                    </label>
+                    <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                      {deptForm.default_shift === "both" ? "Shift 1 & 2 Dual Offerings" : deptForm.default_shift === "shift_2" ? "Shift 2 Evening" : deptForm.default_shift === "shift_1" ? "Shift 1 Day" : "General Full Day"}
+                    </span>
+                  </div>
                   <select
-                    value={deptForm.default_shift || "general"}
+                    value={deptForm.default_shift || "shift_1"}
                     onChange={(e) => setDeptForm({ ...deptForm, default_shift: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 text-xs shadow-xs"
                   >
-                    <option value="general">General Shift</option>
-                    <option value="shift_1">Shift 1</option>
-                    <option value="shift_2">Shift 2</option>
+                    <option value="shift_1">Shift 1 — Morning / Day (08:20 AM - 12:50 PM)</option>
+                    <option value="shift_2">Shift 2 — Evening (01:00 PM - 05:30 PM)</option>
+                    <option value="both">Both Shifts — Dual Offerings (Shift 1 & Shift 2)</option>
+                    <option value="general">General — Full Day (09:00 AM - 04:00 PM)</option>
                   </select>
+
+                  {/* Active Period Timings Preview */}
+                  <div className="mt-2.5 pt-2.5 border-t border-indigo-100/80 dark:border-slate-800/80 space-y-1.5">
+                    <span className="text-[9.5px] font-extrabold uppercase text-slate-500 block tracking-wider">Configured Timings & Period Schedule:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(!deptForm.default_shift || deptForm.default_shift === "shift_1") && (
+                        <>
+                          <span className="px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-bold">P1: 8.20 AM - 9.10 AM</span>
+                          <span className="px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-bold">P2: 9.10 AM - 10.00 AM</span>
+                          <span className="px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-bold">P3: 10.20 AM - 11.10 AM</span>
+                          <span className="px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-bold">P4: 11.10 AM - 12.00 PM</span>
+                          <span className="px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-bold">P5: 12.00 PM - 12.50 PM</span>
+                        </>
+                      )}
+                      {deptForm.default_shift === "shift_2" && (
+                        <>
+                          <span className="px-2 py-0.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9.5px] font-bold">P1: 1.00 PM - 1.50 PM</span>
+                          <span className="px-2 py-0.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9.5px] font-bold">P2: 1.50 PM - 2.40 PM</span>
+                          <span className="px-2 py-0.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9.5px] font-bold">P3: 3.00 PM - 3.50 PM</span>
+                          <span className="px-2 py-0.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9.5px] font-bold">P4: 3.50 PM - 4.40 PM</span>
+                          <span className="px-2 py-0.5 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9.5px] font-bold">P5: 4.40 PM - 5.30 PM</span>
+                        </>
+                      )}
+                      {deptForm.default_shift === "both" && (
+                        <div className="space-y-2.5 w-full pt-1">
+                          <div className="p-2.5 rounded-xl bg-white dark:bg-slate-950 border border-indigo-150 space-y-1.5 shadow-2xs">
+                            <span className="text-[9.5px] font-black uppercase text-indigo-700 dark:text-indigo-400 block tracking-wider flex items-center gap-1.5">
+                              <Sun className="h-3 w-3 text-amber-500" />
+                              Shift 1 (Morning Section Periods):
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[9px] font-bold">P1: 8.20 AM - 9.10 AM</span>
+                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[9px] font-bold">P2: 9.10 AM - 10.00 AM</span>
+                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[9px] font-bold">P3: 10.20 AM - 11.10 AM</span>
+                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[9px] font-bold">P4: 11.10 AM - 12.00 PM</span>
+                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[9px] font-bold">P5: 12.00 PM - 12.50 PM</span>
+                            </div>
+                          </div>
+
+                          <div className="p-2.5 rounded-xl bg-white dark:bg-slate-950 border border-purple-150 space-y-1.5 shadow-2xs">
+                            <span className="text-[9.5px] font-black uppercase text-purple-700 dark:text-purple-400 block tracking-wider flex items-center gap-1.5">
+                              <Moon className="h-3 w-3 text-purple-500" />
+                              Shift 2 (Evening Section Periods):
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-bold">P1: 1.00 PM - 1.50 PM</span>
+                              <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-bold">P2: 1.50 PM - 2.40 PM</span>
+                              <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-bold">P3: 3.00 PM - 3.50 PM</span>
+                              <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-bold">P4: 3.50 PM - 4.40 PM</span>
+                              <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-bold">P5: 4.40 PM - 5.30 PM</span>
+                            </div>
+                          </div>
+
+                          <p className="text-[9px] text-slate-500 font-bold italic">
+                            * Dual cohort course synced with campus Shift 1 and Shift 2 period schedules.
+                          </p>
+                        </div>
+                      )}
+                      {deptForm.default_shift === "general" && (
+                        <>
+                          <span className="px-2 py-0.5 bg-white text-slate-700 border border-slate-200 rounded-lg text-[9.5px] font-bold">General Full Day (09:00 AM - 04:00 PM)</span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Custom Shift Period Slot Timing Adjustments */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-indigo-100 dark:border-slate-800">
+                      {(deptForm.default_shift === "shift_1" || deptForm.default_shift === "both" || !deptForm.default_shift) && (
+                        <div className="space-y-1 bg-white dark:bg-slate-950 p-2.5 rounded-xl border border-indigo-100 dark:border-slate-800">
+                          <label className="text-[9.5px] font-black uppercase text-indigo-700 dark:text-indigo-300 block flex items-center gap-1">
+                            <Sun className="h-3 w-3 text-amber-500" /> Shift 1 Hours (Morning)
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              defaultValue="08:20 AM"
+                              placeholder="08:20 AM"
+                              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-200"
+                            />
+                            <span className="text-[10px] text-slate-400 font-bold">to</span>
+                            <input
+                              type="text"
+                              defaultValue="12:50 PM"
+                              placeholder="12:50 PM"
+                              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-200"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {(deptForm.default_shift === "shift_2" || deptForm.default_shift === "both") && (
+                        <div className="space-y-1 bg-white dark:bg-slate-950 p-2.5 rounded-xl border border-purple-100 dark:border-slate-800">
+                          <label className="text-[9.5px] font-black uppercase text-purple-700 dark:text-purple-300 block flex items-center gap-1">
+                            <Moon className="h-3 w-3 text-purple-500" /> Shift 2 Hours (Evening)
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              defaultValue="01:00 PM"
+                              placeholder="01:00 PM"
+                              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-200"
+                            />
+                            <span className="text-[10px] text-slate-400 font-bold">to</span>
+                            <input
+                              type="text"
+                              defaultValue="05:30 PM"
+                              placeholder="05:30 PM"
+                              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-200"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-1 sm:col-span-2">

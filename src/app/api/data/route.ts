@@ -37,7 +37,7 @@ export async function GET(request: Request) {
       courses, students, studentAttendance, leaveRequests, colleges,
       notifications, announcements, holidays, loginHistory, users,
       weeklyTasks, studentTracker, smes, demoSessions, subjectGroups, demoRules,
-      signupRequests
+      signupRequests, demoSwapRequests, kamTasks, campusIssues, academicYears, academicEvents
     ] = await Promise.all([
       db.all("SELECT * FROM mentors"),
       db.all("SELECT * FROM slots"),
@@ -61,7 +61,12 @@ export async function GET(request: Request) {
       db.all("SELECT * FROM demo_sessions ORDER BY created_at DESC"),
       db.all("SELECT * FROM subject_groups ORDER BY name ASC"),
       db.all("SELECT * FROM demo_rules ORDER BY created_at DESC"),
-      db.all("SELECT * FROM signup_requests ORDER BY created_at DESC")
+      db.all("SELECT * FROM signup_requests ORDER BY created_at DESC"),
+      db.all("SELECT * FROM demo_swap_requests ORDER BY created_at DESC").catch(() => []),
+      db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC").catch(() => []),
+      db.all("SELECT * FROM campus_issues ORDER BY created_at DESC").catch(() => []),
+      db.all("SELECT * FROM academic_years").catch(() => []),
+      db.all("SELECT * FROM academic_events ORDER BY start_date ASC").catch(() => [])
     ]);
 
     let filteredColleges = colleges;
@@ -80,7 +85,7 @@ export async function GET(request: Request) {
     let filteredStudentTracker = studentTracker;
 
     if (collegeId) {
-      filteredColleges = colleges.filter((c: any) => c.id === collegeId);
+      filteredColleges = colleges;
       filteredCourses = courses.filter((c: any) => c.college_id === collegeId || !c.college_id);
       filteredMentors = mentors.filter((m: any) => m.college_id === collegeId);
       filteredSlots = slots.filter((s: any) => s.college_id === collegeId);
@@ -151,7 +156,16 @@ export async function GET(request: Request) {
       demoSessions,
       subjectGroups,
       demoRules,
-      signupRequests
+      signupRequests,
+      demoSwapRequests,
+      kamTasks,
+      campusIssues,
+      academicYears: academicYears.map((ay: any) => typeof ay === "string" ? ay : ay.year || ay.year_name || ay.name || String(ay)),
+      academicEvents
+    }, {
+      headers: {
+        "Cache-Control": "private, max-age=3, stale-while-revalidate=15"
+      }
     });
   } catch (error: any) {
     console.error("API GET Data error:", error);

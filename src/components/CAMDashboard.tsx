@@ -973,6 +973,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [currDept, setCurrDept] = useState("General");
   const [currSemester, setCurrSemester] = useState("Semester 1");
   const [currYear, setCurrYear] = useState("2026-2027");
+  const [currShift, setCurrShift] = useState("General");
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
 
   // Inline Subject Edit states
@@ -982,6 +983,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [editSubDept, setEditSubDept] = useState("General");
   const [editSubSemester, setEditSubSemester] = useState("Semester 1");
   const [editSubYear, setEditSubYear] = useState("2026-2027");
+  const [editSubShift, setEditSubShift] = useState("General");
 
   // Sub-Tab configuration inside curriculum mapping page
   const [curriculumSubTab, setCurriculumSubTab] = useState<"subjects" | "departments">("subjects");
@@ -995,17 +997,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [deptName, setDeptName] = useState("");
   const [deptCode, setDeptCode] = useState("");
   const [deptDesc, setDeptDesc] = useState("");
+  const [deptShift, setDeptShift] = useState("shift_1");
   const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
 
   // Inline Department Edit states
   const [editDeptName, setEditDeptName] = useState("");
   const [editDeptCode, setEditDeptCode] = useState("");
   const [editDeptDesc, setEditDeptDesc] = useState("");
+  const [editDeptShift, setEditDeptShift] = useState("shift_1");
 
   // Curriculum Filters
   const [subjectSearch, setSubjectSearch] = useState("");
   const [subjectTypeFilter, setSubjectTypeFilter] = useState("all");
   const [subjectDeptFilter, setSubjectDeptFilter] = useState("all");
+  const [subjectShiftFilter, setSubjectShiftFilter] = useState("all");
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
   const [expandedSems, setExpandedSems] = useState<Record<string, boolean>>({});
 
@@ -1467,13 +1472,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       type: currType,
       college_id: activeCollegeId,
       year: currYear,
-      weekly_hours: currHours
+      weekly_hours: currHours,
+      shift: currShift
     };
 
     const res = await createSubject(subjectData);
     if (res.success) {
       setCurrName("");
       setCurrHours(4);
+      setCurrShift("General");
       toast("Subject created in database successfully.", "success");
     } else {
       toast("Error creating subject: " + res.message, "error");
@@ -1488,6 +1495,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setEditSubDept(sub.department || "General");
     setEditSubSemester(sub.semester || "Semester I");
     setEditSubYear(sub.year || selectedYear);
+    setEditSubShift(sub.shift || "General");
   };
 
   const handleSaveInlineSubject = async (e: React.FormEvent, id: string) => {
@@ -1502,7 +1510,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       type: editSubType,
       college_id: activeCollegeId,
       year: editSubYear,
-      weekly_hours: editSubHours
+      weekly_hours: editSubHours,
+      shift: editSubShift
     });
 
     if (res.success) {
@@ -1541,7 +1550,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       start_date: "",
       end_date: "",
       start_year: "",
-      end_year: ""
+      end_year: "",
+      default_shift: deptShift,
+      shift_based: deptShift === "both" || deptShift === "general" ? 1 : 0
     };
 
     const res = await createCourse(deptData);
@@ -1549,6 +1560,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       setDeptName("");
       setDeptCode("");
       setDeptDesc("");
+      setDeptShift("shift_1");
       toast("Department created in database successfully.", "success");
     } else {
       toast("Error creating department: " + res.message, "error");
@@ -1560,6 +1572,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setEditDeptName(dept.name);
     setEditDeptCode(dept.code || "");
     setEditDeptDesc(dept.description || "");
+    setEditDeptShift(dept.default_shift || (dept.shift_based ? "both" : "shift_1"));
   };
 
   const handleSaveInlineDept = async (e: React.FormEvent, id: string) => {
@@ -1579,7 +1592,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       start_date: "",
       end_date: "",
       start_year: "",
-      end_year: ""
+      end_year: "",
+      default_shift: editDeptShift,
+      shift_based: editDeptShift === "both" || editDeptShift === "general" ? 1 : 0
     });
 
     if (res.success) {
@@ -2978,9 +2993,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 }}
                 className="px-2.5 py-1.5 border border-slate-205 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-950 text-[10px] cursor-pointer outline-none font-bold text-slate-705 dark:text-slate-300 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
               >
-                {academicYears.map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
+                {(academicYears || []).map((y: any) => {
+                  const str = typeof y === "string" ? y : y.year || y.year_name || String(y);
+                  return <option key={str} value={str}>{str}</option>;
+                })}
               </select>
             </div>
 
@@ -3216,8 +3232,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </form>
 
                   <div className="space-y-2 pt-2">
-                    {academicYears.map((y, index) => (
-                      <div key={y} className="flex items-center justify-between p-2.5 border border-slate-200 rounded-xl bg-white shadow-sm">
+                    {(academicYears || []).map((y: any, index) => {
+                      const str = typeof y === "string" ? y : y.year || y.year_name || String(index);
+                      return (
+                        <div key={str} className="flex items-center justify-between p-2.5 border border-slate-200 rounded-xl bg-white shadow-sm">
                         {editingYearIndex === index ? (
                           <div className="flex gap-2 w-full">
                             <input
@@ -3250,7 +3268,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </>
                         )}
                       </div>
-                    ))}
+                    );
+                  })}
                   </div>
                 </div>
 
@@ -3596,7 +3615,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       </div>
                       <Select label="Department" value={currDept} onChange={e => setCurrDept(e.target.value)} options={coursesList.map(d => ({ value: d.name, label: d.name }))} />
                       <Select label="Semester" value={currSemester} onChange={e => setCurrSemester(e.target.value)} options={["Semester 1","Semester 2","Semester 3","Semester 4","Semester 5","Semester 6","Semester 7","Semester 8"].map(s => ({ value: s, label: s }))} />
-                      <Select label="Academic Year" value={currYear} onChange={e => setCurrYear(e.target.value)} options={academicYears.map(yr => ({ value: yr, label: yr }))} />
+                      <Select label="Academic Year" value={currYear} onChange={e => setCurrYear(e.target.value)} options={(academicYears || []).map((yr: any) => { const str = typeof yr === "string" ? yr : yr.year || yr.year_name || String(yr); return { value: str, label: str }; })} />
+                      <Select label="Shift" value={currShift} onChange={e => setCurrShift(e.target.value)} options={[{value:"General",label:"General (Both Shifts)"},{value:"Shift 1",label:"Shift 1 (Day)"},{value:"Shift 2",label:"Shift 2 (Evening)"},{value:"Both",label:"Both Shifts"}]} />
                       <Input label="Weekly Hours" type="number" min={1} max={10} value={currHours} onChange={e => setCurrHours(parseInt(e.target.value) || 4)} required />
                       <Select label="Subject Type" value={currType} onChange={e => setCurrType(e.target.value)} options={[{value:"theory",label:"Theory"},{value:"practical",label:"Practical"},{value:"elective",label:"Elective"},{value:"laboratory",label:"Laboratory"}]} />
                       <div className="sm:col-span-2 lg:col-span-3 flex gap-2 pt-1">
@@ -3611,14 +3631,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 {showAddDeptForm && (
                   <div className="mb-5 bg-slate-50 border border-slate-200 rounded-2xl p-5 shadow-sm animate-fade-in">
                     <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mb-3">Register New Department</h3>
-                    <form onSubmit={async (e) => { await handleSaveDept(e); setShowAddDeptForm(false); }} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <form onSubmit={async (e) => { await handleSaveDept(e); setShowAddDeptForm(false); }} className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                       <Input label="Department Name" placeholder="e.g. Information Technology" value={deptName} onChange={e => setDeptName(e.target.value)} required />
                       <Input label="Department Code" placeholder="e.g. IT" value={deptCode} onChange={e => setDeptCode(e.target.value)} required />
-                      <div className="space-y-1">
+                      <Select label="Shift Scope" value={deptShift} onChange={e => setDeptShift(e.target.value)} options={[{value:"shift_1",label:"Shift 1 (Day)"},{value:"shift_2",label:"Shift 2 (Evening)"},{value:"both",label:"Both Shifts (Shift 1 & 2)"},{value:"general",label:"General (Full Day)"}]} />
+                      <div className="sm:col-span-3 lg:col-span-4 space-y-1">
                         <label className="text-slate-400 text-[10px] uppercase font-bold">Description</label>
                         <input type="text" placeholder="Brief summary..." value={deptDesc} onChange={e => setDeptDesc(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm" />
                       </div>
-                      <div className="sm:col-span-3 flex gap-2 pt-1">
+                      <div className="sm:col-span-3 lg:col-span-4 flex gap-2 pt-1">
                         <Button type="submit" variant="primary" size="md" className="flex-1">Add Department</Button>
                         <Button type="button" variant="secondary" size="md" onClick={() => setShowAddDeptForm(false)}>Cancel</Button>
                       </div>
@@ -3639,6 +3660,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <option value="LAB">LAB</option>
                     <option value="GENERAL">GENERAL</option>
                   </select>
+                  <select value={subjectShiftFilter} onChange={e => setSubjectShiftFilter(e.target.value)} className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm">
+                    <option value="all">All Shifts</option>
+                    <option value="Shift 1">Shift 1 (Day)</option>
+                    <option value="Shift 2">Shift 2 (Evening)</option>
+                    <option value="General">General / Both Shifts</option>
+                  </select>
                   <span className="ml-auto text-[10px] text-slate-400 font-semibold">{subjectsList.length} subjects · {coursesList.length} departments</span>
                 </div>
 
@@ -3656,7 +3683,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   const filteredSubs = subjectsList.filter(sub => {
                     const ms = sub.name.toLowerCase().includes(subjectSearch.toLowerCase());
                     const mt = subjectTypeFilter === "all" || sub.type === subjectTypeFilter;
-                    return ms && mt;
+                    const subShiftStr = sub.shift || "General";
+                    const mshift = subjectShiftFilter === "all"
+                      ? true
+                      : subShiftStr === subjectShiftFilter ||
+                        subShiftStr === "General" ||
+                        subShiftStr === "Both";
+                    return ms && mt && mshift;
                   });
 
                   const registeredDeptNames = coursesList.map(d => d.name);
@@ -3675,7 +3708,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div className="space-y-4 text-xs font-semibold">
                       {allDeptNames.map(deptName => {
                         const registeredDept = coursesList.find(d => d.name === deptName);
-                        const deptSubjects = filteredSubs.filter(s => s.department === deptName);
+                        
+                        // Flexible subject matching helper
+                        const norm = (str: string) => (str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+                        const isDeptSubjectMatch = (subDept: string, dName: string, dCode?: string) => {
+                          if (!subDept || !dName) return false;
+                          const nSub = norm(subDept);
+                          const nName = norm(dName);
+                          if (nSub === nName) return true;
+                          if (dCode && nSub === norm(dCode)) return true;
+                          const baseSub = norm(subDept.replace(/\s*-\s*(Semester|Sem|Year|Yr|Shift|Batch)\s*\d+/gi, ""));
+                          const baseName = norm(dName.replace(/\s*-\s*(Semester|Sem|Year|Yr|Shift|Batch)\s*\d+/gi, ""));
+                          return baseSub === baseName || (nSub.length > 4 && nName.length > 4 && (nSub.includes(nName) || nName.includes(nSub)));
+                        };
+
+                        const deptSubjects = filteredSubs.filter(s => isDeptSubjectMatch(s.department, deptName, registeredDept?.code));
                         const isEditingDept = editingDeptId === registeredDept?.id;
                         const isDeptExpanded = !!expandedDepts[deptName];
 
@@ -3695,14 +3742,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             {/* ── DEPARTMENT HEADER (Collapsible Card Style) ── */}
                             {isEditingDept ? (
                               <div className="bg-indigo-50/40 border-b border-indigo-100 p-4">
-                                <form onSubmit={(ev) => handleSaveInlineDept(ev, registeredDept!.id)} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <form onSubmit={(ev) => handleSaveInlineDept(ev, registeredDept!.id)} className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                                   <Input label="Dept Name" value={editDeptName} onChange={ev => setEditDeptName(ev.target.value)} required />
                                   <Input label="Dept Code" value={editDeptCode} onChange={ev => setEditDeptCode(ev.target.value)} required />
+                                  <Select label="Shift Scope" value={editDeptShift} onChange={ev => setEditDeptShift(ev.target.value)} options={[{value:"shift_1",label:"Shift 1 (Day)"},{value:"shift_2",label:"Shift 2 (Evening)"},{value:"both",label:"Both Shifts (Shift 1 & 2)"},{value:"general",label:"General (Full Day)"}]} />
                                   <div className="space-y-1">
                                     <label className="text-[9px] uppercase font-bold text-slate-400">Description</label>
                                     <input type="text" value={editDeptDesc} onChange={ev => setEditDeptDesc(ev.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold outline-none" />
                                   </div>
-                                  <div className="sm:col-span-3 flex gap-2">
+                                  <div className="sm:col-span-3 lg:col-span-4 flex gap-2">
                                     <Button type="submit" variant="success" size="xs" className="flex-1">Save</Button>
                                     <Button type="button" variant="secondary" size="xs" onClick={() => setEditingDeptId(null)}>Cancel</Button>
                                   </div>
@@ -3719,6 +3767,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <div className="flex items-center gap-2">
                                       <span className="text-[12px] font-black text-slate-800">{deptName}</span>
                                       {registeredDept?.code && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 border border-indigo-150 text-indigo-700 rounded font-bold uppercase">{registeredDept.code}</span>}
+                                      {registeredDept && (
+                                        <span className={`text-[9px] px-2 py-0.5 border rounded font-bold uppercase ${
+                                          registeredDept.default_shift === "both" || registeredDept.shift_based === 1
+                                            ? "bg-purple-50 border-purple-200 text-purple-700"
+                                            : registeredDept.default_shift === "shift_1"
+                                            ? "bg-teal-50 border-teal-200 text-teal-700"
+                                            : registeredDept.default_shift === "shift_2"
+                                            ? "bg-amber-50 border-amber-200 text-amber-700"
+                                            : "bg-slate-100 border-slate-200 text-slate-700"
+                                        }`}>
+                                          {registeredDept.default_shift === "both" || registeredDept.shift_based === 1
+                                            ? "Shift 1 & 2 (Both Shifts)"
+                                            : registeredDept.default_shift === "shift_1"
+                                            ? "Shift 1 (Day)"
+                                            : registeredDept.default_shift === "shift_2"
+                                            ? "Shift 2 (Eve)"
+                                            : "General (Full Day)"}
+                                        </span>
+                                      )}
                                     </div>
                                     {registeredDept?.description && <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{registeredDept.description}</p>}
                                   </div>
@@ -3774,8 +3841,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                 {isSemExpanded && (
                                                   <div className="border-t border-slate-100 animate-fade-in">
                                                     <div className="grid grid-cols-12 gap-2 px-4 py-1.5 bg-slate-50/40 text-[8px] uppercase font-black text-slate-400 tracking-wider border-b border-slate-50">
-                                                      <span className="col-span-6">Subject Name</span>
-                                                      <span className="col-span-3">Type</span>
+                                                      <span className="col-span-5">Subject Name</span>
+                                                      <span className="col-span-2">Type</span>
+                                                      <span className="col-span-2">Shift</span>
                                                       <span className="col-span-2 text-right">Target Hrs</span>
                                                       <span className="col-span-1"></span>
                                                     </div>
@@ -3793,7 +3861,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                               <Select label="Type" value={editSubType} onChange={ev => setEditSubType(ev.target.value)} options={[{value:"theory",label:"Theory"},{value:"practical",label:"Practical"},{value:"elective",label:"Elective"},{value:"laboratory",label:"Laboratory"}]} />
                                                               <Input label="Weekly Hours" type="number" value={editSubHours} onChange={ev => setEditSubHours(parseInt(ev.target.value) || 4)} required />
                                                               <Select label="Department" value={editSubDept} onChange={ev => setEditSubDept(ev.target.value)} options={coursesList.map(d => ({ value: d.name, label: d.name }))} />
-                                                              <Select label="Academic Year" value={editSubYear} onChange={ev => setEditSubYear(ev.target.value)} options={academicYears.map(yr2 => ({ value: yr2, label: yr2 }))} />
+                                                              <Select label="Shift" value={editSubShift} onChange={ev => setEditSubShift(ev.target.value)} options={[{value:"General",label:"General"},{value:"Shift 1",label:"Shift 1 (Day)"},{value:"Shift 2",label:"Shift 2 (Evening)"}]} />
+                                                              <Select label="Academic Year" value={editSubYear} onChange={ev => setEditSubYear(ev.target.value)} options={(academicYears || []).map((yr2: any) => { const str = typeof yr2 === "string" ? yr2 : yr2.year || yr2.year_name || String(yr2); return { value: str, label: str }; })} />
                                                               <div className="sm:col-span-2 lg:col-span-3 flex gap-2">
                                                                 <Button type="submit" variant="success" size="xs" className="flex-1">Save</Button>
                                                                 <Button type="button" variant="secondary" size="xs" onClick={() => setEditingSubjectId(null)}>Cancel</Button>
@@ -3802,14 +3871,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                           </div>
                                                         ) : (
                                                           <div key={sub.id} className="grid grid-cols-12 gap-2 items-center px-4 py-2 hover:bg-slate-50/50 transition-all group">
-                                                            <div className="col-span-6 font-semibold text-slate-700 text-[11px] truncate pr-2">{sub.name}</div>
-                                                            <div className="col-span-3">
+                                                            <div className="col-span-5 font-semibold text-slate-700 text-[11px] truncate pr-2">{sub.name}</div>
+                                                            <div className="col-span-2">
                                                               <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] uppercase font-bold ${
                                                                 sub.type === "practical" ? "bg-amber-50 border border-amber-200 text-amber-700" :
                                                                 sub.type === "laboratory" ? "bg-rose-50 border border-rose-200 text-rose-700" :
                                                                 sub.type === "elective" ? "bg-violet-50 border border-violet-200 text-violet-700" :
                                                                 "bg-indigo-50 border border-indigo-200 text-indigo-700"
                                                               }`}>{sub.type}</span>
+                                                            </div>
+                                                            <div className="col-span-2">
+                                                              <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] uppercase font-bold ${
+                                                                sub.shift === "Shift 1" ? "bg-blue-50 border border-blue-200 text-blue-700" :
+                                                                sub.shift === "Shift 2" ? "bg-purple-50 border border-purple-200 text-purple-700" :
+                                                                "bg-gray-50 border border-gray-200 text-gray-700"
+                                                              }`}>{sub.shift || "General"}</span>
                                                             </div>
                                                             <div className="col-span-2 text-right font-extrabold text-indigo-600">{sub.weekly_hours || 4}</div>
                                                             <div className="col-span-1 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
@@ -5636,7 +5712,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <td className="p-3 border-r border-slate-100">
                                       {req.status === "pending_cam" ? (
                                         <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-indigo-50 border-indigo-150 text-indigo-700 animate-pulse">
-                                          Emergency (CAM)
+                                          Emergency (CM)
                                         </span>
                                       ) : (
                                         <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-amber-50 border-amber-100 text-amber-700">
@@ -5997,72 +6073,90 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   })()}
 
                   {/* Student Tracker Audit Tab */}
-                  {activeTab === "tracker" && (
-                    <div className="space-y-6 font-sans">
-                      {/* Header */}
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-150 pb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
-                            <GraduationCap className="h-5 w-5" />
+                  {activeTab === "tracker" && (() => {
+                    const collegeStudents = students.filter(s => !s.college_id || s.college_id === activeCollegeId);
+                    const distinctClasses = Array.from(new Set([
+                      ...collegeStudents.map(s => s.classGroup).filter(Boolean),
+                      ...weeklyTasks.map(t => t.class_group).filter(Boolean),
+                      ...studentTracker.map(st => st.class_group).filter(Boolean)
+                    ])).sort();
+
+                    const collegeSubjects = subjectsList.length > 0
+                      ? subjectsList
+                      : Array.from(new Set([
+                          ...weeklyTasks.map(t => t.subject).filter(Boolean),
+                          ...studentTracker.map(st => st.subject).filter(Boolean)
+                        ])).map(name => ({ id: name, name }));
+
+                    const activeClass = camTrackerClass || (distinctClasses[0] || "");
+                    const activeSubject = camTrackerSubject || (collegeSubjects[0]?.name || "");
+
+                    return (
+                      <div className="space-y-6 font-sans">
+                        {/* Header */}
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-150 pb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                              <GraduationCap className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <h2 className="text-lg font-black text-slate-800 leading-tight">Student Performance &amp; Task Audit Console</h2>
+                              <p className="text-xs text-slate-455 font-medium mt-0.5">
+                                Monitor and review weekly tasks, student submissions, and evaluations across all classes.
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <h2 className="text-lg font-black text-slate-800 leading-tight">Student Performance &amp; Task Audit Console</h2>
-                            <p className="text-xs text-slate-455 font-medium mt-0.5">
-                              Monitor and review weekly tasks, student submissions, and evaluations across all classes.
-                            </p>
+                        </div>
+
+                        {/* Selectors and Filters */}
+                        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-wrap gap-4 items-end">
+                          <div className="flex-1 min-w-[200px] space-y-1.5">
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Class Group</label>
+                            <select
+                              value={activeClass}
+                              onChange={(e) => setCamTrackerClass(e.target.value)}
+                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                            >
+                              {distinctClasses.map(c => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                              {distinctClasses.length === 0 && <option value="">No class groups</option>}
+                            </select>
+                          </div>
+
+                          <div className="flex-1 min-w-[200px] space-y-1.5">
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Subject</label>
+                            <select
+                              value={activeSubject}
+                              onChange={(e) => setCamTrackerSubject(e.target.value)}
+                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                            >
+                              {collegeSubjects.map(s => (
+                                <option key={s.id} value={s.name}>{s.name}</option>
+                              ))}
+                              {collegeSubjects.length === 0 && <option value="">No subjects found</option>}
+                            </select>
+                          </div>
+
+                          <div className="w-[120px] space-y-1.5">
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Week Number</label>
+                            <select
+                              value={camTrackerWeek}
+                              onChange={(e) => setCamTrackerWeek(parseInt(e.target.value, 10))}
+                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                            >
+                              {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
+                                <option key={wk} value={wk}>Week {wk}</option>
+                              ))}
+                            </select>
                           </div>
                         </div>
-                      </div>
-
-                      {/* Selectors and Filters */}
-                      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-wrap gap-4 items-end">
-                        <div className="flex-1 min-w-[200px] space-y-1.5">
-                          <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Class Group</label>
-                          <select
-                            value={camTrackerClass}
-                            onChange={(e) => setCamTrackerClass(e.target.value)}
-                            className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
-                          >
-                            {distinctClasses.map(c => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                            {distinctClasses.length === 0 && <option value="">No class groups</option>}
-                          </select>
-                        </div>
-
-                        <div className="flex-1 min-w-[200px] space-y-1.5">
-                          <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Subject</label>
-                          <select
-                            value={camTrackerSubject}
-                            onChange={(e) => setCamTrackerSubject(e.target.value)}
-                            className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
-                          >
-                            {collegeSubjects.map(s => (
-                              <option key={s.id} value={s.name}>{s.name}</option>
-                            ))}
-                            {collegeSubjects.length === 0 && <option value="">No subjects found</option>}
-                          </select>
-                        </div>
-
-                        <div className="w-[120px] space-y-1.5">
-                          <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Week Number</label>
-                          <select
-                            value={camTrackerWeek}
-                            onChange={(e) => setCamTrackerWeek(parseInt(e.target.value, 10))}
-                            className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
-                          >
-                            {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
-                              <option key={wk} value={wk}>Week {wk}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
 
                       {/* Assigned Task Detail Card */}
                       {(() => {
                         const currentTask = weeklyTasks.find(
-                          t => t.class_group === camTrackerClass &&
-                               t.subject === camTrackerSubject &&
+                          t => t.class_group.toLowerCase().trim() === activeClass.toLowerCase().trim() &&
+                               t.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim() &&
                                t.week_number === camTrackerWeek
                         );
 
@@ -6115,13 +6209,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </h3>
                         {(() => {
                           const classStudents = students.filter(
-                            s => s.classGroup && s.classGroup.toLowerCase().trim() === camTrackerClass.toLowerCase().trim()
+                            s => s.classGroup && s.classGroup.toLowerCase().trim() === activeClass.toLowerCase().trim()
                           );
 
                           if (classStudents.length === 0) {
                             return (
                               <div className="text-center py-8">
-                                <p className="text-xs text-slate-455 italic">No students registered in class &ldquo;{camTrackerClass}&rdquo;.</p>
+                                <p className="text-xs text-slate-455 italic">No students registered in class &ldquo;{activeClass}&rdquo;.</p>
                               </div>
                             );
                           }
@@ -6141,8 +6235,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   {classStudents.map(student => {
                                     const entry = studentTracker.find(
                                       e => e.student_id === student.id &&
-                                           e.class_group.toLowerCase().trim() === camTrackerClass.toLowerCase().trim() &&
-                                           e.subject.toLowerCase().trim() === camTrackerSubject.toLowerCase().trim() &&
+                                           e.class_group.toLowerCase().trim() === activeClass.toLowerCase().trim() &&
+                                           e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim() &&
                                            e.week_number === camTrackerWeek
                                     );
 
@@ -6201,7 +6295,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         })()}
                       </div>
                     </div>
-                  )}
+                  );
+                })()}
 
                   {/* Tab: Student Directory & Bulk Import */}
                   {activeTab === "students_list" && (
@@ -6483,7 +6578,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             </div>
                             <div>
                               <h2 className="text-lg font-extrabold text-slate-900 leading-tight">{currentCAM.name}</h2>
-                              <p className="text-[10px] text-slate-455 font-bold uppercase tracking-wider mt-1">Campus Manager (CAM)</p>
+                              <p className="text-[10px] text-slate-455 font-bold uppercase tracking-wider mt-1">Campus Manager (CM)</p>
                             </div>
                             <div className="flex flex-wrap justify-center gap-1.5 pt-1">
                               <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-150 text-[9px] font-black text-slate-700 uppercase">
@@ -6542,7 +6637,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex items-center gap-3">
                             <Sparkles className="h-5 w-5 text-indigo-600 shrink-0" />
                             <div className="text-[11px] text-indigo-850 font-semibold leading-normal">
-                              As Campus Manager (CAM), you hold authority over campus-wide class allocations, room management, slot conflict resolutions, and compliance auditing for your assigned campus.
+                              As Campus Manager (CM), you hold authority over campus-wide class allocations, room management, slot conflict resolutions, and compliance auditing for your assigned campus.
                             </div>
                           </div>
                         </div>

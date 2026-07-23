@@ -437,7 +437,7 @@ export function SMEDashboard() {
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
         <div>
-          <h1 className="text-2xl font-black text-slate-850 dark:text-white tracking-tight flex items-center gap-2">
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Sparkles className="h-6 w-6 text-pink-500" />
             SME Evaluation Hub
           </h1>
@@ -446,7 +446,7 @@ export function SMEDashboard() {
           </p>
         </div>
         <div className="px-4 py-2.5 bg-pink-50/50 dark:bg-pink-950/10 border border-pink-100 dark:border-pink-900 rounded-2xl">
-          <span className="text-[9px] font-black uppercase text-pink-650 dark:text-pink-400 tracking-wider block">Specialization</span>
+          <span className="text-[9px] font-black uppercase text-pink-600 dark:text-pink-400 tracking-wider block">Specialization</span>
           <span className="text-xs font-black text-slate-800 dark:text-white">{currentSME.subject || "General"} Expert</span>
         </div>
       </div>
@@ -510,7 +510,7 @@ export function SMEDashboard() {
                   {kpi.icon}
                 </div>
                 <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block">{kpi.label}</span>
-                <span className="text-lg font-black text-slate-850 dark:text-white">{kpi.value}</span>
+                <span className="text-lg font-black text-slate-900 dark:text-white">{kpi.value}</span>
               </div>
             ))}
           </div>
@@ -520,7 +520,7 @@ export function SMEDashboard() {
 
             {/* Today's Demos */}
             <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-3xl shadow-sm space-y-4">
-              <h2 className="text-sm font-black text-slate-855 dark:text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                 <Clock className="h-4 w-4 text-violet-500" />
                 Today&apos;s Demos
               </h2>
@@ -961,14 +961,14 @@ export function SMEDashboard() {
 
       {/* ═══════════════ SWAP REQUEST MODAL ═══════════════ */}
       {swapModalSession && (
-        <div className="fixed inset-0 bg-slate-955/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="border-b border-slate-105 dark:border-slate-800 pb-3 flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-850 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                 <RefreshCw className="h-4.5 w-4.5 text-indigo-500 animate-spin-slow" />
                 Request Demo Swap
               </h3>
-              <button onClick={() => setSwapModalSession(null)} className="text-slate-400 hover:text-slate-655 text-xs font-bold">Close</button>
+              <button onClick={() => setSwapModalSession(null)} className="text-slate-400 hover:text-slate-700 text-xs font-bold">Close</button>
             </div>
 
             {swapStep === 1 ? (

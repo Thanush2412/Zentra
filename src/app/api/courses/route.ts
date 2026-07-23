@@ -150,7 +150,7 @@ export async function PUT(request: Request) {
 
       await db.run("COMMIT;");
     } catch (txError) {
-      await db.run("ROLLBACK;");
+      try { await db.run("ROLLBACK;"); } catch (_) {}
       throw txError;
     }
 
@@ -209,10 +209,10 @@ export async function DELETE(request: Request) {
       
       if (slotIds.length > 0) {
         const placeholders = slotIds.map(() => "?").join(",");
-        await db.run(`DELETE FROM student_attendance WHERE slotId IN (${placeholders})`, slotIds);
-        await db.run(`DELETE FROM handover_requests WHERE slotId IN (${placeholders})`, slotIds);
-        await db.run(`DELETE FROM approved_handovers WHERE slotId IN (${placeholders})`, slotIds);
-        await db.run(`DELETE FROM slots WHERE id IN (${placeholders})`, slotIds);
+        await db.run(`DELETE FROM student_attendance WHERE slotId IN (${placeholders})`, ...slotIds);
+        await db.run(`DELETE FROM handover_requests WHERE slotId IN (${placeholders})`, ...slotIds);
+        await db.run(`DELETE FROM approved_handovers WHERE slotId IN (${placeholders})`, ...slotIds);
+        await db.run(`DELETE FROM slots WHERE id IN (${placeholders})`, ...slotIds);
       }
 
       // Also delete handover_requests where classGroup matches this course (Bug #26 fix)
@@ -223,7 +223,7 @@ export async function DELETE(request: Request) {
         .map(h => h.id);
       if (handoverIdsToDelete.length > 0) {
         const placeholders = handoverIdsToDelete.map(() => "?").join(",");
-        await db.run(`DELETE FROM handover_requests WHERE id IN (${placeholders})`, handoverIdsToDelete);
+        await db.run(`DELETE FROM handover_requests WHERE id IN (${placeholders})`, ...handoverIdsToDelete);
       }
       
       // 2. Find student IDs in this department to clean up their records
@@ -238,11 +238,11 @@ export async function DELETE(request: Request) {
       
       if (studentIds.length > 0) {
         const placeholders = studentIds.map(() => "?").join(",");
-        await db.run(`DELETE FROM student_attendance WHERE studentId IN (${placeholders})`, studentIds);
+        await db.run(`DELETE FROM student_attendance WHERE studentId IN (${placeholders})`, ...studentIds);
         // Bug #27 fix: clean up leave_requests for deleted students
-        await db.run(`DELETE FROM leave_requests WHERE studentId IN (${placeholders})`, studentIds);
-        await db.run(`DELETE FROM students WHERE id IN (${placeholders})`, studentIds);
-        await db.run(`DELETE FROM users WHERE role = 'student' AND reference_id IN (${placeholders})`, studentIds);
+        await db.run(`DELETE FROM leave_requests WHERE studentId IN (${placeholders})`, ...studentIds);
+        await db.run(`DELETE FROM students WHERE id IN (${placeholders})`, ...studentIds);
+        await db.run(`DELETE FROM users WHERE role = 'student' AND reference_id IN (${placeholders})`, ...studentIds);
       }
 
       // 3. Delete mentors in this department and their user accounts
@@ -251,8 +251,8 @@ export async function DELETE(request: Request) {
       const mentorIds = mentorsToDelete.map(m => m.id);
       if (mentorIds.length > 0) {
         const placeholders = mentorIds.map(() => "?").join(",");
-        await db.run(`DELETE FROM mentors WHERE id IN (${placeholders})`, mentorIds);
-        await db.run(`DELETE FROM users WHERE role = 'mentor' AND reference_id IN (${placeholders})`, mentorIds);
+        await db.run(`DELETE FROM mentors WHERE id IN (${placeholders})`, ...mentorIds);
+        await db.run(`DELETE FROM users WHERE role = 'mentor' AND reference_id IN (${placeholders})`, ...mentorIds);
       }
 
       // 4. Delete subjects associated with this department
@@ -261,19 +261,19 @@ export async function DELETE(request: Request) {
       const subjectIds = subjectsToDelete.map(s => s.id);
       if (subjectIds.length > 0) {
         const placeholders = subjectIds.map(() => "?").join(",");
-        await db.run(`DELETE FROM subjects WHERE id IN (${placeholders})`, subjectIds);
+        await db.run(`DELETE FROM subjects WHERE id IN (${placeholders})`, ...subjectIds);
       }
 
       // 5. Finally delete the course and matching departments table rows
       await db.run("DELETE FROM courses WHERE id = ?", id);
-      await db.run("DELETE FROM departments WHERE id = ? OR name = ?", [id, courseName]);
+      await db.run("DELETE FROM departments WHERE id = ? OR name = ?", id, courseName);
 
-      await db.run("COMMIT;");
+      try { await db.run("COMMIT;"); } catch (_) {}
 
       const deletedSummary = `Deleted: ${slotsToDelete.length} slots, ${studentsToDelete.length} students, ${mentorsToDelete.length} mentors, ${subjectsToDelete.length} subjects.`;
       return NextResponse.json({ success: true, message: `Course and all associated data deleted successfully. ${deletedSummary}`, deletedCounts: { slots: slotsToDelete.length, students: studentsToDelete.length, mentors: mentorsToDelete.length, subjects: subjectsToDelete.length } });
     } catch (txError) {
-      await db.run("ROLLBACK;");
+      try { await db.run("ROLLBACK;"); } catch (_) {}
       throw txError;
     }
   } catch (error: any) {

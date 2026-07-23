@@ -67,7 +67,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-black text-slate-800 dark:text-white">{cam?.name || "Campus Manager"}</h3>
-              <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-100 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[9px] font-black uppercase tracking-wider">CAM</span>
+              <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-100 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[9px] font-black uppercase tracking-wider">CM</span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">{cam?.email}</p>
             <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mt-0.5">
@@ -525,7 +525,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
       icon: Building2,
       items: [
         { id: "overview", label: "Overview", icon: Activity },
-        { id: "cam_reports", label: "CAM Reports", icon: Layers },
+        { id: "cam_reports", label: "CM Reports", icon: Layers },
         { id: "colleges", label: "Campus Directory", icon: Building2 },
         { id: "swap_tracker", label: "Swap Ledger", icon: ArrowRightLeft },
       ]
@@ -707,7 +707,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
         <div className="flex w-full justify-around items-center py-2 px-1">
           {[
             { id: "overview", label: "Overview", icon: Activity },
-            { id: "cam_reports", label: "CAMs", icon: Layers },
+            { id: "cam_reports", label: "CMs", icon: Layers },
             { id: "tasks", label: "Tasks", icon: ClipboardList },
             { id: "escalations", label: "Issues", icon: ShieldAlert },
             { id: "profile", label: "Profile", icon: User },
@@ -883,14 +883,14 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 {/* Header */}
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div>
-                    <h2 className="text-lg font-black text-slate-800 dark:text-white">CAM Reporting View</h2>
+                    <h2 className="text-lg font-black text-slate-800 dark:text-white">CM Reporting View</h2>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       All Campus Managers reporting to you — {activeColleges.length} college{activeColleges.length !== 1 ? "s" : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-[10px] font-black">
-                      {activeColleges.length} CAM{activeColleges.length !== 1 ? "s" : ""} under you
+                      {activeColleges.length} CM{activeColleges.length !== 1 ? "s" : ""} under you
                     </span>
                   </div>
                 </div>
@@ -936,7 +936,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                     return (
                       <CAMCollegeCard
                         key={college.id}
-                        cam={cam || { name: `CAM — ${college.name}`, email: "—", id: null }}
+                        cam={cam || { name: `CM — ${college.name}`, email: "—", id: null }}
                         college={college}
                         mentors={collegeMentors}
                         students={collegeStudents}
@@ -1002,7 +1002,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
           {/* ══ TAB: ASSIGN TASK ══ */}
           {activeTab === "tasks" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Panel title="Assign Task to CAM" subtitle="Direct task items to campus academic managers">
+              <Panel title="Assign Task to CM" subtitle="Direct task items to campus managers">
                 <form onSubmit={handleCreateTask} className="space-y-4 text-xs font-semibold">
                   <Select label="Target College" value={taskCollegeId} onChange={e => setTaskCollegeId(e.target.value)}
                     options={activeColleges.map(c => ({ value: c.id, label: c.name }))} required />
@@ -1044,7 +1044,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
           {/* ══ TAB: ESCALATED ISSUES ══ */}
           {activeTab === "escalations" && (
             <div className="max-w-3xl mx-auto w-full">
-              <Panel title="Escalated Campus Issues" subtitle="Review and resolve items forwarded by CAMs">
+              <Panel title="Escalated Campus Issues" subtitle="Review and resolve items forwarded by CMs">
                 <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
                   {escalations.map(esc => (
                     <div key={esc.id} className="p-3.5 rounded-xl border border-slate-105 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 flex flex-col gap-3 hover:border-indigo-500/20 transition-all">

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/context/AppContext";
 import { ProfessionalLoader } from "@/components/DashboardLayout";
+import { LoadingButton } from "@/components/ui/LoadingButton";
 
 import {
   User,
@@ -439,24 +440,17 @@ export default function Home() {
                     </div>
 
                     {/* Sign In Button */}
-                    <button
+                    <LoadingButton
                       id="login-submit-btn"
                       type="submit"
-                      disabled={loginLoading}
-                      className="w-full btn-gradient font-bold py-3.5 rounded-2xl text-sm transition-all shadow-md mt-2 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-70"
+                      isLoading={loginLoading}
+                      loadingText="Verifying credentials…"
+                      variant="gradient"
+                      icon={<ArrowRight className="h-4 w-4" />}
+                      className="w-full py-3.5 rounded-2xl text-sm mt-2"
                     >
-                      {loginLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Verifying credentials…
-                        </>
-                      ) : (
-                        <>
-                          Sign in to Dashboard
-                          <ArrowRight className="h-4 w-4" />
-                        </>
-                      )}
-                    </button>
+                      Sign in to Dashboard
+                    </LoadingButton>
 
                     <button
                       type="button"

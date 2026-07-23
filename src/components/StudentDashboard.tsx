@@ -740,7 +740,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       } ${
                         isActive
                           ? "sidebar-active-item"
-                          : "text-slate-500 hover:text-slate-850 hover:bg-slate-50"
+                          : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
                       }`}
                     >
                       <div className="relative flex items-center justify-center">
@@ -771,7 +771,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     localStorage.setItem("fp_sidebar_collapsed", String(next));
                     return next;
                   })}
-                  className="h-8.5 w-8.5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-850 hover:bg-slate-50 shadow-xs transition-all cursor-pointer"
+                  className="h-8.5 w-8.5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-50 shadow-xs transition-all cursor-pointer"
                   title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
                 >
                   {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
@@ -1029,7 +1029,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           className={`px-3 py-1 text-[10px] font-extrabold rounded-full transition-all cursor-pointer ${
                             tasksFilter === t.id
                               ? "bg-slate-900 text-white shadow-xs"
-                              : "text-slate-500 hover:text-slate-850"
+                              : "text-slate-500 hover:text-slate-900"
                           }`}
                         >
                           {t.label}
@@ -1039,7 +1039,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => setShowAddTaskForm(!showAddTaskForm)}
-                      className="p-1.5 rounded-full bg-slate-900 text-white hover:bg-slate-850 cursor-pointer shadow-xs transition-transform hover:scale-105"
+                      className="p-1.5 rounded-full bg-slate-900 text-white hover:bg-slate-800 cursor-pointer shadow-xs transition-transform hover:scale-105"
                       title="Add task"
                     >
                       <Plus className="h-3.5 w-3.5" />
@@ -2266,7 +2266,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <p className="text-[10px] text-slate-455 mt-0.5 font-semibold">
                       {isProfileEditAllowed 
                         ? "You are permitted to modify your academic and personal registration credentials." 
-                        : "Editing has been disabled by your Campus Manager (CAM) for your class group."}
+                        : "Editing has been disabled by your Campus Manager (CM) for your class group."}
                     </p>
                   </div>
                 </div>
@@ -2341,7 +2341,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-850 block">{currentStudent.register_number || <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-800 block">{currentStudent.register_number || <span className="text-slate-400 italic">Not Added</span>}</span>
                       )}
                     </div>
 
@@ -2356,7 +2356,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-850 block">{currentStudent.roll_number || <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-800 block">{currentStudent.roll_number || <span className="text-slate-400 italic">Not Added</span>}</span>
                       )}
                     </div>
 

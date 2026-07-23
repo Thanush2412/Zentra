@@ -5,7 +5,7 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { department, semester, name, type, college_id, year, weekly_hours, subject_group } = body;
+    const { department, semester, name, type, college_id, year, weekly_hours, subject_group, shift } = body;
 
     if (!department || !semester || !name || !type) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
@@ -24,10 +24,11 @@ export async function POST(request: Request) {
     const newId = `sub_${(countRow?.count || 0) + 1}_${Date.now()}`;
 
     const weeklyHoursVal = parseInt(weekly_hours, 10) || 4;
+    const shiftVal = shift || "general";
 
     await db.run(
-      `INSERT INTO subjects (id, department, semester, name, type, college_id, year, weekly_hours, subject_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      newId, department, semester, name, type, college_id || null, calculatedYear, weeklyHoursVal, subject_group || "General"
+      `INSERT INTO subjects (id, department, semester, name, type, college_id, year, weekly_hours, subject_group, shift) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      newId, department, semester, name, type, college_id || null, calculatedYear, weeklyHoursVal, subject_group || "General", shiftVal
     );
 
     return NextResponse.json({ success: true, message: "Subject created successfully." });
@@ -41,7 +42,7 @@ export async function PUT(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { id, department, semester, name, type, college_id, year, weekly_hours, subject_group } = body;
+    const { id, department, semester, name, type, college_id, year, weekly_hours, subject_group, shift } = body;
 
     if (!id || !department || !semester || !name || !type) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
@@ -57,10 +58,11 @@ export async function PUT(request: Request) {
     }
 
     const weeklyHoursVal = parseInt(weekly_hours, 10) || 4;
+    const shiftVal = shift || "general";
 
     await db.run(
-      `UPDATE subjects SET department = ?, semester = ?, name = ?, type = ?, college_id = ?, year = ?, weekly_hours = ?, subject_group = ? WHERE id = ?`,
-      department, semester, name, type, college_id || null, calculatedYear, weeklyHoursVal, subject_group || "General", id
+      `UPDATE subjects SET department = ?, semester = ?, name = ?, type = ?, college_id = ?, year = ?, weekly_hours = ?, subject_group = ?, shift = ? WHERE id = ?`,
+      department, semester, name, type, college_id || null, calculatedYear, weeklyHoursVal, subject_group || "General", shiftVal, id
     );
 
     return NextResponse.json({ success: true, message: "Subject updated successfully." });
@@ -87,7 +89,7 @@ export async function DELETE(request: Request) {
       if (subject) {
         const slotsList = await db.all(
           "SELECT id FROM slots WHERE LOWER(course) = LOWER(?) AND (LOWER(department) = LOWER(?) OR department IS NULL OR department = '')",
-          [subject.name, subject.department]
+          subject.name, subject.department
         );
         const slotIds = slotsList.map(s => s.id);
 
@@ -105,7 +107,7 @@ export async function DELETE(request: Request) {
       await db.run("COMMIT;");
       return NextResponse.json({ success: true, message: "Subject and all associated slots deleted successfully." });
     } catch (txError) {
-      await db.run("ROLLBACK;");
+      try { await db.run("ROLLBACK;"); } catch (_) {}
       throw txError;
     }
   } catch (error: any) {

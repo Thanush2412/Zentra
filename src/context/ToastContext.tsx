@@ -30,6 +30,11 @@ interface ConfirmOptions {
 interface ToastContextValue {
   toast: (message: string, type?: ToastType) => void;
   confirm: (options: ConfirmOptions) => Promise<boolean>;
+  startLoading: (message?: string) => void;
+  stopLoading: () => void;
+  withLoading: <T>(action: Promise<T> | (() => Promise<T>), message?: string) => Promise<T>;
+  isLoading: boolean;
+  loadingMessage: string;
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -76,6 +81,8 @@ let _nextId = 0;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [actionMessage, setActionMessage] = useState("Processing request...");
 
   // Confirm modal state
   const [confirmState, setConfirmState] = useState<ConfirmOptions & { visible: boolean }>({
@@ -83,6 +90,26 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     message: "",
   });
   const confirmResolve = useRef<((value: boolean) => void) | null>(null);
+
+  /* -- action loading API -- */
+  const startLoading = useCallback((message = "Processing request...") => {
+    setActionMessage(message);
+    setIsActionLoading(true);
+  }, []);
+
+  const stopLoading = useCallback(() => {
+    setIsActionLoading(false);
+  }, []);
+
+  const withLoading = useCallback(async <T,>(action: Promise<T> | (() => Promise<T>), message = "Processing request..."): Promise<T> => {
+    startLoading(message);
+    try {
+      const result = typeof action === "function" ? await action() : await action;
+      return result;
+    } finally {
+      stopLoading();
+    }
+  }, [startLoading, stopLoading]);
 
   /* -- toast API -- */
   const toast = useCallback((message: string, type: ToastType = "info") => {
@@ -114,8 +141,30 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ToastContext.Provider value={{ toast, confirm }}>
+    <ToastContext.Provider value={{ toast, confirm, startLoading, stopLoading, withLoading, isLoading: isActionLoading, loadingMessage: actionMessage }}>
       {children}
+
+      {/* ── Top Sleek Glowing Progress Bar ───────── */}
+      {isActionLoading && (
+        <div className="fixed top-0 left-0 right-0 z-[10001] h-1.5 bg-slate-200/40 dark:bg-slate-800/40 overflow-hidden pointer-events-none">
+          <div 
+            className="h-full bg-gradient-to-r from-indigo-500 via-[#D528A2] via-purple-500 to-rose-500 shadow-[0_0_12px_rgba(213,40,162,0.8)] animate-pulse w-full"
+            style={{ animation: "top-loader-pulse 1.2s ease-in-out infinite alternate" }} 
+          />
+        </div>
+      )}
+
+      {/* ── Floating Action Progress Indicator ───── */}
+      {isActionLoading && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10001] flex items-center gap-3 px-5 py-3 rounded-2xl bg-slate-900/90 text-white backdrop-blur-xl border border-slate-700/80 shadow-2xl animate-in fade-in slide-in-from-bottom-3 duration-200 pointer-events-none">
+          <div className="flex items-center gap-1.5">
+            <div className="h-2.5 w-2.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "0s", animationDuration: "0.8s" }} />
+            <div className="h-2.5 w-2.5 rounded-full bg-[#D528A2] animate-bounce" style={{ animationDelay: "0.15s", animationDuration: "0.8s" }} />
+            <div className="h-2.5 w-2.5 rounded-full bg-rose-400 animate-bounce" style={{ animationDelay: "0.30s", animationDuration: "0.8s" }} />
+          </div>
+          <span className="text-xs font-bold tracking-wide text-slate-100">{actionMessage || "Processing request..."}</span>
+        </div>
+      )}
 
       {/* ── Toast Stack ─────────────────────────── */}
       <div className="tt-stack" aria-live="polite" aria-atomic="false">

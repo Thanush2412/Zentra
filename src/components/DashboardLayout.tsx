@@ -36,6 +36,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     currentStudent,
     currentSME,
     isLoading,
+    isDataLoading,
   } = useApp();
 
   const isLoggedInClient = typeof window !== "undefined" && localStorage.getItem("fp_logged_in") === "true";
@@ -191,7 +192,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
   // Render global loading screen if app is initializing or not authorized yet
   if (isLoading || !isAuthorized) {
-    return <ProfessionalLoader message="Loading your workspace..." />;
+    return <ProfessionalLoader message="Connecting to live database & loading workspace..." />;
   }
 
   return (
@@ -545,18 +546,18 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
 export function ProfessionalLoader({ message = "Loading your workspace..." }: { message?: string }) {
   return (
-    <div className="flex-1 flex items-center justify-center min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 relative overflow-hidden">
+    <div className="flex-1 flex items-center justify-center min-h-screen bg-slate-50 relative overflow-hidden">
       {/* Background Soft Orbs */}
       <div className="absolute top-[35%] left-[35%] h-[320px] w-[320px] rounded-full bg-indigo-500/10 blur-[120px] pointer-events-none animate-pulse" />
       <div className="absolute bottom-[35%] right-[35%] h-[320px] w-[320px] rounded-full bg-[#D528A2]/10 blur-[120px] pointer-events-none animate-pulse" />
 
       {/* Glassmorphic Card */}
-      <div className="relative z-10 flex flex-col items-center p-8 sm:p-10 rounded-3xl border border-white/70 dark:border-slate-800/80 bg-white/75 dark:bg-slate-900/75 backdrop-blur-xl shadow-2xl max-w-sm w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-300">
+      <div className="relative z-10 flex flex-col items-center p-8 sm:p-10 rounded-3xl border border-slate-200/90 bg-white/95 backdrop-blur-xl shadow-2xl max-w-sm w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-300">
         
         {/* Zentra Logo Header */}
         <div className="relative mb-6 flex items-center justify-center">
           <div className="absolute -inset-3 rounded-2xl bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-[#D528A2]/20 blur-md animate-pulse" />
-          <div className="relative flex items-center justify-center px-6 py-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-md">
+          <div className="relative flex items-center justify-center px-6 py-3.5 rounded-2xl bg-white border border-slate-200 shadow-md">
             <img src="/logo.svg" alt="Zentra Logo" className="h-10 w-auto object-contain" />
           </div>
         </div>
@@ -582,10 +583,10 @@ export function ProfessionalLoader({ message = "Loading your workspace..." }: { 
         </div>
 
         {/* Loading Message */}
-        <h3 className="text-sm font-extrabold text-slate-850 dark:text-white tracking-tight mt-2 mb-1">
+        <h3 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight mt-3 mb-1">
           {message}
         </h3>
-        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+        <p className="text-xs text-slate-600 dark:text-slate-300 font-bold">
           Please wait while your environment is loaded...
         </p>
       </div>

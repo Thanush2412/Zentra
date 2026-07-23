@@ -2795,7 +2795,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     ? "bg-indigo-150 text-indigo-800 border border-indigo-200/50"
                                     : "bg-amber-100 text-amber-805 border border-amber-200/50"
                               }`}>
-                              {req.status === "pending_cam" ? "Awaiting CAM Approval" : req.status}
+                              {req.status === "pending_cam" ? "Awaiting CM Approval" : req.status}
                             </span>
                             {req.headerReason && (
                               <div className="text-[9px] text-gray-500 border-l-2 border-gray-200 pl-1.5 mt-1">
@@ -3049,7 +3049,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex items-center gap-3">
                 <Sparkles className="h-5 w-5 text-indigo-650 shrink-0" />
                 <div className="text-[11px] text-indigo-850 font-semibold leading-normal">
-                  Your academic profile and subjects list are managed by your Campus Academic Manager (CAM). Shift changes or subject reallocations will be updated automatically upon approval.
+                  Your academic profile and subjects list are managed by your Campus Manager (CM). Shift changes or subject reallocations will be updated automatically upon approval.
                 </div>
               </div>
             </div>
@@ -3584,7 +3584,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <p className="flex justify-between"><span>Present:</span> <span className="font-black text-emerald-600">{prevPresent}</span></p>
                         <p className="flex justify-between"><span>Absent:</span> <span className="font-black text-rose-600">{prevAbsent}</span></p>
                         <p className="flex justify-between"><span>OD (On Duty):</span> <span className="font-black text-blue-600">{prevOD}</span></p>
-                        <p className="text-[10px] text-slate-450 font-bold mt-3 italic text-center block bg-slate-50 p-2 rounded-xl border">Contact your Campus Manager (CAM) for in-person corrections.</p>
+                        <p className="text-[10px] text-slate-450 font-bold mt-3 italic text-center block bg-slate-50 p-2 rounded-xl border">Contact your Campus Manager (CM) for in-person corrections.</p>
                       </div>
                     ) : (
                       <p className="text-[10px] text-slate-450 italic font-semibold">No attendance was marked for this slot before the window closed.</p>
@@ -4428,7 +4428,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       <div className="p-3 bg-indigo-50 border border-indigo-100 text-indigo-900 text-[11px] rounded-xl font-semibold flex gap-1.5 items-start">
                         <AlertCircle className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
                         <div>
-                          <span className="font-bold text-indigo-700">Emergency Request:</span> Since this class period has already passed, this request requires Campus Academic Manager (CAM) approval first. Once approved, the cover staff can accept it.
+                          <span className="font-bold text-indigo-700">Emergency Request:</span> Since this class period has already passed, this request requires Campus Manager (CM) approval first. Once approved, the cover staff can accept it.
                         </div>
                       </div>
                     )}

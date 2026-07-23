@@ -132,7 +132,7 @@ export async function POST(request: Request) {
           { label: "Student Group", value: slot.classGroup || "General" },
           { label: "Cover Faculty", value: coverStaff.name, highlight: true },
           { label: "Reason", value: reason },
-          { label: "Emergency Request", value: isEmergency ? "Yes (Requires CAM Approval)" : "No" }
+          { label: "Emergency Request", value: isEmergency ? "Yes (Requires CM Approval)" : "No" }
         ]
       });
       await sendMail({

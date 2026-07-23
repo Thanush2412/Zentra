@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { resolveClassGroupDetailsFromState } from "@/lib/utils";
+import { useToast } from "@/context/ToastContext";
 
 export interface Mentor {
   id: string;
@@ -221,6 +222,7 @@ export interface Subject {
   year?: string;
   weekly_hours?: number;
   subject_group?: string;
+  shift?: string;
 }
 
 export interface Department {
@@ -239,6 +241,7 @@ export interface Department {
   end_year?: string;
   default_room?: string;
   default_shift?: string;
+  shift_based?: number;
 }
 
 export type Course = Department;
@@ -274,6 +277,7 @@ interface AppContextProps {
   weekOffset: number;
   setWeekOffset: (offset: number) => void;
   isLoading: boolean;
+  isDataLoading: boolean;
   currentShift: ShiftType;
   setCurrentShift: (shift: ShiftType) => void;
   shiftTimeSlots: Record<ShiftType, string[]>;
@@ -486,6 +490,15 @@ export const SHIFT_TIME_SLOTS: Record<ShiftType, string[]> = {
 const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  let startLoading = (_msg?: string) => {};
+  let stopLoading = () => {};
+  try {
+    const toastObj = useToast();
+    if (toastObj) {
+      startLoading = toastObj.startLoading;
+      stopLoading = toastObj.stopLoading;
+    }
+  } catch (_) {}
   // All data starts empty — populated exclusively from database via API
   const [mentors, setMentors] = useState<Mentor[]>([]);
   const [hrList, setHrList] = useState<HRUser[]>([]);
@@ -534,6 +547,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentShift, setCurrentShiftState] = useState<ShiftType>("general");
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isDataLoading, setIsDataLoading] = useState(false);
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [baseDate, setBaseDate] = useState<string>(() => {
     const today = new Date();
@@ -588,6 +602,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Fetch all data from the database ──────────────────────────────────────
   const refreshData = async () => {
+    setIsDataLoading(true);
+    startLoading("Fetching live database data…");
     try {
       const role = localStorage.getItem("fp_current_role") || "";
       let userId = "";
@@ -605,6 +621,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setApprovedHandovers(data.approvedHandovers || []);
         setAuditLogs(data.auditLogs || []);
         setMentors(data.mentors || []);
+        setColleges(data.colleges || []);
         setHrList(data.hr || []);
         setSubjectsList(data.subjects || []);
         setDepartmentsList(data.departments || []);
@@ -620,28 +637,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setDemoRules(data.demoRules || []);
         setSignupRequests(data.signupRequests || []);
 
-        // Parallel fetch for secondary metadata endpoints for fast page load / refresh
-        Promise.allSettled([
-          fetch("/api/requests/demo-swap").then(r => r.json()),
-          fetch("/api/tasks").then(r => r.json()),
-          fetch("/api/issues").then(r => r.json()),
-          fetch("/api/academic-calendar").then(r => r.json()),
-          fetch("/api/faculty-constraints").then(r => r.json()),
-          fetch("/api/colleges").then(r => r.json())
-        ]).then(([swapRes, tasksRes, issuesRes, calRes, constRes, collegesRes]) => {
-          if (swapRes.status === "fulfilled" && swapRes.value?.success) setDemoSwapRequests(swapRes.value.requests || []);
-          if (tasksRes.status === "fulfilled" && tasksRes.value?.success) setKamTasks(tasksRes.value.tasks || []);
-          if (issuesRes.status === "fulfilled" && issuesRes.value?.success) setCampusIssues(issuesRes.value.issues || []);
-          if (calRes.status === "fulfilled" && calRes.value?.success) {
-            setAcademicYears(calRes.value.academicYears || []);
-            setAcademicEvents(calRes.value.academicEvents || []);
-          }
-          if (constRes.status === "fulfilled" && constRes.value?.success) {
-            setFacultyWorkloadLimits(constRes.value.workloadLimits || {});
-            setFacultyShifts(constRes.value.shifts || {});
-          }
-          if (collegesRes.status === "fulfilled" && collegesRes.value?.success) setColleges(collegesRes.value.colleges || []);
-        }).catch(err => console.error("Error in parallel metadata fetch:", err));
+        if (data.demoSwapRequests) setDemoSwapRequests(data.demoSwapRequests);
+        if (data.kamTasks) setKamTasks(data.kamTasks);
+        if (data.campusIssues) setCampusIssues(data.campusIssues);
+        if (data.academicYears) setAcademicYears(data.academicYears.map((ay: any) => typeof ay === "string" ? ay : ay.year || ay.year_name || ay.name || String(ay)));
+        if (data.academicEvents) setAcademicEvents(data.academicEvents);
 
         return {
           mentors: data.mentors || [] as Mentor[],
@@ -652,13 +652,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch (e) {
       console.error("Error fetching data from API:", e);
+    } finally {
+      setIsDataLoading(false);
+      stopLoading();
     }
     return { mentors: [] as Mentor[], hr: [] as HRUser[], students: [] as Student[], smes: [] as any[] };
   };
 
   useEffect(() => {
+    // Instant 0ms session pre-hydration from cached localStorage snapshot
+    if (typeof window !== "undefined") {
+      try {
+        const loggedIn = localStorage.getItem("fp_logged_in") === "true";
+        const storedRole = localStorage.getItem("fp_current_role") as Role | null;
+        const cachedSnap = localStorage.getItem("fp_user_snapshot");
+        if (loggedIn && storedRole && cachedSnap) {
+          const userObj = JSON.parse(cachedSnap);
+          if (storedRole === "mentor") setCurrentMentor(userObj);
+          else if (storedRole === "cam") setCurrentCAM(userObj);
+          else if (storedRole === "kam") setCurrentKAM(userObj);
+          else if (storedRole === "admin") setCurrentAdmin(userObj);
+          else if (storedRole === "student") setCurrentStudent(userObj);
+          else if (storedRole === "sme") setCurrentSME(userObj);
+          setCurrentRoleState(storedRole);
+          setIsLoading(false);
+        }
+      } catch (_) {}
+    }
+
     const initApp = async () => {
-      setIsLoading(true);
       document.documentElement.classList.remove("dark");
 
       // 1. Fetch all data from DB
@@ -701,6 +723,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setCurrentRoleState("mentor");
           } else {
             setCurrentMentor(m);
+            localStorage.setItem("fp_user_snapshot", JSON.stringify(m));
             setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
             if (m.shift) {
               setCurrentShiftState(m.shift as ShiftType);
@@ -710,11 +733,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else if (parsedRole === "cam" && storedCamId) {
           let camFound = false;
           try {
-            const camRes = await fetch(`/api/cam?id=${storedCamId}`);
-            const camData = await camRes.json();
-            if (camData.success && camData.cam) {
-              setCurrentCAM({ ...camData.cam, role: "cam" });
-              camFound = true;
+            const cachedSnap = localStorage.getItem("fp_user_snapshot");
+            if (cachedSnap) {
+              const snap = JSON.parse(cachedSnap);
+              if (snap.id === storedCamId) {
+                setCurrentCAM({ ...snap, role: "cam" });
+                camFound = true;
+              }
+            }
+            if (!camFound) {
+              const camRes = await fetch(`/api/cam?id=${storedCamId}`);
+              const camData = await camRes.json();
+              if (camData.success && camData.cam) {
+                setCurrentCAM({ ...camData.cam, role: "cam" });
+                localStorage.setItem("fp_user_snapshot", JSON.stringify(camData.cam));
+                camFound = true;
+              }
             }
           } catch (_) {}
           if (!camFound) {
@@ -727,11 +761,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else if (parsedRole === "kam" && storedKamId) {
           let kamFound = false;
           try {
-            const kamRes = await fetch(`/api/kam?id=${storedKamId}`);
-            const kamData = await kamRes.json();
-            if (kamData.success && kamData.kam) {
-              setCurrentKAM({ ...kamData.kam, role: "kam" });
-              kamFound = true;
+            const cachedSnap = localStorage.getItem("fp_user_snapshot");
+            if (cachedSnap) {
+              const snap = JSON.parse(cachedSnap);
+              if (snap.id === storedKamId) {
+                setCurrentKAM({ ...snap, role: "kam" });
+                kamFound = true;
+              }
+            }
+            if (!kamFound) {
+              const kamRes = await fetch(`/api/kam?id=${storedKamId}`);
+              const kamData = await kamRes.json();
+              if (kamData.success && kamData.kam) {
+                setCurrentKAM({ ...kamData.kam, role: "kam" });
+                localStorage.setItem("fp_user_snapshot", JSON.stringify(kamData.kam));
+                kamFound = true;
+              }
             }
           } catch (_) {}
           if (!kamFound) {
@@ -744,11 +789,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else if (parsedRole === "admin" && storedAdminId) {
           let adminFound = false;
           try {
-            const adminRes = await fetch(`/api/admin?id=${storedAdminId}`);
-            const adminData = await adminRes.json();
-            if (adminData.success && adminData.admin) {
-              setCurrentAdmin({ ...adminData.admin, role: "admin" });
-              adminFound = true;
+            const cachedSnap = localStorage.getItem("fp_user_snapshot");
+            if (cachedSnap) {
+              const snap = JSON.parse(cachedSnap);
+              if (snap.id === storedAdminId) {
+                setCurrentAdmin({ ...snap, role: "admin" });
+                adminFound = true;
+              }
+            }
+            if (!adminFound) {
+              const adminRes = await fetch(`/api/admin?id=${storedAdminId}`);
+              const adminData = await adminRes.json();
+              if (adminData.success && adminData.admin) {
+                setCurrentAdmin({ ...adminData.admin, role: "admin" });
+                localStorage.setItem("fp_user_snapshot", JSON.stringify(adminData.admin));
+                adminFound = true;
+              }
             }
           } catch (_) {}
           if (!adminFound) {
@@ -766,6 +822,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setCurrentRoleState("mentor");
           } else {
             setCurrentStudent(s);
+            localStorage.setItem("fp_user_snapshot", JSON.stringify(s));
             setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentSME(null);
           }
         } else if (parsedRole === "sme") {
@@ -777,6 +834,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setCurrentRoleState("mentor");
           } else {
             setCurrentSME(s);
+            localStorage.setItem("fp_user_snapshot", JSON.stringify(s));
             setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
           }
         } else if (parsedRole === "allocator") {
@@ -2093,6 +2151,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const createCourse = async (course: Omit<Course, "id">) => {
+    startLoading("Registering new department...");
     try {
       const res = await fetch("/api/courses", {
         method: "POST",
@@ -2106,10 +2165,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
+    } finally {
+      stopLoading();
     }
   };
 
   const updateCourse = async (course: Course) => {
+    startLoading("Saving department changes...");
     try {
       const res = await fetch("/api/courses", {
         method: "PUT",
@@ -2123,10 +2185,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
+    } finally {
+      stopLoading();
     }
   };
 
   const updateStudent = async (student: Student) => {
+    startLoading("Updating student record...");
     try {
       const res = await fetch("/api/students", {
         method: "PUT",
@@ -2140,10 +2205,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
+    } finally {
+      stopLoading();
     }
   };
 
   const deleteCourse = async (id: string) => {
+    startLoading("Deleting department and linked records...");
     try {
       const res = await fetch(`/api/courses?id=${id}`, {
         method: "DELETE"
@@ -2155,6 +2223,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
+    } finally {
+      stopLoading();
     }
   };
 
@@ -2531,6 +2601,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         weekOffset,
         setWeekOffset,
         isLoading,
+        isDataLoading,
         currentShift,
         setCurrentShift,
         shiftTimeSlots: customShiftTimeSlots,
