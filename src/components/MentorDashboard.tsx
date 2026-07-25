@@ -11,6 +11,7 @@ import {
   ListTodo,
   Send,
   AlertCircle,
+  AlertTriangle,
   X,
   UserCheck,
   CalendarCheck2,
@@ -147,6 +148,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [attendanceMode, setAttendanceMode] = useState<"Online" | "Offline">("Offline");
   const [attendanceTypeSub, setAttendanceTypeSub] = useState<string>("Event");
   const [attendanceStep, setAttendanceStep] = useState<1 | 2 | 3>(1);
+  const [isDayConfigSet, setIsDayConfigSet] = useState<boolean>(true);
+  const [dayConfigDetails, setDayConfigDetails] = useState<any>(null);
   // Target Classes Filter State
   const [selectedClassFilter, setSelectedClassFilter] = useState<string | null>(null);
 
@@ -1489,14 +1492,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     const targetSem = getSemesterFromSlot(slot);
     setModalSemester(targetSem);
 
+    setIsDayConfigSet(true);
+    setDayConfigDetails(null);
+
     // Fetch daily config asynchronously to resolve type & mode preset by CAM
-    if (!firstExisting && currentMentor?.college_id) {
+    if (currentMentor?.college_id) {
       fetch(`/api/daily-configs?college_id=${currentMentor.college_id}`)
         .then(res => res.json())
         .then(data => {
           if (data.success && data.configs) {
             const configForDate = data.configs.find((c: any) => c.dateStr === dateStr);
-            if (configForDate) {
+            if (configForDate && configForDate.day_type && configForDate.day_type !== "None") {
+              setIsDayConfigSet(true);
+              setDayConfigDetails(configForDate);
               if (configForDate.day_type === "event" || configForDate.day_type === "exam_day") {
                 setAttendanceType("Non-Regular");
                 setAttendanceTypeSub(configForDate.day_type === "event" ? "Event" : "Exam");
@@ -1504,6 +1512,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 setAttendanceType("Regular");
               }
               setAttendanceMode(configForDate.session_mode === "Online" ? "Online" : "Offline");
+            } else {
+              if (!firstExisting) {
+                setIsDayConfigSet(false);
+                setDayConfigDetails(null);
+              }
             }
           }
         })
@@ -3776,6 +3789,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
               return (
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                  {!isDayConfigSet && (
+                    <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-bold flex items-center gap-2 shrink-0">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span>
+                        Type of Day has not been configured for {selectedCell?.dateStr || "today"} by the Campus Manager (CAM). Attendance marking is disabled.
+                      </span>
+                    </div>
+                  )}
+
                   {/* Step Tracker (Only shown if NOT past/locked) */}
                   {!isPastDay && (
                     <div className="flex items-center justify-between gap-2 p-1 border-b border-slate-100 pb-3 shrink-0 mb-3.5">
@@ -4279,9 +4301,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <button
                               type="button"
                               onClick={() => setAttendanceStep(3)}
-                              className="flex-1 bg-slate-900 hover:bg-slate-900/90 text-white font-semibold rounded-md py-2.5 text-xs transition-colors cursor-pointer text-center shadow-xs"
+                              disabled={!isDayConfigSet}
+                              className="flex-1 bg-slate-900 hover:bg-slate-900/90 text-white font-semibold rounded-md py-2.5 text-xs transition-colors cursor-pointer text-center shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              Review & Save →
+                              {!isDayConfigSet ? "Type of Day Not Set" : "Review & Save →"}
                             </button>
                           </>
                         )}
@@ -4365,10 +4388,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <button
                           type="button"
                           onClick={handleSaveAttendance}
-                          disabled={isSubmittingAttendance}
+                          disabled={isSubmittingAttendance || !isDayConfigSet}
                           className="flex-1 bg-slate-900 hover:bg-slate-900/90 text-white font-semibold rounded-md py-2.5 text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {isSubmittingAttendance ? "Saving..." : "Confirm & Save"}
+                          {isSubmittingAttendance ? "Saving..." : !isDayConfigSet ? "Type of Day Not Set" : "Confirm & Save"}
                         </button>
                       </div>
                     </div>

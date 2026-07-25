@@ -227,6 +227,13 @@ export function getDb(): Promise<TursoDbAdapter> {
       end_year TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS campus_drafts (
+      id TEXT PRIMARY KEY DEFAULT 'active_draft',
+      data TEXT NOT NULL,
+      saved_at TEXT NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS students (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,

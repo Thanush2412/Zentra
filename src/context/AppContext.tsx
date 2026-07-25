@@ -104,6 +104,8 @@ export interface Student {
   hackerrank_link?: string;
   leetcode_link?: string;
   figma_link?: string;
+  semester?: string;
+  shift?: string;
 }
 
 export interface StudentAttendance {
@@ -281,7 +283,7 @@ interface AppContextProps {
   currentShift: ShiftType;
   setCurrentShift: (shift: ShiftType) => void;
   shiftTimeSlots: Record<ShiftType, string[]>;
-  getTimeSlots: (shift: string, semesterOrClassGroup?: string) => string[];
+  getTimeSlots: (shift: string, semesterOrClassGroup?: string, targetCollegeId?: string) => string[];
   setRole: (role: Role, userId?: string, extra?: { collegeId?: string }) => void;
   assignSlot: (mentorId: string, day: string, time: string, course: string, location: string, classGroup?: string) => Promise<void>;
   deleteSlot: (slotId: string) => Promise<void>;
@@ -320,6 +322,7 @@ interface AppContextProps {
   importCSV: (csvContent: string) => Promise<{ success: boolean; message: string; count: number }>;
   clearAllData: () => Promise<{ success: boolean; message: string }>;
   createMentor: (mentor: Omit<Mentor, "role">) => Promise<{ success: boolean; message: string }>;
+  bulkImportMentors: (mentors: any[], defaultCollegeId?: string) => Promise<{ success: boolean; count?: number; message: string }>;
   updateMentor: (mentor: Omit<Mentor, "role">) => Promise<{ success: boolean; message: string }>;
   deleteMentor: (id: string) => Promise<{ success: boolean; message: string }>;
   bookDemoSession: (mentorId: string, mentorName: string, smeId: string, smeName: string, dateStr: string, timeSlot: string, subject: string, stream: string, week: number) => Promise<{ success: boolean; message: string }>;
@@ -391,6 +394,8 @@ interface AppContextProps {
   requestLeave: (type: "leave" | "od", dateStr: string, reason: string) => Promise<{ success: boolean; message?: string }>;
   handleLeaveRequest: (requestId: string, status: "approved" | "rejected") => Promise<{ success: boolean; message?: string }>;
   updateStudent: (student: Student) => Promise<{ success: boolean; message: string }>;
+  deleteStudent: (id: string) => Promise<{ success: boolean; message: string }>;
+  bulkDeleteStudents: (ids: string[]) => Promise<{ success: boolean; message: string; count?: number }>;
   weeklyTasks: WeeklyTask[];
   studentTracker: StudentTrackerEntry[];
   assignWeeklyTask: (taskData: { classGroup: string; subject: string; weekNumber: number; taskName: string; taskPdfUrl?: string; mentorId: string }) => Promise<{ success: boolean; task?: WeeklyTask; message?: string }>;
@@ -574,6 +579,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       currentCAM?.college_id || 
       currentMentor?.college_id || 
       currentStudent?.college_id || 
+      colleges.find(c => c.kam_id === currentKAM?.id)?.id ||
       colleges[0]?.id;
 
     if (!activeCollegeId) {
@@ -598,7 +604,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       setCustomShiftTimeSlots(SHIFT_TIME_SLOTS);
     }
-  }, [colleges, currentCAM, currentMentor, currentStudent]);
+  }, [colleges, currentCAM, currentMentor, currentStudent, currentKAM, currentSME]);
 
   // ── Fetch all data from the database ──────────────────────────────────────
   const refreshData = async () => {
@@ -1673,6 +1679,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const bulkImportMentors = async (mentorsData: any[], defaultCollegeId?: string) => {
+    try {
+      const res = await fetch("/api/mentors/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mentors: mentorsData, defaultCollegeId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await refreshData();
+      }
+      return data;
+    } catch (e: any) {
+      return { success: false, message: e.message || "Bulk import failed." };
+    }
+  };
+
   const updateMentor = async (mentorData: Omit<Mentor, "role">) => {
     try {
       const res = await fetch("/api/mentors", {
@@ -1719,20 +1742,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return "";
   };
 
-  const getTimeSlots = (shift: string, semesterOrClassGroup?: string): string[] => {
+  const getTimeSlots = (shift: string, semesterOrClassGroup?: string, targetCollegeId?: string): string[] => {
+    let rawShift = (shift || "").trim();
+
+    // Auto-detect course-specific default_shift from DB if shift wasn't explicitly passed
+    if ((!rawShift || rawShift.toLowerCase() === "all" || rawShift.toLowerCase() === "auto") && semesterOrClassGroup) {
+      const foundCourse = coursesList.find(c => 
+        semesterOrClassGroup.toLowerCase().includes(c.name.toLowerCase().trim()) ||
+        c.name.toLowerCase().trim() === semesterOrClassGroup.toLowerCase().trim()
+      );
+      if (foundCourse && foundCourse.default_shift) {
+        rawShift = foundCourse.default_shift;
+      }
+    }
+
+    if (!rawShift) rawShift = "general";
+
+    let sKey = rawShift.toLowerCase().replace(/\s+/g, "_");
+    if (sKey === "shift1" || sKey === "shift_1") sKey = "shift_1";
+    if (sKey === "shift2" || sKey === "shift_2") sKey = "shift_2";
+    if (sKey === "gen" || sKey === "general") sKey = "general";
+
     let semester = semesterOrClassGroup || "";
     if (semester && !semester.startsWith("Semester")) {
       semester = parseSemesterFromClassGroup(semester);
     }
-    
-    if (semester && customShiftTimeSlots.semesters?.[semester]) {
-      const semConfig = customShiftTimeSlots.semesters[semester];
-      if (semConfig[shift] && semConfig[shift].length > 0) {
-        return semConfig[shift];
+
+    // Resolve specific college shift configs if targetCollegeId provided
+    let activeConfigs = customShiftTimeSlots;
+    if (targetCollegeId) {
+      const targetCol = colleges.find(c => c.id === targetCollegeId);
+      if (targetCol && targetCol.shift_configs) {
+        try {
+          const parsed = JSON.parse(targetCol.shift_configs);
+          activeConfigs = {
+            shift_1: parsed.shift_1 || SHIFT_TIME_SLOTS.shift_1,
+            shift_2: parsed.shift_2 || SHIFT_TIME_SLOTS.shift_2,
+            general: parsed.general || SHIFT_TIME_SLOTS.general,
+            semesters: parsed.semester_configs || {}
+          };
+        } catch (_) {}
       }
     }
     
-    return customShiftTimeSlots[shift] || customShiftTimeSlots["general"] || (SHIFT_TIME_SLOTS as any)[shift] || [];
+    // Check Admin semester-level shift configs in DB
+    if (semester && activeConfigs.semesters?.[semester]) {
+      const semConfig = activeConfigs.semesters[semester];
+      if (semConfig[sKey] && semConfig[sKey].length > 0) {
+        return semConfig[sKey];
+      }
+      if (semConfig[rawShift] && semConfig[rawShift].length > 0) {
+        return semConfig[rawShift];
+      }
+    }
+    
+    // Check Admin college-level shift configs in DB
+    if (activeConfigs[sKey] && activeConfigs[sKey].length > 0) {
+      return activeConfigs[sKey];
+    }
+    if (activeConfigs[rawShift] && activeConfigs[rawShift].length > 0) {
+      return activeConfigs[rawShift];
+    }
+    
+    // Fallback to static shift defaults
+    return (SHIFT_TIME_SLOTS as any)[sKey] || (SHIFT_TIME_SLOTS as any)["general"] || [];
   };
 
   const generateTimetable = async (
@@ -1774,16 +1847,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         });
       } else {
-        // Fallback: use mentors that match the class group's department (Bug #2 fix)
-        // Extract course/department name from classGroup (strip semester/shift suffixes)
+        // Fallback: use mentors that match the class group's department & shift
         const normGroupName = classGroup.toLowerCase().replace(/[-–—\s]*(sem|semester|shift|year|yr)\s*\w+/gi, "").trim();
+        const targetShiftKey = (shift || "general").toLowerCase().replace(/\s+/g, "_");
         const deptMentors = mentors.filter((m) => {
           if (!m.subjects || !m.subjects.trim()) return false;
-          // Match by department field if it roughly matches the class group name
+          if (m.shift) {
+            const mShiftKey = m.shift.toLowerCase().replace(/\s+/g, "_");
+            if (mShiftKey !== "general" && targetShiftKey !== "general" && mShiftKey !== targetShiftKey) {
+              return false;
+            }
+          }
           if (m.department) {
             const normDept = m.department.toLowerCase().replace(/[^a-z0-9]/g, "");
             const normGroup = normGroupName.replace(/[^a-z0-9]/g, "");
-            // Accept if they share a meaningful prefix (at least 6 chars) or dept contains class keywords
             if (normDept.includes(normGroup.slice(0, 6)) || normGroup.includes(normDept.slice(0, 6))) {
               return true;
             }
@@ -2210,6 +2287,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const deleteStudent = async (id: string) => {
+    startLoading("Deleting student record...");
+    try {
+      const res = await fetch(`/api/students?id=${encodeURIComponent(id)}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      if (data.success) {
+        await refreshData();
+      }
+      return data;
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    } finally {
+      stopLoading();
+    }
+  };
+
+  const bulkDeleteStudents = async (ids: string[]) => {
+    if (!ids || ids.length === 0) return { success: false, message: "No student IDs provided." };
+    startLoading(`Deleting ${ids.length} student records...`);
+    try {
+      const res = await fetch("/api/students", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await refreshData();
+      }
+      return data;
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    } finally {
+      stopLoading();
+    }
+  };
+
   const deleteCourse = async (id: string) => {
     startLoading("Deleting department and linked records...");
     try {
@@ -2618,6 +2734,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         importCSV,
         clearAllData,
         createMentor,
+        bulkImportMentors,
         updateMentor,
         deleteMentor,
         bookDemoSession,
@@ -2654,6 +2771,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         refreshData,
         students,
         updateStudent,
+        deleteStudent,
+        bulkDeleteStudents,
         studentAttendance,
         currentStudent,
         markAttendance,

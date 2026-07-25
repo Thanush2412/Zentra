@@ -1,4 +1,5 @@
 import React from "react";
+import { Loader2 } from "lucide-react";
 
 type Variant = "primary" | "secondary" | "danger" | "success" | "warning" | "ghost" | "gradient";
 type Size = "xs" | "sm" | "md" | "lg";
@@ -7,18 +8,20 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
   icon?: React.ReactNode;
+  isLoading?: boolean;
+  loadingText?: string;
   children?: React.ReactNode;
 }
 
 // Matches the project's own button patterns from AdminDashboard / MentorDashboard
 const variantClasses: Record<Variant, string> = {
-  primary:   "btn-gradient border-none",                                                  // brand pink→orange
+  primary:   "btn-gradient border-none text-white",
   secondary: "bg-gray-100 hover:bg-gray-200 text-gray-700 border-transparent",
   danger:    "bg-rose-500 hover:bg-rose-600 text-white border-transparent shadow",
   success:   "bg-emerald-500 hover:bg-emerald-600 text-white border-transparent shadow",
   warning:   "bg-amber-400 hover:bg-amber-500 text-white border-transparent shadow",
   ghost:     "bg-transparent hover:bg-gray-55 text-gray-600 border-transparent",
-  gradient:  "btn-gradient border-none",
+  gradient:  "btn-gradient border-none text-white",
 };
 
 const sizeClasses: Record<Size, string> = {
@@ -32,6 +35,8 @@ export const Button: React.FC<ButtonProps> = ({
   variant = "primary",
   size = "md",
   icon,
+  isLoading = false,
+  loadingText,
   children,
   className = "",
   disabled,
@@ -40,15 +45,24 @@ export const Button: React.FC<ButtonProps> = ({
   return (
     <button
       {...rest}
-      disabled={disabled}
+      disabled={disabled || isLoading}
       className={`inline-flex items-center justify-center font-bold border cursor-pointer 
         transition-all duration-300 [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)] 
         hover:scale-[1.04] active:scale-[0.96] hover:shadow-md hover:shadow-[#D528A2]/10 
-        disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:active:scale-100 disabled:hover:shadow-none
+        disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:active:scale-100 disabled:hover:shadow-none
         ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
     >
-      {icon && <span className="shrink-0">{icon}</span>}
-      {children}
+      {isLoading ? (
+        <>
+          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+          <span>{loadingText || "Processing..."}</span>
+        </>
+      ) : (
+        <>
+          {icon && <span className="shrink-0">{icon}</span>}
+          {children}
+        </>
+      )}
     </button>
   );
 };

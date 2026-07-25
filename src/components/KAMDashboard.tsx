@@ -1,15 +1,16 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import { useToast } from "../context/ToastContext";
 import { gsap } from "gsap";
 import {
   Building2, Users, ClipboardList, ShieldAlert, CheckCircle2,
-  PlusCircle, Trash2, RefreshCw, Plus, Compass, ChevronsLeft, ChevronsRight, User,
-  ArrowRightLeft, TrendingUp, Scale, Clock, XCircle, ChevronRight, Settings,
-  GraduationCap, BookOpen, Eye, AlertTriangle, CheckCircle, X, Calendar,
-  ChevronDown, ChevronUp, Search, UserCheck, UserX, Activity, Layers
+  PlusCircle, Trash2, RefreshCw, Compass, ChevronsLeft, ChevronsRight, User,
+  ArrowRightLeft, TrendingUp, Clock, XCircle, ChevronRight,
+  GraduationCap, BookOpen, Eye, CheckCircle, Calendar,
+  ChevronDown, ChevronUp, Search, Activity, Layers,
+  IndianRupee, BarChart2, BookMarked, AlertCircle, UserCheck
 } from "lucide-react";
 import { Button } from "./Button";
 import { Card } from "./Card";
@@ -36,77 +37,129 @@ interface CAMCollegeCardProps {
   approvedHandovers: any[];
   escalations: any[];
   tasks: any[];
+  subjects: any[];
+  departments: any[];
+  attendance: any[];
+  leaveRequests: any[];
+  feeStats: { totalFees: number; totalPaid: number; collectionRate: number; paidCount: number; partialCount: number; unpaidCount: number } | null;
 }
 
 const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
-  cam, college, mentors, students, slots, requests, approvedHandovers, escalations, tasks
+  cam, college, mentors, students, slots, requests, approvedHandovers, escalations, tasks,
+  subjects, departments, attendance, leaveRequests, feeStats
 }) => {
   const [expanded, setExpanded] = useState(false);
-  const [activeSection, setActiveSection] = useState<"mentors" | "students" | "handovers" | "requests" | "issues">("mentors");
+  const [activeSection, setActiveSection] = useState<"mentors" | "students" | "handovers" | "requests" | "issues" | "curriculum" | "attendance" | "fees">("mentors");
   const [search, setSearch] = useState("");
 
   const pendingRequests = requests.filter(r => r.status === "pending" || r.status === "pending_cam");
   const openIssues = escalations.filter(e => e.status === "pending" || e.status === "open");
   const pendingTasks = tasks.filter(t => t.collegeId === college?.id && t.status === "pending");
 
+  // Attendance health: % present across all recorded sessions for this college
+  const collegeStudentIds = new Set(students.map((s: any) => s.id));
+  const collegeAttendance = attendance.filter((a: any) => collegeStudentIds.has(a.studentId));
+  const presentCount = collegeAttendance.filter((a: any) => a.status === "present" || a.status === "od").length;
+  const attendanceRate = collegeAttendance.length > 0 ? Math.round((presentCount / collegeAttendance.length) * 100) : null;
+
+  // Curriculum health: subjects mapped vs departments
+  const collegeDepts = departments.length;
+  const mappedDepts = new Set(subjects.map((s: any) => s.department)).size;
+  const subjectCount = subjects.length;
+
+  // Leave requests for this college's mentors
+  const mentorIds = new Set(mentors.map((m: any) => m.id));
+  const pendingLeaves = leaveRequests.filter((l: any) => mentorIds.has(l.mentorId) && l.status === "pending").length;
+
   const filteredMentors = mentors.filter(m =>
-    !search || m.name.toLowerCase().includes(search.toLowerCase()) || (m.department || "").toLowerCase().includes(search.toLowerCase())
+    !search || (m.name || "").toLowerCase().includes(search.toLowerCase()) || (m.department || "").toLowerCase().includes(search.toLowerCase())
   );
   const filteredStudents = students.filter(s =>
-    !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.classGroup || "").toLowerCase().includes(search.toLowerCase())
+    !search || (s.name || "").toLowerCase().includes(search.toLowerCase()) || (s.classGroup || "").toLowerCase().includes(search.toLowerCase())
   );
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden transition-all">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden transition-all" data-kam-card>
       {/* Card Header */}
-      <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-start gap-4">
-          <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-[#D528A2] flex items-center justify-center text-white font-black text-lg shadow-md shrink-0">
-            {(cam?.name || "C").substring(0, 1)}
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-black text-slate-800 dark:text-white">{cam?.name || "Campus Manager"}</h3>
-              <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-100 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[9px] font-black uppercase tracking-wider">CM</span>
+      <div className="p-5 flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-4">
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-[#D528A2] flex items-center justify-center text-white font-black text-lg shadow-md shrink-0">
+              {(cam?.name || "C").substring(0, 1)}
             </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">{cam?.email}</p>
-            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mt-0.5">
-              <Building2 className="inline h-3 w-3 mr-1 text-indigo-500" />
-              {college?.name || "Unassigned College"}
-              {college?.address ? ` · ${college.address}` : ""}
-            </p>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-black text-slate-800 dark:text-white">{cam?.name || "Campus Manager"}</h3>
+                <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-100 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[9px] font-black uppercase tracking-wider">CM</span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">{cam?.email || "—"}</p>
+              <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mt-0.5">
+                <Building2 className="inline h-3 w-3 mr-1 text-indigo-500" />
+                {college?.name || "Unassigned College"}
+                {college?.address ? ` · ${college.address}` : ""}
+              </p>
+            </div>
           </div>
-        </div>
-
-        {/* KPI Badges */}
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300">
-            <Users className="h-3 w-3 text-indigo-500" />{mentors.length} Faculty
-          </span>
-          <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300">
-            <GraduationCap className="h-3 w-3 text-emerald-500" />{students.length} Students
-          </span>
-          <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300">
-            <BookOpen className="h-3 w-3 text-amber-500" />{slots.length} Slots
-          </span>
-          {pendingRequests.length > 0 && (
-            <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[10px] font-bold text-amber-700 dark:text-amber-300">
-              <Clock className="h-3 w-3" />{pendingRequests.length} Pending
-            </span>
-          )}
-          {openIssues.length > 0 && (
-            <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-[10px] font-bold text-rose-700 dark:text-rose-300">
-              <ShieldAlert className="h-3 w-3" />{openIssues.length} Issues
-            </span>
-          )}
           <button
             onClick={() => setExpanded(p => !p)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-black hover:bg-indigo-100 dark:hover:bg-indigo-500/30 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-black hover:bg-indigo-100 dark:hover:bg-indigo-500/30 transition-all cursor-pointer self-start sm:self-center"
           >
             <Eye className="h-3 w-3" />
             {expanded ? "Collapse" : "View Details"}
             {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           </button>
+        </div>
+
+        {/* Health & KPI grid */}
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
+          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700">
+            <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{mentors.length}</span>
+            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">Faculty</span>
+          </div>
+          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700">
+            <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">{students.length}</span>
+            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">Students</span>
+          </div>
+          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700">
+            <span className="text-sm font-black text-amber-600 dark:text-amber-400">{slots.length}</span>
+            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">Slots</span>
+          </div>
+          <div className={`flex flex-col items-center justify-center p-2 rounded-xl border ${
+            attendanceRate === null ? "bg-slate-50 dark:bg-slate-800/60 border-slate-100 dark:border-slate-700"
+            : attendanceRate >= 75 ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
+            : "bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20"
+          }`}>
+            <span className={`text-sm font-black ${
+              attendanceRate === null ? "text-slate-400"
+              : attendanceRate >= 75 ? "text-emerald-600 dark:text-emerald-400"
+              : "text-rose-600 dark:text-rose-400"
+            }`}>{attendanceRate !== null ? `${attendanceRate}%` : "—"}</span>
+            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">Attend.</span>
+          </div>
+          <div className={`flex flex-col items-center justify-center p-2 rounded-xl border ${
+            feeStats === null ? "bg-slate-50 dark:bg-slate-800/60 border-slate-100 dark:border-slate-700"
+            : feeStats.collectionRate >= 80 ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
+            : "bg-amber-50 dark:bg-amber-500/10 border-amber-100 dark:border-amber-500/20"
+          }`}>
+            <span className={`text-sm font-black ${
+              feeStats === null ? "text-slate-400"
+              : feeStats.collectionRate >= 80 ? "text-emerald-600 dark:text-emerald-400"
+              : "text-amber-600 dark:text-amber-400"
+            }`}>{feeStats !== null ? `${feeStats.collectionRate}%` : "—"}</span>
+            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">Fees</span>
+          </div>
+          <div className={`flex flex-col items-center justify-center p-2 rounded-xl border ${
+            openIssues.length > 0 ? "bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20"
+            : pendingRequests.length > 0 ? "bg-amber-50 dark:bg-amber-500/10 border-amber-100 dark:border-amber-500/20"
+            : "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
+          }`}>
+            <span className={`text-sm font-black ${
+              openIssues.length > 0 ? "text-rose-600 dark:text-rose-400"
+              : pendingRequests.length > 0 ? "text-amber-600 dark:text-amber-400"
+              : "text-emerald-600 dark:text-emerald-400"
+            }`}>{openIssues.length > 0 ? openIssues.length : pendingRequests.length > 0 ? pendingRequests.length : "✓"}</span>
+            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">{openIssues.length > 0 ? "Issues" : "Requests"}</span>
+          </div>
         </div>
       </div>
 
@@ -118,6 +171,9 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
             {[
               { id: "mentors", label: "Faculty", icon: Users, count: mentors.length },
               { id: "students", label: "Students", icon: GraduationCap, count: students.length },
+              { id: "attendance", label: "Attendance", icon: UserCheck, count: attendanceRate !== null ? `${attendanceRate}%` as any : null },
+              { id: "curriculum", label: "Curriculum", icon: BookMarked, count: subjectCount },
+              { id: "fees", label: "Fees", icon: IndianRupee, count: feeStats?.collectionRate !== undefined ? `${feeStats.collectionRate}%` as any : null },
               { id: "handovers", label: "Handovers", icon: ArrowRightLeft, count: approvedHandovers.length },
               { id: "requests", label: "Requests", icon: Clock, count: pendingRequests.length, alert: pendingRequests.length > 0 },
               { id: "issues", label: "Issues", icon: ShieldAlert, count: openIssues.length, alert: openIssues.length > 0 },
@@ -184,7 +240,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                             <td className="p-3">
                               <div className="flex items-center gap-2">
                                 <div className="h-7 w-7 rounded-full bg-gradient-to-br from-indigo-400 to-[#D528A2] flex items-center justify-center text-white text-[9px] font-black shrink-0">
-                                  {m.name.substring(0, 2).toUpperCase()}
+                                  {(m.name || "Faculty").substring(0, 2).toUpperCase()}
                                 </div>
                                 <span className="font-bold text-slate-800 dark:text-white">{m.name}</span>
                               </div>
@@ -235,7 +291,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                           <td className="p-3">
                             <div className="flex items-center gap-2">
                               <div className="h-7 w-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-[9px] font-black shrink-0">
-                                {s.name.substring(0, 2).toUpperCase()}
+                                {(s.name || "Student").substring(0, 2).toUpperCase()}
                               </div>
                               <span className="font-bold text-slate-800 dark:text-white">{s.name}</span>
                             </div>
@@ -386,6 +442,192 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                 )}
               </div>
             )}
+
+            {/* ATTENDANCE section */}
+            {activeSection === "attendance" && (
+              <div className="space-y-4">
+                {/* Summary row */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Present", value: presentCount, color: "emerald" },
+                    { label: "Absent", value: collegeAttendance.filter((a: any) => a.status === "absent").length, color: "rose" },
+                    { label: "OD", value: collegeAttendance.filter((a: any) => a.status === "od").length, color: "amber" },
+                  ].map(s => (
+                    <div key={s.label} className={`p-3 rounded-2xl bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 text-center`}>
+                      <div className={`text-xl font-black text-${s.color}-600 dark:text-${s.color}-400`}>{s.value}</div>
+                      <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Progress bar */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[10px] font-bold text-slate-600 dark:text-slate-400">
+                    <span>Overall Attendance Rate</span>
+                    <span className={attendanceRate !== null && attendanceRate < 75 ? "text-rose-600" : "text-emerald-600"}>
+                      {attendanceRate !== null ? `${attendanceRate}%` : "No data"}
+                    </span>
+                  </div>
+                  {attendanceRate !== null && (
+                    <div className="h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${attendanceRate >= 75 ? "bg-emerald-500" : "bg-rose-500"}`}
+                        style={{ width: `${attendanceRate}%` }}
+                      />
+                    </div>
+                  )}
+                  {attendanceRate !== null && attendanceRate < 75 && (
+                    <p className="text-[10px] text-rose-600 dark:text-rose-400 font-bold flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Below 75% threshold — CAM action required
+                    </p>
+                  )}
+                </div>
+                {/* Per-mentor slot attendance breakdown */}
+                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <table className="w-full text-xs font-semibold min-w-[420px]">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-widest text-slate-500 font-black">
+                        <th className="p-3 text-left">Faculty</th>
+                        <th className="p-3 text-left">Dept</th>
+                        <th className="p-3 text-center">Slots</th>
+                        <th className="p-3 text-center">Att. Sessions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                      {mentors.slice(0, 10).map((m: any) => {
+                        const mSlots = slots.filter((s: any) => s.mentorId === m.id);
+                        const mAttCount = collegeAttendance.filter((a: any) => mSlots.some((s: any) => s.id === a.slotId)).length;
+                        return (
+                          <tr key={m.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                            <td className="p-3 font-bold text-slate-800 dark:text-white">{m.name}</td>
+                            <td className="p-3 text-slate-500 dark:text-slate-400 text-[10px]">{m.department || "—"}</td>
+                            <td className="p-3 text-center text-slate-700 dark:text-slate-300 font-black">{mSlots.length}</td>
+                            <td className="p-3 text-center text-slate-700 dark:text-slate-300 font-black">{mAttCount}</td>
+                          </tr>
+                        );
+                      })}
+                      {mentors.length === 0 && (
+                        <tr><td colSpan={4} className="p-4 text-center text-xs text-slate-400 italic">No faculty data.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {pendingLeaves > 0 && (
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-2">
+                    <Clock className="h-3.5 w-3.5 shrink-0" />
+                    {pendingLeaves} faculty leave request{pendingLeaves !== 1 ? "s" : ""} pending CAM approval
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CURRICULUM section */}
+            {activeSection === "curriculum" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Departments", value: collegeDepts, color: "indigo" },
+                    { label: "Mapped Depts", value: mappedDepts, color: mappedDepts === collegeDepts && collegeDepts > 0 ? "emerald" : "amber" },
+                    { label: "Subjects", value: subjectCount, color: "purple" },
+                  ].map(s => (
+                    <div key={s.label} className={`p-3 rounded-2xl bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 text-center`}>
+                      <div className={`text-xl font-black text-${s.color}-600 dark:text-${s.color}-400`}>{s.value}</div>
+                      <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+                {collegeDepts > 0 && mappedDepts < collegeDepts && (
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-2">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    {collegeDepts - mappedDepts} department{collegeDepts - mappedDepts !== 1 ? "s" : ""} have no subjects mapped
+                  </div>
+                )}
+                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <table className="w-full text-xs font-semibold min-w-[480px]">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-widest text-slate-500 font-black">
+                        <th className="p-3 text-left">Department</th>
+                        <th className="p-3 text-center">Subjects</th>
+                        <th className="p-3 text-center">Shift</th>
+                        <th className="p-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                      {departments.length === 0 ? (
+                        <tr><td colSpan={4} className="p-4 text-center text-xs text-slate-400 italic">No departments found.</td></tr>
+                      ) : departments.map((dept: any) => {
+                        const deptSubs = subjects.filter((s: any) => s.department === dept.name);
+                        const mapped = deptSubs.length > 0;
+                        return (
+                          <tr key={dept.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                            <td className="p-3 font-bold text-slate-800 dark:text-white">{dept.name}</td>
+                            <td className="p-3 text-center font-black text-slate-700 dark:text-slate-300">{deptSubs.length}</td>
+                            <td className="p-3 text-center">
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 uppercase">
+                                {dept.default_shift || "General"}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
+                                mapped ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300" : "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+                              }`}>{mapped ? "Mapped" : "Unmapped"}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* FEES section */}
+            {activeSection === "fees" && (
+              <div className="space-y-4">
+                {feeStats === null ? (
+                  <div className="text-center py-8 text-xs text-slate-400 italic">Fee data unavailable — no CM assigned or no fees recorded.</div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { label: "Total Fees", value: `₹${(feeStats.totalFees / 100).toLocaleString()}`, color: "indigo" },
+                        { label: "Collected", value: `₹${(feeStats.totalPaid / 100).toLocaleString()}`, color: "emerald" },
+                        { label: "Outstanding", value: `₹${((feeStats.totalFees - feeStats.totalPaid) / 100).toLocaleString()}`, color: feeStats.totalFees - feeStats.totalPaid > 0 ? "rose" : "emerald" },
+                        { label: "Collection Rate", value: `${feeStats.collectionRate}%`, color: feeStats.collectionRate >= 80 ? "emerald" : "amber" },
+                      ].map(s => (
+                        <div key={s.label} className={`p-3 rounded-2xl bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 text-center`}>
+                          <div className={`text-sm font-black text-${s.color}-600 dark:text-${s.color}-400`}>{s.value}</div>
+                          <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[10px] font-bold text-slate-600 dark:text-slate-400">
+                        <span>Collection Progress</span>
+                        <span className={feeStats.collectionRate >= 80 ? "text-emerald-600" : "text-amber-600"}>{feeStats.collectionRate}%</span>
+                      </div>
+                      <div className="h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${feeStats.collectionRate >= 80 ? "bg-emerald-500" : "bg-amber-500"}`}
+                          style={{ width: `${feeStats.collectionRate}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {[
+                        { label: "Paid", value: feeStats.paidCount, color: "emerald" },
+                        { label: "Partial", value: feeStats.partialCount, color: "amber" },
+                        { label: "Unpaid", value: feeStats.unpaidCount, color: "rose" },
+                      ].map(s => (
+                        <div key={s.label} className={`p-3 rounded-2xl bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 text-center`}>
+                          <div className={`text-xl font-black text-${s.color}-600 dark:text-${s.color}-400`}>{s.value}</div>
+                          <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -411,11 +653,19 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
     campusIssues: escalations,
     saveKamTask,
     deleteKamTask,
-    updateCampusIssueStatus
+    updateCampusIssueStatus,
+    subjectsList,
+    departmentsList,
+    studentAttendance,
+    leaveRequests,
   } = useApp();
   const { toast } = useToast();
 
-  const activeColleges = colleges.filter(c => !currentKAM || c.kam_id === currentKAM.id);
+  // Bug 8 fix: memoize activeColleges so it's stable across renders
+  const activeColleges = useMemo(
+    () => colleges.filter(c => !currentKAM || c.kam_id === currentKAM.id),
+    [colleges, currentKAM]
+  );
 
   const [localActiveTab, setLocalActiveTab] = useState<"overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "profile">("overview");
   const activeTab = propActiveTab || localActiveTab;
@@ -443,15 +693,13 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
     if (activeColleges.length > 0 && !taskCollegeId) {
       setTaskCollegeId(activeColleges[0].id);
     }
-  }, [activeColleges]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeColleges.length, activeColleges[0]?.id]);
 
-  // GSAP tab transition
+  // GSAP tab transition — Bug 9 fix: use data attribute selector instead of .bg-white
   useEffect(() => {
     if (typeof window !== "undefined" && containerRef.current) {
-      const cards = Array.from(containerRef.current.querySelectorAll(".rounded-3xl, .rounded-2xl, .bg-white")).filter(el => {
-        if (el.closest(".floating-sidebar") || el.closest("header") || el.tagName === "ASIDE") return false;
-        return !el.parentElement?.closest(".rounded-3xl, .rounded-2xl, .bg-white");
-      });
+      const cards = Array.from(containerRef.current.querySelectorAll("[data-kam-card], [data-kam-panel]"));
       if (cards.length > 0) {
         gsap.killTweensOf(cards);
         gsap.fromTo(cards, { opacity: 0, y: 15, scale: 0.97 }, { opacity: 1, y: 0, scale: 1, duration: 0.45, stagger: 0.04, ease: "back.out(0.8)" });
@@ -459,32 +707,48 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
     }
   }, [activeTab]);
 
-  // GSAP sidebar mount
-  useEffect(() => {
-    if (typeof window !== "undefined" && sidebarRef.current && !isFirstSidebarAnimationDone) {
-      const btns = sidebarRef.current.querySelectorAll("button");
-      if (btns.length > 0) {
-        isFirstSidebarAnimationDone = true;
-        gsap.fromTo(btns, { opacity: 0, x: -20, scale: 0.9 }, { opacity: 1, x: 0, scale: 1, duration: 0.55, stagger: 0.05, ease: "back.out(1.3)", delay: 0.05 });
-      }
-    }
-  }, []);
+  // Sidebar hover state for flyout popover (matches CAM pattern)
+  const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
 
-  // CAM reports state — must be at component level (Rules of Hooks)
+  // Bug 1 fix: fetch real CAM data per college using /api/cam, not /api/kam
+  // Also fetch fee stats per college via /api/fees?role=cam&camId=
   const [camDataMap, setCamDataMap] = useState<Record<string, any>>({});
+  const [feeStatsMap, setFeeStatsMap] = useState<Record<string, any>>({});
   const [loadingCams, setLoadingCams] = useState(false);
 
   useEffect(() => {
     if (!currentKAM?.id || activeColleges.length === 0) return;
+
     setLoadingCams(true);
+    // First get all CMs for this KAM (their IDs) from the KAM endpoint
     fetch(`/api/kam?id=${encodeURIComponent(currentKAM.id)}`)
       .then(r => r.json())
-      .then(data => {
-        if (data.success && data.campusManagers) {
-          const map: Record<string, any> = {};
-          data.campusManagers.forEach((cam: any) => { map[cam.college_id] = cam; });
-          setCamDataMap(map);
-        }
+      .then(async (kamData) => {
+        if (!kamData.success) return;
+        const cmList: any[] = kamData.campusManagers || [];
+
+        // Fetch full CAM data + fee data in parallel for each CM
+        const results = await Promise.allSettled(
+          cmList.map(async (cm: any) => {
+            const [camRes, feeRes] = await Promise.all([
+              fetch(`/api/cam?id=${encodeURIComponent(cm.id)}`).then(r => r.json()).catch(() => null),
+              fetch(`/api/fees?role=cam&camId=${encodeURIComponent(cm.id)}`).then(r => r.json()).catch(() => null),
+            ]);
+            return { collegeId: cm.college_id, camData: camRes, feeData: feeRes };
+          })
+        );
+
+        const newCamMap: Record<string, any> = {};
+        const newFeeMap: Record<string, any> = {};
+        results.forEach(r => {
+          if (r.status === "fulfilled" && r.value) {
+            const { collegeId, camData, feeData } = r.value;
+            if (camData?.success && camData.cam) newCamMap[collegeId] = camData.cam;
+            if (feeData?.success && feeData.stats) newFeeMap[collegeId] = feeData.stats;
+          }
+        });
+        setCamDataMap(newCamMap);
+        setFeeStatsMap(newFeeMap);
       })
       .catch(() => {})
       .finally(() => setLoadingCams(false));
@@ -500,21 +764,36 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
 
   const handleDeleteTask = async (id: string) => {
     const res = await deleteKamTask(id);
-    if (res.success) toast("Task deleted.", "success");
-    else toast(res.message || "Failed to delete task", "error");
+    if (res.success) {
+      await refreshData();
+      toast("Task deleted.", "success");
+    } else toast(res.message || "Failed to delete task", "error");
   };
 
   const handleResolveEscalation = async (id: string) => {
     const res = await updateCampusIssueStatus(id, "resolved", new Date().toLocaleDateString());
-    if (res.success) toast("Issue resolved.", "success");
-    else toast(res.message || "Failed to resolve", "error");
+    if (res.success) {
+      await refreshData();
+      toast("Issue resolved.", "success");
+    } else toast(res.message || "Failed to resolve", "error");
   };
+
+  // ── Portfolio-wide computed stats (must be declared BEFORE getNotificationCount) ─────
+  const portfolioMentorIds = new Set(mentors.filter(m => activeColleges.some(c => c.id === m.college_id)).map(m => m.id));
+  const portfolioStudentIds = new Set(students.filter(s => activeColleges.some(c => c.id === s.college_id)).map(s => s.id));
+  const totalMentors = portfolioMentorIds.size;
+  const totalStudents = portfolioStudentIds.size;
+  const totalSlots = slots.filter(s => portfolioMentorIds.has(s.mentorId)).length;
+  const totalPendingRequests = requests.filter(r => (r.status === "pending" || r.status === "pending_cam") && portfolioMentorIds.has(r.requestorId)).length;
+  // Scoped to this KAM's portfolio colleges (Bug 3 / 5 fix)
+  const totalOpenIssues = escalations.filter(e => (e.status === "pending" || e.status === "open") && activeColleges.some(c => c.id === e.collegeId)).length;
+  const totalPendingTasks = tasks.filter(t => t.status === "pending" && activeColleges.some(c => c.id === t.collegeId)).length;
 
   // ── Sidebar nav groups ──────────────────────────────────────────────────
   const getNotificationCount = (tabId: string) => {
-    if (tabId === "tasks") return tasks.filter(t => t.status === "pending").length;
-    if (tabId === "escalations") return escalations.filter(e => e.status === "pending").length;
-    if (tabId === "cam_reports") return escalations.filter(e => e.status === "pending").length + requests.filter(r => r.status === "pending_cam").length;
+    if (tabId === "tasks") return tasks.filter(t => t.status === "pending" && activeColleges.some(c => c.id === t.collegeId)).length;
+    if (tabId === "escalations") return escalations.filter(e => (e.status === "pending" || e.status === "open") && activeColleges.some(c => c.id === e.collegeId)).length;
+    if (tabId === "cam_reports") return requests.filter(r => r.status === "pending_cam" && portfolioMentorIds.has(r.requestorId)).length;
     return 0;
   };
 
@@ -549,111 +828,108 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
     }
   ];
 
-  // ── Portfolio-wide computed stats ────────────────────────────────────────
-  const portfolioMentorIds = new Set(mentors.filter(m => activeColleges.some(c => c.id === m.college_id)).map(m => m.id));
-  const portfolioStudentIds = new Set(students.filter(s => activeColleges.some(c => c.id === s.college_id)).map(s => s.id));
-  const totalMentors = portfolioMentorIds.size;
-  const totalStudents = portfolioStudentIds.size;
-  const totalSlots = slots.filter(s => portfolioMentorIds.has(s.mentorId)).length;
-  const totalPendingRequests = requests.filter(r => (r.status === "pending" || r.status === "pending_cam") && portfolioMentorIds.has(r.requestorId)).length;
-  const totalOpenIssues = escalations.filter(e => e.status === "pending" || e.status === "open").length;
-  const totalPendingTasks = tasks.filter(t => t.status === "pending").length;
-
   // Build CAMs list for this KAM
   const kamCamList = activeColleges.map(college => {
-    const cam = ([] as any[]).concat(
-      // We look for campus managers from context — they're in the /api/data response shape via admin
-      // We derive from colleges and mentors' headerId if available, else just show college-level
-    );
-    return { college };
+    const cam = camDataMap[college.id] || null;
+    return { college, cam };
   });
 
   return (
     <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-805 font-sans h-full overflow-hidden dark:bg-gradient-to-br dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 dark:text-slate-100">
 
       {/* ── Sidebar ── */}
-      <aside ref={sidebarRef} className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-3" : "w-72 p-6"}`}>
+      <aside ref={sidebarRef} className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-3" : "w-64 p-5"}`}>
         <div className="flex flex-col flex-1 overflow-visible">
           {/* Sidebar Header */}
           {!isCollapsed && (
-            <div className="mb-6 pb-4 border-b border-slate-200/60 dark:border-slate-800">
-              <h2 className="text-lg font-black text-slate-800 dark:text-white">KAM Portal</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Portfolio Management</p>
+            <div className="mb-5 pb-4 border-b border-slate-200/60 dark:border-slate-800">
+              <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-1">KAM Portal</p>
+              <h2 className="text-base font-black text-slate-800 dark:text-white leading-tight">Portfolio Hub</h2>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                {activeColleges.length} campus{activeColleges.length !== 1 ? "es" : ""} managed
+              </p>
             </div>
           )}
 
-          <nav className={`flex-1 space-y-4 ${isCollapsed ? "px-1" : "px-2"}`}>
+          <nav className={`py-2 space-y-2 ${isCollapsed ? "px-1" : "px-4"}`}>
             {sidebarGroups.map(group => {
               const Icon = group.icon;
               const isAnyChildActive = group.items.some(item => activeTab === item.id);
-              const totalPending = group.items.reduce((sum, item) => sum + getNotificationCount(item.id), 0);
-              
-              return (
-                <div key={group.id} className="space-y-1">
-                  {/* Group Header - Only show in expanded mode */}
-                  {!isCollapsed && (
-                    <div className="flex items-center justify-between px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <Icon className="h-4 w-4 text-slate-400 dark:text-slate-500" />
-                        <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                          {group.title}
-                        </span>
-                      </div>
-                      {totalPending > 0 && (
-                        <span className="bg-rose-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">
-                          {totalPending}
-                        </span>
-                      )}
-                    </div>
-                  )}
+              const totalPendingInGroup = group.items.reduce((sum, item) => sum + getNotificationCount(item.id), 0);
 
-                  {/* Group Items */}
-                  <div className="space-y-1">
-                    {group.items.map(item => {
-                      const ItemIcon = item.icon;
-                      const isActive = activeTab === item.id;
-                      const count = getNotificationCount(item.id);
-                      
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => setActiveTab(item.id as any)}
-                          className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 cursor-pointer group ${
-                            isActive 
-                              ? "bg-gradient-to-r from-indigo-500 to-[#D528A2] text-white shadow-lg shadow-indigo-500/25" 
-                              : "text-slate-600 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/60"
-                          } ${isCollapsed ? "justify-center" : "justify-start"}`}
-                          title={isCollapsed ? item.label : undefined}
-                        >
-                          <ItemIcon className={`h-5 w-5 shrink-0 transition-transform group-hover:scale-110 ${
-                            isActive ? "text-white" : "text-slate-500 dark:text-slate-400"
-                          }`} />
-                          
-                          {!isCollapsed && (
-                            <>
-                              <span className="flex-1 text-left text-sm font-bold truncate">
-                                {item.label}
-                              </span>
+              return (
+                <div
+                  key={group.id}
+                  className="relative py-0.5"
+                  onMouseEnter={() => setHoveredGroupId(group.id)}
+                  onMouseLeave={() => setHoveredGroupId(null)}
+                >
+                  {/* Group button — acts as the hover trigger */}
+                  <button
+                    type="button"
+                    className={`sidebar-group-btn w-full flex items-center rounded-2xl transition-all duration-200 cursor-pointer ${
+                      isCollapsed ? "justify-center px-0 py-3.5" : "justify-between px-4 py-3.5 text-left"
+                    } ${
+                      isAnyChildActive
+                        ? "bg-indigo-500/8 text-indigo-600 border border-indigo-200/60 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/25"
+                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-white dark:hover:bg-white/5"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Icon className={`h-4 w-4 shrink-0 ${isAnyChildActive ? "text-indigo-500 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`} />
+                      {!isCollapsed && <span className="text-xs font-bold truncate">{group.title}</span>}
+                    </div>
+                    {!isCollapsed && (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {totalPendingInGroup > 0 && (
+                          <span className="bg-rose-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">
+                            {totalPendingInGroup}
+                          </span>
+                        )}
+                        <ChevronRight className={`h-3 w-3 transition-transform ${isAnyChildActive ? "text-indigo-500" : "text-slate-400"}`} />
+                      </div>
+                    )}
+                  </button>
+
+                  {/* Flyout sub-menu popover — appears on hover to the right */}
+                  <div className={`absolute left-full top-0 pl-2 w-56 z-50 ${hoveredGroupId === group.id ? "block" : "hidden"}`}>
+                    <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-indigo-100 dark:border-slate-700 shadow-xl rounded-2xl p-2.5 animate-fadeIn">
+                      <div className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 mb-1.5 text-indigo-600 dark:text-indigo-400">
+                        {group.title}
+                      </div>
+                      <div className="space-y-0.5">
+                        {group.items.map(child => {
+                          const ChildIcon = child.icon;
+                          const isChildActive = activeTab === child.id;
+                          const count = getNotificationCount(child.id);
+                          return (
+                            <button
+                              key={child.id}
+                              type="button"
+                              onClick={() => {
+                                setActiveTab(child.id as any);
+                                setHoveredGroupId(null);
+                              }}
+                              className={`w-full flex items-center justify-start gap-3 px-2.5 py-2 text-left rounded-xl text-[11px] font-bold tracking-tight transition-all duration-150 cursor-pointer ${
+                                isChildActive
+                                  ? "bg-gradient-to-r from-indigo-500 to-[#D528A2] text-white shadow-sm"
+                                  : "text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 dark:text-slate-400 dark:hover:text-indigo-300 dark:hover:bg-white/5"
+                              }`}
+                            >
+                              <ChildIcon className={`h-3.5 w-3.5 shrink-0 ${isChildActive ? "text-white" : "text-slate-400"}`} />
+                              <span className="flex-1 truncate">{child.label}</span>
                               {count > 0 && (
-                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full transition-all ${
-                                  isActive 
-                                    ? "bg-white/20 text-white" 
-                                    : "bg-rose-500 text-white"
+                                <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                  isChildActive ? "bg-white/25 text-white" : "bg-rose-500 text-white"
                                 }`}>
                                   {count}
                                 </span>
                               )}
-                            </>
-                          )}
-                          
-                          {isCollapsed && count > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[8px] font-bold h-4 w-4 rounded-full flex items-center justify-center">
-                              {count}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
@@ -661,12 +937,12 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
           </nav>
         </div>
 
-        {/* Sidebar Footer */}
-        <div className="border-t border-slate-200/60 dark:border-slate-800 pt-4 shrink-0">
+        {/* Sidebar Footer — user card + collapse toggle */}
+        <div className="border-t border-slate-100/85 dark:border-slate-800 pt-4 space-y-3 shrink-0">
           {!isCollapsed && (
-            <div className="px-3 py-2 mb-3 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-500/10 dark:to-purple-500/10 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
+            <div className="px-3 py-2.5 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-500/10 dark:to-purple-500/10 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
               <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-full bg-gradient-to-r from-indigo-500 to-[#D528A2] flex items-center justify-center text-white text-xs font-bold">
+                <div className="h-8 w-8 rounded-full bg-gradient-to-r from-indigo-500 to-[#D528A2] flex items-center justify-center text-white text-xs font-bold shrink-0">
                   {currentKAM?.name?.substring(0, 2).toUpperCase() || "KM"}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -674,40 +950,37 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                     {currentKAM?.name || "KAM User"}
                   </p>
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                    {activeColleges.length} campus{activeColleges.length !== 1 ? "es" : ""}
+                    Key Account Manager
                   </p>
                 </div>
               </div>
             </div>
           )}
-          
-          <div className="flex justify-center">
+          <div className="flex justify-center pt-1">
             <button
               type="button"
-              onClick={() => setIsCollapsed(prev => { 
-                const next = !prev; 
-                localStorage.setItem("fp_sidebar_collapsed", String(next)); 
-                return next; 
+              onClick={() => setIsCollapsed(prev => {
+                const next = !prev;
+                localStorage.setItem("fp_sidebar_collapsed", String(next));
+                return next;
               })}
-              className="h-10 w-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-all cursor-pointer group"
+              className="h-8 w-8 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-all cursor-pointer"
               title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
             >
-              {isCollapsed ? (
-                <ChevronsRight className="h-4 w-4 group-hover:scale-110 transition-transform" />
-              ) : (
-                <ChevronsLeft className="h-4 w-4 group-hover:scale-110 transition-transform" />
-              )}
+              {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
             </button>
           </div>
         </div>
       </aside>
 
-      {/* ── Mobile Bottom Nav ── */}
+      {/* ── Mobile Bottom Nav — all 7 tabs, scroll-friendly ── */}
       <nav className="flex md:hidden fixed bottom-0 inset-x-0 z-50 mobile-bottom-nav">
-        <div className="flex w-full justify-around items-center py-2 px-1">
+        <div className="flex w-full justify-around items-center py-2 px-1 overflow-x-auto gap-0.5">
           {[
             { id: "overview", label: "Overview", icon: Activity },
             { id: "cam_reports", label: "CMs", icon: Layers },
+            { id: "colleges", label: "Campuses", icon: Building2 },
+            { id: "swap_tracker", label: "Swaps", icon: ArrowRightLeft },
             { id: "tasks", label: "Tasks", icon: ClipboardList },
             { id: "escalations", label: "Issues", icon: ShieldAlert },
             { id: "profile", label: "Profile", icon: User },
@@ -717,12 +990,16 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
             const count = getNotificationCount(t.id);
             return (
               <button key={t.id} onClick={() => setActiveTab(t.id as any)}
-                className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 py-1.5 rounded-xl transition-all cursor-pointer ${isActive ? "text-indigo-600" : "text-slate-400"}`}>
+                className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 min-w-[44px] py-1.5 rounded-xl transition-all cursor-pointer ${isActive ? "text-indigo-600" : "text-slate-400"}`}>
                 <div className="relative">
-                  <Icon className={`h-5 w-5 transition-transform ${isActive ? "scale-110" : ""}`} />
-                  {count > 0 && <span className="absolute -top-1.5 -right-1.5 h-3.5 w-3.5 bg-rose-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">{count}</span>}
+                  <Icon className={`h-4.5 w-4.5 transition-transform ${isActive ? "scale-110" : ""}`} />
+                  {count > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 h-3.5 w-3.5 bg-rose-500 text-white text-[7px] font-bold rounded-full flex items-center justify-center">
+                      {count}
+                    </span>
+                  )}
                 </div>
-                <span className={`text-[9px] font-semibold tracking-wide leading-none ${isActive ? "text-indigo-600" : "text-slate-400"}`}>{t.label}</span>
+                <span className={`text-[8px] font-semibold tracking-wide leading-none ${isActive ? "text-indigo-600" : "text-slate-400"}`}>{t.label}</span>
                 {isActive && <span className="absolute top-0 inset-x-2 h-0.5 bg-indigo-500 rounded-full" />}
               </button>
             );
@@ -738,7 +1015,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
         <div className="max-w-7xl mx-auto w-full space-y-6 relative z-10 animate-fadeIn">
 
           {/* ── Global Header ── */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-3xl p-5 md:p-8 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div data-kam-panel className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-3xl p-5 md:p-8 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <span className="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/20 text-indigo-650 dark:text-indigo-300 text-[10px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-500/30">
@@ -764,18 +1041,18 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
               {/* KPI Row */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                 {[
-                  { label: "Campuses", value: activeColleges.length, icon: Building2, color: "indigo" },
-                  { label: "Faculty", value: totalMentors, icon: Users, color: "purple" },
-                  { label: "Students", value: totalStudents, icon: GraduationCap, color: "emerald" },
-                  { label: "Total Slots", value: totalSlots, icon: BookOpen, color: "amber" },
-                  { label: "Pending Requests", value: totalPendingRequests, icon: Clock, color: totalPendingRequests > 0 ? "rose" : "emerald" },
-                  { label: "Open Issues", value: totalOpenIssues, icon: ShieldAlert, color: totalOpenIssues > 0 ? "rose" : "emerald" },
+                  { label: "Campuses", value: activeColleges.length, icon: Building2, bg: "bg-indigo-50 dark:bg-indigo-500/10", border: "border-indigo-100 dark:border-indigo-500/20", text: "text-indigo-600 dark:text-indigo-400" },
+                  { label: "Faculty", value: totalMentors, icon: Users, bg: "bg-purple-50 dark:bg-purple-500/10", border: "border-purple-100 dark:border-purple-500/20", text: "text-purple-600 dark:text-purple-400" },
+                  { label: "Students", value: totalStudents, icon: GraduationCap, bg: "bg-emerald-50 dark:bg-emerald-500/10", border: "border-emerald-100 dark:border-emerald-500/20", text: "text-emerald-600 dark:text-emerald-400" },
+                  { label: "Total Slots", value: totalSlots, icon: BookOpen, bg: "bg-amber-50 dark:bg-amber-500/10", border: "border-amber-100 dark:border-amber-500/20", text: "text-amber-600 dark:text-amber-400" },
+                  { label: "Pending Requests", value: totalPendingRequests, icon: Clock, bg: totalPendingRequests > 0 ? "bg-rose-50 dark:bg-rose-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalPendingRequests > 0 ? "border-rose-100 dark:border-rose-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalPendingRequests > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400" },
+                  { label: "Open Issues", value: totalOpenIssues, icon: ShieldAlert, bg: totalOpenIssues > 0 ? "bg-rose-50 dark:bg-rose-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalOpenIssues > 0 ? "border-rose-100 dark:border-rose-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalOpenIssues > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400" },
                 ].map(kpi => {
                   const Icon = kpi.icon;
                   return (
                     <div key={kpi.label} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
-                      <div className={`h-8 w-8 rounded-xl flex items-center justify-center bg-${kpi.color}-50 dark:bg-${kpi.color}-500/10 border border-${kpi.color}-100 dark:border-${kpi.color}-500/20`}>
-                        <Icon className={`h-4 w-4 text-${kpi.color}-600 dark:text-${kpi.color}-400`} />
+                      <div className={`h-8 w-8 rounded-xl flex items-center justify-center ${kpi.bg} border ${kpi.border}`}>
+                        <Icon className={`h-4 w-4 ${kpi.text}`} />
                       </div>
                       <div>
                         <div className="text-2xl font-black text-slate-800 dark:text-white">{kpi.value}</div>
@@ -916,39 +1193,62 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                   })}
                 </div>
 
-                {loadingCams && (
-                  <div className="text-center py-8 text-xs text-slate-400">Loading CAM data…</div>
-                )}
-
-                {/* CAM Cards */}
+                {/* CAM Cards — Bug 10 fix: skeleton while loading, real CM data once ready */}
                 <div className="space-y-4">
-                  {activeColleges.map(college => {
-                    const cam = camDataMap[college.id];
-                    const collegeMentors = mentors.filter(m => m.college_id === college.id);
-                    const collegeStudents = students.filter(s => s.college_id === college.id);
-                    const collegeMentorIds = new Set(collegeMentors.map(m => m.id));
-                    const collegeSlots = slots.filter(s => collegeMentorIds.has(s.mentorId));
-                    const collegeRequests = requests.filter(r => collegeMentorIds.has(r.requestorId) || collegeMentorIds.has(r.targetStaffId));
-                    const collegeHandovers = approvedHandovers.filter(h => collegeMentorIds.has(h.originalMentorId) || collegeMentorIds.has(h.coverStaffId));
-                    const collegeIssues = escalations.filter(e => e.collegeId === college.id);
-                    const collegeTasks = tasks.filter(t => t.collegeId === college.id);
+                  {loadingCams ? (
+                    // Loading skeleton
+                    Array.from({ length: activeColleges.length || 2 }).map((_, i) => (
+                      <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 animate-pulse">
+                        <div className="flex items-center gap-4">
+                          <div className="h-12 w-12 rounded-2xl bg-slate-200 dark:bg-slate-700 shrink-0" />
+                          <div className="flex-1 space-y-2">
+                            <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-1/3" />
+                            <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded w-1/2" />
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    activeColleges.map(college => {
+                      const cam = camDataMap[college.id];
+                      const collegeMentors = mentors.filter(m => m.college_id === college.id);
+                      const collegeStudents = students.filter(s => s.college_id === college.id);
+                      const collegeMentorIds = new Set(collegeMentors.map(m => m.id));
+                      const collegeSlots = slots.filter(s => collegeMentorIds.has(s.mentorId));
+                      const collegeRequests = requests.filter(r => collegeMentorIds.has(r.requestorId) || collegeMentorIds.has(r.targetStaffId));
+                      const collegeHandovers = approvedHandovers.filter(h => collegeMentorIds.has(h.originalMentorId) || collegeMentorIds.has(h.coverStaffId));
+                      const collegeIssues = escalations.filter(e => e.collegeId === college.id);
+                      const collegeTasks = tasks.filter(t => t.collegeId === college.id);
+                      const collegeDepts = departmentsList.filter(d => d.college_id === college.id);
+                      const collegeSubjects = subjectsList.filter(s => s.college_id === college.id);
+                      const collegeMentorIdSet = new Set(collegeMentors.map(m => m.id));
+                      const collegeStudentIds = new Set(collegeStudents.map(s => s.id));
+                      const collegeAtt = studentAttendance.filter(a => collegeStudentIds.has(a.studentId));
+                      const collegeLeaves = leaveRequests.filter((l: any) => collegeMentorIdSet.has(l.mentorId));
+                      const feeStat = feeStatsMap[college.id] || null;
 
-                    return (
-                      <CAMCollegeCard
-                        key={college.id}
-                        cam={cam || { name: `CM — ${college.name}`, email: "—", id: null }}
-                        college={college}
-                        mentors={collegeMentors}
-                        students={collegeStudents}
-                        slots={collegeSlots}
-                        requests={collegeRequests}
-                        approvedHandovers={collegeHandovers}
-                        escalations={collegeIssues}
-                        tasks={collegeTasks}
-                      />
-                    );
-                  })}
-                  {activeColleges.length === 0 && (
+                      return (
+                        <CAMCollegeCard
+                          key={college.id}
+                          cam={cam || { name: `CM — ${college.name}`, email: "—", id: null }}
+                          college={college}
+                          mentors={collegeMentors}
+                          students={collegeStudents}
+                          slots={collegeSlots}
+                          requests={collegeRequests}
+                          approvedHandovers={collegeHandovers}
+                          escalations={collegeIssues}
+                          tasks={collegeTasks}
+                          subjects={collegeSubjects}
+                          departments={collegeDepts}
+                          attendance={collegeAtt}
+                          leaveRequests={collegeLeaves}
+                          feeStats={feeStat}
+                        />
+                      );
+                    })
+                  )}
+                  {activeColleges.length === 0 && !loadingCams && (
                     <div className="text-center py-16 text-sm text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-700 rounded-3xl">
                       No colleges assigned to your KAM portfolio yet.
                     </div>
@@ -959,124 +1259,266 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
 
           {/* ══ TAB: CAMPUS DIRECTORY ══ */}
           {activeTab === "colleges" && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                <Card label="Colleges Managed" value={`${activeColleges.length} Campuses`} icon={<Building2 className="h-5 w-5" />} success={true} className="bg-pastel-blue" />
-                <Card label="Open Escalations" value={`${escalations.filter(e => e.status === "pending").length} Alerts`} icon={<ShieldAlert className="h-5 w-5 animate-pulse" />} success={escalations.filter(e => e.status === "pending").length === 0} className="bg-pastel-cream" />
-                <Card label="Tasks Dispatched" value={`${tasks.length} Assigned`} icon={<ClipboardList className="h-5 w-5" />} success={true} className="bg-pastel-purple" />
-              </div>
-              <Panel title="Assigned Portfolio Colleges" subtitle="All colleges currently linked to your KAM assignment">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-semibold">
-                  {activeColleges.map(c => {
-                    const mentorsCount = mentors.filter(m => m.college_id === c.id).length;
-                    const studentsCount = students.filter(s => s.college_id === c.id).length;
-                    const slotsCount = slots.filter(s => mentors.find(m => m.id === s.mentorId)?.college_id === c.id).length;
-                    return (
-                      <div key={c.id} className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 flex flex-col gap-4 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-all">
-                        <div>
-                          <h4 className="text-xs font-black text-slate-800 dark:text-white">{c.name}</h4>
-                          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">{c.address || "—"}</span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-bold">
-                          <div className="bg-white dark:bg-slate-950 p-2 rounded-xl border border-slate-100 dark:border-slate-850">
-                            <span className="text-slate-500 dark:text-slate-455 block">Students</span>
-                            <span className="text-xs font-black text-slate-855 dark:text-white block mt-0.5">{studentsCount}</span>
-                          </div>
-                          <div className="bg-white dark:bg-slate-950 p-2 rounded-xl border border-slate-100 dark:border-slate-850">
-                            <span className="text-slate-500 dark:text-slate-455 block">Faculty</span>
-                            <span className="text-xs font-black text-slate-855 dark:text-white block mt-0.5">{mentorsCount}</span>
-                          </div>
-                          <div className="bg-white dark:bg-slate-950 p-2 rounded-xl border border-slate-100 dark:border-slate-850">
-                            <span className="text-slate-500 dark:text-slate-455 block">Schedules</span>
-                            <span className="text-xs font-black text-indigo-650 dark:text-indigo-300 block mt-0.5">{slotsCount} slots</span>
-                          </div>
-                        </div>
+            <div className="space-y-6" data-kam-panel>
+              {/* KPI strip */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {[
+                  { label: "Colleges", value: activeColleges.length, icon: Building2, color: "indigo" },
+                  { label: "Open Issues", value: totalOpenIssues, icon: ShieldAlert, color: totalOpenIssues > 0 ? "rose" : "emerald" },
+                  { label: "Tasks Pending", value: totalPendingTasks, icon: ClipboardList, color: totalPendingTasks > 0 ? "amber" : "emerald" },
+                  { label: "Portfolio Faculty", value: totalMentors, icon: Users, color: "purple" },
+                ].map(kpi => {
+                  const Icon = kpi.icon;
+                  return (
+                    <div key={kpi.label} className={`bg-${kpi.color}-50 dark:bg-${kpi.color}-500/10 border border-${kpi.color}-100 dark:border-${kpi.color}-500/20 rounded-2xl p-4 flex items-center gap-3`}>
+                      <Icon className={`h-5 w-5 text-${kpi.color}-600 dark:text-${kpi.color}-400 shrink-0`} />
+                      <div>
+                        <div className={`text-xl font-black text-${kpi.color}-700 dark:text-${kpi.color}-300`}>{kpi.value}</div>
+                        <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{kpi.label}</div>
                       </div>
-                    );
-                  })}
-                </div>
-              </Panel>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* College cards with CAM contact */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {activeColleges.map(c => {
+                  const cam = camDataMap[c.id];
+                  const cMentors = mentors.filter(m => m.college_id === c.id);
+                  const cStudents = students.filter(s => s.college_id === c.id);
+                  const cMentorIds = new Set(cMentors.map(m => m.id));
+                  const cSlots = slots.filter(s => cMentorIds.has(s.mentorId));
+                  const cIssues = escalations.filter(e => e.collegeId === c.id && (e.status === "pending" || e.status === "open"));
+                  const cTasks = tasks.filter(t => t.collegeId === c.id);
+                  const cTasksDone = cTasks.filter(t => t.status === "completed").length;
+                  const cDepts = departmentsList.filter(d => d.college_id === c.id);
+                  const cSubjects = subjectsList.filter(s => s.college_id === c.id);
+                  const feeStat = feeStatsMap[c.id];
+
+                  return (
+                    <div key={c.id} data-kam-panel className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col gap-4 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-all shadow-sm">
+                      {/* Header row */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-[#D528A2] flex items-center justify-center text-white font-black text-base shrink-0">
+                            {c.name.substring(0, 1)}
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-slate-800 dark:text-white leading-tight">{c.name}</h4>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{c.address || "No address"}</p>
+                          </div>
+                        </div>
+                        {cIssues.length > 0 && (
+                          <span className="shrink-0 px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-[9px] font-black">
+                            {cIssues.length} issue{cIssues.length !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* CAM contact strip */}
+                      <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-semibold ${cam ? "bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20" : "bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"}`}>
+                        <User className={`h-3.5 w-3.5 shrink-0 ${cam ? "text-indigo-500" : "text-slate-400"}`} />
+                        {cam ? (
+                          <span className="text-slate-700 dark:text-slate-300">
+                            <span className="font-black text-indigo-700 dark:text-indigo-300">{cam.name}</span>
+                            <span className="mx-1.5 text-slate-400">·</span>
+                            <span className="text-slate-500 dark:text-slate-400 font-mono">{cam.email}</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 italic">No campus manager assigned</span>
+                        )}
+                      </div>
+
+                      {/* Stats grid */}
+                      <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-bold">
+                        {[
+                          { label: "Faculty", value: cMentors.length, color: "indigo" },
+                          { label: "Students", value: cStudents.length, color: "emerald" },
+                          { label: "Slots", value: cSlots.length, color: "amber" },
+                        ].map(s => (
+                          <div key={s.label} className="bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
+                            <span className={`text-sm font-black text-${s.color}-600 dark:text-${s.color}-400 block`}>{s.value}</span>
+                            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5 block">{s.label}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Health badges row */}
+                      <div className="flex flex-wrap gap-2">
+                        <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[9px] font-bold text-slate-600 dark:text-slate-300">
+                          <BookMarked className="h-3 w-3 text-purple-500" />
+                          {cDepts.length} depts · {cSubjects.length} subjects
+                        </span>
+                        {feeStat && (
+                          <span className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${feeStat.collectionRate >= 80 ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300" : "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300"}`}>
+                            <IndianRupee className="h-3 w-3" />
+                            {feeStat.collectionRate}% collected
+                          </span>
+                        )}
+                        {cTasks.length > 0 && (
+                          <span className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${cTasksDone === cTasks.length ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300" : "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300"}`}>
+                            <CheckCircle className="h-3 w-3" />
+                            {cTasksDone}/{cTasks.length} tasks done
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {activeColleges.length === 0 && (
+                  <div className="col-span-2 text-center py-16 text-sm text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                    No colleges assigned to your KAM portfolio yet.
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {/* ══ TAB: ASSIGN TASK ══ */}
-          {activeTab === "tasks" && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Panel title="Assign Task to CM" subtitle="Direct task items to campus managers">
-                <form onSubmit={handleCreateTask} className="space-y-4 text-xs font-semibold">
-                  <Select label="Target College" value={taskCollegeId} onChange={e => setTaskCollegeId(e.target.value)}
-                    options={activeColleges.map(c => ({ value: c.id, label: c.name }))} required />
-                  <Input label="Task Directive" type="text" placeholder="e.g. Verify missing mark entries" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} required />
-                  <div className="grid grid-cols-2 gap-3">
-                    <Select label="Priority" value={taskPriority} onChange={e => setTaskPriority(e.target.value)}
-                      options={[{ value: "high", label: "High" }, { value: "medium", label: "Medium" }, { value: "low", label: "Low" }]} />
-                    <Input label="Due Date" type="date" value={taskDueDate} onChange={e => setTaskDueDate(e.target.value)} required />
-                  </div>
-                  <Button type="submit" variant="gradient" size="md" icon={<PlusCircle className="h-4.5 w-4.5" />} className="w-full mt-2">Assign Task</Button>
-                </form>
-              </Panel>
-              <Panel title="Task Logs" subtitle="Review status of active assignments">
-                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                  {tasks.map(t => {
-                    const college = colleges.find(c => c.id === t.collegeId);
-                    return (
-                      <div key={t.id} className="p-3.5 rounded-xl border border-slate-105 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 flex items-center justify-between gap-4 hover:border-indigo-500/25 transition-all">
-                        <div className="space-y-1 text-[11px] font-semibold">
-                          <div className="flex items-center gap-1.5 text-[9px] uppercase font-black">
-                            <span className={`px-1.5 py-0.5 rounded ${t.priority === "high" ? "bg-red-500/10 text-red-650 dark:text-red-400 border border-red-550/20" : "bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-550/20"}`}>{t.priority}</span>
-                            <span className="text-slate-505 dark:text-slate-450">{college ? college.name : "Campus"}</span>
-                          </div>
-                          <h4 className="text-xs font-bold text-slate-800 dark:text-white">{t.title}</h4>
-                          <p className="text-[10px] text-slate-505 dark:text-slate-400">Due: <strong>{t.dueDate || "—"}</strong> · Status: <strong className={t.status === "completed" ? "text-emerald-650 dark:text-emerald-450" : "text-amber-600 dark:text-amber-400"}>{t.status}</strong></p>
-                        </div>
-                        <button onClick={() => handleDeleteTask(t.id)} className="p-1.5 text-red-550 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {tasks.length === 0 && <p className="text-xs text-slate-500 italic text-center py-6">No tasks assigned.</p>}
-                </div>
-              </Panel>
-            </div>
-          )}
-
-          {/* ══ TAB: ESCALATED ISSUES ══ */}
-          {activeTab === "escalations" && (
-            <div className="max-w-3xl mx-auto w-full">
-              <Panel title="Escalated Campus Issues" subtitle="Review and resolve items forwarded by CMs">
-                <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
-                  {escalations.map(esc => (
-                    <div key={esc.id} className="p-3.5 rounded-xl border border-slate-105 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 flex flex-col gap-3 hover:border-indigo-500/20 transition-all">
-                      <div className="space-y-1">
-                        <div className="flex justify-between items-center text-[9px] uppercase font-black">
-                          <span className="text-indigo-650 dark:text-indigo-455 font-bold">{esc.collegeName}</span>
-                          <span className="text-slate-500 dark:text-slate-450 font-semibold">{esc.escalatedAt || esc.created_at?.slice(0, 10) || "Today"}</span>
-                        </div>
-                        <h4 className="text-xs font-black text-slate-800 dark:text-white">{esc.title}</h4>
-                        {esc.desc && <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed italic">"{esc.desc}"</p>}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {esc.priority && (
-                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
-                              esc.priority === "high" ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300" :
-                              "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
-                            }`}>{esc.priority} priority</span>
-                          )}
-                          {esc.type && <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[8px] font-black text-slate-500 dark:text-slate-400">{esc.type}</span>}
-                        </div>
-                      </div>
-                      {esc.status === "pending" || esc.status === "open" ? (
-                        <Button variant="secondary" size="xs" onClick={() => handleResolveEscalation(esc.id)} className="w-full">Mark Resolved</Button>
-                      ) : (
-                        <span className="w-full py-1.5 bg-emerald-500/10 text-emerald-650 dark:text-emerald-450 font-black border border-emerald-500/20 text-[10px] rounded text-center block">✓ Resolved</span>
-                      )}
+          {activeTab === "tasks" && (() => {
+            const today = new Date().toISOString().slice(0, 10);
+            const portfolioTasks = tasks.filter(t => activeColleges.some(c => c.id === t.collegeId));
+            const doneTasks = portfolioTasks.filter(t => t.status === "completed");
+            const pendingT = portfolioTasks.filter(t => t.status === "pending");
+            const overdueTasks = pendingT.filter(t => t.dueDate && t.dueDate < today);
+            return (
+              <div className="space-y-6" data-kam-panel>
+                {/* Task summary strip */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {[
+                    { label: "Total Assigned", value: portfolioTasks.length, color: "indigo" },
+                    { label: "Pending", value: pendingT.length, color: pendingT.length > 0 ? "amber" : "emerald" },
+                    { label: "Completed", value: doneTasks.length, color: "emerald" },
+                    { label: "Overdue", value: overdueTasks.length, color: overdueTasks.length > 0 ? "rose" : "slate" },
+                  ].map(s => (
+                    <div key={s.label} className={`bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 rounded-2xl p-4 text-center`}>
+                      <div className={`text-2xl font-black text-${s.color}-600 dark:text-${s.color}-400`}>{s.value}</div>
+                      <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
                     </div>
                   ))}
-                  {escalations.length === 0 && <p className="text-xs text-slate-500 italic text-center py-6">All campuses fully SLA compliant.</p>}
                 </div>
-              </Panel>
-            </div>
-          )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Panel title="Assign Task to CM" subtitle="Direct task items to campus managers">
+                    <form onSubmit={handleCreateTask} className="space-y-4 text-xs font-semibold">
+                      <Select label="Target College" value={taskCollegeId} onChange={e => setTaskCollegeId(e.target.value)}
+                        options={activeColleges.map(c => ({ value: c.id, label: c.name }))} required />
+                      <Input label="Task Directive" type="text" placeholder="e.g. Verify missing mark entries" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} required />
+                      <div className="grid grid-cols-2 gap-3">
+                        <Select label="Priority" value={taskPriority} onChange={e => setTaskPriority(e.target.value)}
+                          options={[{ value: "high", label: "High" }, { value: "medium", label: "Medium" }, { value: "low", label: "Low" }]} />
+                        <Input label="Due Date" type="date" value={taskDueDate} onChange={e => setTaskDueDate(e.target.value)} required />
+                      </div>
+                      <Button type="submit" variant="gradient" size="md" icon={<PlusCircle className="h-4 w-4" />} className="w-full mt-2">Assign Task</Button>
+                    </form>
+                  </Panel>
+
+                  <Panel title="Task Logs" subtitle="All assigned tasks with completion status">
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                      {portfolioTasks.length === 0 && (
+                        <p className="text-xs text-slate-500 italic text-center py-6">No tasks assigned yet.</p>
+                      )}
+                      {portfolioTasks
+                        .slice()
+                        .sort((a, b) => {
+                          // sort: overdue first, then pending, then completed
+                          const aOverdue = a.status === "pending" && a.dueDate && a.dueDate < today;
+                          const bOverdue = b.status === "pending" && b.dueDate && b.dueDate < today;
+                          if (aOverdue && !bOverdue) return -1;
+                          if (!aOverdue && bOverdue) return 1;
+                          if (a.status === "pending" && b.status !== "pending") return -1;
+                          if (a.status !== "pending" && b.status === "pending") return 1;
+                          return (a.dueDate || "").localeCompare(b.dueDate || "");
+                        })
+                        .map(t => {
+                          const college = activeColleges.find(c => c.id === t.collegeId);
+                          const isOverdue = t.status === "pending" && t.dueDate && t.dueDate < today;
+                          const isDone = t.status === "completed";
+                          return (
+                            <div key={t.id} className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 transition-all ${
+                              isOverdue ? "border-rose-200 dark:border-rose-500/30 bg-rose-50/40 dark:bg-rose-500/5"
+                              : isDone ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-500/5"
+                              : "border-slate-105 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60"
+                            }`}>
+                              <div className="space-y-1 text-[11px] font-semibold min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap text-[9px] uppercase font-black">
+                                  <span className={`px-1.5 py-0.5 rounded ${
+                                    t.priority === "high" ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+                                    : t.priority === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                                    : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                                  }`}>{t.priority}</span>
+                                  <span className="text-slate-500 dark:text-slate-400 truncate">{college?.name || "—"}</span>
+                                  {isOverdue && (
+                                    <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white">⚠ Overdue</span>
+                                  )}
+                                </div>
+                                <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{t.title}</p>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                  Due: <strong className={isOverdue ? "text-rose-600 dark:text-rose-400" : ""}>{t.dueDate || "—"}</strong>
+                                  {" · "}
+                                  <strong className={isDone ? "text-emerald-600 dark:text-emerald-400" : isOverdue ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}>
+                                    {isDone ? "✓ Completed" : isOverdue ? "Overdue" : "Pending"}
+                                  </strong>
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteTask(t.id)}
+                                className="shrink-0 p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                                title="Delete task"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </Panel>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ══ TAB: ESCALATED ISSUES ══ */}
+          {activeTab === "escalations" && (() => {
+            // Bug 3 fix: filter to this KAM's portfolio
+            const portfolioEscalations = escalations.filter(e => activeColleges.some(c => c.id === e.collegeId));
+            return (
+              <div className="max-w-3xl mx-auto w-full">
+                <Panel title="Escalated Campus Issues" subtitle="Review and resolve items forwarded by CMs">
+                  <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+                    {portfolioEscalations.map(esc => (
+                      <div key={esc.id} className="p-3.5 rounded-xl border border-slate-105 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 flex flex-col gap-3 hover:border-indigo-500/20 transition-all">
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-center text-[9px] uppercase font-black">
+                            <span className="text-indigo-650 dark:text-indigo-455 font-bold">{esc.collegeName}</span>
+                            <span className="text-slate-500 dark:text-slate-450 font-semibold">{esc.escalatedAt || esc.created_at?.slice(0, 10) || "Today"}</span>
+                          </div>
+                          <h4 className="text-xs font-black text-slate-800 dark:text-white">{esc.title}</h4>
+                          {esc.desc && <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed italic">"{esc.desc}"</p>}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {esc.priority && (
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
+                                esc.priority === "high" ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300" :
+                                "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                              }`}>{esc.priority} priority</span>
+                            )}
+                            {esc.type && <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[8px] font-black text-slate-500 dark:text-slate-400">{esc.type}</span>}
+                          </div>
+                        </div>
+                        {esc.status === "pending" || esc.status === "open" ? (
+                          <Button variant="secondary" size="xs" onClick={() => handleResolveEscalation(esc.id)} className="w-full">Mark Resolved</Button>
+                        ) : (
+                          <span className="w-full py-1.5 bg-emerald-500/10 text-emerald-650 dark:text-emerald-450 font-black border border-emerald-500/20 text-[10px] rounded text-center block">✓ Resolved</span>
+                        )}
+                      </div>
+                    ))}
+                    {portfolioEscalations.length === 0 && <p className="text-xs text-slate-500 italic text-center py-6">All campuses fully SLA compliant.</p>}
+                  </div>
+                </Panel>
+              </div>
+            );
+          })()}
 
           {/* ══ TAB: SWAP LEDGER ══ */}
           {activeTab === "swap_tracker" && (() => {
@@ -1157,7 +1599,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                          {allSwapRequests.slice().sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map(req => {
+                          {allSwapRequests.slice().sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || "")).map(req => {
                             const debtorMentor = mentors.find(m => m.id === req.requestorId);
                             const creditorMentor = mentors.find(m => m.id === req.targetStaffId);
                             const campus = debtorMentor ? activeColleges.find(c => c.id === debtorMentor.college_id) : null;
@@ -1194,17 +1636,29 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                          {ledgerList.map(row => (
-                            <tr key={row.mentorId} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors ${row.balance > 0 && row.swapsPending === 0 ? "bg-rose-50/30 dark:bg-rose-500/5" : ""}`}>
-                              <td className="p-3"><div className="font-black text-slate-800 dark:text-white">{row.mentorName}</div><div className="text-[9px] text-slate-400">{row.department}</div></td>
-                              <td className="p-3"><span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[8.5px] font-black uppercase">{row.collegeName}</span></td>
-                              <td className="p-3 text-center">{row.given > 0 ? <span className="px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/30 dark:text-rose-300 font-black">−{row.given}</span> : <span className="text-slate-300">—</span>}</td>
-                              <td className="p-3 text-center">{row.received > 0 ? <span className="px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 dark:bg-teal-500/10 dark:border-teal-500/30 dark:text-teal-300 font-black">+{row.received}</span> : <span className="text-slate-300">—</span>}</td>
-                              <td className={`p-3 text-center font-black text-sm ${row.balance > 0 ? "text-rose-600 dark:text-rose-400" : row.balance < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}>{row.balance > 0 ? `+${row.balance}` : row.balance}</td>
-                              <td className="p-3 text-center">{row.swapsPending > 0 ? <span className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-200 text-amber-800 dark:bg-amber-500/20 dark:border-amber-500/30 dark:text-amber-300 text-[8.5px] font-black">{row.swapsPending} pending</span> : <span className="text-slate-300 text-[9px]">—</span>}</td>
-                              <td className="p-3 text-center">{row.swapsSettled > 0 ? <span className="px-2 py-0.5 rounded-full bg-teal-100 border border-teal-200 text-teal-800 dark:bg-teal-500/20 dark:border-teal-500/30 dark:text-teal-300 text-[8.5px] font-black">{row.swapsSettled} settled</span> : <span className="text-slate-300 text-[9px]">—</span>}</td>
-                            </tr>
-                          ))}
+                          {ledgerList.map(row => {
+                            // Bug 6 fix: balance > 0 means GIVEN more than received = OWED (creditor) = amber
+                            // balance < 0 means RECEIVED more than given = DEBTOR = rose
+                            const isOwed = row.balance > 0;
+                            const isDebtor = row.balance < 0;
+                            return (
+                              <tr key={row.mentorId} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors ${isDebtor && row.swapsPending === 0 ? "bg-rose-50/30 dark:bg-rose-500/5" : isOwed && row.swapsPending === 0 ? "bg-amber-50/30 dark:bg-amber-500/5" : ""}`}>
+                                <td className="p-3"><div className="font-black text-slate-800 dark:text-white">{row.mentorName}</div><div className="text-[9px] text-slate-400">{row.department}</div></td>
+                                <td className="p-3"><span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[8.5px] font-black uppercase">{row.collegeName}</span></td>
+                                <td className="p-3 text-center">{row.given > 0 ? <span className="px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300 font-black">−{row.given}</span> : <span className="text-slate-300">—</span>}</td>
+                                <td className="p-3 text-center">{row.received > 0 ? <span className="px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 dark:bg-teal-500/10 dark:border-teal-500/30 dark:text-teal-300 font-black">+{row.received}</span> : <span className="text-slate-300">—</span>}</td>
+                                <td className="p-3 text-center font-black text-sm">
+                                  <span className={isOwed ? "text-amber-600 dark:text-amber-400" : isDebtor ? "text-rose-600 dark:text-rose-400" : "text-slate-400"}>
+                                    {row.balance > 0 ? `+${row.balance}` : row.balance}
+                                  </span>
+                                  {isOwed && row.swapsPending === 0 && <span className="ml-1 text-[8px] text-amber-500">(owed)</span>}
+                                  {isDebtor && row.swapsPending === 0 && <span className="ml-1 text-[8px] text-rose-500">(owes)</span>}
+                                </td>
+                                <td className="p-3 text-center">{row.swapsPending > 0 ? <span className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-200 text-amber-800 dark:bg-amber-500/20 dark:border-amber-500/30 dark:text-amber-300 text-[8.5px] font-black">{row.swapsPending} pending</span> : <span className="text-slate-300 text-[9px]">—</span>}</td>
+                                <td className="p-3 text-center">{row.swapsSettled > 0 ? <span className="px-2 py-0.5 rounded-full bg-teal-100 border border-teal-200 text-teal-800 dark:bg-teal-500/20 dark:border-teal-500/30 dark:text-teal-300 text-[8.5px] font-black">{row.swapsSettled} settled</span> : <span className="text-slate-300 text-[9px]">—</span>}</td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -1215,36 +1669,60 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
           })()}
 
           {/* ══ TAB: PROFILE ══ */}
-          {activeTab === "profile" && currentKAM && (
-            <div className="space-y-6 max-w-4xl mx-auto w-full">
+          {activeTab === "profile" && (
+            /* Bug 11 fix: show empty state when currentKAM is null */
+            !currentKAM ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-4 text-center" data-kam-panel>
+                <div className="h-16 w-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                  <User className="h-8 w-8 text-slate-400" />
+                </div>
+                <p className="text-sm font-bold text-slate-600 dark:text-slate-400">No KAM profile loaded.</p>
+                <p className="text-xs text-slate-400">Please log in as a Key Account Manager to view this page.</p>
+              </div>
+            ) : (
+            <div className="space-y-6 max-w-4xl mx-auto w-full" data-kam-panel>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-7 rounded-3xl shadow-sm flex flex-col items-center justify-between text-center min-h-[300px]">
+                {/* Identity card */}
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-3xl shadow-sm flex flex-col items-center justify-between text-center min-h-[300px]">
                   <div className="flex flex-col items-center space-y-4 w-full">
-                    <div className="h-20 w-20 rounded-full bg-indigo-600 border-4 border-white text-white flex items-center justify-center text-3xl font-black shadow-lg uppercase">
+                    <div className="h-20 w-20 rounded-full bg-gradient-to-br from-indigo-500 to-[#D528A2] border-4 border-white dark:border-slate-800 text-white flex items-center justify-center text-3xl font-black shadow-lg uppercase">
                       {currentKAM.name.substring(0, 2)}
                     </div>
                     <div>
                       <h2 className="text-lg font-extrabold text-slate-800 dark:text-white leading-tight">{currentKAM.name}</h2>
-                      <p className="text-[10px] text-indigo-605 dark:text-indigo-400 font-bold uppercase tracking-wider mt-1">Key Account Manager</p>
+                      <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider mt-1">Key Account Manager</p>
+                      {currentKAM.title && currentKAM.title !== "Key Account Manager" && (
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{currentKAM.title}</p>
+                      )}
                     </div>
                   </div>
                   <div className="w-full border-t border-slate-100 dark:border-white/10 pt-4 mt-4 text-left space-y-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                    <div className="flex justify-between"><span>Manager ID</span><span className="text-slate-800 dark:text-white font-mono">{currentKAM.id}</span></div>
-                    <div className="flex justify-between"><span>Email</span><span className="text-slate-805 dark:text-white truncate max-w-[170px]">{currentKAM.email}</span></div>
+                    <div className="flex justify-between gap-2"><span>Manager ID</span><span className="text-slate-800 dark:text-white font-mono text-right truncate max-w-[150px]">{currentKAM.id}</span></div>
+                    <div className="flex justify-between gap-2"><span>Email</span><span className="text-slate-800 dark:text-white truncate max-w-[150px] text-right">{currentKAM.email}</span></div>
+                    <div className="flex justify-between gap-2"><span>Portfolio</span><span className="text-indigo-600 dark:text-indigo-400 font-bold">{activeColleges.length} campus{activeColleges.length !== 1 ? "es" : ""}</span></div>
                   </div>
                 </div>
 
-                <div className="md:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-7 rounded-3xl shadow-sm space-y-6 flex flex-col justify-between">
+                {/* Jurisdiction card */}
+                <div className="md:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-3xl shadow-sm space-y-6 flex flex-col justify-between">
                   <div>
                     <h3 className="text-xs font-black text-indigo-600 dark:text-indigo-300 uppercase tracking-widest mb-4">Operations & Jurisdiction</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <div className="space-y-1"><span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block">Role Type</span><span className="text-sm font-extrabold text-slate-800 dark:text-white block">Key Account Manager</span><span className="text-[10px] text-slate-500 dark:text-slate-400 block">Regional Operations Coordinator</span></div>
-                      <div className="space-y-1"><span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block">Scope of Authority</span><span className="text-sm font-extrabold text-slate-800 dark:text-white block">Multi-Campus Portfolios</span><span className="text-[10px] text-slate-500 dark:text-slate-400 block">Aided & Self-Financed Campuses</span></div>
-                      <div className="space-y-1"><span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block">Campus Allocations</span><span className="text-sm font-extrabold text-slate-800 dark:text-white block">{activeColleges.length} Campuses</span><span className="text-[10px] text-slate-505 dark:text-slate-400 block">FPC Regional Portfolio</span></div>
-                      <div className="space-y-1"><span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block">Security Level</span><span className="text-sm font-extrabold text-slate-800 dark:text-white block">Level 3 Regional Head</span><span className="text-[10px] text-slate-500 dark:text-slate-400 block">Policy Oversight & Audits</span></div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                      {[
+                        { label: "Role Type", main: "Key Account Manager", sub: "Regional Operations Coordinator" },
+                        { label: "Scope of Authority", main: "Multi-Campus Portfolios", sub: "Aided & Self-Financed Campuses" },
+                        { label: "Campus Allocations", main: `${activeColleges.length} Campuses`, sub: "FPC Regional Portfolio" },
+                        { label: "Security Level", main: "Level 3 Regional Head", sub: "Policy Oversight & Audits" },
+                      ].map(item => (
+                        <div key={item.label} className="space-y-0.5">
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block">{item.label}</span>
+                          <span className="text-sm font-extrabold text-slate-800 dark:text-white block">{item.main}</span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 block">{item.sub}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <div className="bg-indigo-50/30 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 p-4 rounded-2xl flex items-center gap-3">
+                  <div className="bg-indigo-50/50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 p-4 rounded-2xl flex items-center gap-3">
                     <Compass className="h-5 w-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                     <div className="text-[11px] text-indigo-700 dark:text-indigo-200 font-semibold leading-normal">
                       Your KAM authority covers regional resource planning, campus-level SLA verification, escalations audit, and overall academic policy enforcement.
@@ -1253,29 +1731,30 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-7 rounded-3xl shadow-sm space-y-6">
+              {/* Portfolio metrics — all scoped to this KAM's portfolio */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-3xl shadow-sm space-y-5">
                 <h3 className="text-xs font-black text-indigo-600 dark:text-indigo-300 uppercase tracking-widest">Regional Network Metrics</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center text-xs">
-                  <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-850">
-                    <span className="text-3xl font-extrabold text-slate-800 dark:text-white">{activeColleges.length}</span>
-                    <span className="text-[9px] text-slate-500 dark:text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Colleges</span>
-                  </div>
-                  <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-850">
-                    <span className="text-3xl font-extrabold text-slate-800 dark:text-white">{totalMentors}</span>
-                    <span className="text-[9px] text-slate-500 dark:text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Managed Mentors</span>
-                  </div>
-                  <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-850">
-                    <span className="text-3xl font-extrabold text-slate-800 dark:text-white">{escalations.length}</span>
-                    <span className="text-[9px] text-slate-500 dark:text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Total Escalations</span>
-                  </div>
-                  <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-850">
-                    <span className="text-3xl font-extrabold text-slate-800 dark:text-white">{tasks.length}</span>
-                    <span className="text-[9px] text-slate-500 dark:text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Assigned Tasks</span>
-                  </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                  {[
+                    { label: "Colleges", value: activeColleges.length, sub: "in portfolio", color: "indigo" },
+                    { label: "Faculty", value: totalMentors, sub: "managed mentors", color: "purple" },
+                    { label: "Students", value: totalStudents, sub: "across campuses", color: "emerald" },
+                    { label: "Total Slots", value: totalSlots, sub: "timetable entries", color: "amber" },
+                    { label: "Escalations", value: totalOpenIssues, sub: "open issues", color: totalOpenIssues > 0 ? "rose" : "emerald" },
+                    { label: "Pending Tasks", value: totalPendingTasks, sub: "awaiting CMs", color: totalPendingTasks > 0 ? "amber" : "emerald" },
+                    { label: "Pending Requests", value: totalPendingRequests, sub: "handover queue", color: totalPendingRequests > 0 ? "amber" : "emerald" },
+                    { label: "Subjects Mapped", value: subjectsList.filter(s => activeColleges.some(c => c.id === s.college_id)).length, sub: "curriculum entries", color: "teal" },
+                  ].map(m => (
+                    <div key={m.label} className={`p-4 bg-${m.color}-50 dark:bg-${m.color}-500/10 rounded-2xl border border-${m.color}-100 dark:border-${m.color}-500/20`}>
+                      <span className={`text-2xl font-extrabold text-${m.color}-600 dark:text-${m.color}-400 block`}>{m.value}</span>
+                      <span className="text-[9px] text-slate-500 dark:text-slate-400 font-extrabold uppercase tracking-wider block mt-0.5">{m.label}</span>
+                      <span className="text-[8px] text-slate-400 block">{m.sub}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-          )}
+          ))}
         </div>
       </main>
     </div>

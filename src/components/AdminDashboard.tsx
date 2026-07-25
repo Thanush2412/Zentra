@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useApp, SHIFT_TIME_SLOTS, Slot, Mentor, AuditLog, College, Subject, Department } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { 
@@ -28,6 +28,7 @@ import {
   Eye,
   UserCheck,
   Megaphone,
+  GripVertical,
   Calendar,
   CalendarDays,
   LayoutDashboard,
@@ -35,8 +36,14 @@ import {
   Menu,
   Sparkles,
   Sun,
-  Moon
+  Moon,
+  Upload,
+  Download,
+  FileSpreadsheet,
+  AlertTriangle,
+  Loader2
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 
@@ -110,6 +117,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     updateCAM,
     deleteCAM,
     createMentor,
+    bulkImportMentors,
     updateMentor,
     deleteMentor,
     createSubject,
@@ -213,6 +221,159 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [mappingClassGroup, setMappingClassGroup] = useState("");
   const [approvingRole, setApprovingRole] = useState("student");
 
+  // Faculty Bulk Import State
+  const [templateCollegeId, setTemplateCollegeId] = useState<string>("");
+  const [showFacultyImportModal, setShowFacultyImportModal] = useState(false);
+  const [facultyImportPreview, setFacultyImportPreview] = useState<{ parsed: any[]; warnings: string[] } | null>(null);
+  const [isImportingFaculty, setIsImportingFaculty] = useState(false);
+  const [subjectStaffSearch, setSubjectStaffSearch] = useState("");
+
+  useEffect(() => {
+    if (colleges.length > 0 && !templateCollegeId) {
+      setTemplateCollegeId(colleges[0].id);
+    }
+  }, [colleges]);
+
+  const isCampusShiftBased = useMemo(() => {
+    const targetColId = templateCollegeId || (colleges.length > 0 ? colleges[0].id : "");
+    const relevantCourses = coursesList.filter(c => !targetColId || c.college_id === targetColId);
+    return relevantCourses.some(c => c.shift_based === 1 || (c.default_shift && c.default_shift !== "general"));
+  }, [coursesList, templateCollegeId, colleges]);
+
+  const handleDownloadFacultyTemplate = () => {
+    const targetCol = colleges.find(c => c.id === templateCollegeId) || colleges[0];
+    const targetCollegeId = targetCol?.id || "college_1";
+    const targetCollegeName = targetCol?.name || "Selected College";
+
+    // Sheet 1: Faculty Directory
+    const facultyData = [
+      {
+        "Faculty Name": "Dr. Anitha Ramesh",
+        "Email Address": "anitha.ramesh@zentra.edu",
+        "Department": "Computer Science",
+        "Shift": "Shift 1",
+        "College ID": targetCollegeId,
+        "College Name": targetCollegeName,
+        "Assigned Subjects": "Data Structures, Web Development",
+        "Assigned Classes": "Year 2 Section A, Year 3 Section B"
+      },
+      {
+        "Faculty Name": "Prof. Rajesh Kumar",
+        "Email Address": "rajesh.kumar@zentra.edu",
+        "Department": "Information Technology",
+        "Shift": "General Shift",
+        "College ID": targetCollegeId,
+        "College Name": targetCollegeName,
+        "Assigned Subjects": "Database Systems, Python Programming",
+        "Assigned Classes": "Year 1 Section A"
+      }
+    ];
+
+    // Sheet 2: Timetable Mapping Guide
+    const mappingGuide = [
+      {
+        "Guide": "Department Options",
+        "Allowed Values": "Computer Science, Information Technology, Data Science, Commerce, Management, Math, English, Tamil"
+      },
+      {
+        "Guide": "Shift Options",
+        "Allowed Values": "Shift 1, Shift 2, General Shift"
+      },
+      {
+        "Guide": "Assigned Subjects",
+        "Allowed Values": "Comma-separated subject names matching course curriculum"
+      },
+      {
+        "Guide": "Assigned Classes",
+        "Allowed Values": "Comma-separated class groups e.g. Year 1 Section A, Year 2 Section B"
+      }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.json_to_sheet(facultyData);
+    const ws2 = XLSX.utils.json_to_sheet(mappingGuide);
+    
+    XLSX.utils.book_append_sheet(wb, ws1, "Faculty Directory");
+    XLSX.utils.book_append_sheet(wb, ws2, "Timetable Mapping Guide");
+    
+    const safeName = targetCollegeName.replace(/[^a-zA-Z0-9]/g, "_");
+    XLSX.writeFile(wb, `Faculty_Timetable_Template_${safeName}.xlsx`);
+    toast(`Faculty & Timetable import template downloaded for ${targetCollegeName}.`, "success");
+  };
+
+  const handleFacultyFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const sheetName = wb.SheetNames.includes("Faculty Directory") ? "Faculty Directory" : wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+        if (rawRows.length === 0) {
+          toast("The uploaded spreadsheet is empty.", "warning");
+          return;
+        }
+
+        const warnings: string[] = [];
+        const parsedFaculty = rawRows.map((row, idx) => {
+          const name = row.name || row.FacultyName || row.faculty_name || row["Faculty Name"] || row["Name"] || "";
+          const email = row.email || row.EmailAddress || row.email_address || row["Email Address"] || row["Email"] || "";
+          const dept = row.department || row.Department || row["Department"] || "Computer Science";
+          const shift = row.shift || row.Shift || row["Shift"] || "shift_1";
+          const collegeId = row.college_id || row.collegeId || row["College ID"] || templateCollegeId || colleges[0]?.id || "";
+          const subjects = row.subjects || row.Subjects || row["Subjects"] || row["Assigned Subjects"] || "";
+          const classes = row.classes || row.Classes || row["Classes"] || row["Assigned Classes"] || "";
+
+          if (!name) warnings.push(`Row ${idx + 2}: Missing Faculty Name.`);
+          if (!email) warnings.push(`Row ${idx + 2}: Missing Email Address.`);
+
+          return {
+            name: String(name).trim(),
+            email: String(email).toLowerCase().trim(),
+            department: String(dept).trim(),
+            shift: String(shift).toLowerCase().includes("2") ? "shift_2" : String(shift).toLowerCase().includes("gen") ? "general" : "shift_1",
+            college_id: collegeId,
+            subjects: String(subjects).trim(),
+            classes: String(classes).trim(),
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(String(email).trim())}`
+          };
+        }).filter(f => f.name || f.email);
+
+        setFacultyImportPreview({ parsed: parsedFaculty, warnings });
+        setShowFacultyImportModal(true);
+      } catch (err: any) {
+        toast("Failed to parse Excel file: " + err.message, "error");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  };
+
+  const handleConfirmFacultyImport = async () => {
+    if (!facultyImportPreview || facultyImportPreview.parsed.length === 0) return;
+    setIsImportingFaculty(true);
+    try {
+      const res = await bulkImportMentors(facultyImportPreview.parsed);
+      if (res.success) {
+        toast(res.message || `Successfully imported ${res.count} faculty members.`, "success");
+        setShowFacultyImportModal(false);
+        setFacultyImportPreview(null);
+        refreshData();
+      } else {
+        toast(res.message || "Failed to import faculty.", "error");
+      }
+    } catch (err: any) {
+      toast("Error importing faculty: " + err.message, "error");
+    } finally {
+      setIsImportingFaculty(false);
+    }
+  };
+
   // Announcement compose modal state
   const [showAnnModal, setShowAnnModal] = useState(false);
   const [annForm, setAnnForm] = useState({ title: "", description: "", target_role: "All", college_id: "" });
@@ -282,9 +443,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     end_year: "",
     description: ""
   });
+  const [editingWizardCourseIndex, setEditingWizardCourseIndex] = useState<number | null>(null);
+  const [editingRooms, setEditingRooms] = useState<Record<string, string>>({});
+  const [draggedBreakId, setDraggedBreakId] = useState<string | null>(null);
+  const [showClockPresets, setShowClockPresets] = useState<boolean>(false);
+  const [editingPeriodNum, setEditingPeriodNum] = useState<number | null>(null);
+  const [draftLastSaved, setDraftLastSaved] = useState<string | null>(null);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState<boolean>(false);
   const [shift1Timings, setShift1Timings] = useState("");
   const [shift2Timings, setShift2Timings] = useState("");
   const [generalTimings, setGeneralTimings] = useState("");
+  const [isDeptSubmitting, setIsDeptSubmitting] = useState<boolean>(false);
   
   const [activeConfigShift, setActiveConfigShift] = useState<"shift_1" | "shift_2" | "general">("general");
   const [shiftConfigsParams, setShiftConfigsParams] = useState<Record<"shift_1" | "shift_2" | "general", ShiftParams>>({
@@ -665,10 +834,87 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // Fetch campus draft from database on mount
   useEffect(() => {
     refreshData();
     fetchAdminDetails();
+    fetchCampusDraftFromDb();
   }, []);
+
+  const fetchCampusDraftFromDb = async () => {
+    try {
+      const res = await fetch("/api/campus-draft");
+      const json = await res.json();
+      if (json.success && json.draft) {
+        const parsed = json.draft;
+        if (parsed.campusForm) setCampusForm(parsed.campusForm);
+        if (parsed.campusWizardStep) setCampusWizardStep(parsed.campusWizardStep);
+        if (parsed.wizardCourses) setWizardCourses(parsed.wizardCourses);
+        if (parsed.shiftConfigsParams) setShiftConfigsParams(parsed.shiftConfigsParams);
+        if (parsed.semesterConfigsMap) setSemesterConfigsMap(parsed.semesterConfigsMap);
+        if (json.savedAt) setDraftLastSaved(json.savedAt);
+        setHasRestoredDraft(true);
+      }
+    } catch (err) {
+      console.error("Failed to fetch campus draft from database:", err);
+    }
+  };
+
+  const saveCampusDraftToDb = async () => {
+    if (!showCampusModal || editingCampus || campusSuccessCreatedId) return;
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const draftData = {
+      campusForm,
+      campusWizardStep,
+      wizardCourses,
+      shiftConfigsParams,
+      semesterConfigsMap
+    };
+    try {
+      await fetch("/api/campus-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: draftData, savedAt: timeStr })
+      });
+      setDraftLastSaved(timeStr);
+      setHasRestoredDraft(true);
+    } catch (err) {
+      console.error("Failed to save campus draft to database:", err);
+    }
+  };
+
+  const clearCampusDraftFromDb = async () => {
+    try {
+      await fetch("/api/campus-draft", { method: "DELETE" });
+    } catch (_) {}
+    setDraftLastSaved(null);
+    setHasRestoredDraft(false);
+    setCampusWizardStep(1);
+    setWizardCourses([]);
+    setCampusForm({
+      id: "",
+      name: "",
+      address: "",
+      kam_id: "",
+      has_shifts: 1,
+      shift_configs: "",
+      rooms: "",
+      code: "",
+      academic_year: "2026-2027",
+      manager: "",
+      working_days: 5
+    });
+  };
+
+  // Auto-Save Draft to Database whenever wizard data changes
+  useEffect(() => {
+    if (showCampusModal && !editingCampus && !campusSuccessCreatedId) {
+      const timeout = setTimeout(() => {
+        saveCampusDraftToDb();
+      }, 500);
+      return () => clearTimeout(timeout);
+    }
+  }, [showCampusModal, editingCampus, campusSuccessCreatedId, campusForm, campusWizardStep, wizardCourses, shiftConfigsParams, semesterConfigsMap]);
 
   // Campus handlers
   const handleOpenCampusModal = (col?: College) => {
@@ -806,58 +1052,82 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setShift2Timings(SHIFT_TIME_SLOTS.shift_2.join("\n"));
       setGeneralTimings(SHIFT_TIME_SLOTS.general.join("\n"));
  
-      setShiftConfigsParams({
-        shift_1: { label: "Shift 1", startTime: "08:30 AM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] },
-        shift_2: { label: "Shift 2", startTime: "01:00 PM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] },
-        general: { label: "General Shift", startTime: "09:00 AM", periodDuration: 50, periodsCount: 6, mode: "duration", breaks: [] }
-      });
- 
-      initialMap["All Semesters"] = {
-        shift_1: { label: "Shift 1", startTime: "08:30 AM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] },
-        shift_2: { label: "Shift 2", startTime: "01:00 PM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] },
-        general: { label: "General Shift", startTime: "09:00 AM", periodDuration: 50, periodsCount: 6, mode: "duration", breaks: [] }
-      };
- 
-      setCampusForm({
-        id: "",
-        name: "",
-        address: "",
-        kam_id: kamList[0]?.id || "",
-        has_shifts: 1,
-        shift_configs: "",
-        rooms: "",
-        code: "",
-        academic_year: "2026-2027",
-        manager: "",
-        working_days: 5
-      });
       setEditingCampus(false);
-      setCampusWizardStep(1);
-      setWizardCourses([]);
       setCampusSuccessCreatedId(null);
-      setWizardCourseForm({
-        name: "",
-        years: 3,
-        sections: { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1 },
-        sectionRooms: {},
-        default_shift: "general",
-        start_date: "",
-        end_date: "",
-        start_year: "",
-        end_year: "",
-        description: ""
-      });
+
+      // Only populate empty fallback form if no draft was restored
+      if (!hasRestoredDraft) {
+        setShiftConfigsParams({
+          shift_1: { label: "Shift 1", startTime: "08:30 AM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] },
+          shift_2: { label: "Shift 2", startTime: "01:00 PM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] },
+          general: { label: "General Shift", startTime: "09:00 AM", periodDuration: 50, periodsCount: 6, mode: "duration", breaks: [] }
+        });
+
+        initialMap["All Semesters"] = {
+          shift_1: { label: "Shift 1", startTime: "08:30 AM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] },
+          shift_2: { label: "Shift 2", startTime: "01:00 PM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] },
+          general: { label: "General Shift", startTime: "09:00 AM", periodDuration: 50, periodsCount: 6, mode: "duration", breaks: [] }
+        };
+
+        setCampusForm({
+          id: "",
+          name: "",
+          address: "",
+          kam_id: kamList[0]?.id || "",
+          has_shifts: 1,
+          shift_configs: "",
+          rooms: "",
+          code: "",
+          academic_year: "2026-2027",
+          manager: "",
+          working_days: 5
+        });
+        setCampusWizardStep(1);
+        setWizardCourses([]);
+      }
     }
-    
+
     setSemesterConfigsMap(initialMap);
     setActiveConfigSemester("All Semesters");
     setNewBreakName("");
     setNewBreakDuration(15);
-    setNewBreakAfterPeriod(2);
     setCampusFieldErrors({});
     setCourseFieldErrors({});
     
     setShowCampusModal(true);
+  };
+
+  const handleStartEditRooms = (c: any, idx: number) => {
+    setEditingWizardCourseIndex(idx);
+    let parsedRooms: Record<string, string> = {};
+    if (c.sectionRooms && Object.keys(c.sectionRooms).length > 0) {
+      parsedRooms = { ...c.sectionRooms };
+    } else if (c.default_room) {
+      try {
+        parsedRooms = typeof c.default_room === "string" && c.default_room.startsWith("{") 
+          ? JSON.parse(c.default_room) 
+          : { "Year 1 Section A": c.default_room };
+      } catch (_) {
+        parsedRooms = { "Year 1 Section A": c.default_room };
+      }
+    } else {
+      for (let yr = 1; yr <= (c.years || 3); yr++) {
+        parsedRooms[`Year ${yr} Section A`] = `Room ${yr}01`;
+      }
+    }
+    setEditingRooms(parsedRooms);
+  };
+
+  const handleSaveEditedRooms = (idx: number) => {
+    setWizardCourses(prev => {
+      const updated = [...prev];
+      const target = { ...updated[idx] };
+      target.sectionRooms = { ...editingRooms };
+      target.default_room = JSON.stringify(editingRooms);
+      updated[idx] = target;
+      return updated;
+    });
+    setEditingWizardCourseIndex(null);
   };
 
   const handleSemesterChange = (newSem: string) => {
@@ -1048,6 +1318,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             default_shift: course.default_shift || null
           });
         }
+        await clearCampusDraftFromDb();
         await refreshData();
         await fetchAdminDetails();
         if (!editingCampus) {
@@ -1378,6 +1649,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Subject handlers
+  const normalizeSubjectType = (rawType?: string) => {
+    if (!rawType) return "SKILL";
+    const u = rawType.trim().toUpperCase();
+    if (u === "THEORY" || u === "ACADEMIC") return "ACADEMIC";
+    if (u === "SKILL" || u === "PRACTICAL") return "SKILL";
+    if (u === "LAB") return "LAB";
+    if (u === "GENERAL") return "GENERAL";
+    return u;
+  };
+
   const handleOpenSubjectModal = (s?: Subject, defaultDept?: string, defaultYear?: string) => {
     setModalError(null);
     if (s) {
@@ -1386,7 +1667,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         name: s.name,
         department: s.department,
         semester: s.semester,
-        type: s.type,
+        type: normalizeSubjectType(s.type),
         college_id: s.college_id || "",
         year: s.year || "Year 1",
         weekly_hours: s.weekly_hours || 4,
@@ -1406,7 +1687,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         name: "",
         department: defaultDept || "",
         semester: defaultSem,
-        type: "theory",
+        type: "SKILL",
         college_id: colleges[0]?.id || "",
         year: defaultYear || "Year 1",
         weekly_hours: 4,
@@ -1661,6 +1942,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
 
+    setIsDeptSubmitting(true);
     try {
       let res;
       const autoCode = generateCodeFromName(deptForm.name.trim());
@@ -1693,6 +1975,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (err: any) {
       setModalError(err.message || "An unexpected error occurred.");
+    } finally {
+      setIsDeptSubmitting(false);
     }
   };
 
@@ -2271,6 +2555,61 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* ── UNFINISHED DRAFT CARD ── */}
+              {draftLastSaved && (
+                <div className="lg:col-span-3 bg-white p-6 rounded-2xl border-2 border-amber-200/90 shadow-sm space-y-4 relative overflow-hidden animate-fadeIn">
+                  <div className="flex items-center justify-between flex-wrap gap-4 border-b border-gray-100 pb-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="p-3 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200">
+                        <Sparkles className="h-5 w-5 text-amber-600 animate-pulse" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <h3 className="font-extrabold text-base text-gray-900 tracking-tight">
+                            Unfinished Campus Setup: <span className="text-indigo-650">{campusForm.name || "Untitled Campus"}</span>
+                          </h3>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5 shadow-2xs">
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                            Draft Auto-Saved ({draftLastSaved})
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 font-semibold mt-1 flex items-center gap-2 flex-wrap">
+                          <span>Step {campusWizardStep} of 4</span>
+                          <span>•</span>
+                          <span>{wizardCourses.length} Course(s) Added</span>
+                          {campusForm.address && (
+                            <>
+                              <span>•</span>
+                              <span className="flex items-center gap-1 text-gray-600">
+                                <MapPin className="h-3 w-3 text-gray-400" />
+                                {campusForm.address}
+                              </span>
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={clearCampusDraftFromDb}
+                        className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:text-rose-600 bg-gray-100 hover:bg-rose-50 border border-gray-200 hover:border-rose-200 transition-all cursor-pointer"
+                      >
+                        Discard Draft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCampusModal()}
+                        className="px-5 py-2 rounded-xl text-xs font-extrabold btn-gradient shadow-sm flex items-center gap-1.5 cursor-pointer"
+                      >
+                        Resume Setup →
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {colleges.map((col) => {
                 const colMentors = mentors.filter(m => m.college_id === col.id);
                 const colSlots = slots.filter(s => colMentors.some(m => m.id === s.mentorId));
@@ -2658,19 +2997,61 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <h2 className="text-lg font-bold text-gray-900">Faculty Mentors Directory</h2>
               </div>
               <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-                <div className="relative w-full sm:w-64 flex-1 sm:flex-none">
+                {/* College Selector Dropdown */}
+                <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-205 rounded-xl px-2.5 py-1 text-xs">
+                  <Building2 className="h-4 w-4 text-indigo-600 shrink-0" />
+                  <select
+                    value={templateCollegeId}
+                    onChange={(e) => setTemplateCollegeId(e.target.value)}
+                    className="bg-transparent font-bold text-gray-800 focus:outline-none cursor-pointer py-0.5 text-xs max-w-[180px] truncate"
+                  >
+                    {colleges.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Template Download Button */}
+                <button
+                  type="button"
+                  onClick={handleDownloadFacultyTemplate}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs"
+                  title="Download Faculty Excel Template for Selected College"
+                >
+                  <Download className="h-4 w-4" />
+                  Template
+                </button>
+
+                {/* Bulk Import Button */}
+                <label className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs">
+                  <Upload className="h-4 w-4" />
+                  Bulk Import
+                  <input
+                    type="file"
+                    accept=".xlsx, .xls, .csv"
+                    onChange={handleFacultyFileSelect}
+                    className="hidden"
+                  />
+                </label>
+
+                {/* Search Bar */}
+                <div className="relative w-full sm:w-56 flex-1 sm:flex-none">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search mentors by name, dept, campus, subjects..."
+                    placeholder="Search faculty..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="bg-gray-50 border border-gray-205 rounded-xl pl-9 pr-4 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 transition-all w-full font-medium text-gray-800"
                   />
                 </div>
+
+                {/* Add Mentor Button */}
                 <button
                   onClick={() => handleOpenMentorModal()}
-                  className="btn-gradient shadow-sm text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                  className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0"
                 >
                   <Plus className="h-4 w-4" />
                   Add Mentor
@@ -2686,7 +3067,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <th className="px-5 py-4">Email</th>
                     <th className="px-5 py-4">Department</th>
                     <th className="px-5 py-4">Assigned Campus</th>
-                    <th className="px-5 py-4">Shift</th>
+                    {isCampusShiftBased && <th className="px-5 py-4">Shift</th>}
                     <th className="px-5 py-4">Mapped Subjects</th>
                     <th className="px-5 py-4 text-right">Actions</th>
                   </tr>
@@ -2718,15 +3099,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           )}
                         </td>
                         <td className="px-5 py-4 text-gray-900 font-bold">{col ? col.name : <span className="text-gray-400 italic">Unassigned</span>}</td>
-                        <td className="px-5 py-4 uppercase">
-                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                            m.shift === "shift_1" ? "bg-teal-50 text-teal-700 border border-teal-200" :
-                            m.shift === "shift_2" ? "bg-indigo-50 text-indigo-700 border border-indigo-200" :
-                            "bg-amber-50 text-amber-700 border border-amber-200"
-                          }`}>
-                            {m.shift ? m.shift.replace("_", " ") : "general"}
-                          </span>
-                        </td>
+                        {isCampusShiftBased && (
+                          <td className="px-5 py-4 uppercase">
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                              m.shift === "shift_1" ? "bg-teal-50 text-teal-700 border border-teal-200" :
+                              m.shift === "shift_2" ? "bg-indigo-50 text-indigo-700 border border-indigo-200" :
+                              "bg-amber-50 text-amber-700 border border-amber-200"
+                            }`}>
+                              {m.shift ? m.shift.replace("_", " ") : "general"}
+                            </span>
+                          </td>
+                        )}
                         <td className="px-5 py-4 max-w-xs">
                           <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
                             {mentorSubjectsList.length > 0 ? (
@@ -2968,7 +3351,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                           </div>
                                           <div>
                                             <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Offerings</span>
-                                            <span className="text-gray-900 font-extrabold">{dept.default_shift === "both" ? "Shift 1 & 2" : dept.default_shift === "shift_2" ? "Shift 2" : "Shift 1 / General"}</span>
+                                            <span className="text-gray-900 font-extrabold">{dept.default_shift === "all" ? "Shift 1, 2 & General" : dept.default_shift === "both" ? "Shift 1 & 2" : dept.default_shift === "shift_2" ? "Shift 2 (Evening)" : dept.default_shift === "shift_1" ? "Shift 1 (Day)" : "General Shift"}</span>
                                           </div>
                                           <div className="col-span-2">
                                             <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Assigned Classrooms</span>
@@ -3071,12 +3454,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                                    <div className="font-mono text-[8px] text-gray-400 mt-0.5">{sub.id}</div>
                                                                  </td>
                                                                  <td className="px-2 py-2">
-                                                                   <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-bold capitalize ${
-                                                                     sub.type === "theory" ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-purple-50 text-purple-700 border border-purple-200"
-                                                                   }`}>
-                                                                     {sub.type}
-                                                                   </span>
-                                                                 </td>
+                                                                    {(() => {
+                                                                      const t = (sub.type || "").toUpperCase();
+                                                                      if (t === "SKILL" || t === "PRACTICAL") {
+                                                                        return <span className="px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase bg-purple-50 text-purple-700 border border-purple-200">Skill</span>;
+                                                                      }
+                                                                      if (t === "ACADEMIC" || t === "THEORY") {
+                                                                        return <span className="px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase bg-blue-50 text-blue-700 border border-blue-200">Theory</span>;
+                                                                      }
+                                                                      if (t === "LAB") {
+                                                                        return <span className="px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">Lab</span>;
+                                                                      }
+                                                                      return <span className="px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200">{sub.type || "General"}</span>;
+                                                                    })()}
+                                                                  </td>
                                                                   <td className="px-2 py-2">
                                                                     {(() => {
                                                                       const subSlots = slots.filter(s => s.course.toLowerCase() === sub.name.toLowerCase() && (s.department || getDeptFromClassGroup(s.classGroup)) === sub.department);
@@ -3147,12 +3538,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                                    <div className="font-mono text-[8px] text-gray-400 mt-0.5">{sub.id}</div>
                                                                  </td>
                                                                  <td className="px-2 py-2">
-                                                                   <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-bold capitalize ${
-                                                                     sub.type === "theory" ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-purple-50 text-purple-700 border border-purple-200"
-                                                                   }`}>
-                                                                     {sub.type}
-                                                                   </span>
-                                                                 </td>
+                                                                    {(() => {
+                                                                      const t = (sub.type || "").toUpperCase();
+                                                                      if (t === "SKILL" || t === "PRACTICAL") {
+                                                                        return <span className="px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase bg-purple-50 text-purple-700 border border-purple-200">Skill</span>;
+                                                                      }
+                                                                      if (t === "ACADEMIC" || t === "THEORY") {
+                                                                        return <span className="px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase bg-blue-50 text-blue-700 border border-blue-200">Theory</span>;
+                                                                      }
+                                                                      if (t === "LAB") {
+                                                                        return <span className="px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">Lab</span>;
+                                                                      }
+                                                                      return <span className="px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200">{sub.type || "General"}</span>;
+                                                                    })()}
+                                                                  </td>
                                                                   <td className="px-2 py-2">
                                                                     {(() => {
                                                                       const subSlots = slots.filter(s => s.course.toLowerCase() === sub.name.toLowerCase() && (s.department || getDeptFromClassGroup(s.classGroup)) === sub.department);
@@ -3379,15 +3778,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <span className="text-[10px] text-indigo-650 font-extrabold">{sub.semester}</span>
                           </td>
                           <td className="p-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-bold capitalize ${
-                              sub.type === "theory" 
-                                ? "bg-blue-50 text-blue-700 border border-blue-200" 
-                                : sub.type === "practical"
-                                  ? "bg-purple-50 text-purple-700 border border-purple-200"
-                                  : "bg-amber-50 text-amber-700 border border-amber-200"
-                            }`}>
-                              {sub.type}
-                            </span>
+                            {(() => {
+                              const t = (sub.type || "").toUpperCase();
+                              if (t === "SKILL" || t === "PRACTICAL") {
+                                return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-purple-50 text-purple-700 border border-purple-200">Skill</span>;
+                              }
+                              if (t === "ACADEMIC" || t === "THEORY") {
+                                return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">Theory</span>;
+                              }
+                              if (t === "LAB") {
+                                return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">Lab</span>;
+                              }
+                              return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">{sub.type || "General"}</span>;
+                            })()}
                           </td>
                           <td className="p-4 font-bold text-gray-800 text-[11px]">
                             {targetHours} hr(s)
@@ -4459,20 +4862,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* ── Campus Modal ── */}
       {showCampusModal && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-2xl w-full overflow-hidden animate-slideUp flex flex-col my-auto max-h-[90vh]">
+          <div className={`bg-white rounded-3xl border border-gray-150 shadow-xl w-full overflow-hidden animate-slideUp flex flex-col my-auto max-h-[90vh] transition-all duration-300 ${campusWizardStep === 3 ? "max-w-5xl" : "max-w-2xl"}`}>
             {/* Modal Header */}
             <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
-              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                <Building2 className="h-5 w-5 text-indigo-650" />
-                {editingCampus ? "Edit Campus" : campusSuccessCreatedId ? "Campus Created!" : "Add New Campus"}
-              </h3>
-              <button
-                type="button"
-                onClick={() => { setShowCampusModal(false); setCampusSuccessCreatedId(null); }}
-                className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-3">
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
+                  <Building2 className="h-5 w-5 text-indigo-655" />
+                  {editingCampus ? "Edit Campus" : campusSuccessCreatedId ? "Campus Created!" : "Add New Campus"}
+                </h3>
+                {draftLastSaved && !editingCampus && !campusSuccessCreatedId && (
+                  <span className="text-[10px] font-black text-pink-700 bg-gradient-to-r from-pink-50 to-amber-50 border border-pink-200/80 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs animate-fadeIn">
+                    <span className="h-1.5 w-1.5 rounded-full bg-pink-500 animate-pulse" />
+                    Draft Auto-Saved ({draftLastSaved})
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {hasRestoredDraft && !editingCampus && !campusSuccessCreatedId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== "undefined") localStorage.removeItem("campus_wizard_draft");
+                      setDraftLastSaved(null);
+                      setHasRestoredDraft(false);
+                      setCampusWizardStep(1);
+                      setWizardCourses([]);
+                      setCampusForm({
+                        id: "",
+                        name: "",
+                        address: "",
+                        kam_id: "",
+                        has_shifts: 1,
+                        shift_configs: "",
+                        rooms: "",
+                        code: "",
+                        academic_year: "2026-2027",
+                        manager: "",
+                        working_days: 5
+                      });
+                    }}
+                    className="text-[9.5px] font-extrabold text-slate-500 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-2.5 py-1 rounded-xl border border-slate-200 cursor-pointer transition-colors"
+                  >
+                    Clear Draft
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setShowCampusModal(false); setCampusSuccessCreatedId(null); }}
+                  className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             {/* ── SUCCESS SCREEN ── */}
@@ -4803,37 +5244,90 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       {/* Existing / Added Courses List */}
                       {wizardCourses.length > 0 && (
-                        <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                        <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
                           {wizardCourses.map((c, idx) => (
-                            <div key={idx} className="flex items-start justify-between bg-indigo-50/40 border border-indigo-100 p-3 rounded-2xl gap-2">
-                              <div className="space-y-1 flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-extrabold text-xs text-gray-800">{c.name}</span>
-                                  <span className="px-1.5 rounded bg-indigo-50 border border-indigo-150 text-indigo-700 text-[8px] font-extrabold uppercase shrink-0">
-                                    {c.years} Yrs · {c.years * 2} Sem
-                                  </span>
-                                  {c.isExisting && (
-                                    <span className="px-1.5 rounded bg-emerald-50 border border-emerald-150 text-emerald-700 text-[8px] font-extrabold uppercase shrink-0">Saved</span>
+                            <div key={idx} className="bg-indigo-50/40 border border-indigo-100 p-3 rounded-2xl space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-1 flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-extrabold text-xs text-gray-800">{c.name}</span>
+                                    <span className="px-1.5 rounded bg-indigo-50 border border-indigo-150 text-indigo-700 text-[8px] font-extrabold uppercase shrink-0">
+                                      {c.years} Yrs · {c.years * 2} Sem
+                                    </span>
+                                    {c.isExisting && (
+                                      <span className="px-1.5 rounded bg-emerald-50 border border-emerald-150 text-emerald-700 text-[8px] font-extrabold uppercase shrink-0">Saved</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEditRooms(c, idx)}
+                                    className="text-[10px] text-indigo-600 font-extrabold hover:text-indigo-800 bg-white border border-indigo-200 hover:bg-indigo-50 px-2 py-1 rounded-xl transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  >
+                                    <Edit className="h-3 w-3" /> Edit Rooms
+                                  </button>
+                                  {!c.isExisting && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setWizardCourses(prev => prev.filter((_, i) => i !== idx))}
+                                      className="text-[10px] text-red-500 font-extrabold hover:text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-xl transition-colors cursor-pointer"
+                                    >
+                                      Remove
+                                    </button>
                                   )}
                                 </div>
-                                {c.sectionRooms && Object.keys(c.sectionRooms).length > 0 && (
-                                  <div className="text-[9px] text-gray-455 font-bold flex flex-wrap gap-1.5">
+                              </div>
+
+                              {/* Room Display or Inline Room Editor */}
+                              {editingWizardCourseIndex === idx ? (
+                                <div className="mt-2.5 pt-2.5 border-t border-indigo-150 space-y-2 bg-white p-3 rounded-xl shadow-2xs animate-fadeIn">
+                                  <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider block">Edit Classroom Allocations</span>
+                                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                                    {Object.keys(editingRooms).length === 0 ? (
+                                      <div className="text-[10px] text-slate-400 italic">No room entries found.</div>
+                                    ) : (
+                                      Object.keys(editingRooms).map((roomKey) => (
+                                        <div key={roomKey} className="flex items-center gap-2">
+                                          <span className="text-[9.5px] font-bold text-slate-600 w-32 shrink-0">{roomKey}:</span>
+                                          <input
+                                            type="text"
+                                            value={editingRooms[roomKey] || ""}
+                                            onChange={(e) => setEditingRooms({ ...editingRooms, [roomKey]: e.target.value })}
+                                            placeholder="Room Name"
+                                            className="flex-1 p-1.5 border border-slate-200 rounded-lg text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
+                                          />
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                  <div className="flex justify-end gap-2 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingWizardCourseIndex(null)}
+                                      className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-bold cursor-pointer"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveEditedRooms(idx)}
+                                      className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold cursor-pointer shadow-2xs"
+                                    >
+                                      Save Rooms
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                c.sectionRooms && Object.keys(c.sectionRooms).length > 0 && (
+                                  <div className="text-[9px] text-gray-455 font-bold flex flex-wrap gap-1.5 pt-0.5">
                                     {Object.entries(c.sectionRooms as Record<string, string>).map(([key, room]) => (
-                                      <span key={key} className="bg-white border border-gray-150 px-1.5 py-0.5 rounded-lg">
-                                        {key}: <span className="text-gray-700">{room}</span>
+                                      <span key={key} className="bg-white border border-gray-150 px-1.5 py-0.5 rounded-lg flex items-center gap-1">
+                                        {key}: <span className="text-gray-800 font-extrabold">{room}</span>
                                       </span>
                                     ))}
                                   </div>
-                                )}
-                              </div>
-                              {!c.isExisting && (
-                                <button
-                                  type="button"
-                                  onClick={() => setWizardCourses(prev => prev.filter((_, i) => i !== idx))}
-                                  className="text-[10px] text-red-500 font-extrabold hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-xl transition-colors cursor-pointer shrink-0"
-                                >
-                                  Remove
-                                </button>
+                                )
                               )}
                             </div>
                           ))}
@@ -5070,355 +5564,597 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {/* ────────────────── STEP 3: SHIFT CONFIG ────────────────── */}
                   {campusWizardStep === 3 && (
                     <div className="space-y-4 animate-fadeIn">
-                      <div className="pb-1 border-b border-gray-100">
-                        <h4 className="text-xs font-black text-gray-800 uppercase tracking-wider">Shift Configuration</h4>
-                        <p className="text-[9.5px] text-gray-400 font-semibold mt-0.5">Configure start time, period durations, and breaks for each shift.</p>
-                      </div>
-
-                      <div className="flex flex-col gap-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-black text-indigo-650 uppercase tracking-wider">
-                            {campusForm.has_shifts === 1 ? "Shift Configurations" : "General Shift Configuration"}
-                          </h4>
-                          {campusForm.has_shifts === 1 && (
-                            <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
-                              {(["shift_1", "shift_2", "general"] as const).map(sh => (
-                                <button
-                                  key={sh}
-                                  type="button"
-                                  onClick={() => {
-                                    setActiveConfigShift(sh);
-                                    setNewBreakName("");
-                                  }}
-                                  className={`px-3 py-1 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${
-                                    activeConfigShift === sh
-                                      ? "bg-white text-indigo-655 shadow-sm"
-                                      : "text-gray-500 hover:text-gray-800"
-                                  }`}
-                                >
-                                  {shiftConfigsParams[sh].label}
-                                </button>
-                              ))}
-                            </div>
-                          )}
+                      <div className="pb-1 border-b border-gray-100 flex items-center justify-between">
+                        <div>
+                          <h4 className="text-xs font-black text-gray-800 uppercase tracking-wider">Shift Configuration</h4>
+                          <p className="text-[9.5px] text-gray-400 font-semibold mt-0.5">Configure start time with clock widget, period durations, and breaks with live floating side-by-side preview.</p>
                         </div>
-
-                        <div className="flex items-center gap-2 bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-100/50">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Configure Semester:</span>
-                          <select
-                            value={activeConfigSemester}
-                            onChange={(e) => handleSemesterChange(e.target.value)}
-                            className="flex-1 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                          >
-                            <option value="All Semesters">All Semesters (Default Fallback)</option>
-                            {["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"].map(sem => (
-                              <option key={sem} value={sem}>{sem}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="bg-slate-50/50 p-4 border border-gray-205 rounded-2xl space-y-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Name / Label</label>
-                            <input
-                              type="text"
-                              required
-                              value={shiftConfigsParams[activeConfigShift].label}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setShiftConfigsParams(prev => ({
-                                  ...prev,
-                                  [activeConfigShift]: { ...prev[activeConfigShift], label: val }
-                                }));
-                              }}
-                              placeholder="e.g. Regular Shift"
-                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Start Time</label>
-                            <input
-                              type="text"
-                              required
-                              value={shiftConfigsParams[activeConfigShift].startTime}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setShiftConfigsParams(prev => ({
-                                  ...prev,
-                                  [activeConfigShift]: { ...prev[activeConfigShift], startTime: val }
-                                }));
-                              }}
-                              placeholder="e.g. 09:00 AM"
-                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Period Duration (minutes)</label>
-                            <input
-                              type="number"
-                              min="1"
-                              required
-                              value={shiftConfigsParams[activeConfigShift].periodDuration}
-                              onChange={(e) => {
-                                const val = parseInt(e.target.value, 10) || 0;
-                                setShiftConfigsParams(prev => ({
-                                  ...prev,
-                                  [activeConfigShift]: { ...prev[activeConfigShift], periodDuration: val }
-                                }));
-                              }}
-                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Calculation Mode</label>
-                            <select
-                              value={shiftConfigsParams[activeConfigShift].mode}
-                              onChange={(e) => {
-                                const mode = e.target.value as "duration" | "fixed";
-                                setShiftConfigsParams(prev => ({
-                                  ...prev,
-                                  [activeConfigShift]: {
-                                    ...prev[activeConfigShift],
-                                    mode,
-                                    endTime: mode === "fixed" ? "04:30 PM" : undefined
-                                  }
-                                }));
-                              }}
-                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs cursor-pointer"
-                            >
-                              <option value="duration">Specify Number of Periods</option>
-                              <option value="fixed">Specify Shift End Time</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {shiftConfigsParams[activeConfigShift].mode === "duration" ? (
-                            <div className="space-y-1">
-                              <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Number of Periods</label>
-                              <input
-                                type="number"
-                                min="1"
-                                required
-                                value={shiftConfigsParams[activeConfigShift].periodsCount}
-                                onChange={(e) => {
-                                  const val = parseInt(e.target.value, 10) || 0;
-                                  setShiftConfigsParams(prev => ({
-                                    ...prev,
-                                    [activeConfigShift]: { ...prev[activeConfigShift], periodsCount: val }
-                                  }));
+                        {campusForm.has_shifts === 1 && (
+                          <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
+                            {(["shift_1", "shift_2", "general"] as const).map(sh => (
+                              <button
+                                key={sh}
+                                type="button"
+                                onClick={() => {
+                                  setActiveConfigShift(sh);
+                                  setNewBreakName("");
                                 }}
-                                className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
-                              />
-                            </div>
-                          ) : (
-                            <div className="space-y-1">
-                              <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift End Time</label>
-                              <input
-                                type="text"
-                                required
-                                value={shiftConfigsParams[activeConfigShift].endTime || ""}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setShiftConfigsParams(prev => ({
-                                    ...prev,
-                                    [activeConfigShift]: { ...prev[activeConfigShift], endTime: val }
-                                  }));
-                                }}
-                                placeholder="e.g. 04:30 PM"
-                                className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Breaks */}
-                      <div className="space-y-3 bg-white p-4 border border-gray-205 rounded-2xl">
-                        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-                          <span className="text-[10px] uppercase font-bold text-gray-455 tracking-wider">Configured Breaks</span>
-                          <span className="text-[9px] text-indigo-500 font-bold bg-indigo-50 px-2 py-0.5 rounded-full">
-                            {shiftConfigsParams[activeConfigShift].breaks.length} Breaks
-                          </span>
-                        </div>
-
-                        {shiftConfigsParams[activeConfigShift].breaks.length === 0 ? (
-                          <p className="text-[10px] text-gray-400 font-semibold text-center py-2">No breaks configured for this shift.</p>
-                        ) : (
-                          <div className="space-y-2">
-                            {shiftConfigsParams[activeConfigShift].breaks.map((brk) => (
-                              <div key={brk.id} className="flex items-center justify-between bg-slate-50/50 p-2.5 rounded-xl border border-gray-150">
-                                <div>
-                                  <div className="font-extrabold text-xs text-gray-800">{brk.name}</div>
-                                  <div className="text-[9.5px] font-bold text-gray-455 mt-0.5">
-                                    {brk.duration} min • Occurs after Period {brk.afterPeriod}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    disabled={brk.afterPeriod <= 1}
-                                    onClick={() => {
-                                      const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
-                                        b.id === brk.id ? { ...b, afterPeriod: b.afterPeriod - 1 } : b
-                                      );
-                                      setShiftConfigsParams(prev => ({
-                                        ...prev,
-                                        [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
-                                      }));
-                                    }}
-                                    className="p-1 text-gray-400 hover:text-indigo-650 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors disabled:opacity-30 disabled:pointer-events-none"
-                                  >▲</button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
-                                        b.id === brk.id ? { ...b, afterPeriod: b.afterPeriod + 1 } : b
-                                      );
-                                      setShiftConfigsParams(prev => ({
-                                        ...prev,
-                                        [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
-                                      }));
-                                    }}
-                                    className="p-1 text-gray-400 hover:text-indigo-650 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
-                                  >▼</button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.filter(b => b.id !== brk.id);
-                                      setShiftConfigsParams(prev => ({
-                                        ...prev,
-                                        [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
-                                      }));
-                                    }}
-                                    className="text-[10px] text-red-500 font-extrabold hover:text-red-750 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-lg transition-colors cursor-pointer"
-                                  >Remove</button>
-                                </div>
-                              </div>
+                                className={`px-3 py-1 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${
+                                  activeConfigShift === sh
+                                    ? "bg-white text-indigo-655 shadow-sm"
+                                    : "text-gray-500 hover:text-gray-800"
+                                }`}
+                              >
+                                {shiftConfigsParams[sh].label}
+                              </button>
                             ))}
                           </div>
                         )}
-
-                        <div className="bg-slate-50/50 p-3 rounded-xl border border-gray-150 border-dashed space-y-3 mt-3">
-                          <div className="text-[10px] font-bold text-gray-555 uppercase tracking-wider">Add Custom Break</div>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            <div className="space-y-1">
-                              <label className="text-[9px] text-gray-400 uppercase font-bold block">Break Name</label>
-                              <input
-                                type="text"
-                                value={newBreakName}
-                                onChange={(e) => setNewBreakName(e.target.value)}
-                                placeholder="e.g. Lunch"
-                                className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[9px] text-gray-400 uppercase font-bold block">Duration (min)</label>
-                              <input
-                                type="number"
-                                min="1"
-                                value={newBreakDuration}
-                                onChange={(e) => setNewBreakDuration(parseInt(e.target.value, 10) || 0)}
-                                className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[9px] text-gray-400 uppercase font-bold block">After Period</label>
-                              <input
-                                type="number"
-                                min="1"
-                                value={newBreakAfterPeriod}
-                                onChange={(e) => setNewBreakAfterPeriod(parseInt(e.target.value, 10) || 0)}
-                                className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
-                              />
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!newBreakName.trim()) {
-                                toast("Please enter a break name.", "warning");
-                                return;
-                              }
-                              const id = "b_" + Date.now();
-                              const brk: ShiftBreak = {
-                                id,
-                                name: newBreakName.trim(),
-                                duration: newBreakDuration,
-                                afterPeriod: newBreakAfterPeriod
-                              };
-                              setShiftConfigsParams(prev => ({
-                                ...prev,
-                                [activeConfigShift]: {
-                                  ...prev[activeConfigShift],
-                                  breaks: [...prev[activeConfigShift].breaks, brk]
-                                }
-                              }));
-                              setNewBreakName("");
-                            }}
-                            className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-extrabold py-2 rounded-xl border border-indigo-150 transition-colors cursor-pointer"
-                          >
-                            + Add Break to Shift
-                          </button>
-                        </div>
                       </div>
 
-                      {/* Live Timeline Preview */}
-                      {(() => {
-                        const schedule = calculateShiftSchedule(shiftConfigsParams[activeConfigShift]);
-                        return (
-                          <div className="bg-slate-50 p-4 border border-gray-205 rounded-3xl space-y-3">
-                            <div className="flex items-center justify-between border-b border-gray-150 pb-2">
-                              <div className="text-[10px] uppercase font-black text-gray-900 tracking-wider">Live Timetable Preview</div>
-                              {schedule.overallEndTime && (
-                                <div className="text-[10px] font-bold text-indigo-650 bg-indigo-50 px-2.5 py-0.5 rounded-full">
-                                  Ends: {schedule.overallEndTime} ({schedule.totalPeriods} Periods)
+                      {/* Side-by-Side 2-Column Grid */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                        {/* Left Column (Form) */}
+                        <div className="lg:col-span-7 space-y-4">
+                          <div className="flex items-center gap-2 bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-100/50">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Configure Semester:</span>
+                            <select
+                              value={activeConfigSemester}
+                              onChange={(e) => handleSemesterChange(e.target.value)}
+                              className="flex-1 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                            >
+                              <option value="All Semesters">All Semesters (Default Fallback)</option>
+                              {["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"].map(sem => (
+                                <option key={sem} value={sem}>{sem}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="bg-slate-50/50 p-4 border border-gray-205 rounded-2xl space-y-3.5">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Name / Label</label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={shiftConfigsParams[activeConfigShift].label}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setShiftConfigsParams(prev => ({
+                                      ...prev,
+                                      [activeConfigShift]: { ...prev[activeConfigShift], label: val }
+                                    }));
+                                  }}
+                                  placeholder="e.g. Regular Shift"
+                                  className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
+                                />
+                              </div>
+
+                              {/* Start Time with Clock Widget */}
+                              <div className="space-y-1 relative">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Start Time (Clock Widget)</label>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowClockPresets(!showClockPresets)}
+                                    className="text-[9px] text-indigo-650 font-extrabold hover:underline flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Clock className="h-3 w-3 text-indigo-600" /> Presets
+                                  </button>
+                                </div>
+                                <div className="relative flex items-center">
+                                  <input
+                                    type="text"
+                                    required
+                                    value={shiftConfigsParams[activeConfigShift].startTime}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setShiftConfigsParams(prev => ({
+                                        ...prev,
+                                        [activeConfigShift]: { ...prev[activeConfigShift], startTime: val }
+                                      }));
+                                    }}
+                                    placeholder="e.g. 08:30 AM"
+                                    className="w-full bg-white border border-gray-200 rounded-xl pl-3 pr-10 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
+                                  />
+                                  <div className="absolute right-2 flex items-center gap-1">
+                                    <input
+                                      type="time"
+                                      onChange={(e) => {
+                                        const timeVal = e.target.value;
+                                        if (timeVal) {
+                                          const [hStr, mStr] = timeVal.split(":");
+                                          let h = parseInt(hStr, 10);
+                                          const m = parseInt(mStr, 10);
+                                          const ampm = h >= 12 ? "PM" : "AM";
+                                          h = h % 12;
+                                          if (h === 0) h = 12;
+                                          const formattedH = h < 10 ? `0${h}` : `${h}`;
+                                          const formattedM = m < 10 ? `0${m}` : `${m}`;
+                                          const formatted = `${formattedH}:${formattedM} ${ampm}`;
+                                          setShiftConfigsParams(prev => ({
+                                            ...prev,
+                                            [activeConfigShift]: { ...prev[activeConfigShift], startTime: formatted }
+                                          }));
+                                        }
+                                      }}
+                                      className="w-6 h-6 opacity-0 absolute right-0 cursor-pointer"
+                                      title="Open Time Picker Widget"
+                                    />
+                                    <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-650 pointer-events-none">
+                                      <Clock className="h-3.5 w-3.5" />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Clock Presets Dropdown */}
+                                {showClockPresets && (
+                                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-indigo-150 rounded-2xl p-2.5 shadow-lg z-30 space-y-1.5 animate-fadeIn">
+                                    <div className="text-[9px] font-black text-gray-400 uppercase tracking-wider px-1">Quick Clock Presets</div>
+                                    <div className="grid grid-cols-4 gap-1">
+                                      {["08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM", "10:00 AM", "01:00 PM", "01:30 PM", "02:00 PM"].map(timePreset => (
+                                        <button
+                                          key={timePreset}
+                                          type="button"
+                                          onClick={() => {
+                                            setShiftConfigsParams(prev => ({
+                                              ...prev,
+                                              [activeConfigShift]: { ...prev[activeConfigShift], startTime: timePreset }
+                                            }));
+                                            setShowClockPresets(false);
+                                          }}
+                                          className={`py-1.5 rounded-lg text-[10px] font-extrabold transition-all border cursor-pointer ${
+                                            shiftConfigsParams[activeConfigShift].startTime === timePreset
+                                              ? "bg-indigo-600 border-indigo-600 text-white shadow-2xs"
+                                              : "bg-gray-50 border-gray-150 text-gray-700 hover:bg-indigo-50 hover:border-indigo-200"
+                                          }`}
+                                        >
+                                          {timePreset}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Period Duration (minutes)</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  required
+                                  value={shiftConfigsParams[activeConfigShift].periodDuration}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value, 10) || 0;
+                                    setShiftConfigsParams(prev => ({
+                                      ...prev,
+                                      [activeConfigShift]: { ...prev[activeConfigShift], periodDuration: val }
+                                    }));
+                                  }}
+                                  className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
+                                />
+                              </div>
+
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Calculation Mode</label>
+                                <select
+                                  value={shiftConfigsParams[activeConfigShift].mode}
+                                  onChange={(e) => {
+                                    const mode = e.target.value as "duration" | "fixed";
+                                    setShiftConfigsParams(prev => ({
+                                      ...prev,
+                                      [activeConfigShift]: {
+                                        ...prev[activeConfigShift],
+                                        mode,
+                                        endTime: mode === "fixed" ? "04:30 PM" : undefined
+                                      }
+                                    }));
+                                  }}
+                                  className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs cursor-pointer"
+                                >
+                                  <option value="duration">Specify Number of Periods</option>
+                                  <option value="fixed">Specify Shift End Time</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {shiftConfigsParams[activeConfigShift].mode === "duration" ? (
+                                <div className="space-y-1">
+                                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Number of Periods</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    required
+                                    value={shiftConfigsParams[activeConfigShift].periodsCount}
+                                    onChange={(e) => {
+                                      const val = parseInt(e.target.value, 10) || 0;
+                                      setShiftConfigsParams(prev => ({
+                                        ...prev,
+                                        [activeConfigShift]: { ...prev[activeConfigShift], periodsCount: val }
+                                      }));
+                                    }}
+                                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="space-y-1">
+                                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift End Time</label>
+                                  <input
+                                    type="text"
+                                    required
+                                    value={shiftConfigsParams[activeConfigShift].endTime || ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setShiftConfigsParams(prev => ({
+                                        ...prev,
+                                        [activeConfigShift]: { ...prev[activeConfigShift], endTime: val }
+                                      }));
+                                    }}
+                                    placeholder="e.g. 04:30 PM"
+                                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
+                                  />
                                 </div>
                               )}
                             </div>
-                            {schedule.error ? (
-                              <div className="text-[10.5px] font-bold text-amber-600 bg-amber-50 border border-amber-150 rounded-xl p-3">
-                                {schedule.error}
-                              </div>
-                            ) : (shiftConfigsParams[activeConfigShift].breaks.length === 0) ? (
-                              <div className="text-[9.5px] font-bold text-amber-700 bg-amber-50 border border-amber-150 rounded-xl p-2.5 flex items-center gap-1.5">
-                                <span>⚠️</span>
-                                <span>At least one break must be configured for this shift.</span>
-                              </div>
-                            ) : schedule.items.length === 0 ? (
-                              <p className="text-[10px] text-gray-400 font-semibold py-2">No periods calculated yet.</p>
+                          </div>
+
+                          {/* Configured Breaks List */}
+                          <div className="space-y-3 bg-white p-4 border border-gray-205 rounded-2xl">
+                            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                              <span className="text-[10px] uppercase font-bold text-gray-455 tracking-wider">Configured Breaks</span>
+                              <span className="text-[9px] text-indigo-500 font-bold bg-indigo-50 px-2 py-0.5 rounded-full">
+                                {shiftConfigsParams[activeConfigShift].breaks.length} Breaks
+                              </span>
+                            </div>
+
+                            {shiftConfigsParams[activeConfigShift].breaks.length === 0 ? (
+                              <p className="text-[10px] text-gray-400 font-semibold text-center py-2">No breaks configured for this shift.</p>
                             ) : (
-                              <div className="relative border-l border-indigo-150 ml-3 pl-4 py-1 space-y-2 text-[10.5px]">
-                                {schedule.items.map((item, index) => {
-                                  const isBreak = item.type === "break";
-                                  return (
-                                    <div key={index} className="relative flex items-center justify-between gap-4">
-                                      <div className={`absolute -left-[20.5px] w-2 h-2 rounded-full border ${
-                                        isBreak ? "bg-amber-400 border-amber-500" : "bg-indigo-550 border-indigo-650"
-                                      }`} />
-                                      <div className="flex-grow flex items-center justify-between">
-                                        <span className={`font-bold ${isBreak ? "text-amber-700" : "text-gray-800"}`}>
-                                          {item.name}
-                                        </span>
-                                        <span className="font-mono font-bold text-gray-500">
-                                          {item.startTimeStr} - {item.endTimeStr}
-                                        </span>
+                              <div className="space-y-2">
+                                {shiftConfigsParams[activeConfigShift].breaks.map((brk) => (
+                                  <div key={brk.id} className="flex items-center justify-between bg-slate-50/50 p-2.5 rounded-xl border border-gray-150">
+                                    <div>
+                                      <div className="font-extrabold text-xs text-gray-800">{brk.name}</div>
+                                      <div className="text-[9.5px] font-bold text-gray-455 mt-0.5">
+                                        {brk.duration} min • Occurs after Period {brk.afterPeriod}
                                       </div>
                                     </div>
-                                  );
-                                })}
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        disabled={brk.afterPeriod <= 1}
+                                        onClick={() => {
+                                          const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
+                                            b.id === brk.id ? { ...b, afterPeriod: b.afterPeriod - 1 } : b
+                                          );
+                                          setShiftConfigsParams(prev => ({
+                                            ...prev,
+                                            [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                          }));
+                                        }}
+                                        className="p-1 text-gray-400 hover:text-indigo-650 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                                      >▲</button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
+                                            b.id === brk.id ? { ...b, afterPeriod: b.afterPeriod + 1 } : b
+                                          );
+                                          setShiftConfigsParams(prev => ({
+                                            ...prev,
+                                            [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                          }));
+                                        }}
+                                        className="p-1 text-gray-400 hover:text-indigo-650 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
+                                      >▼</button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.filter(b => b.id !== brk.id);
+                                          setShiftConfigsParams(prev => ({
+                                            ...prev,
+                                            [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                          }));
+                                        }}
+                                        className="text-[10px] text-red-500 font-extrabold hover:text-red-750 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                                      >Remove</button>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             )}
+
+                            <div className="bg-slate-50/50 p-3 rounded-xl border border-gray-150 border-dashed space-y-3 mt-3">
+                              <div className="text-[10px] font-bold text-gray-555 uppercase tracking-wider">Add Custom Break</div>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div className="space-y-1">
+                                  <label className="text-[9px] text-gray-400 uppercase font-bold block">Break Name</label>
+                                  <input
+                                    type="text"
+                                    value={newBreakName}
+                                    onChange={(e) => setNewBreakName(e.target.value)}
+                                    placeholder="e.g. Lunch"
+                                    className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] text-gray-400 uppercase font-bold block">Duration (min)</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={newBreakDuration}
+                                    onChange={(e) => setNewBreakDuration(parseInt(e.target.value, 10) || 0)}
+                                    className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] text-gray-400 uppercase font-bold block">After Period #</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={newBreakAfterPeriod}
+                                    onChange={(e) => setNewBreakAfterPeriod(parseInt(e.target.value, 10) || 1)}
+                                    className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
+                                  />
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!newBreakName.trim()) return;
+                                  const brk: ShiftBreak = {
+                                    id: `b_${Date.now()}`,
+                                    name: newBreakName.trim(),
+                                    duration: newBreakDuration,
+                                    afterPeriod: newBreakAfterPeriod
+                                  };
+                                  setShiftConfigsParams(prev => ({
+                                    ...prev,
+                                    [activeConfigShift]: {
+                                      ...prev[activeConfigShift],
+                                      breaks: [...prev[activeConfigShift].breaks, brk]
+                                    }
+                                  }));
+                                  setNewBreakName("");
+                                }}
+                                className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-extrabold py-2 rounded-xl border border-indigo-150 transition-colors cursor-pointer"
+                              >
+                                + Add Break to Shift
+                              </button>
+                            </div>
                           </div>
-                        );
-                      })()}
+                        </div>
+
+                        {/* Right Column (Floating Drag & Drop Live Timetable Preview Panel) */}
+                        <div className="lg:col-span-5 sticky top-2">
+                          {(() => {
+                            const schedule = calculateShiftSchedule(shiftConfigsParams[activeConfigShift]);
+                            return (
+                              <div className="bg-slate-900 text-white p-4.5 rounded-3xl space-y-3.5 shadow-xl border border-slate-800 animate-fadeIn">
+                                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                                  <div>
+                                    <div className="text-[11px] uppercase font-black tracking-wider text-indigo-300 flex items-center gap-1.5">
+                                      <Sparkles className="h-3.5 w-3.5 text-indigo-400" /> Live Timetable Preview
+                                    </div>
+                                    <p className="text-[9px] text-slate-400 font-semibold mt-0.5">Drag & drop breaks onto periods to reorder</p>
+                                  </div>
+                                  {schedule.overallEndTime && (
+                                    <div className="text-[9.5px] font-bold text-emerald-300 bg-emerald-950/80 border border-emerald-800/60 px-2.5 py-1 rounded-full shrink-0">
+                                      Ends: {schedule.overallEndTime} ({schedule.totalPeriods} Periods)
+                                    </div>
+                                  )}
+                                </div>
+
+                                {schedule.error ? (
+                                  <div className="text-[10.5px] font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-2xl p-3">
+                                    {schedule.error}
+                                  </div>
+                                ) : (shiftConfigsParams[activeConfigShift].breaks.length === 0) ? (
+                                  <div className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-2xl p-3 flex items-center gap-2">
+                                    <span>⚠️</span>
+                                    <span>At least one break must be configured for this shift.</span>
+                                  </div>
+                                ) : schedule.items.length === 0 ? (
+                                  <p className="text-[10px] text-slate-500 font-semibold py-4 text-center">No periods calculated yet.</p>
+                                ) : (
+                                  <div className="relative border-l-2 border-indigo-500/40 ml-3 pl-4 py-1 space-y-2 text-[11px]">
+                                    {schedule.items.map((item, index) => {
+                                      const isBreak = item.type === "break";
+                                      const matchedBreak = isBreak
+                                        ? shiftConfigsParams[activeConfigShift].breaks.find(b => b.name === item.name)
+                                        : null;
+
+                                      return (
+                                        <div
+                                          key={index}
+                                          draggable={isBreak}
+                                          onDragStart={(e) => {
+                                            if (matchedBreak) {
+                                              e.dataTransfer.setData("text/plain", matchedBreak.id);
+                                              setDraggedBreakId(matchedBreak.id);
+                                            }
+                                          }}
+                                          onDragOver={(e) => e.preventDefault()}
+                                          onDrop={() => {
+                                            if (draggedBreakId) {
+                                              let targetP = item.type === "period" ? (item.index || 1) : 1;
+                                              if (item.type === "break" && index > 0) {
+                                                const prevItem = schedule.items[index - 1];
+                                                if (prevItem && prevItem.type === "period") targetP = prevItem.index || 1;
+                                              }
+                                              const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
+                                                b.id === draggedBreakId ? { ...b, afterPeriod: targetP } : b
+                                              );
+                                              setShiftConfigsParams(prev => ({
+                                                ...prev,
+                                                [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                              }));
+                                              setDraggedBreakId(null);
+                                            }
+                                          }}
+                                          className={`relative flex flex-col gap-1.5 p-2.5 rounded-2xl transition-all border ${
+                                            isBreak
+                                              ? "bg-amber-950/40 border-amber-500/30 hover:bg-amber-900/50 cursor-grab active:cursor-grabbing"
+                                              : "bg-slate-800/70 border-slate-700/60 hover:bg-slate-800"
+                                          } ${draggedBreakId && matchedBreak?.id === draggedBreakId ? "opacity-40 scale-[0.98]" : ""}`}
+                                        >
+                                          <div className={`absolute -left-[21px] top-3 w-2.5 h-2.5 rounded-full border-2 ${
+                                            isBreak ? "bg-amber-400 border-amber-300 shadow-amber-500/50 shadow-sm" : "bg-indigo-400 border-indigo-300 shadow-indigo-500/50 shadow-sm"
+                                          }`} />
+
+                                          <div className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                              {isBreak && <GripVertical className="h-3.5 w-3.5 text-amber-400/80 shrink-0" />}
+                                              <span className={`font-black text-xs truncate ${isBreak ? "text-amber-300" : "text-slate-100"}`}>
+                                                {item.name}
+                                              </span>
+                                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-900/90 text-indigo-300 border border-slate-700/80 shrink-0">
+                                                {item.durationMinutes || 0}m
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  if (item.type === "period" && item.index) {
+                                                    setEditingPeriodNum(editingPeriodNum === item.index ? null : item.index);
+                                                  } else if (matchedBreak) {
+                                                    setEditingPeriodNum(editingPeriodNum === index + 100 ? null : index + 100);
+                                                  }
+                                                }}
+                                                title="Edit duration for this specific period/break"
+                                                className="p-1 rounded-md text-slate-400 hover:text-indigo-300 hover:bg-slate-700 transition-colors cursor-pointer"
+                                              >
+                                                <Edit className="h-3 w-3" />
+                                              </button>
+                                            </div>
+
+                                            <span className="font-mono font-bold text-[10px] text-slate-300 shrink-0 bg-slate-950/80 px-2 py-0.5 rounded-md border border-slate-800">
+                                              {item.startTimeStr} - {item.endTimeStr}
+                                            </span>
+                                          </div>
+
+                                          {/* Inline Duration Adjustment Controls (Pencil Edit) */}
+                                          {item.type === "period" && item.index && editingPeriodNum === item.index && (
+                                            <div className="mt-1 pt-1.5 border-t border-slate-700/60 flex items-center justify-between gap-2 text-[10px] animate-fadeIn bg-slate-900/90 p-2 rounded-xl">
+                                              <div>
+                                                <span className="text-slate-200 font-extrabold block">Adjust Period {item.index} Duration:</span>
+                                                <span className="text-[8.5px] text-indigo-300/80 font-medium block">Only updates Period {item.index} & subsequent times</span>
+                                              </div>
+                                              <div className="flex items-center gap-1.5 shrink-0">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const cur = item.durationMinutes || shiftConfigsParams[activeConfigShift].periodDuration;
+                                                    const updated = Math.max(5, cur - 5);
+                                                    setShiftConfigsParams(prev => ({
+                                                      ...prev,
+                                                      [activeConfigShift]: {
+                                                        ...prev[activeConfigShift],
+                                                        customPeriodDurations: {
+                                                          ...prev[activeConfigShift].customPeriodDurations,
+                                                          [item.index!]: updated
+                                                        }
+                                                      }
+                                                    }));
+                                                  }}
+                                                  className="h-5 w-5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-black rounded-md flex items-center justify-center cursor-pointer"
+                                                >−</button>
+                                                <span className="font-mono font-extrabold text-indigo-300 w-8 text-center">
+                                                  {item.durationMinutes || shiftConfigsParams[activeConfigShift].periodDuration}m
+                                                </span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const cur = item.durationMinutes || shiftConfigsParams[activeConfigShift].periodDuration;
+                                                    const updated = cur + 5;
+                                                    setShiftConfigsParams(prev => ({
+                                                      ...prev,
+                                                      [activeConfigShift]: {
+                                                        ...prev[activeConfigShift],
+                                                        customPeriodDurations: {
+                                                          ...prev[activeConfigShift].customPeriodDurations,
+                                                          [item.index!]: updated
+                                                        }
+                                                      }
+                                                    }));
+                                                  }}
+                                                  className="h-5 w-5 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-md flex items-center justify-center cursor-pointer"
+                                                >+</button>
+                                                {shiftConfigsParams[activeConfigShift].customPeriodDurations?.[item.index] && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      const copy = { ...shiftConfigsParams[activeConfigShift].customPeriodDurations };
+                                                      delete copy[item.index!];
+                                                      setShiftConfigsParams(prev => ({
+                                                        ...prev,
+                                                        [activeConfigShift]: {
+                                                          ...prev[activeConfigShift],
+                                                          customPeriodDurations: copy
+                                                        }
+                                                      }));
+                                                    }}
+                                                    className="text-[9px] text-amber-400 hover:underline font-bold ml-1 cursor-pointer"
+                                                  >
+                                                    Reset
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {/* Inline Break Duration Adjustment */}
+                                          {isBreak && matchedBreak && editingPeriodNum === index + 100 && (
+                                            <div className="mt-1 pt-1.5 border-t border-amber-900/60 flex items-center justify-between gap-2 text-[10px] animate-fadeIn bg-amber-950/80 p-2 rounded-xl">
+                                              <div>
+                                                <span className="text-amber-200 font-extrabold block">Adjust {matchedBreak.name} Duration:</span>
+                                                <span className="text-[8.5px] text-amber-300/80 font-medium block">Only updates break & subsequent times</span>
+                                              </div>
+                                              <div className="flex items-center gap-1.5 shrink-0">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
+                                                      b.id === matchedBreak.id ? { ...b, duration: Math.max(5, b.duration - 5) } : b
+                                                    );
+                                                    setShiftConfigsParams(prev => ({
+                                                      ...prev,
+                                                      [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                                    }));
+                                                  }}
+                                                  className="h-5 w-5 bg-slate-800 hover:bg-slate-700 text-amber-200 font-black rounded-md flex items-center justify-center cursor-pointer"
+                                                >−</button>
+                                                <span className="font-mono font-extrabold text-amber-300 w-8 text-center">
+                                                  {matchedBreak.duration}m
+                                                </span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
+                                                      b.id === matchedBreak.id ? { ...b, duration: b.duration + 5 } : b
+                                                    );
+                                                    setShiftConfigsParams(prev => ({
+                                                      ...prev,
+                                                      [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                                    }));
+                                                  }}
+                                                  className="h-5 w-5 bg-amber-600 hover:bg-amber-500 text-white font-black rounded-md flex items-center justify-center cursor-pointer"
+                                                >+</button>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -5988,19 +6724,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </select>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Shift Assignment</label>
-                  <select
-                    required
-                    value={mentorForm.shift}
-                    onChange={(e) => setMentorForm({ ...mentorForm, shift: e.target.value as any })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                  >
-                    <option value="general">General Shift</option>
-                    <option value="shift_1">Shift 1</option>
-                    <option value="shift_2">Shift 2</option>
-                  </select>
-                </div>
+                {isCampusShiftBased && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Shift Assignment</label>
+                    <select
+                      required
+                      value={mentorForm.shift}
+                      onChange={(e) => setMentorForm({ ...mentorForm, shift: e.target.value as any })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                    >
+                      <option value="general">General Shift</option>
+                      <option value="shift_1">Shift 1</option>
+                      <option value="shift_2">Shift 2</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -6250,7 +6988,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Subject Type / Domain</label>
                       <select
                         required
-                        value={subjectForm.type}
+                        value={normalizeSubjectType(subjectForm.type)}
                         onChange={(e) => setSubjectForm({ ...subjectForm, type: e.target.value })}
                         className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
                       >
@@ -6302,40 +7040,71 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     );
                   }
+                  const filteredMentors = campusMentors.filter(m =>
+                    !subjectStaffSearch ||
+                    (m.name || "").toLowerCase().includes(subjectStaffSearch.toLowerCase()) ||
+                    (m.department || "").toLowerCase().includes(subjectStaffSearch.toLowerCase())
+                  );
                   return (
                     <div className="flex flex-col h-full space-y-2">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">
-                        Assign Staff <span className="text-gray-300 font-normal normal-case">(optional)</span>
-                      </label>
-                      <div className="flex-1 max-h-64 overflow-y-auto rounded-2xl border border-gray-200 divide-y divide-gray-100 bg-gray-55">
-                        {campusMentors.map(m => {
-                          const checked = subjectForm.mentorIds.includes(m.id);
-                          return (
-                            <label
-                              key={m.id}
-                              className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-indigo-50/40 transition-colors"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => {
-                                  const next = checked
-                                    ? subjectForm.mentorIds.filter(id => id !== m.id)
-                                    : [...subjectForm.mentorIds, m.id];
-                                  setSubjectForm({ ...subjectForm, mentorIds: next });
-                                }}
-                                className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 cursor-pointer"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <div className="font-bold text-gray-800 truncate text-xs">{m.name}</div>
-                                {m.department && <div className="text-[9px] text-gray-400 truncate">{m.department}</div>}
-                              </div>
-                              {checked && (
-                                <span className="shrink-0 text-[8px] bg-indigo-50 border border-indigo-100 text-indigo-700 px-1 py-0.2 rounded font-black">Assigned</span>
-                              )}
-                            </label>
-                          );
-                        })}
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
+                          Assign Staff <span className="text-gray-300 font-normal normal-case">(optional)</span>
+                        </label>
+                        <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                          {subjectForm.mentorIds.length} Selected
+                        </span>
+                      </div>
+
+                      {/* Staff Search Bar */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Search staff by name or dept..."
+                          value={subjectStaffSearch}
+                          onChange={(e) => setSubjectStaffSearch(e.target.value)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-gray-800"
+                        />
+                      </div>
+
+                      <div className="flex-1 max-h-56 overflow-y-auto rounded-2xl border border-gray-200 divide-y divide-gray-100 bg-gray-55">
+                        {filteredMentors.length === 0 ? (
+                          <div className="p-4 text-center text-gray-400 text-[11px] italic">
+                            No staff match "{subjectStaffSearch}"
+                          </div>
+                        ) : (
+                          filteredMentors.map(m => {
+                            const checked = subjectForm.mentorIds.includes(m.id);
+                            return (
+                              <label
+                                key={m.id}
+                                className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-indigo-50/40 transition-colors"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => {
+                                    const next = checked
+                                      ? subjectForm.mentorIds.filter(id => id !== m.id)
+                                      : [...subjectForm.mentorIds, m.id];
+                                    setSubjectForm({ ...subjectForm, mentorIds: next });
+                                  }}
+                                  className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 cursor-pointer"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-bold text-gray-800 truncate text-xs">{m.name}</div>
+                                  {m.department && <div className="text-[9px] text-gray-400 truncate">{m.department}</div>}
+                                </div>
+                                {checked && (
+                                  <span className="text-[9px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                    Assigned
+                                  </span>
+                                )}
+                              </label>
+                            );
+                          })
+                        )}
                       </div>
                       {subjectForm.mentorIds.length > 0 && (
                         <p className="text-[10px] text-indigo-600 font-semibold leading-none pt-1">
@@ -6531,8 +7300,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   >
                     <option value="shift_1">Shift 1 (Day)</option>
                     <option value="shift_2">Shift 2 (Evening)</option>
-                    <option value="both">Both Shifts (Dual Offerings)</option>
+                    <option value="both">Both Shifts (Shift 1 & 2)</option>
                     <option value="general">General Shift</option>
+                    <option value="all">Both Shifts + General (Shift 1, 2 & General)</option>
                   </select>
                 </div>
 
@@ -6559,9 +7329,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  disabled={isDeptSubmitting}
+                  className={`btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer flex items-center justify-center gap-2 ${
+                    isDeptSubmitting ? "opacity-75 cursor-not-allowed" : "hover:opacity-95 active:scale-95"
+                  }`}
                 >
-                  {editingDept ? "Save Changes" : "Create Course"}
+                  {isDeptSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-white shrink-0" />
+                      <span>{editingDept ? "Saving Changes..." : "Creating Course..."}</span>
+                    </>
+                  ) : (
+                    <span>{editingDept ? "Save Changes" : "Create Course"}</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -6898,6 +7678,129 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }}
         />
       )}
+        {/* ── FACULTY BULK IMPORT PREVIEW MODAL ── */}
+        {showFacultyImportModal && facultyImportPreview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl border border-gray-100 max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100">
+                    <FileSpreadsheet className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-extrabold text-gray-900">Faculty Bulk Import Preview</h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        {colleges.find(c => c.id === templateCollegeId)?.name || "Target Campus"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 font-medium mt-0.5">
+                      Parsed {facultyImportPreview.parsed.length} faculty record(s) from spreadsheet
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowFacultyImportModal(false)}
+                  className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {facultyImportPreview.warnings.length > 0 && (
+                <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold space-y-1">
+                  <div className="font-extrabold flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    Validation Warnings ({facultyImportPreview.warnings.length}):
+                  </div>
+                  <ul className="list-disc list-inside text-[11px] space-y-0.5 max-h-24 overflow-y-auto">
+                    {facultyImportPreview.warnings.map((w, idx) => (
+                      <li key={idx}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="flex-1 overflow-y-auto border border-gray-200 rounded-2xl">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-extrabold uppercase text-[10px] tracking-wider">
+                      <th className="p-3">#</th>
+                      <th className="p-3">Faculty Name</th>
+                      <th className="p-3">Email Address</th>
+                      <th className="p-3">Department</th>
+                      {isCampusShiftBased && <th className="p-3">Shift</th>}
+                      <th className="p-3">Timetable Subjects</th>
+                      <th className="p-3">Assigned Classes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white font-medium text-gray-800">
+                    {facultyImportPreview.parsed.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-indigo-50/20">
+                        <td className="p-3 text-gray-400 font-mono text-[10px]">{idx + 1}</td>
+                        <td className="p-3 font-bold text-gray-900">{item.name || <span className="text-rose-500 italic">Missing</span>}</td>
+                        <td className="p-3 font-mono text-[11px] text-gray-600">{item.email || <span className="text-rose-500 italic">Missing</span>}</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] font-bold">{item.department}</span></td>
+                        {isCampusShiftBased && (
+                          <td className="p-3"><span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold uppercase">{item.shift}</span></td>
+                        )}
+                        <td className="p-3">
+                          {item.subjects ? (
+                            <div className="flex flex-wrap gap-1 max-w-[200px]">
+                              {item.subjects.split(",").map((sub: string, sIdx: number) => (
+                                <span key={sIdx} className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9.5px] font-bold">
+                                  {sub.trim()}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-[10px] italic">No subjects</span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {item.classes ? (
+                            <div className="flex flex-wrap gap-1 max-w-[180px]">
+                              {item.classes.split(",").map((cls: string, cIdx: number) => (
+                                <span key={cIdx} className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[9.5px] font-bold">
+                                  {cls.trim()}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-[10px] italic">No classes</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                <p className="text-xs text-gray-500 font-medium">
+                  Initial default password for all imported faculty will be set to <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono font-bold">password123</code>
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowFacultyImportModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isImportingFaculty}
+                    onClick={handleConfirmFacultyImport}
+                    className="px-5 py-2 rounded-xl text-xs font-extrabold btn-gradient text-white shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isImportingFaculty ? "Importing..." : `Confirm & Import (${facultyImportPreview.parsed.length}) →`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 };

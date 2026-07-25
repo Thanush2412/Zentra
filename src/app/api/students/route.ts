@@ -74,7 +74,7 @@ export async function PUT(request: Request) {
       email ? email.trim() : "",
       department ? department.trim() : "",
       classGroup ? classGroup.trim() : "",
-      college_id || "college_1",
+      college_id || currentStudent.college_id || null,
       register_number || null,
       roll_number || null,
       tenth_mark || null,
@@ -108,10 +108,10 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    
+
     const students = Array.isArray(body) ? body : [body];
     const nowStr = new Date().toISOString();
-    
+
     for (const student of students) {
       const {
         id: rawId,
@@ -141,18 +141,22 @@ export async function POST(request: Request) {
         semester,
         shift
       } = student;
-      
-      const stId = (rawId || roll_number || register_number || "").toString().trim();
+
       const stName = (name || "").toString().trim();
-      
-      if (!stId || !stName) {
+      let stId = (rawId || roll_number || register_number || (email ? email.split("@")[0] : "")).toString().trim();
+
+      if (!stName) {
         continue;
+      }
+
+      if (!stId) {
+        stId = "STU_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
       }
 
       const stEmail = (email || `${stId.toLowerCase()}@university.edu`).toString().trim();
       const stRoll = (roll_number || stId).toString().trim();
       const stReg = (register_number || stId).toString().trim();
-      
+
       await db.run(
         `INSERT OR REPLACE INTO students (
           id, name, email, classGroup, department, college_id, 
@@ -169,7 +173,7 @@ export async function POST(request: Request) {
           stEmail,
           classGroup || "General Class",
           department || "General",
-          college_id || "college_1",
+          college_id || null,
           stReg,
           stRoll,
           semester || "Semester 1",
@@ -194,7 +198,7 @@ export async function POST(request: Request) {
           nowStr
         ]
       );
-      
+
       // Also register credential in users table
       await db.run(
         `INSERT OR REPLACE INTO users (
@@ -209,10 +213,70 @@ export async function POST(request: Request) {
         ]
       );
     }
-    
+
     return NextResponse.json({ success: true, message: "Students created successfully." });
   } catch (error: any) {
     console.error("API POST Students error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    let ids: string[] = [];
+
+    const singleId = searchParams.get("id");
+    if (singleId) {
+      ids = [singleId];
+    } else {
+      try {
+        const body = await request.json();
+        if (body.ids && Array.isArray(body.ids)) {
+          ids = body.ids;
+        } else if (body.id) {
+          ids = [body.id];
+        }
+      } catch (e) {
+        // No json body
+      }
+    }
+
+    if (!ids || ids.length === 0) {
+      return NextResponse.json({ success: false, message: "No student ID(s) provided for deletion." }, { status: 400 });
+    }
+
+    const cleanIds = ids.map(id => String(id).trim()).filter(Boolean);
+    if (cleanIds.length === 0) {
+      return NextResponse.json({ success: false, message: "Invalid student ID(s)." }, { status: 400 });
+    }
+
+    const placeholders = cleanIds.map(() => "?").join(",");
+
+    // Delete from students table
+    await db.run(`DELETE FROM students WHERE id IN (${placeholders})`, cleanIds);
+
+    // Delete associated student users from users table
+    await db.run(`DELETE FROM users WHERE role = 'student' AND (id IN (${placeholders}) OR reference_id IN (${placeholders}))`, [...cleanIds, ...cleanIds]);
+
+    // Cleanup linked attendance, leave requests, and tracker records
+    try {
+      await db.run(`DELETE FROM student_attendance WHERE studentId IN (${placeholders})`, cleanIds);
+      await db.run(`DELETE FROM leave_requests WHERE studentId IN (${placeholders})`, cleanIds);
+      await db.run(`DELETE FROM student_tracker WHERE studentId IN (${placeholders})`, cleanIds);
+    } catch (err) {
+      console.warn("Minor warning cleaning associated student logs:", err);
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `${cleanIds.length} student record(s) deleted successfully.`,
+      count: cleanIds.length
+    });
+  } catch (error: any) {
+    console.error("API DELETE Students error:", error);
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
+

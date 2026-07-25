@@ -311,6 +311,7 @@ export interface ScheduleItem {
   endTimeStr: string;
   startMinutes: number;
   endMinutes: number;
+  durationMinutes?: number;
 }
 
 export interface ShiftBreak {
@@ -328,6 +329,7 @@ export interface ShiftParams {
   mode: "duration" | "fixed";
   endTime?: string;
   breaks: ShiftBreak[];
+  customPeriodDurations?: Record<number, number>;
 }
 
 export const parseTimeToMinutes = (timeStr: string): number => {
@@ -365,7 +367,7 @@ export const calculateShiftSchedule = (params: ShiftParams): {
   totalPeriods: number;
   error?: string;
 } => {
-  const { startTime, periodDuration, periodsCount, mode, endTime, breaks } = params;
+  const { startTime, periodDuration, periodsCount, mode, endTime, breaks, customPeriodDurations } = params;
   let currentMinutes = parseTimeToMinutes(startTime);
   const items: ScheduleItem[] = [];
   
@@ -378,8 +380,11 @@ export const calculateShiftSchedule = (params: ShiftParams): {
 
   if (mode === "duration") {
     for (let p = 1; p <= periodsCount; p++) {
+      const thisPeriodDur = (customPeriodDurations && customPeriodDurations[p]) 
+        ? customPeriodDurations[p] 
+        : periodDuration;
       const pStart = currentMinutes;
-      const pEnd = currentMinutes + periodDuration;
+      const pEnd = currentMinutes + thisPeriodDur;
       items.push({
         type: "period",
         index: p,
@@ -387,7 +392,8 @@ export const calculateShiftSchedule = (params: ShiftParams): {
         startTimeStr: formatMinutesToTime(pStart),
         endTimeStr: formatMinutesToTime(pEnd),
         startMinutes: pStart,
-        endMinutes: pEnd
+        endMinutes: pEnd,
+        durationMinutes: thisPeriodDur
       });
       currentMinutes = pEnd;
       
@@ -401,7 +407,8 @@ export const calculateShiftSchedule = (params: ShiftParams): {
           startTimeStr: formatMinutesToTime(bStart),
           endTimeStr: formatMinutesToTime(bEnd),
           startMinutes: bStart,
-          endMinutes: bEnd
+          endMinutes: bEnd,
+          durationMinutes: pBreak.duration
         });
         currentMinutes = bEnd;
       }
@@ -421,10 +428,15 @@ export const calculateShiftSchedule = (params: ShiftParams): {
     let iterations = 0;
     const maxIterations = 50;
     
-    while (currentMinutes + periodDuration <= limitMinutes && iterations < maxIterations) {
+    while (iterations < maxIterations) {
+      const thisPeriodDur = (customPeriodDurations && customPeriodDurations[periodIndex]) 
+        ? customPeriodDurations[periodIndex] 
+        : periodDuration;
+      if (currentMinutes + thisPeriodDur > limitMinutes) break;
+      
       iterations++;
       const pStart = currentMinutes;
-      const pEnd = currentMinutes + periodDuration;
+      const pEnd = currentMinutes + thisPeriodDur;
       items.push({
         type: "period",
         index: periodIndex,
@@ -432,7 +444,8 @@ export const calculateShiftSchedule = (params: ShiftParams): {
         startTimeStr: formatMinutesToTime(pStart),
         endTimeStr: formatMinutesToTime(pEnd),
         startMinutes: pStart,
-        endMinutes: pEnd
+        endMinutes: pEnd,
+        durationMinutes: thisPeriodDur
       });
       currentMinutes = pEnd;
       
@@ -450,7 +463,8 @@ export const calculateShiftSchedule = (params: ShiftParams): {
           startTimeStr: formatMinutesToTime(bStart),
           endTimeStr: formatMinutesToTime(bEnd),
           startMinutes: bStart,
-          endMinutes: bEnd
+          endMinutes: bEnd,
+          durationMinutes: pBreak.duration
         });
         currentMinutes = bEnd;
       }
@@ -459,7 +473,7 @@ export const calculateShiftSchedule = (params: ShiftParams): {
     return {
       items,
       overallEndTime: formatMinutesToTime(currentMinutes),
-      totalPeriods: periodIndex - 1
+      totalPeriods: items.filter(i => i.type === "period").length
     };
   }
 };

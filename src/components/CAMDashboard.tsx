@@ -17,7 +17,7 @@ import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,
   PlusCircle, Check, ArrowRight, Settings, MessageSquare, ShieldAlert,
-  Award, TrendingUp, FileText, RefreshCw, Plus, Trash2, Edit2, Download, Upload, ChevronDown,
+  Award, TrendingUp, FileText, RefreshCw, Plus, Trash2, Edit2, Download, Upload, ChevronDown, Loader2,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle, User, SlidersHorizontal, CalendarCheck2, IndianRupee, BadgePercent, X, Mail, Lock, Menu
 } from "lucide-react";
 
@@ -212,6 +212,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     weeklyTasks,
     studentTracker,
     createMentor,
+    bulkImportMentors,
     updateMentor,
     deleteMentor,
     subjectGroups,
@@ -232,7 +233,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     deleteAcademicYear,
     saveAcademicEvent,
     deleteAcademicEvent,
-    saveFacultyConfig
+    saveFacultyConfig,
+    deleteStudent,
+    bulkDeleteStudents
   } = useApp();
   const { toast, confirm: showConfirm } = useToast();
 
@@ -289,28 +292,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const sidebarRef = useRef<HTMLElement>(null);
   const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
 
-  // GSAP Sidebar load animations on mount
-  useEffect(() => {
-    if (typeof window !== "undefined" && sidebarRef.current && !isFirstSidebarAnimationDone) {
-      const parentButtons = sidebarRef.current.querySelectorAll(".sidebar-group-btn");
-      if (parentButtons.length > 0) {
-        isFirstSidebarAnimationDone = true; // Set flag so it never runs again on re-mount
-        gsap.fromTo(
-          parentButtons,
-          { opacity: 0, x: -20, scale: 0.9 },
-          { 
-            opacity: 1, 
-            x: 0, 
-            scale: 1,
-            duration: 0.55, 
-            stagger: 0.05, 
-            ease: "back.out(1.3)",
-            delay: 0.05
-          }
-        );
-      }
-    }
-  }, []);
+  // Sidebar remains static and stable without GSAP button wobble
 
   // GSAP Stagger sub-menu item entrances on category hover
   useEffect(() => {
@@ -385,8 +367,55 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [isStudentImportSubmitting, setIsStudentImportSubmitting] = useState(false);
   const [studentDirSearch, setStudentDirSearch] = useState("");
   const [studentDirDeptFilter, setStudentDirDeptFilter] = useState("all");
-  const [studentClassFilter, setStudentClassFilter] = useState("all");
+  const [studentSemFilter, setStudentSemFilter] = useState("all");
+  const [studentShiftFilter, setStudentShiftFilter] = useState("all");
   const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<any | null>(null);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+
+  const handleSingleDeleteStudent = async (st: any) => {
+    if (!st || !st.id) return;
+    const ok = await showConfirm({
+      title: "Delete Student Record",
+      message: `Are you sure you want to delete ${st.name} (${st.roll_number || st.id})? This will permanently remove their profile, attendance logs, and login credentials.`,
+      confirmLabel: "Delete Record",
+      danger: true
+    });
+    if (ok) {
+      const res = await deleteStudent(st.id);
+      if (res.success) {
+        toast(`Student ${st.name} deleted successfully.`, "success");
+        setSelectedStudentIds(prev => prev.filter(id => id !== st.id));
+        if (selectedStudentForDetail?.id === st.id) {
+          setSelectedStudentForDetail(null);
+        }
+      } else {
+        toast(res.message || "Failed to delete student.", "error");
+      }
+    }
+  };
+
+  const handleBulkDeleteStudents = async (targetIds?: string[]) => {
+    const idsToDelete = targetIds || selectedStudentIds;
+    if (!idsToDelete || idsToDelete.length === 0) return;
+    const ok = await showConfirm({
+      title: "Delete Selected Students",
+      message: `Are you sure you want to delete ${idsToDelete.length} selected student(s)? This will permanently remove their records, attendance logs, and login credentials.`,
+      confirmLabel: `Delete ${idsToDelete.length} Students`,
+      danger: true
+    });
+    if (ok) {
+      const res = await bulkDeleteStudents(idsToDelete);
+      if (res.success) {
+        toast(`${res.count || idsToDelete.length} student record(s) deleted successfully.`, "success");
+        setSelectedStudentIds(prev => prev.filter(id => !idsToDelete.includes(id)));
+        if (selectedStudentForDetail && idsToDelete.includes(selectedStudentForDetail.id)) {
+          setSelectedStudentForDetail(null);
+        }
+      } else {
+        toast(res.message || "Failed to delete selected students.", "error");
+      }
+    }
+  };
   // Template download selectors (3 separate pickers)
   const [templateDept, setTemplateDept] = useState<string>("");
   const [templateShift, setTemplateShift] = useState<string>("Shift 1");
@@ -397,9 +426,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const campusDepts = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
     const deptList = campusDepts.length > 0 ? campusDepts : FACULTY_DEPARTMENTS;
     const resolvedDept = templateDept || deptList[0] || "Computer Science";
-    const resolvedShift = templateShift || "Shift 1";
+    const resolvedShift = isCampusShiftBased ? (templateShift || "Shift 1") : "General";
     const resolvedSem = templateSem || "Semester 1";
-    const resolvedClass = classGroupOverride || `${resolvedDept} - ${resolvedShift} - ${resolvedSem}`;
+    const resolvedClass = classGroupOverride || (isCampusShiftBased ? `${resolvedDept} - ${resolvedShift} - ${resolvedSem}` : `${resolvedDept} - ${resolvedSem}`);
     const selectedClass = resolvedClass;
     const headers = [
       "Sl. No.",
@@ -492,13 +521,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
       if (norm === "slno" || norm === "sno" || norm === "serialno" || norm === "sl") {
         // Skip Serial No column
-      } else if (norm.includes("roll") || norm === "rollno") {
+      } else if (norm.includes("roll") || norm.includes("reg") || norm.includes("register") || norm.includes("studentid") || norm === "id") {
         mapped.roll_number = val;
         mapped.register_number = val;
-      } else if (norm === "department" || norm === "dept") {
+      } else if (norm === "department" || norm.includes("dept") || norm === "branch" || norm === "course") {
         mapped.department = val;
-      } else if (norm === "name" || norm === "studentname") {
+      } else if (norm.includes("name") || norm === "student" || norm === "studentname") {
         mapped.name = val;
+      } else if (norm === "semester" || norm === "sem" || norm.includes("semester")) {
+        mapped.semester = val;
       } else if (norm.includes("10th") || norm.includes("tenth")) {
         mapped.tenth_mark = val;
       } else if (norm.includes("11th") || norm.includes("eleventh")) {
@@ -511,11 +542,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         mapped.medium = val;
       } else if (norm.includes("blood")) {
         mapped.blood_group = val;
-      } else if (norm === "dob" || norm.includes("dateofbirth")) {
+      } else if (norm === "dob" || norm.includes("dateofbirth") || norm.includes("birth")) {
         mapped.dob = val;
-      } else if (norm.includes("studentphone") || (norm.includes("phone") && !norm.includes("parent"))) {
+      } else if (norm.includes("studentphone") || (norm.includes("phone") && !norm.includes("parent") && !norm.includes("father") && !norm.includes("mother"))) {
         mapped.phone = val;
-      } else if (norm.includes("parentphone") || norm.includes("whatsapp")) {
+      } else if (norm.includes("parent") || norm.includes("father") || norm.includes("mother") || norm.includes("whatsapp")) {
         mapped.parent_phone = val;
       } else if (norm.includes("aadhar")) {
         mapped.aadhar_number = val;
@@ -535,36 +566,45 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         mapped.shift = val;
       } else if (norm.includes("class") || norm.includes("cohort")) {
         mapped.classGroup = val;
+        mapped.hasCustomClassGroup = true;
       }
     });
 
-    const rollOrId = mapped.roll_number || mapped.email || "";
+    const rollOrId = mapped.roll_number || mapped.register_number || (mapped.email ? mapped.email.split("@")[0] : "") || (mapped.name ? "STU_" + mapped.name.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10) + "_" + Math.floor(Math.random() * 1000) : "");
     mapped.id = rollOrId;
-    if (!mapped.classGroup) mapped.classGroup = defaultCG;
     mapped.college_id = activeCollegeId;
+
+    if (mapped.semester) {
+      if (!mapped.semester.toLowerCase().startsWith("semester")) {
+        const semNum = mapped.semester.replace(/[^0-9]/g, "");
+        if (semNum) mapped.semester = `Semester ${semNum}`;
+      }
+    }
 
     // Auto-derive department from classGroup if not in sheet
     if (!mapped.department && mapped.classGroup) {
       mapped.department = getDeptFromClassGroup(mapped.classGroup);
     }
 
-    // If department was in sheet, stamp classGroup from dept+shift to keep consistency
-    if (mapped.department && (!mapped.classGroup || mapped.classGroup === defaultCG)) {
-      const shiftPart = mapped.shift && mapped.shift !== "General"
-        ? mapped.shift
-        : defaultCG.includes("Shift 2") ? "Shift 2" : defaultCG.includes("Shift 1") ? "Shift 1" : "Shift 1";
-      const semPart = defaultCG.split(" - ").find((p: string) => p.toLowerCase().startsWith("semester")) || "Semester 1";
-      mapped.classGroup = `${mapped.department} - ${shiftPart} - ${semPart}`;
-    }
-
-    // Derive shift from classGroup
-    if (!mapped.shift && mapped.classGroup) {
-      if (mapped.classGroup.toLowerCase().includes("shift 1") || mapped.classGroup.toLowerCase().includes("shift_1")) {
+    // Derive shift cleanly
+    if (!mapped.shift) {
+      if (mapped.classGroup?.toLowerCase().includes("shift 1") || mapped.classGroup?.toLowerCase().includes("shift_1")) {
         mapped.shift = "Shift 1";
-      } else if (mapped.classGroup.toLowerCase().includes("shift 2") || mapped.classGroup.toLowerCase().includes("shift_2")) {
+      } else if (mapped.classGroup?.toLowerCase().includes("shift 2") || mapped.classGroup?.toLowerCase().includes("shift_2")) {
         mapped.shift = "Shift 2";
       } else {
-        mapped.shift = "General";
+        mapped.shift = isCampusShiftBased ? "Shift 1" : "General";
+      }
+    }
+
+    // Derive classGroup cleanly without forcing Shift 1 on non-shift campuses
+    if (!mapped.classGroup || mapped.classGroup === defaultCG) {
+      const deptPart = mapped.department || (defaultCG.includes(" - ") ? defaultCG.split(" - ")[0] : "General");
+      const semPart = defaultCG.split(" - ").find((p: string) => p.toLowerCase().startsWith("semester")) || "Semester 1";
+      if (isCampusShiftBased && mapped.shift && mapped.shift !== "General") {
+        mapped.classGroup = `${deptPart} - ${mapped.shift} - ${semPart}`;
+      } else {
+        mapped.classGroup = `${deptPart} - ${semPart}`;
       }
     }
 
@@ -590,13 +630,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         }
 
         const defaultCG = (() => {
-          // Prefer the cohort the user already picked in the template download selectors
           const campusDepts = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
           const deptList = campusDepts.length > 0 ? campusDepts : FACULTY_DEPARTMENTS;
           const dept = templateDept || deptList[0] || "Computer Science";
-          const shift = templateShift || "Shift 1";
+          const shift = isCampusShiftBased ? (templateShift || "Shift 1") : "";
           const sem = templateSem || "Semester 1";
-          return `${dept} - ${shift} - ${sem}`;
+          return shift ? `${dept} - ${shift} - ${sem}` : `${dept} - ${sem}`;
         })();
         const warnings: string[] = [];
         const parsedStudents = rawRows.map((row, idx) => {
@@ -621,7 +660,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       }
     };
     reader.readAsBinaryString(file);
-    // Reset file input value so re-uploading same file triggers change
     e.target.value = "";
   };
 
@@ -630,11 +668,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setIsStudentImportSubmitting(true);
     try {
       const targetCG = studentImportPreview.targetClassGroup || "General Class";
-      const payload = studentImportPreview.parsed.map(s => ({
-        ...s,
-        classGroup: s.classGroup || targetCG,
-        college_id: activeCollegeId
-      }));
+      const targetSem = getSemesterFromClassGroup(targetCG) || templateSem || "Semester 1";
+      const targetDept = getDeptFromClassGroup(targetCG) || templateDept || "Computer Science";
+      const targetShift = targetCG.includes("Shift 2") ? "Shift 2" : targetCG.includes("Shift 1") ? "Shift 1" : "General";
+
+      const payload = studentImportPreview.parsed.map(s => {
+        const finalCG = (s.hasCustomClassGroup && s.classGroup) ? s.classGroup : targetCG;
+        const finalSem = s.semester || getSemesterFromClassGroup(finalCG) || targetSem;
+        const finalDept = s.department || getDeptFromClassGroup(finalCG) || targetDept;
+        const finalShift = s.shift || (finalCG.includes("Shift 2") ? "Shift 2" : finalCG.includes("Shift 1") ? "Shift 1" : targetShift);
+
+        return {
+          ...s,
+          classGroup: finalCG,
+          semester: finalSem,
+          department: finalDept,
+          shift: finalShift,
+          college_id: activeCollegeId
+        };
+      });
 
       const res = await fetch("/api/students", {
         method: "POST",
@@ -643,7 +695,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       });
       const data = await res.json();
       if (data.success) {
-        toast(`Successfully imported ${payload.length} student records!`, "success");
+        toast(`Successfully imported ${payload.length} students into ${targetCG}!`, "success");
         setShowStudentImportModal(false);
         setStudentImportPreview(null);
         await refreshData();
@@ -787,6 +839,113 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   };
 
+  // Faculty Bulk Import State
+  const [showFacultyImportModal, setShowFacultyImportModal] = useState(false);
+  const [facultyImportPreview, setFacultyImportPreview] = useState<{ parsed: any[]; warnings: string[] } | null>(null);
+  const [isImportingFaculty, setIsImportingFaculty] = useState(false);
+
+  const handleDownloadFacultyTemplate = () => {
+    const sampleData = [
+      {
+        "Faculty Name": "Dr. Anitha Ramesh",
+        "Email Address": "anitha.ramesh@zentra.edu",
+        "Department": "Computer Science",
+        "Shift": "Shift 1",
+        "College ID": activeCollegeId || "college_1",
+        "Subjects": "Data Structures, Web Development",
+        "Classes": "Year 2 Section A, Year 3 Section B"
+      },
+      {
+        "Faculty Name": "Prof. Rajesh Kumar",
+        "Email Address": "rajesh.kumar@zentra.edu",
+        "Department": "Information Technology",
+        "Shift": "General Shift",
+        "College ID": activeCollegeId || "college_1",
+        "Subjects": "Database Systems, Python Programming",
+        "Classes": "Year 1 Section A"
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Faculty_Template");
+    XLSX.writeFile(wb, "Faculty_Bulk_Import_Template.xlsx");
+    toast("Faculty import template downloaded.", "info");
+  };
+
+  const handleFacultyFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const sheetName = wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+        if (rawRows.length === 0) {
+          toast("The uploaded spreadsheet is empty.", "warning");
+          return;
+        }
+
+        const warnings: string[] = [];
+        const parsedFaculty = rawRows.map((row, idx) => {
+          const name = row.name || row.FacultyName || row.faculty_name || row["Faculty Name"] || row["Name"] || "";
+          const email = row.email || row.EmailAddress || row.email_address || row["Email Address"] || row["Email"] || "";
+          const dept = row.department || row.Department || row["Department"] || "Computer Science";
+          const shift = row.shift || row.Shift || row["Shift"] || "shift_1";
+          const collegeId = row.college_id || row.collegeId || row["College ID"] || activeCollegeId || "";
+          const subjects = row.subjects || row.Subjects || row["Subjects"] || "";
+          const classes = row.classes || row.Classes || row["Classes"] || "";
+
+          if (!name) warnings.push(`Row ${idx + 2}: Missing Faculty Name.`);
+          if (!email) warnings.push(`Row ${idx + 2}: Missing Email Address.`);
+
+          return {
+            name: String(name).trim(),
+            email: String(email).toLowerCase().trim(),
+            department: String(dept).trim(),
+            shift: String(shift).toLowerCase().includes("2") ? "shift_2" : String(shift).toLowerCase().includes("gen") ? "general" : "shift_1",
+            college_id: collegeId,
+            subjects: String(subjects).trim(),
+            classes: String(classes).trim(),
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(String(email).trim())}`
+          };
+        }).filter(f => f.name || f.email);
+
+        setFacultyImportPreview({ parsed: parsedFaculty, warnings });
+        setShowFacultyImportModal(true);
+      } catch (err: any) {
+        toast("Failed to parse Excel file: " + err.message, "error");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  };
+
+  const handleConfirmFacultyImport = async () => {
+    if (!facultyImportPreview || facultyImportPreview.parsed.length === 0) return;
+    setIsImportingFaculty(true);
+    try {
+      const res = await bulkImportMentors(facultyImportPreview.parsed, activeCollegeId);
+      if (res.success) {
+        toast(res.message || `Successfully imported ${res.count} faculty members.`, "success");
+        setShowFacultyImportModal(false);
+        setFacultyImportPreview(null);
+        refreshData();
+      } else {
+        toast(res.message || "Failed to import faculty.", "error");
+      }
+    } catch (err: any) {
+      toast("Error importing faculty: " + err.message, "error");
+    } finally {
+      setIsImportingFaculty(false);
+    }
+  };
+
   const handleOpenMentorModal = (m?: Mentor) => {
     setModalError(null);
     setMentorSubjectSearch("");
@@ -883,30 +1042,50 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   };
 
-  const distinctClasses = useMemo(() => {
-    const fromStudents = students.map(s => s.classGroup).filter(Boolean);
-    const fromSlots = slots.map(s => s.classGroup).filter(Boolean);
+  // Derived filters and variables
+  const collegeCourses = useMemo(() => coursesList.filter(c => c.college_id === activeCollegeId), [coursesList, activeCollegeId]);
 
-    const campusCourses = coursesList.filter(c => c.college_id === activeCollegeId);
-    const activeDeptNames = campusCourses.length > 0
-      ? campusCourses.map(c => c.name)
-      : (coursesList.length > 0 ? coursesList.map(c => c.name) : FACULTY_DEPARTMENTS);
+  const collegeMentors = useMemo(() => {
+    return mentors.filter(m => m.college_id === activeCollegeId);
+  }, [mentors, activeCollegeId]);
 
-    const sems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"];
-    const shifts = ["Shift 1", "Shift 2"];
+  const collegeStudents = useMemo(() => {
+    return students.filter(s => s.college_id === activeCollegeId);
+  }, [students, activeCollegeId]);
 
-    const generated: string[] = [];
-    activeDeptNames.forEach(deptName => {
-      sems.forEach(sem => {
-        generated.push(`${deptName} - ${sem}`);
-        shifts.forEach(sh => {
-          generated.push(`${deptName} - ${sh} - ${sem}`);
-        });
-      });
+  const isCampusShiftBased = useMemo(() => {
+    const activeCollege = colleges.find(c => c.id === activeCollegeId);
+    if (activeCollege && (activeCollege.has_shifts === 1 || activeCollege.has_shifts === 0)) {
+      return activeCollege.has_shifts === 1;
+    }
+    return collegeCourses.some(c => c.shift_based === 1 || (c.default_shift && c.default_shift.toLowerCase() !== "general"));
+  }, [colleges, activeCollegeId, collegeCourses]);
+
+  const collegeSlots = useMemo(() => {
+    return slots.filter(s => s.college_id === activeCollegeId);
+  }, [slots, activeCollegeId]);
+
+  const dbCourseNames = useMemo(() => {
+    return Array.from(new Set(collegeCourses.map(c => c.name.trim()).filter(Boolean))).sort();
+  }, [collegeCourses]);
+
+  const dbSemesterOptions = useMemo(() => {
+    const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+    const fromStudents = collegeStudents
+      .map(s => s.semester?.trim() || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : null))
+      .filter(Boolean) as string[];
+    return Array.from(new Set([...defaultSems, ...fromStudents])).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, "") || "0");
+      const numB = parseInt(b.replace(/\D/g, "") || "0");
+      return numA - numB;
     });
+  }, [collegeStudents]);
 
-    return Array.from(new Set([...fromStudents, ...fromSlots, ...generated])).sort();
-  }, [students, slots, coursesList, activeCollegeId]);
+  const distinctClasses = useMemo(() => {
+    const fromStudents = collegeStudents.map(s => s.classGroup).filter(Boolean);
+    const fromSlots = collegeSlots.map(s => s.classGroup).filter(Boolean);
+    return Array.from(new Set([...fromStudents, ...fromSlots])).sort();
+  }, [collegeStudents, collegeSlots]);
   const collegeSubjects = subjectsList.filter(s => s.college_id === activeCollegeId);
 
   useEffect(() => {
@@ -1144,18 +1323,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   }, [academicYears, selectedYear]);
 
-  // Derived filters and variables
-  const collegeMentors = useMemo(() => mentors.filter(m => m.college_id === activeCollegeId), [mentors, activeCollegeId]);
-  const collegeStudents = useMemo(() => students.filter(s => s.college_id === activeCollegeId), [students, activeCollegeId]);
-  const collegeCourses = useMemo(() => coursesList.filter(c => c.college_id === activeCollegeId), [coursesList, activeCollegeId]);
-
-  const collegeSlots = useMemo(() => {
-    return slots.filter(s => {
-      if (s.college_id) return s.college_id === activeCollegeId;
-      const m = mentors.find(item => item.id === s.mentorId);
-      return m && m.college_id === activeCollegeId;
-    });
-  }, [slots, mentors, activeCollegeId]);
+  // Additional derived filters and variables
 
   const activeBatches = useMemo(() => {
     return Array.from(new Set(collegeSlots.map(s => s.classGroup).filter((g): g is string => Boolean(g))));
@@ -1510,13 +1678,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     department: "",
     semester: "Semester 1",
     type: "SKILL",
-    college_id: activeCollegeId || (colleges && colleges[0]?.id) || "",
+    college_id: activeCollegeId,
     year: "Year 1",
     weekly_hours: 4,
     shift: "General",
     subject_group: "General",
     mentorIds: [] as string[]
   });
+
+  const normalizeSubjectType = (rawType?: string) => {
+    if (!rawType) return "SKILL";
+    const u = rawType.trim().toUpperCase();
+    if (u === "THEORY" || u === "ACADEMIC") return "ACADEMIC";
+    if (u === "SKILL" || u === "PRACTICAL") return "SKILL";
+    if (u === "LAB") return "LAB";
+    if (u === "GENERAL") return "GENERAL";
+    return u;
+  };
 
   const handleOpenSubjectModal = (sub?: any, defaultDept?: string, defaultYear?: string) => {
     setSubjectModalError(null);
@@ -1527,8 +1705,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         name: sub.name,
         department: sub.department || defaultDept || "",
         semester: sub.semester || "Semester 1",
-        type: sub.type || "SKILL",
-        college_id: sub.college_id || activeCollegeId || (colleges && colleges[0]?.id) || "",
+        type: normalizeSubjectType(sub.type),
+        college_id: activeCollegeId,
         year: sub.year || defaultYear || "Year 1",
         weekly_hours: sub.weekly_hours || 4,
         shift: sub.shift || "General",
@@ -1549,7 +1727,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         department: defaultDept || "",
         semester: defaultSem,
         type: "SKILL",
-        college_id: activeCollegeId || (colleges && colleges[0]?.id) || "",
+        college_id: activeCollegeId,
         year: defaultYear || "Year 1",
         weekly_hours: 4,
         shift: "General",
@@ -1752,16 +1930,33 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   };
 
-  const handleDeleteDept = async (id: string) => {
-    if (await showConfirm({ title: "Delete Department", message: "Are you sure you want to delete this department?\n\nThis will permanently delete all associated mentors, students, subjects, slots, and attendance records. This action cannot be undone.", danger: true, confirmLabel: "Delete Department" })) {
-      const res = await deleteCourse(id);
+  const handleDeleteDept = async (deptName: string, id?: string) => {
+    if (await showConfirm({
+      title: "Delete Department",
+      message: `Are you sure you want to delete department "${deptName}"?\n\nThis will permanently delete all associated mentors, students, subjects, slots, and attendance records. This action cannot be undone.`,
+      danger: true,
+      confirmLabel: "Delete Department"
+    })) {
+      let res: { success: boolean; message?: string; deletedCounts?: any } = { success: false };
+      if (id) {
+        res = await deleteCourse(id);
+      } else {
+        // Unregistered department name: cascade delete subjects with this department name
+        const subsToDelete = collegeSubjects.filter(s => s.department === deptName);
+        for (const s of subsToDelete) {
+          await deleteSubject(s.id);
+        }
+        res = { success: true, message: `Department ${deptName} removed.` };
+      }
+
       if (res.success) {
         const counts = res.deletedCounts;
         if (counts && (counts.slots > 0 || counts.students > 0 || counts.mentors > 0)) {
           toast(`Department deleted. Cascade removed: ${counts.slots} slot(s), ${counts.students} student(s), ${counts.mentors} mentor(s), ${counts.subjects} subject(s).`, "info");
         } else {
-          toast("Department deleted successfully.", "success");
+          toast(`Department "${deptName}" deleted successfully.`, "success");
         }
+        await refreshData();
       } else {
         toast("Error deleting department: " + res.message, "error");
       }
@@ -2616,12 +2811,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       return;
     }
 
-    const deptSubjects = getSubjectsForDepartment(subjectsList, mentors, slots, targetDept);
+    const deptSubjects = getSubjectsForDepartment(collegeSubjects, collegeMentors, collegeSlots, targetDept);
     const semSubjects = deptSubjects.filter(
       (s) => s.semester.toLowerCase().trim() === genSelectedSemester.toLowerCase().trim()
     );
 
-    const deptMentors = collegeMentors.filter((m) => isMentorInProgram(m, targetDept, slots, subjectsList));
+    const deptMentors = collegeMentors.filter((m) => isMentorInProgram(m, targetDept, collegeSlots, collegeSubjects));
 
     const initialAllocations = semSubjects.map((s) => {
       // Find matching mentor
@@ -2762,8 +2957,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
     const { year: resolvedYear } = resolveClassGroupDetailsFromState(
       `${genSelectedCourse} - ${genSelectedSemester}`,
-      subjectsList,
-      coursesList
+      collegeSubjects,
+      collegeCourses
     );
 
     const newSubjects = genAllocations.filter(a => a.isNew && a.isSelected);
@@ -3706,14 +3901,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-2">
-                    {Array.from(new Set(students.map(s => s.classGroup).filter(Boolean))).map(cls => {
+                    {Array.from(new Set(collegeStudents.map(s => s.classGroup).filter(Boolean))).map(cls => {
                       const isAllowed = allowedProfileEditClasses.includes(cls);
                       return (
                         <div key={cls} className="p-4.5 rounded-2xl border border-slate-200 bg-white shadow-sm flex items-center justify-between gap-4 hover:shadow-md transition-all font-sans">
                           <div className="space-y-1">
                             <h4 className="text-xs font-bold text-slate-805">{cls}</h4>
                             <span className="text-[9px] text-slate-400 font-semibold block">
-                              {students.filter(s => s.classGroup === cls).length} enrolled students
+                              {collegeStudents.filter(s => s.classGroup === cls).length} enrolled students
                             </span>
                           </div>
 
@@ -3759,7 +3954,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <form onSubmit={async (e) => { await handleSaveDept(e); setShowAddDeptForm(false); }} className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                       <Input label="Department Name" placeholder="e.g. Information Technology" value={deptName} onChange={e => setDeptName(e.target.value)} required />
                       <Input label="Department Code" placeholder="e.g. IT (Auto-generated if blank)" value={deptCode} onChange={e => setDeptCode(e.target.value)} />
-                      <Select label="Shift Scope" value={deptShift} onChange={e => setDeptShift(e.target.value)} options={[{value:"shift_1",label:"Shift 1 (Day)"},{value:"shift_2",label:"Shift 2 (Evening)"},{value:"both",label:"Both Shifts (Shift 1 & 2)"},{value:"general",label:"General (Full Day)"}]} />
+                      <Select label="Shift Scope" value={deptShift} onChange={e => setDeptShift(e.target.value)} options={[{value:"shift_1",label:"Shift 1 (Day)"},{value:"shift_2",label:"Shift 2 (Evening)"},{value:"both",label:"Both Shifts (Shift 1 & 2)"},{value:"general",label:"General Shift"},{value:"all",label:"Both Shifts + General (Shift 1, 2 & General)"}]} />
                       <div className="sm:col-span-3 lg:col-span-4 space-y-1">
                         <label className="text-slate-400 text-[10px] uppercase font-bold">Description</label>
                         <input type="text" placeholder="Brief summary..." value={deptDesc} onChange={e => setDeptDesc(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm" />
@@ -3772,28 +3967,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
                 )}
 
-                {/* Search & stats bar */}
-                <div className="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-slate-100">
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                    <input type="text" placeholder="Search subjects..." value={subjectSearch} onChange={e => setSubjectSearch(e.target.value)} className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-xl bg-slate-50 text-[11px] focus:ring-1 focus:ring-indigo-500 outline-none font-semibold w-48 shadow-sm" />
-                  </div>
-                  <select value={subjectTypeFilter} onChange={e => setSubjectTypeFilter(e.target.value)} className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm">
-                    <option value="all">All Types</option>
-                    <option value="SKILL">SKILL</option>
-                    <option value="ACADEMIC">ACADEMIC</option>
-                    <option value="LAB">LAB</option>
-                    <option value="GENERAL">GENERAL</option>
-                  </select>
-                  <select value={subjectShiftFilter} onChange={e => setSubjectShiftFilter(e.target.value)} className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm">
-                    <option value="all">All Shifts</option>
-                    <option value="Shift 1">Shift 1 (Day)</option>
-                    <option value="Shift 2">Shift 2 (Evening)</option>
-                    <option value="General">General / Both Shifts</option>
-                  </select>
-                  <span className="ml-auto text-[10px] text-slate-400 font-semibold">{subjectsList.length} subjects · {coursesList.length} departments</span>
-                </div>
-
                 {/* ===== UNIFIED TREE: Department → Year → Semester → Subjects ===== */}
                 {(() => {
                   const YEAR_SEM_MAP: Record<string, string[]> = {
@@ -3805,7 +3978,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   const YEARS = ["Year 1", "Year 2", "Year 3", "Year 4"];
                   const ALL_KNOWN_SEMS = Object.values(YEAR_SEM_MAP).flat();
 
-                  const filteredSubs = subjectsList.filter(sub => {
+                  const filteredSubs = collegeSubjects.filter(sub => {
                     const ms = sub.name.toLowerCase().includes(subjectSearch.toLowerCase());
                     const mt = subjectTypeFilter === "all" || sub.type === subjectTypeFilter;
                     const subShiftStr = sub.shift || "General";
@@ -3817,22 +3990,55 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     return ms && mt && mshift;
                   });
 
-                  const registeredDeptNames = coursesList.map(d => d.name);
+                  const registeredDeptNames = collegeCourses.map(d => d.name);
                   const subjectDeptNames = [...new Set(filteredSubs.map(s => s.department).filter(Boolean))];
                   const allDeptNames = [...new Set([...registeredDeptNames, ...subjectDeptNames])].sort();
 
-                  if (allDeptNames.length === 0) return (
-                    <div className="py-12 text-center border rounded-2xl bg-white">
-                      <GraduationCap className="h-8 w-8 text-slate-300 mx-auto mb-3" />
-                      <p className="text-sm font-semibold text-slate-400">No departments or subjects found</p>
-                      <p className="text-[10px] text-slate-300 mt-1">Use <strong>+ Department</strong> and <strong>+ Subject</strong> above to get started.</p>
-                    </div>
-                  );
+                  const totalSubCount = collegeSubjects.length;
+                  const totalDeptCount = allDeptNames.length;
 
                   return (
-                    <div className="space-y-4 text-xs font-semibold">
-                      {allDeptNames.map(deptName => {
-                        const registeredDept = coursesList.find(d => d.name === deptName);
+                    <div className="space-y-4">
+                      {/* Search & Filter Bar */}
+                      <div className="flex flex-wrap items-center gap-2 pt-2">
+                        <div className="relative flex-1 min-w-[200px]">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search subjects..."
+                            value={subjectSearch}
+                            onChange={(e) => setSubjectSearch(e.target.value)}
+                            className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                          />
+                        </div>
+                        <select value={subjectTypeFilter} onChange={e => setSubjectTypeFilter(e.target.value)} className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm">
+                          <option value="all">All Types</option>
+                          <option value="SKILL">SKILL</option>
+                          <option value="ACADEMIC">ACADEMIC</option>
+                          <option value="LAB">LAB</option>
+                          <option value="GENERAL">GENERAL</option>
+                        </select>
+                        <select value={subjectShiftFilter} onChange={e => setSubjectShiftFilter(e.target.value)} className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm">
+                          <option value="all">All Shifts</option>
+                          <option value="Shift 1">Shift 1 (Day)</option>
+                          <option value="Shift 2">Shift 2 (Evening)</option>
+                          <option value="General">General / Both Shifts</option>
+                        </select>
+                        <span className="ml-auto text-[10px] text-slate-400 font-semibold">
+                          {totalSubCount} {totalSubCount === 1 ? "subject" : "subjects"} · {totalDeptCount} {totalDeptCount === 1 ? "department" : "departments"}
+                        </span>
+                      </div>
+
+                      {allDeptNames.length === 0 ? (
+                        <div className="py-12 text-center border rounded-2xl bg-white">
+                          <GraduationCap className="h-8 w-8 text-slate-300 mx-auto mb-3" />
+                          <p className="text-sm font-semibold text-slate-400">No departments or subjects found</p>
+                          <p className="text-[10px] text-slate-300 mt-1">Use <strong>+ Department</strong> and <strong>+ Subject</strong> above to get started.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4 text-xs font-semibold">
+                          {allDeptNames.map(deptName => {
+                            const registeredDept = collegeCourses.find(d => d.name === deptName);
                         
                         // Flexible subject matching helper
                         const norm = (str: string) => (str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -3870,7 +4076,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 <form onSubmit={(ev) => handleSaveInlineDept(ev, registeredDept!.id)} className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                                   <Input label="Dept Name" value={editDeptName} onChange={ev => setEditDeptName(ev.target.value)} required />
                                   <Input label="Dept Code" placeholder="Auto-generated if blank" value={editDeptCode} onChange={ev => setEditDeptCode(ev.target.value)} />
-                                  <Select label="Shift Scope" value={editDeptShift} onChange={ev => setEditDeptShift(ev.target.value)} options={[{value:"shift_1",label:"Shift 1 (Day)"},{value:"shift_2",label:"Shift 2 (Evening)"},{value:"both",label:"Both Shifts (Shift 1 & 2)"},{value:"general",label:"General (Full Day)"}]} />
+                                  <Select label="Shift Scope" value={editDeptShift} onChange={ev => setEditDeptShift(ev.target.value)} options={[{value:"shift_1",label:"Shift 1 (Day)"},{value:"shift_2",label:"Shift 2 (Evening)"},{value:"both",label:"Both Shifts (Shift 1 & 2)"},{value:"general",label:"General Shift"},{value:"all",label:"Both Shifts + General (Shift 1, 2 & General)"}]} />
                                   <div className="space-y-1">
                                     <label className="text-[9px] uppercase font-bold text-slate-400">Description</label>
                                     <input type="text" value={editDeptDesc} onChange={ev => setEditDeptDesc(ev.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold outline-none" />
@@ -3917,12 +4123,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 </div>
                                 <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
                                   <span className="text-[9px] font-bold px-2.5 py-0.5 bg-slate-200 text-slate-600 rounded-full">{deptSubjects.length} subjects</span>
-                                  {registeredDept && (
-                                    <div className="flex gap-1">
-                                      <Button variant="ghost" size="xs" onClick={() => handleStartEditDept(registeredDept)} className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"><Edit2 className="h-3 w-3" /></Button>
-                                      <Button variant="ghost" size="xs" onClick={() => handleDeleteDept(registeredDept.id)} className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50"><Trash2 className="h-3 w-3" /></Button>
-                                    </div>
-                                  )}
+                                  <div className="flex gap-1">
+                                    {registeredDept && (
+                                      <Button variant="ghost" size="xs" onClick={() => handleStartEditDept(registeredDept)} title="Edit Department" className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"><Edit2 className="h-3 w-3" /></Button>
+                                    )}
+                                    <Button variant="ghost" size="xs" onClick={() => handleDeleteDept(deptName, registeredDept?.id)} title="Delete Department" className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50"><Trash2 className="h-3 w-3" /></Button>
+                                  </div>
                                   <ChevronDown className={`h-4.5 w-4.5 text-slate-400 transition-transform duration-200 ml-1 ${isDeptExpanded ? "rotate-180 text-indigo-500" : ""}`} onClick={() => setExpandedDepts(prev => ({ ...prev, [deptName]: !prev[deptName] }))} />
                                 </div>
                               </div>
@@ -3952,7 +4158,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     </div>
                                     <div>
                                       <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Offerings</span>
-                                      <span className="text-slate-900 font-black">{registeredDept?.default_shift === "both" ? "Shift 1 & 2" : registeredDept?.default_shift === "shift_2" ? "Shift 2" : "Shift 1 / General"}</span>
+                                      <span className="text-slate-900 font-black">{registeredDept?.default_shift === "all" ? "Shift 1, 2 & General" : registeredDept?.default_shift === "both" ? "Shift 1 & 2" : registeredDept?.default_shift === "shift_2" ? "Shift 2 (Evening)" : registeredDept?.default_shift === "shift_1" ? "Shift 1 (Day)" : "General Shift"}</span>
                                     </div>
                                     <div className="col-span-2">
                                       <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Assigned Classrooms (Year-wise)</span>
@@ -4065,8 +4271,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         );
                       })}
                     </div>
-                  );
-                })()}
+                  )}
+                </div>
+              );
+            })()}
               </Panel>
             )}
 
@@ -4105,6 +4313,24 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     >
                       Substitution
                     </Button>
+                    <Button 
+                      variant="secondary" 
+                      size="sm" 
+                      onClick={handleDownloadFacultyTemplate}
+                      icon={<Download className="h-3.5 w-3.5" />}
+                    >
+                      Template
+                    </Button>
+                    <label className="px-3 py-1 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all flex items-center gap-1.5 cursor-pointer">
+                      <Upload className="h-3.5 w-3.5" />
+                      Bulk Import
+                      <input
+                        type="file"
+                        accept=".xlsx, .xls, .csv"
+                        onChange={handleFacultyFileSelect}
+                        className="hidden"
+                      />
+                    </label>
                     <Button 
                       variant="success" 
                       size="sm" 
@@ -4182,9 +4408,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                                   {/* Shift & Workload Badges */}
                                   <div className="flex flex-wrap gap-1.5">
-                                    <span className="px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[8px] font-black text-indigo-750 uppercase">
-                                      {shiftVal.replace("_", " ")}
-                                    </span>
+                                    {isCampusShiftBased && (
+                                      <span className="px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[8px] font-black text-indigo-750 uppercase">
+                                        {shiftVal.replace("_", " ")}
+                                      </span>
+                                    )}
                                     <span className="px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-205 text-[8px] font-black text-slate-700 uppercase">
                                       {hoursCount} {hoursCount === 1 ? 'hr' : 'hrs'} / week
                                     </span>
@@ -4260,7 +4488,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                     const previewTimeSlots = getTimeSlots(
                       hasShifts ? (timetableSubTab === "view" ? viewerShift : genShift) : "general",
-                      timetableSubTab === "view" ? selectedCohortSem : genSelectedSemester
+                      timetableSubTab === "view" ? selectedCohortSem : genSelectedSemester,
+                      activeCollegeId
                     );
 
                     const activeShiftLabel = hasShifts ? (timetableSubTab === "view" ? viewerShift : genShift) : "general";
@@ -4887,7 +5116,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           // Tier 3: mentors who belong to the selected course/program (using keyword-aware isMentorInProgram)
                                           const programMentors = genSelectedCourse
                                             ? collegeMentors.filter(m =>
-                                                isMentorInProgram(m, genSelectedCourse, collegeSlots, subjectsList)
+                                                isMentorInProgram(m, genSelectedCourse, collegeSlots, collegeSubjects)
                                               )
                                             : [];
 
@@ -6208,8 +6437,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       ...studentTracker.map(st => st.class_group).filter(Boolean)
                     ])).sort();
 
-                    const collegeSubjects = subjectsList.length > 0
-                      ? subjectsList
+                    const trackerSubjects = collegeSubjects.length > 0
+                      ? collegeSubjects
                       : Array.from(new Set([
                           ...weeklyTasks.map(t => t.subject).filter(Boolean),
                           ...studentTracker.map(st => st.subject).filter(Boolean)
@@ -6449,25 +6678,60 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {(() => {
                             const campusDeptNames = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
                             const deptOptions = campusDeptNames.length > 0 ? campusDeptNames : FACULTY_DEPARTMENTS;
-                            const shiftOptions = ["Shift 1", "Shift 2", "General"];
-                            const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"];
-                            const composedClass = `${templateDept || deptOptions[0] || "Dept"} - ${templateShift} - ${templateSem}`;
+                            const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+                            const selectedDept = templateDept || deptOptions[0] || "Computer Science";
+
+                            const selectedCourseObj = collegeCourses.find(
+                              c => c.name.trim().toLowerCase() === selectedDept.trim().toLowerCase()
+                            );
+
+                            const allowedShifts = (() => {
+                              if (!selectedCourseObj) return ["Shift 1", "Shift 2", "General"];
+                              const ds = (selectedCourseObj.default_shift || "").toLowerCase();
+                              if (ds === "shift_1") return ["Shift 1"];
+                              if (ds === "shift_2") return ["Shift 2"];
+                              if (ds === "general") return ["General"];
+                              if (ds === "both") return ["Shift 1", "Shift 2"];
+                              if (ds === "all") return ["Shift 1", "Shift 2", "General"];
+                              if (selectedCourseObj.shift_based === 1) return ["Shift 1", "Shift 2"];
+                              return ["General"];
+                            })();
+
+                            const selectedShift = allowedShifts.includes(templateShift) ? templateShift : allowedShifts[0];
+                            const composedClass = (selectedShift && selectedShift !== "General")
+                              ? `${selectedDept} - ${selectedShift} - ${templateSem || "Semester 1"}`
+                              : `${selectedDept} - ${templateSem || "Semester 1"}`;
+
                             return (
                               <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl px-1.5 py-1 shadow-xs">
                                 <select
-                                  value={templateDept || deptOptions[0] || ""}
-                                  onChange={(e) => setTemplateDept(e.target.value)}
+                                  value={selectedDept}
+                                  onChange={(e) => {
+                                    setTemplateDept(e.target.value);
+                                    const nextCourse = collegeCourses.find(c => c.name.trim().toLowerCase() === e.target.value.trim().toLowerCase());
+                                    const nextDs = (nextCourse?.default_shift || "").toLowerCase();
+                                    if (nextDs === "shift_1") setTemplateShift("Shift 1");
+                                    else if (nextDs === "shift_2") setTemplateShift("Shift 2");
+                                    else if (nextDs === "general") setTemplateShift("General");
+                                    else if (nextDs === "both") setTemplateShift("Shift 1");
+                                  }}
                                   className="text-[11px] font-bold px-2 py-1.5 rounded-lg bg-white border border-slate-200 outline-none cursor-pointer text-slate-700"
                                 >
                                   {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
                                 </select>
-                                <select
-                                  value={templateShift}
-                                  onChange={(e) => setTemplateShift(e.target.value)}
-                                  className="text-[11px] font-bold px-2 py-1.5 rounded-lg bg-white border border-slate-200 outline-none cursor-pointer text-slate-700"
-                                >
-                                  {shiftOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
+                                {allowedShifts.length > 1 ? (
+                                  <select
+                                    value={selectedShift}
+                                    onChange={(e) => setTemplateShift(e.target.value)}
+                                    className="text-[11px] font-bold px-2 py-1.5 rounded-lg bg-white border border-slate-200 outline-none cursor-pointer text-slate-700"
+                                  >
+                                    {allowedShifts.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                ) : (
+                                  <span className="text-[11px] font-extrabold px-2 py-1.5 rounded-lg bg-slate-200 text-slate-700">
+                                    {allowedShifts[0]}
+                                  </span>
+                                )}
                                 <select
                                   value={templateSem}
                                   onChange={(e) => setTemplateSem(e.target.value)}
@@ -6542,7 +6806,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       })()}
 
                       {/* Filters & Search Controls */}
-                      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-wrap gap-4 items-center justify-between">
+                      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-wrap gap-3 items-center justify-between">
                         <div className="relative flex-1 min-w-[220px]">
                           <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                           <input
@@ -6554,35 +6818,105 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           />
                         </div>
 
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <select
-                            value={studentDirDeptFilter}
-                            onChange={(e) => setStudentDirDeptFilter(e.target.value)}
-                            className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 bg-white cursor-pointer outline-none shadow-xs"
-                          >
-                            <option value="all">All Departments</option>
-                            {Array.from(new Set(students.map(s => s.department).filter(Boolean))).map(d => (
-                              <option key={d} value={d}>{d}</option>
-                            ))}
-                          </select>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          {/* Course / Department Filter */}
+                          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Course:</span>
+                            <select
+                              value={studentDirDeptFilter}
+                              onChange={(e) => setStudentDirDeptFilter(e.target.value)}
+                              className="text-xs font-bold bg-transparent cursor-pointer outline-none text-slate-800"
+                            >
+                              <option value="all">All Courses</option>
+                              {dbCourseNames.map(d => (
+                                <option key={d} value={d}>{d}</option>
+                              ))}
+                            </select>
+                          </div>
 
-                          <select
-                            value={studentClassFilter}
-                            onChange={(e) => setStudentClassFilter(e.target.value)}
-                            className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 bg-white cursor-pointer outline-none shadow-xs"
-                          >
-                            <option value="all">All Class Cohorts</option>
-                            {distinctClasses.map(c => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                          </select>
+                          {/* Semester Filter */}
+                          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Semester:</span>
+                            <select
+                              value={studentSemFilter}
+                              onChange={(e) => setStudentSemFilter(e.target.value)}
+                              className="text-xs font-bold bg-transparent cursor-pointer outline-none text-slate-800"
+                            >
+                              <option value="all">All Semesters</option>
+                              {dbSemesterOptions.map(sem => (
+                                <option key={sem} value={sem}>{sem}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Shift Filter */}
+                          {isCampusShiftBased && (
+                            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Shift:</span>
+                              <select
+                                value={studentShiftFilter}
+                                onChange={(e) => setStudentShiftFilter(e.target.value)}
+                                className="text-xs font-bold bg-transparent cursor-pointer outline-none text-slate-800"
+                              >
+                                <option value="all">All Shifts</option>
+                                <option value="Shift 1">Shift 1</option>
+                                <option value="Shift 2">Shift 2</option>
+                                <option value="General">General</option>
+                              </select>
+                            </div>
+                          )}
+
+                          {/* Clear / Reset Filters button */}
+                          {(studentDirDeptFilter !== "all" || studentSemFilter !== "all" || studentShiftFilter !== "all" || studentDirSearch) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStudentDirDeptFilter("all");
+                                setStudentSemFilter("all");
+                                setStudentShiftFilter("all");
+                                setStudentDirSearch("");
+                              }}
+                              className="text-xs font-extrabold text-indigo-600 hover:text-indigo-800 px-2.5 py-1.5 rounded-xl hover:bg-indigo-50 transition-colors cursor-pointer"
+                            >
+                              Reset Filters
+                            </button>
+                          )}
                         </div>
                       </div>
+
+                      {/* Batch Action Toolbar when students selected */}
+                      {selectedStudentIds.length > 0 && (
+                        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
+                          <div className="flex items-center gap-2.5 text-xs font-bold text-rose-900">
+                            <span className="h-6 px-2.5 rounded-full bg-rose-600 text-white font-extrabold text-[11px] flex items-center justify-center">
+                              {selectedStudentIds.length}
+                            </span>
+                            <span>student(s) selected across directory</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedStudentIds([])}
+                              className="px-3 py-1.5 rounded-xl bg-white border border-rose-200 hover:bg-rose-100 text-rose-800 text-xs font-bold transition-all cursor-pointer"
+                            >
+                              Deselect All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleBulkDeleteStudents()}
+                              className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Delete Selected ({selectedStudentIds.length})
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Students Table */}
                       <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
                         {(() => {
-                          const campusStudents = students.filter(s => s.college_id === activeCollegeId || (!s.college_id && activeCollegeId === "college_1"));
+                          const campusStudents = collegeStudents;
                           const filtered = campusStudents.filter(s => {
                             const matchSearch = !studentDirSearch ||
                               s.name?.toLowerCase().includes(studentDirSearch.toLowerCase()) ||
@@ -6591,11 +6925,34 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               s.email?.toLowerCase().includes(studentDirSearch.toLowerCase()) ||
                               s.phone?.includes(studentDirSearch);
 
-                            const matchDept = studentDirDeptFilter === "all" || s.department === studentDirDeptFilter;
-                            const matchClass = studentClassFilter === "all" || s.classGroup === studentClassFilter;
+                            const stDept = (s.department || "").trim().toLowerCase();
+                            const matchDept = studentDirDeptFilter === "all" || 
+                              stDept === studentDirDeptFilter.toLowerCase() ||
+                              (s.classGroup && s.classGroup.toLowerCase().includes(studentDirDeptFilter.toLowerCase()));
 
-                            return matchSearch && matchDept && matchClass;
+                            const stSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").trim().toLowerCase();
+                            const matchSem = studentSemFilter === "all" || 
+                              stSem === studentSemFilter.toLowerCase() ||
+                              (s.classGroup && s.classGroup.toLowerCase().includes(studentSemFilter.toLowerCase()));
+
+                            const stShift = (s.shift || (s.classGroup ? s.classGroup.match(/Shift\s*\d+/i)?.[0] : "") || "").trim().toLowerCase();
+                            const matchShift = studentShiftFilter === "all" || 
+                              stShift === studentShiftFilter.toLowerCase() ||
+                              (s.classGroup && s.classGroup.toLowerCase().includes(studentShiftFilter.toLowerCase()));
+
+                            return matchSearch && matchDept && matchSem && matchShift;
                           });
+
+                          const allFilteredIds = filtered.map(s => s.id);
+                          const isAllFilteredSelected = filtered.length > 0 && allFilteredIds.every(id => selectedStudentIds.includes(id));
+
+                          const toggleSelectAllFiltered = () => {
+                            if (isAllFilteredSelected) {
+                              setSelectedStudentIds(prev => prev.filter(id => !allFilteredIds.includes(id)));
+                            } else {
+                              setSelectedStudentIds(prev => Array.from(new Set([...prev, ...allFilteredIds])));
+                            }
+                          };
 
                           if (filtered.length === 0) {
                             return (
@@ -6608,84 +6965,135 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           }
 
                           return (
-                            <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-xs">
-                              <table className="w-full border-collapse text-left text-xs font-semibold min-w-[900px]">
-                                <thead>
-                                  <tr className="bg-gradient-to-r from-slate-50 to-indigo-50/30 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider">
-                                    <th className="p-3">Roll No / ID</th>
-                                    <th className="p-3">Student Name</th>
-                                    <th className="p-3">Dept &amp; Class</th>
-                                    <th className="p-3">Academic Marks</th>
-                                    <th className="p-3">Group / Medium</th>
-                                    <th className="p-3">Contact</th>
-                                    <th className="p-3">Social Profiles</th>
-                                    <th className="p-3 text-center">Action</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                                  {filtered.map(st => (
-                                    <tr key={st.id} className="hover:bg-indigo-50/20 transition-colors">
-                                      <td className="p-3 font-mono font-bold text-indigo-700">
-                                        {st.roll_number || st.id}
-                                      </td>
-                                      <td className="p-3">
-                                        <div className="font-bold text-slate-900">{st.name}</div>
-                                        <div className="text-[10px] text-slate-400 font-normal truncate max-w-[160px]">{st.email}</div>
-                                      </td>
-                                      <td className="p-3">
-                                        <div className="font-bold text-slate-800">{st.department || "General"}</div>
-                                        <div className="text-[10px] text-indigo-600 font-semibold">{st.classGroup}</div>
-                                      </td>
-                                      <td className="p-3">
-                                        <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
-                                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="10th Mark">10th: {st.tenth_mark || "—"}%</span>
-                                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="11th Mark">11th: {st.eleventh_mark || "—"}%</span>
-                                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="12th Mark">12th: {st.twelfth_mark || "—"}%</span>
-                                        </div>
-                                      </td>
-                                      <td className="p-3">
-                                        <div className="text-slate-800 font-bold">{st.academic_group || "—"}</div>
-                                        <div className="text-[10px] text-slate-400">{st.medium || "—"} medium</div>
-                                      </td>
-                                      <td className="p-3 text-[11px]">
-                                        <div className="text-slate-800 font-semibold">{st.phone || "—"}</div>
-                                        {st.parent_phone && <div className="text-[9.5px] text-emerald-600 font-medium">WhatsApp: {st.parent_phone}</div>}
-                                      </td>
-                                      <td className="p-3">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          {st.linkedin_link && (
-                                            <a href={st.linkedin_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 text-[10px] font-bold">LinkedIn</a>
-                                          )}
-                                          {st.github_id && (
-                                            <a href={st.github_id.startsWith("http") ? st.github_id : `https://github.com/${st.github_id}`} target="_blank" rel="noreferrer" className="p-1 rounded bg-slate-100 text-slate-800 hover:bg-slate-200 text-[10px] font-bold">GitHub</a>
-                                          )}
-                                          {st.hackerrank_link && (
-                                            <a href={st.hackerrank_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-[10px] font-bold">HackerRank</a>
-                                          )}
-                                          {st.leetcode_link && (
-                                            <a href={st.leetcode_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-amber-50 text-amber-600 hover:bg-amber-100 text-[10px] font-bold">LeetCode</a>
-                                          )}
-                                          {st.figma_link && (
-                                            <a href={st.figma_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-purple-50 text-purple-600 hover:bg-purple-100 text-[10px] font-bold">Figma</a>
-                                          )}
-                                          {!st.linkedin_link && !st.github_id && !st.hackerrank_link && !st.leetcode_link && !st.figma_link && (
-                                            <span className="text-[10px] text-slate-350 italic">—</span>
-                                          )}
-                                        </div>
-                                      </td>
-                                      <td className="p-3 text-center">
-                                        <button
-                                          type="button"
-                                          onClick={() => setSelectedStudentForDetail(st)}
-                                          className="p-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10.5px] font-extrabold transition-colors cursor-pointer"
-                                        >
-                                          View Full Profile
-                                        </button>
-                                      </td>
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between text-xs font-semibold text-slate-500 px-1">
+                                <span>Showing {filtered.length} student(s)</span>
+                                {filtered.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBulkDeleteStudents(allFilteredIds)}
+                                    className="text-rose-600 hover:text-rose-700 font-bold text-[11px] hover:underline flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                    Delete All Filtered ({filtered.length})
+                                  </button>
+                                )}
+                              </div>
+                              <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-xs">
+                                <table className="w-full border-collapse text-left text-xs font-semibold min-w-[950px]">
+                                  <thead>
+                                    <tr className="bg-gradient-to-r from-slate-50 to-indigo-50/30 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider">
+                                      <th className="p-3 w-10 text-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={isAllFilteredSelected}
+                                          onChange={toggleSelectAllFiltered}
+                                          className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                                          title="Select / Deselect all visible students"
+                                        />
+                                      </th>
+                                      <th className="p-3">Roll No / ID</th>
+                                      <th className="p-3">Student Name</th>
+                                      <th className="p-3">Dept &amp; Class</th>
+                                      <th className="p-3">Academic Marks</th>
+                                      <th className="p-3">Group / Medium</th>
+                                      <th className="p-3">Contact</th>
+                                      <th className="p-3">Social Profiles</th>
+                                      <th className="p-3 text-center">Action</th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                                    {filtered.map(st => {
+                                      const isSelected = selectedStudentIds.includes(st.id);
+                                      return (
+                                        <tr key={st.id} className={`transition-colors ${isSelected ? "bg-rose-50/30 hover:bg-rose-50/50" : "hover:bg-indigo-50/20"}`}>
+                                          <td className="p-3 text-center">
+                                            <input
+                                              type="checkbox"
+                                              checked={isSelected}
+                                              onChange={() => {
+                                                if (isSelected) {
+                                                  setSelectedStudentIds(prev => prev.filter(id => id !== st.id));
+                                                } else {
+                                                  setSelectedStudentIds(prev => [...prev, st.id]);
+                                                }
+                                              }}
+                                              className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                                            />
+                                          </td>
+                                          <td className="p-3 font-mono font-bold text-indigo-700">
+                                            {st.roll_number || st.id}
+                                          </td>
+                                          <td className="p-3">
+                                            <div className="font-bold text-slate-900">{st.name}</div>
+                                            <div className="text-[10px] text-slate-400 font-normal truncate max-w-[160px]">{st.email}</div>
+                                          </td>
+                                          <td className="p-3">
+                                            <div className="font-bold text-slate-800">{st.department || "General"}</div>
+                                            <div className="text-[10px] text-indigo-600 font-semibold">{st.classGroup}</div>
+                                          </td>
+                                          <td className="p-3">
+                                            <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="10th Mark">10th: {st.tenth_mark || "—"}%</span>
+                                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="11th Mark">11th: {st.eleventh_mark || "—"}%</span>
+                                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="12th Mark">12th: {st.twelfth_mark || "—"}%</span>
+                                            </div>
+                                          </td>
+                                          <td className="p-3">
+                                            <div className="text-slate-800 font-bold">{st.academic_group || "—"}</div>
+                                            <div className="text-[10px] text-slate-400">{st.medium || "—"} medium</div>
+                                          </td>
+                                          <td className="p-3 text-[11px]">
+                                            <div className="text-slate-800 font-semibold">{st.phone || "—"}</div>
+                                            {st.parent_phone && <div className="text-[9.5px] text-emerald-600 font-medium">WhatsApp: {st.parent_phone}</div>}
+                                          </td>
+                                          <td className="p-3">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              {st.linkedin_link && (
+                                                <a href={st.linkedin_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 text-[10px] font-bold">LinkedIn</a>
+                                              )}
+                                              {st.github_id && (
+                                                <a href={st.github_id.startsWith("http") ? st.github_id : `https://github.com/${st.github_id}`} target="_blank" rel="noreferrer" className="p-1 rounded bg-slate-100 text-slate-800 hover:bg-slate-200 text-[10px] font-bold">GitHub</a>
+                                              )}
+                                              {st.hackerrank_link && (
+                                                <a href={st.hackerrank_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-[10px] font-bold">HackerRank</a>
+                                              )}
+                                              {st.leetcode_link && (
+                                                <a href={st.leetcode_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-amber-50 text-amber-600 hover:bg-amber-100 text-[10px] font-bold">LeetCode</a>
+                                              )}
+                                              {st.figma_link && (
+                                                <a href={st.figma_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-purple-50 text-purple-600 hover:bg-purple-100 text-[10px] font-bold">Figma</a>
+                                              )}
+                                              {!st.linkedin_link && !st.github_id && !st.hackerrank_link && !st.leetcode_link && !st.figma_link && (
+                                                <span className="text-[10px] text-slate-350 italic">—</span>
+                                              )}
+                                            </div>
+                                          </td>
+                                          <td className="p-3 text-center">
+                                            <div className="flex items-center justify-center gap-1.5">
+                                              <button
+                                                type="button"
+                                                onClick={() => setSelectedStudentForDetail(st)}
+                                                className="p-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10.5px] font-extrabold transition-colors cursor-pointer"
+                                              >
+                                                View Profile
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleSingleDeleteStudent(st)}
+                                                className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10.5px] font-extrabold transition-colors cursor-pointer flex items-center gap-1"
+                                                title="Delete student record"
+                                              >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
                             </div>
                           );
                         })()}
@@ -6776,25 +7184,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
                           <div className="p-4 bg-white/80 rounded-2xl border border-slate-100/40">
                             <span className="text-3xl font-extrabold text-slate-900">
-                              {mentors.filter(m => m.college_id === activeCollegeId || (!m.college_id && activeCollegeId === "college_1")).length}
+                              {collegeMentors.length}
                             </span>
                             <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Campus Faculty</span>
                           </div>
                           <div className="p-4 bg-white/80 rounded-2xl border border-slate-100/40">
                             <span className="text-3xl font-extrabold text-slate-900">
-                              {students.filter(s => s.college_id === activeCollegeId || (!s.college_id && activeCollegeId === "college_1")).length}
+                              {collegeStudents.length}
                             </span>
                             <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Active Students</span>
                           </div>
                           <div className="p-4 bg-white/80 rounded-2xl border border-slate-100/40">
                             <span className="text-3xl font-extrabold text-slate-900">
-                              {coursesList.filter(c => c.college_id === activeCollegeId || (!c.college_id && activeCollegeId === "college_1")).length}
+                              {collegeCourses.length}
                             </span>
                             <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Active Courses</span>
                           </div>
                           <div className="p-4 bg-white/80 rounded-2xl border border-slate-105/40">
                             <span className="text-3xl font-extrabold text-slate-900">
-                              {slots.filter(s => mentors.some(m => m.id === s.mentorId && (m.college_id === activeCollegeId || (!m.college_id && activeCollegeId === "college_1")))).length}
+                              {collegeSlots.length}
                             </span>
                             <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Timetable Slots</span>
                           </div>
@@ -6938,19 +7346,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         />
                       </div>
 
-                       <div className="space-y-1">
-                        <label className="text-[10px] text-slate-400 uppercase tracking-wider block">Shift Assignment</label>
-                        <select
-                          required
-                          value={mentorForm.shift}
-                          onChange={(e) => setMentorForm({ ...mentorForm, shift: e.target.value as any })}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                        >
-                          <option value="general">General Shift</option>
-                          <option value="shift_1">Shift 1</option>
-                          <option value="shift_2">Shift 2</option>
-                        </select>
-                      </div>
+                       {isCampusShiftBased && (
+                         <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase tracking-wider block">Shift Assignment</label>
+                          <select
+                            required
+                            value={mentorForm.shift}
+                            onChange={(e) => setMentorForm({ ...mentorForm, shift: e.target.value as any })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                          >
+                            <option value="general">General Shift</option>
+                            <option value="shift_1">Shift 1</option>
+                            <option value="shift_2">Shift 2</option>
+                          </select>
+                        </div>
+                       )}
 
                       <div className="space-y-1">
                         <label className="text-[10px] text-slate-400 uppercase tracking-wider block">Subject Group / Category</label>
@@ -6982,7 +7392,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         
                         <div className="border border-slate-150 rounded-xl bg-slate-50 p-3.5 max-h-36 overflow-y-auto space-y-1.5 text-[11px] font-bold">
                           {(() => {
-                            const searched = (subjectsList || []).filter(s => {
+                            const searched = (collegeSubjects || []).filter(s => {
                               if (s.college_id && s.college_id !== activeCollegeId) return false;
 
                               const matchesSearch = s.name.toLowerCase().includes(mentorSubjectSearch.toLowerCase()) ||
@@ -7381,13 +7791,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         type="button"
                         onClick={handleConfirmImport}
                         disabled={isImportSubmitting || importPreview.slots.length === 0}
-                        className={`px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer border border-indigo-650 ${
+                        className={`px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer border border-indigo-650 flex items-center justify-center gap-2 ${
                           isImportSubmitting || importPreview.slots.length === 0
-                            ? "bg-slate-300 border-slate-300 text-slate-400 cursor-not-allowed"
+                            ? "bg-slate-300 border-slate-300 text-slate-400 cursor-not-allowed opacity-80"
                             : "btn-gradient hover:opacity-95 active:scale-95"
                         }`}
                       >
-                        {isImportSubmitting ? "Importing..." : "Commit Schedule"}
+                        {isImportSubmitting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin text-white shrink-0" />
+                            <span>Importing Schedule...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4 shrink-0" />
+                            <span>Commit Schedule</span>
+                          </>
+                        )}
                       </button>
                     </div>
                   </div>
@@ -7447,34 +7867,79 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {(() => {
                             const campusDeptNames = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
                             const deptOptions = campusDeptNames.length > 0 ? campusDeptNames : FACULTY_DEPARTMENTS;
-                            const shiftOptions = ["Shift 1", "Shift 2", "General"];
-                            const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"];
-                            // Parse existing targetClassGroup into parts
+                            const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
                             const current = studentImportPreview.targetClassGroup || "";
-                            const updateCohort = (dept: string, shift: string, sem: string) => {
-                              setStudentImportPreview({ ...studentImportPreview, targetClassGroup: `${dept} - ${shift} - ${sem}` });
-                            };
-                            // Detect current parts
-                            const currentShift = shiftOptions.find(s => current.includes(s)) || "Shift 1";
-                            const currentSem = semOptions.find(s => current.includes(s)) || "Semester 1";
                             const currentDept = deptOptions.find(d => current.startsWith(d)) || deptOptions[0] || "Computer Science";
+
+                            const selectedCourseObj = collegeCourses.find(
+                              c => c.name.trim().toLowerCase() === currentDept.trim().toLowerCase()
+                            );
+
+                            const allowedShifts = (() => {
+                              if (!selectedCourseObj) return ["Shift 1", "Shift 2", "General"];
+                              const ds = (selectedCourseObj.default_shift || "").toLowerCase();
+                              if (ds === "shift_1") return ["Shift 1"];
+                              if (ds === "shift_2") return ["Shift 2"];
+                              if (ds === "general") return ["General"];
+                              if (ds === "both") return ["Shift 1", "Shift 2"];
+                              if (ds === "all") return ["Shift 1", "Shift 2", "General"];
+                              if (selectedCourseObj.shift_based === 1) return ["Shift 1", "Shift 2"];
+                              return ["General"];
+                            })();
+
+                            let currentShift = allowedShifts.find(s => current.includes(s)) || allowedShifts[0];
+
+                            const updateCohort = (dept: string, shift: string, sem: string) => {
+                              const newCG = (shift && shift !== "General")
+                                ? `${dept} - ${shift} - ${sem}`
+                                : `${dept} - ${sem}`;
+                              setStudentImportPreview({ ...studentImportPreview, targetClassGroup: newCG });
+                            };
+
+                            const currentSem = semOptions.find(s => current.includes(s)) || "Semester 1";
+
+                            const handleDeptChange = (newDept: string) => {
+                              const newCourseObj = collegeCourses.find(
+                                c => c.name.trim().toLowerCase() === newDept.trim().toLowerCase()
+                              );
+                              const newAllowedShifts = (() => {
+                                if (!newCourseObj) return ["Shift 1", "Shift 2", "General"];
+                                const ds = (newCourseObj.default_shift || "").toLowerCase();
+                                if (ds === "shift_1") return ["Shift 1"];
+                                if (ds === "shift_2") return ["Shift 2"];
+                                if (ds === "general") return ["General"];
+                                if (ds === "both") return ["Shift 1", "Shift 2"];
+                                if (ds === "all") return ["Shift 1", "Shift 2", "General"];
+                                if (newCourseObj.shift_based === 1) return ["Shift 1", "Shift 2"];
+                                return ["General"];
+                              })();
+                              const newShift = newAllowedShifts.includes(currentShift) ? currentShift : newAllowedShifts[0];
+                              updateCohort(newDept, newShift, currentSem);
+                            };
+
                             return (
                               <div className="flex flex-col gap-1">
                                 <select
                                   value={currentDept}
-                                  onChange={(e) => updateCohort(e.target.value, currentShift, currentSem)}
+                                  onChange={(e) => handleDeptChange(e.target.value)}
                                   className="w-full text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
                                 >
                                   {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
                                 </select>
                                 <div className="flex gap-1">
-                                  <select
-                                    value={currentShift}
-                                    onChange={(e) => updateCohort(currentDept, e.target.value, currentSem)}
-                                    className="flex-1 text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
-                                  >
-                                    {shiftOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                                  </select>
+                                  {allowedShifts.length > 1 ? (
+                                    <select
+                                      value={currentShift}
+                                      onChange={(e) => updateCohort(currentDept, e.target.value, currentSem)}
+                                      className="flex-1 text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
+                                    >
+                                      {allowedShifts.map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                  ) : (
+                                    <div className="flex-1 text-[11px] font-extrabold px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-100 text-slate-700 flex items-center">
+                                      {allowedShifts[0]}
+                                    </div>
+                                  )}
                                   <select
                                     value={currentSem}
                                     onChange={(e) => updateCohort(currentDept, currentShift, e.target.value)}
@@ -7564,13 +8029,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         type="button"
                         onClick={handleConfirmStudentImportSubmit}
                         disabled={isStudentImportSubmitting || studentImportPreview.parsed.length === 0}
-                        className={`px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer border border-indigo-650 ${
+                        className={`px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer border border-indigo-650 flex items-center justify-center gap-2 ${
                           isStudentImportSubmitting || studentImportPreview.parsed.length === 0
-                            ? "bg-slate-300 border-slate-300 text-slate-400 cursor-not-allowed"
+                            ? "bg-slate-300 border-slate-300 text-slate-400 cursor-not-allowed opacity-80"
                             : "btn-gradient hover:opacity-95 active:scale-95"
                         }`}
                       >
-                        {isStudentImportSubmitting ? "Importing Records..." : "Confirm & Import Students"}
+                        {isStudentImportSubmitting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin text-white shrink-0" />
+                            <span>Importing Students...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4 shrink-0" />
+                            <span>Confirm & Import Students</span>
+                          </>
+                        )}
                       </button>
                     </div>
                   </div>
@@ -7709,7 +8184,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex justify-end pt-3 border-t border-slate-100">
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => handleSingleDeleteStudent(selectedStudentForDetail)}
+                        className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete Student Record
+                      </button>
                       <button
                         type="button"
                         onClick={() => setSelectedStudentForDetail(null)}
@@ -7770,7 +8253,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
                               >
                                 <option value="">— Select Course —</option>
-                                {coursesList.map(dept => (
+                                {collegeCourses.map(dept => (
                                   <option key={dept.id} value={dept.name}>{dept.name}</option>
                                 ))}
                               </select>
@@ -7780,12 +8263,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Assigned Campus</label>
                               <select
                                 required
+                                disabled
                                 value={subjectForm.college_id}
                                 onChange={(e) => setSubjectForm({ ...subjectForm, college_id: e.target.value })}
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
+                                className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none text-slate-700 cursor-not-allowed"
                               >
-                                <option value="">— Campus —</option>
-                                {colleges.map(c => (
+                                {colleges.filter(c => c.id === activeCollegeId).map(c => (
                                   <option key={c.id} value={c.id}>{c.name}</option>
                                 ))}
                               </select>
@@ -7857,7 +8340,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Subject Type / Domain</label>
                               <select
                                 required
-                                value={subjectForm.type}
+                                value={normalizeSubjectType(subjectForm.type)}
                                 onChange={(e) => setSubjectForm({ ...subjectForm, type: e.target.value })}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
                               >
@@ -7899,7 +8382,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                         {/* Right Column: Staff Assignment Checklist */}
                         {!editingSubject && (() => {
-                          const campusMentors = mentors.filter(m => m.college_id === subjectForm.college_id);
+                          const campusMentors = collegeMentors;
                           if (campusMentors.length === 0) {
                             return (
                               <div className="flex flex-col items-center justify-center p-8 bg-slate-50 border border-dashed border-slate-200 rounded-2xl h-full text-center">
@@ -7908,6 +8391,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               </div>
                             );
                           }
+                          const filteredStaff = campusMentors.filter(m =>
+                            !mentorSubjectSearch ||
+                            (m.name || "").toLowerCase().includes(mentorSubjectSearch.toLowerCase()) ||
+                            (m.department || "").toLowerCase().includes(mentorSubjectSearch.toLowerCase())
+                          );
+
                           return (
                             <div className="space-y-2 flex flex-col h-full">
                               <div className="flex justify-between items-center">
@@ -7919,31 +8408,49 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 </span>
                               </div>
                               
-                              <div className="border border-slate-200 rounded-2xl bg-slate-50/50 p-3 flex-1 max-h-[300px] overflow-y-auto space-y-1.5">
-                                {campusMentors.map(m => {
-                                  const isChecked = subjectForm.mentorIds.includes(m.id);
-                                  return (
-                                    <label key={m.id} className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${
-                                      isChecked ? "bg-indigo-50/60 border-indigo-200 shadow-2xs" : "bg-white border-slate-150 hover:border-slate-250"
-                                    }`}>
-                                      <input
-                                        type="checkbox"
-                                        checked={isChecked}
-                                        onChange={(e) => {
-                                          let next;
-                                          if (e.target.checked) next = [...subjectForm.mentorIds, m.id];
-                                          else next = subjectForm.mentorIds.filter(id => id !== m.id);
-                                          setSubjectForm({ ...subjectForm, mentorIds: next });
-                                        }}
-                                        className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
-                                      />
-                                      <div className="leading-tight flex-1">
-                                        <div className="font-bold text-slate-800 text-[11px]">{m.name}</div>
-                                        <div className="text-[9px] text-slate-400 font-semibold">{m.department || "Faculty"}</div>
-                                      </div>
-                                    </label>
-                                  );
-                                })}
+                              {/* Staff Search Bar */}
+                              <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                                <input
+                                  type="text"
+                                  placeholder="Search staff by name or dept..."
+                                  value={mentorSubjectSearch}
+                                  onChange={(e) => setMentorSubjectSearch(e.target.value)}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800"
+                                />
+                              </div>
+
+                              <div className="border border-slate-200 rounded-2xl bg-slate-50/50 p-3 flex-1 max-h-[260px] overflow-y-auto space-y-1.5">
+                                {filteredStaff.length === 0 ? (
+                                  <div className="p-4 text-center text-slate-400 text-[11px] italic">
+                                    No staff match "{mentorSubjectSearch}"
+                                  </div>
+                                ) : (
+                                  filteredStaff.map(m => {
+                                    const isChecked = subjectForm.mentorIds.includes(m.id);
+                                    return (
+                                      <label key={m.id} className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                        isChecked ? "bg-indigo-50/60 border-indigo-200 shadow-2xs" : "bg-white border-slate-150 hover:border-slate-250"
+                                      }`}>
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={(e) => {
+                                            let next;
+                                            if (e.target.checked) next = [...subjectForm.mentorIds, m.id];
+                                            else next = subjectForm.mentorIds.filter(id => id !== m.id);
+                                            setSubjectForm({ ...subjectForm, mentorIds: next });
+                                          }}
+                                          className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                                        />
+                                        <div className="leading-tight flex-1">
+                                          <div className="font-bold text-slate-800 text-[11px]">{m.name}</div>
+                                          <div className="text-[9px] text-slate-400 font-semibold">{m.department || "Faculty"}</div>
+                                        </div>
+                                      </label>
+                                    );
+                                  })
+                                )}
                               </div>
                             </div>
                           );
@@ -7971,7 +8478,98 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
                 </div>
               )}
+        {/* ── FACULTY BULK IMPORT PREVIEW MODAL ── */}
+        {showFacultyImportModal && facultyImportPreview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl border border-gray-100 dark:border-slate-800 max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-500/20">
+                    <FileText className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-gray-900 dark:text-white">Faculty Bulk Import Preview</h3>
+                    <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">
+                      Parsed {facultyImportPreview.parsed.length} faculty record(s) from spreadsheet
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowFacultyImportModal(false)}
+                  className="p-2 rounded-xl text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
 
+              {facultyImportPreview.warnings.length > 0 && (
+                <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs font-semibold space-y-1">
+                  <div className="font-extrabold flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    Validation Warnings ({facultyImportPreview.warnings.length}):
+                  </div>
+                  <ul className="list-disc list-inside text-[11px] space-y-0.5 max-h-24 overflow-y-auto">
+                    {facultyImportPreview.warnings.map((w, idx) => (
+                      <li key={idx}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="flex-1 overflow-y-auto border border-gray-200 dark:border-slate-800 rounded-2xl">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 font-extrabold uppercase text-[10px] tracking-wider">
+                      <th className="p-3">#</th>
+                      <th className="p-3">Faculty Name</th>
+                      <th className="p-3">Email Address</th>
+                      <th className="p-3">Department</th>
+                      {isCampusShiftBased && <th className="p-3">Shift</th>}
+                      <th className="p-3">Subjects</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-800 bg-white dark:bg-slate-900 font-medium text-gray-800 dark:text-slate-200">
+                    {facultyImportPreview.parsed.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-indigo-50/20 dark:hover:bg-indigo-500/5">
+                        <td className="p-3 text-gray-400 font-mono text-[10px]">{idx + 1}</td>
+                        <td className="p-3 font-bold text-gray-900 dark:text-white">{item.name || <span className="text-rose-500 italic">Missing</span>}</td>
+                        <td className="p-3 font-mono text-[11px] text-slate-500 dark:text-slate-400">{item.email || <span className="text-rose-500 italic">Missing</span>}</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-[10px] font-bold">{item.department}</span></td>
+                        {isCampusShiftBased && (
+                          <td className="p-3"><span className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold uppercase">{item.shift}</span></td>
+                        )}
+                        <td className="p-3 text-gray-500 dark:text-slate-400 max-w-[180px] truncate" title={item.subjects}>{item.subjects || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-slate-800">
+                <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">
+                  Initial default password for all imported faculty will be set to <code className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono font-bold">password123</code>
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowFacultyImportModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 dark:text-slate-400 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isImportingFaculty}
+                    onClick={handleConfirmFacultyImport}
+                    className="px-5 py-2 rounded-xl text-xs font-extrabold btn-gradient text-white shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isImportingFaculty ? "Importing..." : `Confirm & Import (${facultyImportPreview.parsed.length}) →`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
             </div>
           );
 };
