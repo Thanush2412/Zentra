@@ -651,3 +651,24 @@ export function getWeekDates(offset: number = 0, baseDateStr?: string, workingDa
   
   return dates;
 }
+
+export function isCohortMatching(cg1?: string, cg2?: string, coursesList: any[] = [], subjectsList: any[] = []): boolean {
+  if (!cg1 || !cg2) return false;
+  const clean1 = cg1.trim().toLowerCase();
+  const clean2 = cg2.trim().toLowerCase();
+  if (clean1 === clean2) return true;
+
+  const norm1 = clean1.replace(/[^a-z0-9]/g, "");
+  const norm2 = clean2.replace(/[^a-z0-9]/g, "");
+  if (norm1 === norm2) return true;
+
+  const d1 = resolveClassGroupDetailsFromState(cg1, coursesList, subjectsList);
+  const d2 = resolveClassGroupDetailsFromState(cg2, coursesList, subjectsList);
+
+  if (d1.department && d2.department && d1.department.toLowerCase().trim() === d2.department.toLowerCase().trim()) {
+    if (d1.semester && d2.semester && d1.semester.toLowerCase().trim() === d2.semester.toLowerCase().trim()) {
+      return true;
+    }
+  }
+  return false;
+}

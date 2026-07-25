@@ -535,7 +535,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     avatar: string;
     subjects: string;
     classes: string;
-    shift: "shift_1" | "shift_2" | "general";
     college_id: string;
     subject_group: string;
   }>({
@@ -546,7 +545,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     avatar: "",
     subjects: "",
     classes: "",
-    shift: "general",
     college_id: "",
     subject_group: "",
   });
@@ -1562,7 +1560,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         avatar: m.avatar,
         subjects: m.subjects || "",
         classes: m.classes || "",
-        shift: m.shift || "general",
         college_id: m.college_id || colleges[0]?.id || "",
         subject_group: m.subject_group || "General"
       });
@@ -1576,7 +1573,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         avatar: "",
         subjects: "",
         classes: "",
-        shift: "general",
         college_id: colleges[0]?.id || "",
         subject_group: "General"
       });
@@ -1609,7 +1605,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       headerId: null, // HOD role is removed
       subjects: mentorForm.subjects.trim(),
       classes: mentorForm.classes.trim(),
-      shift: mentorForm.shift,
       college_id: mentorForm.college_id,
       subject_group: mentorForm.subject_group.trim()
     };
@@ -3101,12 +3096,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td className="px-5 py-4 text-gray-900 font-bold">{col ? col.name : <span className="text-gray-400 italic">Unassigned</span>}</td>
                         {isCampusShiftBased && (
                           <td className="px-5 py-4 uppercase">
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                              m.shift === "shift_1" ? "bg-teal-50 text-teal-700 border border-teal-200" :
-                              m.shift === "shift_2" ? "bg-indigo-50 text-indigo-700 border border-indigo-200" :
-                              "bg-amber-50 text-amber-700 border border-amber-200"
-                            }`}>
-                              {m.shift ? m.shift.replace("_", " ") : "general"}
+                            <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-50 text-slate-600 border border-slate-200">
+                              —
                             </span>
                           </td>
                         )}
@@ -4112,7 +4103,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                             </div>
                                             <div className="min-w-0">
                                               <div className="font-extrabold text-gray-805 truncate text-[10px] leading-tight">{mentor.name}</div>
-                                              <div className="text-[8px] text-gray-450 font-bold uppercase tracking-wider mt-0.5 truncate">{mentor.department} • {mentor.shift || "general"}</div>
+                                              <div className="text-[8px] text-gray-450 font-bold uppercase tracking-wider mt-0.5 truncate">{mentor.department}</div>
                                             </div>
                                           </div>
                                         ))}
@@ -6727,16 +6718,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {isCampusShiftBased && (
                   <div className="space-y-1">
                     <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Shift Assignment</label>
-                    <select
-                      required
-                      value={mentorForm.shift}
-                      onChange={(e) => setMentorForm({ ...mentorForm, shift: e.target.value as any })}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                    >
-                      <option value="general">General Shift</option>
-                      <option value="shift_1">Shift 1</option>
-                      <option value="shift_2">Shift 2</option>
-                    </select>
+                    <p className="text-[10px] text-slate-500 italic py-2">Shifts are assigned per slot, not per faculty member.</p>
                   </div>
                 )}
               </div>
@@ -7742,7 +7724,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td className="p-3 font-mono text-[11px] text-gray-600">{item.email || <span className="text-rose-500 italic">Missing</span>}</td>
                         <td className="p-3"><span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] font-bold">{item.department}</span></td>
                         {isCampusShiftBased && (
-                          <td className="p-3"><span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold uppercase">{item.shift}</span></td>
+                          <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-50 text-slate-500 text-[10px] font-bold">—</span></td>
                         )}
                         <td className="p-3">
                           {item.subjects ? (

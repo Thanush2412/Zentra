@@ -5,7 +5,7 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { id, name, email, department, avatar, subjects, classes, shift, college_id, subject_group } = body;
+    const { id, name, email, department, avatar, subjects, classes, college_id, subject_group } = body;
 
     if (!id || !name || !email || !department || !avatar) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
@@ -14,8 +14,8 @@ export async function POST(request: Request) {
     const cleanEmail = email.toLowerCase().trim();
 
     await db.run(
-      `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, shift, college_id, subject_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, name, cleanEmail, department, avatar, subjects || "", classes || "", shift || "general", college_id || null, subject_group || null
+      `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, college_id, subject_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, name, cleanEmail, department, avatar, subjects || "", classes || "", college_id || null, subject_group || null
     );
 
     // Clean old credentials associated with this email
@@ -42,7 +42,7 @@ export async function PUT(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { id, name, email, department, avatar, subjects, classes, shift, college_id, subject_group } = body;
+    const { id, name, email, department, avatar, subjects, classes, college_id, subject_group } = body;
 
     if (!id || !name || !email || !department || !avatar) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
@@ -51,8 +51,8 @@ export async function PUT(request: Request) {
     const cleanEmail = email.toLowerCase().trim();
 
     await db.run(
-      `UPDATE mentors SET name = ?, email = ?, department = ?, avatar = ?, subjects = ?, classes = ?, shift = ?, college_id = ?, subject_group = ? WHERE id = ?`,
-      name, cleanEmail, department, avatar, subjects || "", classes || "", shift || "general", college_id || null, subject_group || null, id
+      `UPDATE mentors SET name = ?, email = ?, department = ?, avatar = ?, subjects = ?, classes = ?, college_id = ?, subject_group = ? WHERE id = ?`,
+      name, cleanEmail, department, avatar, subjects || "", classes || "", college_id || null, subject_group || null, id
     );
 
     // Clean old credentials associated with this email (excluding current Mentor ID)

@@ -42,7 +42,7 @@ import {
   Trash2
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate } from "@/lib/utils";
+import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 
 export interface MentorDashboardProps {
@@ -360,7 +360,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
       const deptNames = matchingCourses.length > 0 ? matchingCourses.map(c => c.name) : [currentMentor.department];
       const sems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"];
-      const shifts = currentMentor.shift === "shift_2" ? ["Shift 2"] : currentMentor.shift === "shift_1" ? ["Shift 1"] : ["Shift 1", "Shift 2"];
+      const shifts = ["Shift 1", "Shift 2"];
 
       deptNames.forEach(d => {
         shifts.forEach(sh => {
@@ -421,6 +421,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     return Array.from(new Set(rawSubjects));
   }, [currentMentor, slots, subjectsList]);
 
+  const [trackerDept, setTrackerDept] = useState<string>("");
+  const [trackerSem, setTrackerSem] = useState<string>("");
   const [trackerClassGroup, setTrackerClassGroup] = useState<string>("");
   const [trackerSubject, setTrackerSubject] = useState<string>("");
   const [trackerWeek, setTrackerWeek] = useState<number>(1);
@@ -919,15 +921,20 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
   };
 
-  // Set current shift to the mentor's profile shift loaded from Excel sheet
+  // Mentor timetable shift is derived from their slots, not a fixed profile field
   React.useEffect(() => {
-    if (currentMentor && currentMentor.shift) {
-      if (currentShift !== currentMentor.shift) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setCurrentShift(currentMentor.shift);
+    if (currentMentor) {
+      // Determine dominant shift from actual slots
+      const mentorSlots = slots.filter(s => s.mentorId === currentMentor.id);
+      const hasShift1 = mentorSlots.some(s => s.shift === "shift_1");
+      const hasShift2 = mentorSlots.some(s => s.shift === "shift_2");
+      if (hasShift1 && !hasShift2 && currentShift !== "shift_1") {
+        setCurrentShift("shift_1");
+      } else if (hasShift2 && !hasShift1 && currentShift !== "shift_2") {
+        setCurrentShift("shift_2");
       }
     }
-  }, [currentMentor, currentShift, setCurrentShift]);
+  }, [currentMentor, slots]);
 
   if (!currentMentor) return null;
 
@@ -2338,17 +2345,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              {/* Shift Selector - Hidden or Locked based on Mentor Shift */}
-              {currentMentor.shift ? (
-                <span className="px-3.5 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-[10px] font-bold text-indigo-700 shadow-sm flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5 text-indigo-500" />
-                  {currentMentor.shift === "shift_1" && "Shift 1 Timetable"}
-                  {currentMentor.shift === "shift_2" && "Shift 2 Timetable"}
-                  {currentMentor.shift === "general" && "General Shift Timetable"}
-                </span>
-              ) : (
-                <div className="flex bg-gray-55 p-1 rounded-xl border border-gray-200 shadow-inner">
-                  <button
+              {/* Shift Selector - always shown, shift derived from slots */}
+              <div className="flex bg-gray-55 p-1 rounded-xl border border-gray-200 shadow-inner">
+                <button
                     type="button"
                     onClick={() => setCurrentShift("shift_1")}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
@@ -2382,7 +2381,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     General
                   </button>
                 </div>
-              )}
             </div>
           </div>
 
@@ -3002,7 +3000,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
                 <div className="flex flex-wrap justify-center gap-1.5 pt-1">
                   <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-150 text-[9px] font-black text-slate-700 uppercase">
-                    {currentMentor.shift === "shift_1" ? "Shift 1" : currentMentor.shift === "shift_2" ? "Shift 2" : "General Shift"}
+                    Faculty Mentor
                   </span>
                   <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-150 text-[9px] font-black text-slate-700 uppercase">
                     {currentMentor.department}
@@ -4555,15 +4553,67 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       )}
 
       {activeTab === "tracker" && (() => {
+        const campusDepts = Array.from(new Set(
+          coursesList
+            .filter(c => !c.college_id || c.college_id === currentMentor?.college_id)
+            .map(c => c.name.trim())
+            .filter(Boolean)
+        )).sort();
+
+        const deptOptions = campusDepts.length > 0
+          ? campusDepts
+          : Array.from(new Set(mentorClasses.map(c => getDeptFromClassGroup(c) || c))).filter(Boolean);
+
+        const activeDept = trackerDept || deptOptions[0] || currentMentor?.department || "Computer Science";
+
+        const semesterOptions = Array.from(new Set(
+          subjectsList
+            .filter(s => (!s.college_id || s.college_id === currentMentor?.college_id) &&
+                         s.department?.toLowerCase().trim() === activeDept.toLowerCase().trim())
+            .map(s => s.semester)
+            .filter(Boolean)
+        )).sort((a, b) => {
+          const na = parseInt((a || "").replace(/\D/g, "") || "0");
+          const nb = parseInt((b || "").replace(/\D/g, "") || "0");
+          return na - nb;
+        });
+
+        const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+        const finalSemOptions = semesterOptions.length > 0 ? semesterOptions : defaultSems;
+        const activeSem = trackerSem || finalSemOptions[0] || "Semester 1";
+
+        const subjectObjs = subjectsList.filter(s =>
+          (!s.college_id || s.college_id === currentMentor?.college_id) &&
+          s.department?.toLowerCase().trim() === activeDept.toLowerCase().trim() &&
+          s.semester?.toLowerCase().trim() === activeSem.toLowerCase().trim()
+        );
+        // Only show subjects THIS mentor actually handles (from their slots or profile subjects)
+        // mentorSubjects contains the mentor's actual subjects derived from slots + profile
+        const mentorSubjectNames = new Set(mentorSubjects.map(s => s.toLowerCase().trim()));
+        const mentorFilteredSubjectObjs = subjectObjs.filter(s => mentorSubjectNames.has(s.name.toLowerCase().trim()));
+        const subjectOptions = mentorFilteredSubjectObjs.length > 0
+          ? mentorFilteredSubjectObjs.map(s => s.name)
+          : subjectObjs.length > 0
+            ? subjectObjs.map(s => s.name)   // fallback: show all in dept/sem if none match mentor's subjects
+            : mentorSubjects.length > 0 ? mentorSubjects : ["General Subject"];
+        
+        const activeSubj = trackerSubject || subjectOptions[0] || "";
+        const activeClassGroup = `${activeDept} - ${activeSem}`;
+
         const currentTask = weeklyTasks.find(
-          t => t.class_group === trackerClassGroup &&
-               t.subject === trackerSubject &&
-               t.week_number === trackerWeek
+          t => t.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() &&
+               t.week_number === trackerWeek &&
+               (isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) ||
+                t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim()))
         );
 
-        const classStudents = students.filter(
-          s => s.classGroup && s.classGroup.toLowerCase().trim() === trackerClassGroup.toLowerCase().trim()
-        );
+        const classStudents = students.filter(s => {
+          if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+          if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
+          const sDept = (s.department || "").toLowerCase().trim();
+          const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
+          return sDept === activeDept.toLowerCase().trim() && sSem === activeSem.toLowerCase().trim();
+        });
 
         const exportTrackerData = () => {
           try {
@@ -4574,12 +4624,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 "Student Name": student.name,
               };
 
-              // Add columns for weeks 1 to 15
               for (let wk = 1; wk <= 15; wk++) {
                 const entry = studentTracker.find(
                   e => e.student_id === student.id &&
-                       e.class_group === trackerClassGroup &&
-                       e.subject === trackerSubject &&
+                       e.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() &&
                        e.week_number === wk
                 );
                 rowObj[`W${wk} Status`] = entry?.submission_url ? "Submitted" : "Not Submitted";
@@ -4595,7 +4643,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "Weekly Marks");
 
-            const filename = `${trackerClassGroup.replace(/[^a-zA-Z0-9]/g, "_")}_${trackerSubject.replace(/[^a-zA-Z0-9]/g, "_")}_Tracker.xlsx`;
+            const filename = `${activeClassGroup.replace(/[^a-zA-Z0-9]/g, "_")}_${activeSubj.replace(/[^a-zA-Z0-9]/g, "_")}_Tracker.xlsx`;
             XLSX.writeFile(workbook, filename);
             toast("Tracker data exported successfully!", "success");
           } catch (err: any) {
@@ -4621,42 +4669,72 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             </div>
           </div>
 
-          {/* Interactive Class, Subject & Week Selector Bar */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-4 font-sans">
+          {/* Interactive 4-Dropdown Selector Bar: Department -> Semester -> Subject -> Week */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs font-sans">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              {/* Left: Responsive Class, Subject & Week Selectors */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
-                {/* Class Group Select - Flex Grow for long names */}
-                <div className="space-y-1 sm:flex-[2.5] min-w-0">
-                  <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Class Group</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
+                {/* 1. Department */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Department</label>
                   <select
-                    value={trackerClassGroup}
-                    onChange={(e) => setTrackerClassGroup(e.target.value)}
-                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-slate-50/50 text-slate-800 cursor-pointer truncate"
+                    value={activeDept}
+                    onChange={(e) => {
+                      const newDept = e.target.value;
+                      setTrackerDept(newDept);
+                      setTrackerSem("");
+                      setTrackerSubject("");
+                      // Sync trackerClassGroup to best matching mentor class group
+                      const bestMatch = mentorClasses.find(c => c.toLowerCase().includes(newDept.toLowerCase()));
+                      if (bestMatch) setTrackerClassGroup(bestMatch);
+                    }}
+                    className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
                   >
-                    {mentorClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                    {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
 
-                {/* Subject Select */}
-                <div className="space-y-1 sm:flex-1 min-w-0">
-                  <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Subject</label>
+                {/* 2. Semester */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Semester</label>
                   <select
-                    value={trackerSubject}
+                    value={activeSem}
+                    onChange={(e) => {
+                      const newSem = e.target.value;
+                      setTrackerSem(newSem);
+                      setTrackerSubject("");
+                      // Sync trackerClassGroup to best matching mentor class group
+                      const semNum = newSem.replace(/\D/g, "");
+                      const bestMatch = mentorClasses.find(c =>
+                        c.toLowerCase().includes(activeDept.toLowerCase()) &&
+                        (c.toLowerCase().includes(`semester ${semNum}`) || c.toLowerCase().includes(`sem ${semNum}`))
+                      ) || mentorClasses.find(c => c.toLowerCase().includes(activeDept.toLowerCase()));
+                      if (bestMatch) setTrackerClassGroup(bestMatch);
+                    }}
+                    className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                  >
+                    {finalSemOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+
+                {/* 3. Subject */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Subject</label>
+                  <select
+                    value={activeSubj}
                     onChange={(e) => setTrackerSubject(e.target.value)}
-                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-slate-50/50 text-slate-800 cursor-pointer truncate"
+                    className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
                   >
-                    {filteredMentorSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+                    {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
 
-                {/* Week Select */}
-                <div className="space-y-1 sm:flex-1 min-w-[130px]">
-                  <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Week Number</label>
+                {/* 4. Week */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Week</label>
                   <select
                     value={trackerWeek}
                     onChange={(e) => setTrackerWeek(parseInt(e.target.value, 10))}
-                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-slate-50/50 text-slate-800 cursor-pointer"
+                    className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
                   >
                     {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
                       <option key={wk} value={wk}>Week {wk} {wk % 2 === 0 ? "(Assessment)" : ""}</option>
@@ -4665,7 +4743,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Right: Export Button */}
+              {/* Export Button */}
               <div className="flex items-center gap-2 shrink-0 pt-2 lg:pt-0">
                 <button
                   type="button"
@@ -4683,9 +4761,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           {/* Task Assignment Feature Card */}
           {(() => {
             const currentTask = weeklyTasks.find(
-              t => t.class_group === trackerClassGroup &&
-                   t.subject === trackerSubject &&
-                   t.week_number === trackerWeek
+              t => t.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() &&
+                   t.week_number === trackerWeek &&
+                   (isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) ||
+                    t.class_group === trackerClassGroup)
             );
 
             return (
@@ -4730,14 +4809,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           onClick={async () => {
                             const confirmed = await showConfirm({
                               title: `Delete Week ${trackerWeek} Task?`,
-                              message: `Are you sure you want to delete the task "${currentTask.task_name}" for ${trackerSubject} (Week ${trackerWeek})? This will remove the task assignment and student tracker data for this week.`,
+                              message: `Are you sure you want to delete the task "${currentTask.task_name}" for ${activeSubj} (Week ${trackerWeek})? This will remove the task assignment and student tracker data for this week.`,
                               confirmLabel: "Delete Task",
                               cancelLabel: "Cancel",
                               danger: true
                             });
                             if (!confirmed) return;
 
-                            const res = await deleteWeeklyTask(trackerClassGroup, trackerSubject, trackerWeek);
+                            const res = await deleteWeeklyTask(currentTask.class_group, activeSubj, trackerWeek);
                             if (res.success) {
                               toast(`Week ${trackerWeek} task deleted successfully.`, "success");
                             } else {
@@ -4816,7 +4895,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   </div>
                 ) : (
                   <div className="text-center py-6 bg-white/60 border border-dashed border-indigo-200 rounded-2xl flex flex-col items-center justify-center gap-2">
-                    <p className="text-xs text-slate-500 font-medium">No task assigned for Week {trackerWeek} in {trackerSubject} yet.</p>
+                    <p className="text-xs text-slate-500 font-medium">No task assigned for Week {trackerWeek} in {activeSubj} yet.</p>
                     <button
                       onClick={() => {
                         setTrackerTaskName("");
@@ -4847,13 +4926,17 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </h3>
               </div>
               {(() => {
-                const classStudents = students.filter(
-                  s => s.classGroup && s.classGroup.toLowerCase().trim() === trackerClassGroup.toLowerCase().trim()
-                );
+                const classStudents = students.filter(s => {
+                  if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+                  if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
+                  const sDept = (s.department || "").toLowerCase().trim();
+                  const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
+                  return sDept === activeDept.toLowerCase().trim() && sSem === activeSem.toLowerCase().trim();
+                });
                 
                 // Calculate 15-week class metrics
                 const assignedWeeksList = Array.from({ length: 15 }, (_, i) => i + 1).filter(wk =>
-                  weeklyTasks.some(t => t.class_group === trackerClassGroup && t.subject === trackerSubject && t.week_number === wk)
+                  weeklyTasks.some(t => isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) && t.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() && t.week_number === wk)
                 );
                 const assignedWeeksCount = assignedWeeksList.length;
 
@@ -4865,8 +4948,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   for (let wk = 1; wk <= 15; wk++) {
                     const entry = studentTracker.find(
                       e => e.student_id === st.id &&
-                           e.class_group === trackerClassGroup &&
-                           e.subject === trackerSubject &&
+                           e.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() &&
                            e.week_number === wk
                     );
                     if (entry?.submission_url) totalSubmissionsCount++;
@@ -4884,8 +4966,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 const currentWeekSubmittedCount = classStudents.filter(s => {
                   const entry = studentTracker.find(
                     e => e.student_id === s.id &&
-                         e.class_group === trackerClassGroup &&
-                         e.subject === trackerSubject &&
+                         e.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() &&
                          e.week_number === trackerWeek
                   );
                   return entry && !!entry.submission_url;
@@ -4919,11 +5000,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               })()}
             </div>
             {(() => {
-              const classStudents = students.filter(
-                s => s.classGroup && s.classGroup.toLowerCase().trim() === trackerClassGroup.toLowerCase().trim()
-              );
+              const classStudents = students.filter(s => {
+                if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+                if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
+                const sDept = (s.department || "").toLowerCase().trim();
+                const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
+                return sDept === activeDept.toLowerCase().trim() && sSem === activeSem.toLowerCase().trim();
+              });
               const assignedWeeksCount = Array.from({ length: 15 }, (_, i) => i + 1).filter(wk =>
-                weeklyTasks.some(t => t.class_group === trackerClassGroup && t.subject === trackerSubject && t.week_number === wk)
+                weeklyTasks.some(t => isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) && t.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() && t.week_number === wk)
               ).length;
 
               if (classStudents.length === 0) {
@@ -4932,7 +5017,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-slate-50 mb-2">
                       <Users className="h-6 w-6 text-slate-300" />
                     </div>
-                    <p className="text-xs text-slate-455 italic">No students registered in class &ldquo;{trackerClassGroup}&rdquo;.</p>
+                    <p className="text-xs text-slate-455 italic">No students registered in class &ldquo;{activeClassGroup}&rdquo;.</p>
                   </div>
                 );
               }
@@ -4944,8 +5029,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 
                 const entry = studentTracker.find(
                   e => e.student_id === student.id &&
-                       e.class_group === trackerClassGroup &&
-                       e.subject === trackerSubject &&
+                       e.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() &&
                        e.week_number === trackerWeek
                 );
                 
@@ -5013,8 +5097,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           const absoluteIdx = trackerPageSize === -1 ? idx : (validPage - 1) * trackerPageSize + idx;
                           const entry = studentTracker.find(
                             e => e.student_id === student.id &&
-                                 e.class_group === trackerClassGroup &&
-                                 e.subject === trackerSubject &&
+                                 e.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() &&
                                  e.week_number === trackerWeek
                           );
 
@@ -5039,12 +5122,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                                   const dots = Array.from({ length: 15 }, (_, i) => i + 1).map(wk => {
                                     const isAssigned = weeklyTasks.some(
-                                      t => t.class_group === trackerClassGroup && t.subject === trackerSubject && t.week_number === wk
+                                      t => isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) && t.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() && t.week_number === wk
                                     );
                                     const stEntry = studentTracker.find(
                                       e => e.student_id === student.id &&
-                                           e.class_group === trackerClassGroup &&
-                                           e.subject === trackerSubject &&
+                                           e.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() &&
                                            e.week_number === wk
                                     );
                                     const isSubmitted = !!stEntry?.submission_url;
@@ -5141,10 +5223,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               </td>
                               <td className="p-3 border-r border-slate-100/60 space-y-1.5 min-w-[210px]">
                                 {(() => {
-                                  const isEnglishSubject = trackerSubject.toLowerCase().includes("english") ||
-                                                           trackerSubject.toLowerCase().includes("communication") ||
-                                                           trackerSubject.toLowerCase().includes("soft skills") ||
-                                                           trackerSubject.toLowerCase().includes("tamil");
+                                  const isEnglishSubject = activeSubj.toLowerCase().includes("english") ||
+                                                           activeSubj.toLowerCase().includes("communication") ||
+                                                           activeSubj.toLowerCase().includes("soft skills") ||
+                                                           activeSubj.toLowerCase().includes("tamil");
                                   const isSpotTopic = currentFeedback.startsWith("Spot Topic") || isEnglishSubject;
                                   return (
                                     <>
@@ -5174,8 +5256,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                           setSaveStatusMap(prev => ({ ...prev, [student.id]: "saving" }));
                                           const res = await gradeStudentTask({
                                             studentId: student.id,
-                                            classGroup: trackerClassGroup,
-                                            subject: trackerSubject,
+                                            classGroup: student.classGroup || activeClassGroup,
+                                            subject: activeSubj,
                                             weekNumber: trackerWeek,
                                             vivaAssessment: newFeedback,
                                             gradedBy: currentMentor?.id || ""
@@ -5208,8 +5290,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                               setSaveStatusMap(prev => ({ ...prev, [student.id]: "saving" }));
                                               const res = await gradeStudentTask({
                                                 studentId: student.id,
-                                                classGroup: trackerClassGroup,
-                                                subject: trackerSubject,
+                                                classGroup: student.classGroup || activeClassGroup,
+                                                subject: activeSubj,
                                                 weekNumber: trackerWeek,
                                                 vivaAssessment: newFeedback,
                                                 gradedBy: currentMentor?.id || ""
@@ -5245,8 +5327,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     setSaveStatusMap(prev => ({ ...prev, [student.id]: "saving" }));
                                     const res = await gradeStudentTask({
                                       studentId: student.id,
-                                      classGroup: trackerClassGroup,
-                                      subject: trackerSubject,
+                                      classGroup: student.classGroup || activeClassGroup,
+                                      subject: activeSubj,
                                       weekNumber: trackerWeek,
                                       marks: val !== "" ? parseFloat(val) : null as any,
                                       gradedBy: currentMentor?.id || ""
@@ -5317,6 +5399,184 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       </button>
                     </div>
                   </div>
+
+                  {/* Assign / Edit Task Modal */}
+                  {editingTask && (
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                      <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-2xl w-full overflow-hidden animate-slideUp flex flex-col">
+                        <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
+                          <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
+                            <BookOpen className="h-5 w-5 text-indigo-650" />
+                            <span>{currentTask ? "Edit Assignment Details" : "Assign New Task"}</span>
+                          </h3>
+                          <button
+                            onClick={() => setEditingTask(false)}
+                            className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                        
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (!trackerTaskName.trim()) {
+                              toast("Task name is required.", "warning");
+                              return;
+                            }
+                            const res = await assignWeeklyTask({
+                              classGroup: activeClassGroup,
+                              subject: activeSubj,
+                              weekNumber: trackerWeek,
+                              taskName: trackerTaskName,
+                              taskPdfUrl: trackerTaskPdf || undefined,
+                              mentorId: currentMentor?.id || ""
+                            });
+                            if (res.success) {
+                              setEditingTask(false);
+                              toast("Task assigned successfully!", "success");
+                            } else {
+                              toast(res.message || "Failed to save task.", "error");
+                            }
+                          }}
+                          className="p-6 space-y-5"
+                        >
+                          <div className="space-y-4">
+                            {/* Interactive Selectors in Modal - Synced directly with main filters */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">Department &amp; Semester</label>
+                                <select
+                                  value={activeDept}
+                                  onChange={(e) => {
+                                    setTrackerDept(e.target.value);
+                                    setTrackerSem("");
+                                    setTrackerSubject("");
+                                  }}
+                                  className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-white text-slate-800 cursor-pointer truncate"
+                                >
+                                  {deptOptions.map(d => <option key={d} value={d}>{d} — {activeSem}</option>)}
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">Subject *</label>
+                                <select
+                                  value={activeSubj}
+                                  onChange={(e) => setTrackerSubject(e.target.value)}
+                                  className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-white text-slate-800 cursor-pointer truncate"
+                                >
+                                  {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">Week *</label>
+                                <select
+                                  value={trackerWeek}
+                                  onChange={(e) => setTrackerWeek(parseInt(e.target.value, 10))}
+                                  className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-white text-slate-800 cursor-pointer"
+                                >
+                                  {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
+                                    <option key={wk} value={wk}>Week {wk} {wk % 2 === 0 ? "(Assessment)" : ""}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">
+                                Task Name / Description *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={trackerTaskName}
+                                onChange={(e) => setTrackerTaskName(e.target.value)}
+                                placeholder="e.g. Experiment 1: SQL Join Operations"
+                                className="w-full text-xs font-semibold px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-slate-50 text-slate-800"
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setTrackerUploadType("url")}
+                                  className={`flex-1 py-2.5 text-xs font-bold rounded-xl border transition-all ${trackerUploadType === "url" ? "bg-[#D528A2]/10 border-[#D528A2]/30 text-[#D528A2]" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                                >
+                                  URL Link
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setTrackerUploadType("file")}
+                                  className={`flex-1 py-2.5 text-xs font-bold rounded-xl border transition-all ${trackerUploadType === "file" ? "bg-[#D528A2]/10 border-[#D528A2]/30 text-[#D528A2]" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                                >
+                                  Upload File
+                                </button>
+                              </div>
+                              
+                              {trackerUploadType === "url" ? (
+                                <div className="space-y-1.5 mt-2">
+                                  <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">
+                                    Reference PDF URL / Drive Link
+                                  </label>
+                                  <input
+                                    type="url"
+                                    value={trackerTaskPdf}
+                                    onChange={(e) => setTrackerTaskPdf(e.target.value)}
+                                    placeholder="e.g. https://drive.google.com/..."
+                                    className="w-full text-xs font-semibold px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:border-[#D528A2] focus:ring-2 focus:ring-[#D528A2]/10 bg-slate-50 text-slate-800"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5 mt-2">
+                                  <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">
+                                    Choose Reference File
+                                  </label>
+                                  <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 hover:bg-slate-100 hover:border-[#D528A2]/40 transition-all">
+                                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                      <Upload className="w-5 h-5 mb-1 text-slate-400" />
+                                      <p className="text-[10px] text-slate-500 font-medium">Click to upload or drag and drop</p>
+                                      <p className="text-[9px] text-slate-400 font-semibold mt-0.5">PDF, DOCX (MAX. 10MB)</p>
+                                    </div>
+                                    <input type="file" className="hidden" accept=".pdf,.docx,.doc,.pptx" onChange={(e) => {
+                                      if(e.target.files && e.target.files[0]) {
+                                        toast("File selected: " + e.target.files[0].name, "success");
+                                        setTrackerTaskPdf("https://example.com/simulated-upload/" + encodeURIComponent(e.target.files[0].name));
+                                      }
+                                    }} />
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="p-3 bg-rose-50 border border-rose-100 rounded-2xl flex items-center justify-between text-[11px] text-rose-700 font-medium">
+                            <span>Deadline: <strong className="font-extrabold">3 Days from Assignment</strong></span>
+                            <span className="px-2 py-0.5 bg-rose-100 font-bold rounded-lg uppercase tracking-wider text-[9px]">
+                              {trackerWeek % 2 === 0 ? "ASSESSMENT WEEK" : "REGULAR WEEK"}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-end gap-2.5 pt-2 border-t border-gray-100">
+                            <button
+                              type="button"
+                              onClick={() => setEditingTask(false)}
+                              className="px-4 py-2 hover:bg-gray-100 text-gray-655 rounded-xl transition-all font-bold cursor-pointer text-xs"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="submit"
+                              className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer text-xs flex items-center gap-1.5"
+                            >
+                              <BookOpen className="h-3.5 w-3.5" />
+                              <span>Save Task</span>
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -5557,188 +5817,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             );
           })()}
 
-          {editingTask && (() => {
-            const currentTask = weeklyTasks.find(
-              t => t.class_group === trackerClassGroup &&
-                   t.subject === trackerSubject &&
-                   t.week_number === trackerWeek
-            );
-            return (
-              <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-2xl w-full overflow-hidden animate-slideUp flex flex-col">
-                <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
-                  <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                    <BookOpen className="h-5 w-5 text-indigo-650" />
-                    <span>{currentTask ? "Edit Assignment Details" : "Assign New Task"}</span>
-                  </h3>
-                  <button
-                    onClick={() => setEditingTask(false)}
-                    className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    if (!trackerTaskName.trim()) return;
-                    const res = await assignWeeklyTask({
-                      classGroup: trackerClassGroup,
-                      subject: trackerSubject,
-                      weekNumber: trackerWeek,
-                      taskName: trackerTaskName,
-                      taskPdfUrl: trackerTaskPdf || undefined,
-                      mentorId: currentMentor?.id || ""
-                    });
-                    if (res.success) {
-                      setEditingTask(false);
-                      toast("Task assigned successfully!", "success");
-                    } else {
-                      toast(res.message || "Failed to save task.", "error");
-                    }
-                  }}
-                  className="p-6 space-y-5"
-                >
-                  <div className="space-y-4">
-                    {/* Selectors in Modal */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">Class Group</label>
-                        <select
-                          value={trackerClassGroup}
-                          onChange={(e) => setTrackerClassGroup(e.target.value)}
-                          className="w-full text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-250 focus:outline-none focus:ring-1 focus:ring-[#D528A2] bg-slate-50"
-                        >
-                          {mentorClasses.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">Subject</label>
-                        <select
-                          value={trackerSubject}
-                          onChange={(e) => setTrackerSubject(e.target.value)}
-                          className="w-full text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-250 focus:outline-none focus:ring-1 focus:ring-[#D528A2] bg-slate-50"
-                        >
-                          {filteredMentorSubjects.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">Week</label>
-                        <select
-                          value={trackerWeek}
-                          onChange={(e) => setTrackerWeek(parseInt(e.target.value, 10))}
-                          className="w-full text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-250 focus:outline-none focus:ring-1 focus:ring-[#D528A2] bg-slate-50"
-                        >
-                          {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => <option key={wk} value={wk}>Week {wk}</option>)}
-                        </select>
-                      </div>
-                    </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">
-                        Task Name / Description *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={trackerTaskName}
-                        onChange={(e) => setTrackerTaskName(e.target.value)}
-                        placeholder="e.g. Experiment 1: SQL Join Operations"
-                        className="w-full text-xs font-semibold px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-slate-50 text-slate-800"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setTrackerUploadType("url")}
-                          className={`flex-1 py-2.5 text-xs font-bold rounded-xl border transition-all ${trackerUploadType === "url" ? "bg-[#D528A2]/10 border-[#D528A2]/30 text-[#D528A2]" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"}`}
-                        >
-                          URL Link
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setTrackerUploadType("file")}
-                          className={`flex-1 py-2.5 text-xs font-bold rounded-xl border transition-all ${trackerUploadType === "file" ? "bg-[#D528A2]/10 border-[#D528A2]/30 text-[#D528A2]" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"}`}
-                        >
-                          Upload File
-                        </button>
-                      </div>
-                      
-                      {trackerUploadType === "url" ? (
-                        <div className="space-y-1.5 mt-2">
-                          <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">
-                            Reference PDF URL / Drive Link
-                          </label>
-                          <input
-                            type="url"
-                            value={trackerTaskPdf}
-                            onChange={(e) => setTrackerTaskPdf(e.target.value)}
-                            placeholder="e.g. https://drive.google.com/..."
-                            className="w-full text-xs font-semibold px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:border-[#D528A2] focus:ring-2 focus:ring-[#D528A2]/10 bg-slate-50 text-slate-800"
-                          />
-                        </div>
-                      ) : (
-                        <div className="space-y-1.5 mt-2">
-                          <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide block">
-                            Choose Reference File
-                          </label>
-                          <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 hover:bg-slate-100 hover:border-[#D528A2]/40 transition-all">
-                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                              <Upload className="w-5 h-5 mb-1 text-slate-400" />
-                              <p className="text-[10px] text-slate-500 font-medium">Click to upload or drag and drop</p>
-                              <p className="text-[9px] text-slate-400 font-semibold mt-0.5">PDF, DOCX (MAX. 10MB)</p>
-                            </div>
-                            <input type="file" className="hidden" accept=".pdf,.docx,.doc,.pptx" onChange={(e) => {
-                              if(e.target.files && e.target.files[0]) {
-                                toast("File selected: " + e.target.files[0].name, "success");
-                                setTrackerTaskPdf("https://example.com/simulated-upload/" + encodeURIComponent(e.target.files[0].name));
-                              }
-                            }} />
-                          </label>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Info Panel */}
-                  <div className="bg-[#D528A2]/5 rounded-xl p-3 border border-[#D528A2]/10 space-y-2">
-                    <div className="flex justify-between items-center text-[10px]">
-                      <span className="font-bold text-slate-600">Deadline:</span>
-                      <span className="font-black text-[#D528A2]">3 Days from Assignment</span>
-                    </div>
-                    <div className="flex justify-between items-center text-[10px]">
-                      <span className="font-bold text-slate-600">Week Type:</span>
-                      {trackerWeek % 2 === 0 ? (
-                        <span className="font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-lg border border-rose-200">ASSESSMENT / VIVA</span>
-                      ) : (
-                        <span className="font-black text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200">REGULAR WEEK</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => setEditingTask(false)}
-                      className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-colors cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="btn-gradient px-6 py-2.5 rounded-xl text-white font-bold text-xs shadow-md transition-colors cursor-pointer flex items-center gap-2"
-                    >
-                      <BookOpen className="h-4 w-4" /> Save Task
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-            );
-          })()}
 
 
       </main>

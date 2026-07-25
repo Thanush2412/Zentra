@@ -30,8 +30,8 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
   onClose
 }) => {
   const { slots, requests, approvedHandovers, colleges, shiftTimeSlots, getTimeSlots, daysOfWeek, mentors, weekDates, subjectsList } = useApp();
-  // Use the VIEWED mentor's shift to show their correct timetable periods
-  const mentorTimeSlots = getTimeSlots(mentor?.shift || "general", mentor?.classes);
+  // Use the slot-based shift context (general by default) for showing timetable periods
+  const mentorTimeSlots = getTimeSlots("general", mentor?.classes);
   const [activeSubTab, setActiveSubTab] = useState<"workload" | "schedule" | "handovers">("workload");
 
   if (!isOpen || !mentor) return null;
@@ -282,7 +282,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
             <div className="flex items-center gap-2 text-slate-600 bg-white border border-slate-100 p-2.5 rounded-xl">
               <Clock className="h-4 w-4 text-slate-400 shrink-0" />
               <span className="font-bold text-slate-700 capitalize">
-                {mentor.shift?.replace("_", " ") || "General Shift"}
+                Faculty Mentor
               </span>
             </div>
 
@@ -491,9 +491,6 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
               <div className="space-y-4">
                 <div className="flex justify-between items-center pb-2">
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Active Weekly Class Slots</h4>
-                  <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-150 px-2 py-0.5 rounded-md font-bold">
-                    Shift: {mentor.shift?.replace("_", " ") || "general"}
-                  </span>
                 </div>
 
                 <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-xs">
@@ -515,7 +512,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                           {daysOfWeek.map((day) => {
                             // 1. Check if the mentor owns this slot
                             const ownSlot = mentorSlots.find(
-                              (s) => s.day === day && s.time === time && s.shift === (mentor.shift || "general")
+                              (s) => s.day === day && s.time === time
                             );
 
                             // 2. Check if this mentor is covering another mentor's slot via approved handovers
@@ -524,8 +521,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                               return (
                                 s &&
                                 s.day === day &&
-                                s.time === time &&
-                                s.shift === (mentor.shift || "general")
+                                s.time === time
                               );
                             });
 

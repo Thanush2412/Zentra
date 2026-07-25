@@ -67,7 +67,7 @@ export async function GET(request: Request) {
         address: cam.college_address
       },
       departments,
-      mentors: mentors.map((m: any) => ({ ...m, role: "mentor", shift: m.shift || "general" })),
+      mentors: mentors.map((m: any) => ({ ...m, role: "mentor" })),
       slots,
       subjects,
       stats

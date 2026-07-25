@@ -37,7 +37,7 @@ import {
   Menu,
   Edit2
 } from "lucide-react";
-import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate } from "@/lib/utils";
+import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup } from "@/lib/utils";
 
 // Mock Library Books database for OPAC
 interface BookItem {
@@ -701,7 +701,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       {/* Dynamic sidebar for student portal modules */}
       {(() => {
         const pendingTrackerCount = weeklyTasks.filter(t => {
-          if (t.class_group.toLowerCase().trim() !== (currentStudent?.classGroup || "").toLowerCase().trim()) return false;
+          const isMatch = isCohortMatching(t.class_group, currentStudent?.classGroup, coursesList, subjectsList);
+          if (!isMatch) return false;
           const entry = studentTracker.find(e => e.student_id === currentStudent?.id && e.week_number === t.week_number && e.subject.toLowerCase().trim() === t.subject.toLowerCase().trim());
           return !entry || !entry.submission_url;
         }).length;
@@ -796,7 +797,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             const isActive = activeTab === t.id || (t.id === "more_menu" && ["marks", "leave", "exams", "library", "profile"].includes(activeTab));
             const pendingCount = t.id === "tracker"
               ? weeklyTasks.filter(task => {
-                  if (task.class_group.toLowerCase().trim() !== (currentStudent?.classGroup || "").toLowerCase().trim()) return false;
+                  const isMatch = isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList);
+                  if (!isMatch) return false;
                   const entry = studentTracker.find(e => e.student_id === currentStudent?.id && e.week_number === task.week_number && e.subject.toLowerCase().trim() === task.subject.toLowerCase().trim());
                   return !entry || !entry.submission_url;
                 }).length
@@ -1912,14 +1914,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <div className="space-y-4">
               {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => {
                 const task = weeklyTasks.find(
-                  t => t.class_group.toLowerCase().trim() === (currentStudent?.classGroup || "").toLowerCase().trim() &&
+                  t => (isCohortMatching(t.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
+                        (currentStudent?.department && t.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
                        t.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim() &&
                        t.week_number === wk
                 );
 
                 const entry = studentTracker.find(
                   e => e.student_id === currentStudent?.id &&
-                       e.class_group.toLowerCase().trim() === (currentStudent?.classGroup || "").toLowerCase().trim() &&
                        e.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim() &&
                        e.week_number === wk
                 );

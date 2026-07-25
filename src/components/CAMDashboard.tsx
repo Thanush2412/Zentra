@@ -12,7 +12,7 @@ import { Card } from "./Card";
 import { Panel } from "./Panel";
 import { Input } from "./Input";
 import { Select } from "./Select";
-import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList } from "../lib/utils";
+import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList } from "../lib/utils";
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,
@@ -235,7 +235,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     deleteAcademicEvent,
     saveFacultyConfig,
     deleteStudent,
-    bulkDeleteStudents
+    bulkDeleteStudents,
+    departmentsList,
   } = useApp();
   const { toast, confirm: showConfirm } = useToast();
 
@@ -423,7 +424,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
   // Download Student Excel Template matching requested headers
   const handleDownloadStudentTemplate = (classGroupOverride?: string) => {
-    const campusDepts = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
+    const campusDepts = collegeCourses.map(c => c.name);
     const deptList = campusDepts.length > 0 ? campusDepts : FACULTY_DEPARTMENTS;
     const resolvedDept = templateDept || deptList[0] || "Computer Science";
     const resolvedShift = isCampusShiftBased ? (templateShift || "Shift 1") : "General";
@@ -630,7 +631,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         }
 
         const defaultCG = (() => {
-          const campusDepts = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
+          const campusDepts = collegeCourses.map(c => c.name);
           const deptList = campusDepts.length > 0 ? campusDepts : FACULTY_DEPARTMENTS;
           const dept = templateDept || deptList[0] || "Computer Science";
           const shift = isCampusShiftBased ? (templateShift || "Shift 1") : "";
@@ -776,9 +777,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   }, []);
 
   // CAM Student Tracker audit states
-  const [camTrackerClass, setCamTrackerClass] = useState("");
+  const [camTrackerDept, setCamTrackerDept] = useState("");
+  const [camTrackerSemester, setCamTrackerSemester] = useState("");
   const [camTrackerSubject, setCamTrackerSubject] = useState("");
-  const [camTrackerWeek, setCamTrackerWeek] = useState<number>(1);
+  const [camTrackerWeek, setCamTrackerWeek] = useState<number | "">("");
 
   // Mentor CRUD states
   const [showMentorModal, setShowMentorModal] = useState(false);
@@ -793,7 +795,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     avatar: "",
     subjects: "",
     classes: "",
-    shift: "general",
     college_id: "",
     subject_group: ""
   });
@@ -850,7 +851,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "Faculty Name": "Dr. Anitha Ramesh",
         "Email Address": "anitha.ramesh@zentra.edu",
         "Department": "Computer Science",
-        "Shift": "Shift 1",
         "College ID": activeCollegeId || "college_1",
         "Subjects": "Data Structures, Web Development",
         "Classes": "Year 2 Section A, Year 3 Section B"
@@ -859,7 +859,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "Faculty Name": "Prof. Rajesh Kumar",
         "Email Address": "rajesh.kumar@zentra.edu",
         "Department": "Information Technology",
-        "Shift": "General Shift",
         "College ID": activeCollegeId || "college_1",
         "Subjects": "Database Systems, Python Programming",
         "Classes": "Year 1 Section A"
@@ -896,7 +895,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           const name = row.name || row.FacultyName || row.faculty_name || row["Faculty Name"] || row["Name"] || "";
           const email = row.email || row.EmailAddress || row.email_address || row["Email Address"] || row["Email"] || "";
           const dept = row.department || row.Department || row["Department"] || "Computer Science";
-          const shift = row.shift || row.Shift || row["Shift"] || "shift_1";
           const collegeId = row.college_id || row.collegeId || row["College ID"] || activeCollegeId || "";
           const subjects = row.subjects || row.Subjects || row["Subjects"] || "";
           const classes = row.classes || row.Classes || row["Classes"] || "";
@@ -908,7 +906,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             name: String(name).trim(),
             email: String(email).toLowerCase().trim(),
             department: String(dept).trim(),
-            shift: String(shift).toLowerCase().includes("2") ? "shift_2" : String(shift).toLowerCase().includes("gen") ? "general" : "shift_1",
             college_id: collegeId,
             subjects: String(subjects).trim(),
             classes: String(classes).trim(),
@@ -958,7 +955,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         avatar: m.avatar,
         subjects: m.subjects || "",
         classes: m.classes || "",
-        shift: m.shift || "general",
         college_id: m.college_id || activeCollegeId,
         subject_group: m.subject_group || "General"
       });
@@ -972,7 +968,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         avatar: "",
         subjects: "",
         classes: "",
-        shift: "general",
         college_id: activeCollegeId,
         subject_group: "General"
       });
@@ -1004,7 +999,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       headerId: null,
       subjects: mentorForm.subjects.trim(),
       classes: mentorForm.classes.trim(),
-      shift: mentorForm.shift as any,
       college_id: activeCollegeId,
       subject_group: mentorForm.subject_group.trim()
     };
@@ -1043,7 +1037,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   };
 
   // Derived filters and variables
-  const collegeCourses = useMemo(() => coursesList.filter(c => c.college_id === activeCollegeId), [coursesList, activeCollegeId]);
+  const collegeCourses = useMemo(() => coursesList.filter(c => !c.college_id || c.college_id === activeCollegeId), [coursesList, activeCollegeId]);
 
   const collegeMentors = useMemo(() => {
     return mentors.filter(m => m.college_id === activeCollegeId);
@@ -1086,16 +1080,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const fromSlots = collegeSlots.map(s => s.classGroup).filter(Boolean);
     return Array.from(new Set([...fromStudents, ...fromSlots])).sort();
   }, [collegeStudents, collegeSlots]);
-  const collegeSubjects = subjectsList.filter(s => s.college_id === activeCollegeId);
+  const collegeSubjects = subjectsList.filter(s => !s.college_id || s.college_id === activeCollegeId);
 
+  // Seed tracker department when subjects/departments load
   useEffect(() => {
-    if (distinctClasses.length > 0 && !camTrackerClass) {
-      setCamTrackerClass(distinctClasses[0] || "");
+    const collegeDepts = departmentsList.filter(d => !d.college_id || d.college_id === activeCollegeId);
+    if (collegeDepts.length > 0 && !camTrackerDept) {
+      setCamTrackerDept(collegeDepts[0].name.trim());
     }
-    if (collegeSubjects.length > 0 && !camTrackerSubject) {
-      setCamTrackerSubject(collegeSubjects[0].name);
-    }
-  }, [distinctClasses, collegeSubjects, camTrackerClass, camTrackerSubject]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [departmentsList, activeCollegeId]);
 
   // States for divided cohort filters
   const [selectedCohortCourse, setSelectedCohortCourse] = useState("");
@@ -1967,7 +1961,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const handleStartEditFaculty = (m: Mentor) => {
     setEditingFacultyId(m.id);
     setEditingWorkloadVal(facultyWorkloadLimits[m.id] || 16);
-    setEditingShiftVal(facultyShifts[m.id] || m.shift || "general");
+    setEditingShiftVal(facultyShifts[m.id] || "general");
   };
 
   const handleSaveFacultyConfig = async (id: string) => {
@@ -2172,7 +2166,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     };
 
     const deptSubjects = subjectsList.filter(
-      s => s.college_id === activeCollegeId && 
+      s => (!s.college_id || s.college_id === activeCollegeId) && 
            getCleanSemKey(s.semester) === getCleanSemKey(activeSem)
     );
 
@@ -4358,7 +4352,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             .map(m => {
                               const hoursCount = slots.filter(s => s.mentorId === m.id).length;
                               const limit = facultyWorkloadLimits[m.id] || 16;
-                              const shiftVal = facultyShifts[m.id] || m.shift || "general";
+                              const shiftVal = facultyShifts[m.id] || "general";
                               const pct = Math.min((hoursCount / limit) * 100, 100);
                               const isOverloaded = hoursCount > limit;
 
@@ -4701,7 +4695,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             {(() => {
                               const activeSem = timetableSubTab === "view" ? selectedCohortSem : genSelectedSemester;
                               const deptSubs = subjectsList.filter(
-                                s => s.college_id === activeCollegeId && 
+                                s => (!s.college_id || s.college_id === activeCollegeId) && 
                                      getCleanSemesterKey(s.semester) === getCleanSemesterKey(activeSem)
                               );
                               const classGroup = timetableSubTab === "view" ? viewerClassGroup : genClassGroup;
@@ -6430,22 +6424,66 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* Student Tracker Audit Tab */}
                   {activeTab === "tracker" && (() => {
-                    const collegeStudents = students.filter(s => !s.college_id || s.college_id === activeCollegeId);
-                    const distinctClasses = Array.from(new Set([
-                      ...collegeStudents.map(s => s.classGroup).filter(Boolean),
-                      ...weeklyTasks.map(t => t.class_group).filter(Boolean),
-                      ...studentTracker.map(st => st.class_group).filter(Boolean)
-                    ])).sort();
+                    // ── DB-driven cascading filters ───────────────────────────────────────
+                    // Helper: match college_id loosely (includes subjects with null college_id
+                    // as well as those explicitly tied to this campus)
+                    const matchesCollege = (id?: string | null) =>
+                      !id || id === activeCollegeId;
 
-                    const trackerSubjects = collegeSubjects.length > 0
-                      ? collegeSubjects
-                      : Array.from(new Set([
-                          ...weeklyTasks.map(t => t.subject).filter(Boolean),
-                          ...studentTracker.map(st => st.subject).filter(Boolean)
-                        ])).map(name => ({ id: name, name }));
+                    // Step 1: Departments from DB scoped to this college
+                    const trackerDepts = departmentsList
+                      .filter(d => matchesCollege(d.college_id))
+                      .map(d => d.name.trim())
+                      .filter(Boolean)
+                      .sort();
+                    // Deduplicate case-insensitively
+                    const trackerDeptsUniq = Array.from(
+                      new Map(trackerDepts.map(d => [d.toLowerCase(), d])).values()
+                    );
 
-                    const activeClass = camTrackerClass || (distinctClasses[0] || "");
-                    const activeSubject = camTrackerSubject || (collegeSubjects[0]?.name || "");
+                    const activeDept = camTrackerDept || trackerDeptsUniq[0] || "";
+
+                    // Step 2: Semesters from subjects table for the chosen department
+                    const trackerSemesters = Array.from(new Set(
+                      subjectsList
+                        .filter(s => matchesCollege(s.college_id) &&
+                                     (s.department?.trim().toLowerCase() === activeDept.trim().toLowerCase() ||
+                                      s.department?.trim().toLowerCase().includes(activeDept.trim().toLowerCase()) ||
+                                      activeDept.trim().toLowerCase().includes(s.department?.trim().toLowerCase() || "")))
+                        .map(s => s.semester)
+                        .filter(Boolean)
+                    )).sort((a, b) => {
+                      const na = parseInt((a || "").replace(/\D/g, "") || "0");
+                      const nb = parseInt((b || "").replace(/\D/g, "") || "0");
+                      return na - nb;
+                    });
+
+                    const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+                    const finalSemesters = trackerSemesters.length > 0 ? trackerSemesters : defaultSems;
+                    const activeSemester = camTrackerSemester || finalSemesters[0] || "Semester 1";
+
+                    // Step 3: Subjects from DB filtered by dept + semester
+                    const trackerSubjectObjs = subjectsList.filter(
+                      s => matchesCollege(s.college_id) &&
+                           (s.department?.trim().toLowerCase() === activeDept.trim().toLowerCase() ||
+                            s.department?.trim().toLowerCase().includes(activeDept.trim().toLowerCase()) ||
+                            activeDept.trim().toLowerCase().includes(s.department?.trim().toLowerCase() || "")) &&
+                           (s.semester?.trim().toLowerCase() === activeSemester.trim().toLowerCase() || !s.semester)
+                    );
+
+                    const activeSubject = camTrackerSubject || trackerSubjectObjs[0]?.name || "";
+                    const activeClassGroup = `${activeDept} - ${activeSemester}`;
+
+                    // Step 4: Weeks 1 to 15 (always selectable so CAM can audit any week)
+                    const assignedWeekNums = new Set(
+                      weeklyTasks
+                        .filter(t => (isSubjectNameMatch(t.subject, activeSubject) || t.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
+                                     (isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) ||
+                                      t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim())))
+                        .map(t => t.week_number)
+                    );
+
+                    const activeWeek: number = typeof camTrackerWeek === "number" ? camTrackerWeek : 1;
 
                     return (
                       <div className="space-y-6 font-sans">
@@ -6458,51 +6496,73 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             <div>
                               <h2 className="text-lg font-black text-slate-800 leading-tight">Student Performance &amp; Task Audit Console</h2>
                               <p className="text-xs text-slate-455 font-medium mt-0.5">
-                                Monitor and review weekly tasks, student submissions, and evaluations across all classes.
+                                Filter by department, semester and subject to audit weekly task submissions.
                               </p>
                             </div>
                           </div>
                         </div>
 
-                        {/* Selectors and Filters */}
-                        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-wrap gap-4 items-end">
-                          <div className="flex-1 min-w-[200px] space-y-1.5">
-                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Class Group</label>
+                        {/* Cascading Filters — all values come from DB */}
+                        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                          {/* 1. Department */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Department</label>
                             <select
-                              value={activeClass}
-                              onChange={(e) => setCamTrackerClass(e.target.value)}
+                              value={activeDept}
+                              onChange={(e) => {
+                                setCamTrackerDept(e.target.value);
+                                setCamTrackerSemester("");
+                                setCamTrackerSubject("");
+                                setCamTrackerWeek("");
+                              }}
                               className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
                             >
-                              {distinctClasses.map(c => (
-                                <option key={c} value={c}>{c}</option>
-                              ))}
-                              {distinctClasses.length === 0 && <option value="">No class groups</option>}
+                              {trackerDeptsUniq.map(d => <option key={d} value={d}>{d}</option>)}
+                              {trackerDeptsUniq.length === 0 && <option value="">No departments</option>}
                             </select>
                           </div>
-
-                          <div className="flex-1 min-w-[200px] space-y-1.5">
+                          {/* 2. Semester */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Semester</label>
+                            <select
+                              value={activeSemester}
+                              onChange={(e) => {
+                                setCamTrackerSemester(e.target.value);
+                                setCamTrackerSubject("");
+                                setCamTrackerWeek(1);
+                              }}
+                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                            >
+                              {finalSemesters.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                          {/* 3. Subject */}
+                          <div className="space-y-1.5">
                             <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Subject</label>
                             <select
                               value={activeSubject}
-                              onChange={(e) => setCamTrackerSubject(e.target.value)}
+                              onChange={(e) => {
+                                setCamTrackerSubject(e.target.value);
+                                setCamTrackerWeek(1);
+                              }}
                               className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
                             >
-                              {collegeSubjects.map(s => (
-                                <option key={s.id} value={s.name}>{s.name}</option>
-                              ))}
-                              {collegeSubjects.length === 0 && <option value="">No subjects found</option>}
+                              {trackerSubjectObjs.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                              {trackerSubjectObjs.length === 0 && <option value="">General Subject</option>}
                             </select>
                           </div>
-
-                          <div className="w-[120px] space-y-1.5">
-                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Week Number</label>
+                          {/* 4. Week */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Week</label>
                             <select
-                              value={camTrackerWeek}
+                              value={activeWeek}
                               onChange={(e) => setCamTrackerWeek(parseInt(e.target.value, 10))}
                               className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
                             >
                               {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
-                                <option key={wk} value={wk}>Week {wk}</option>
+                                <option key={wk} value={wk}>
+                                  Week {wk} {assignedWeekNums.has(wk) ? "(Assigned)" : ""}
+                                </option>
                               ))}
                             </select>
                           </div>
@@ -6510,34 +6570,33 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                       {/* Assigned Task Detail Card */}
                       {(() => {
+                        if (!activeSubject || activeWeek === null) return null;
                         const currentTask = weeklyTasks.find(
-                          t => t.class_group.toLowerCase().trim() === activeClass.toLowerCase().trim() &&
-                               t.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim() &&
-                               t.week_number === camTrackerWeek
+                          t => (isSubjectNameMatch(t.subject, activeSubject) || t.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
+                               t.week_number === activeWeek &&
+                               (isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) ||
+                                t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim()))
                         );
-
                         const mentor = currentTask ? mentors.find(m => m.id === currentTask.mentor_id) : null;
-
                         return (
                           <div className="bg-gradient-to-r from-indigo-500/5 via-teal-500/5 to-transparent border border-indigo-100 rounded-3xl p-6 shadow-xs space-y-3">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <BookOpen className="h-4.5 w-4.5 text-indigo-500" />
                               <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
-                                Week {camTrackerWeek} Task Assignment Details
+                                Week {activeWeek} — {activeSubject} — Task Details
                               </h3>
+                              <span className="ml-auto flex gap-2 text-[9px] font-bold">
+                                <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700">{activeDept}</span>
+                                <span className="px-2 py-0.5 rounded-full bg-purple-50 border border-purple-100 text-purple-700">{activeSemester}</span>
+                              </span>
                             </div>
-
                             {currentTask ? (
                               <div className="bg-white/80 border border-white/50 p-4 rounded-2xl flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                                 <div className="space-y-1">
                                   <div className="text-xs font-extrabold text-slate-800">{currentTask.task_name}</div>
                                   {currentTask.task_pdf_url && (
-                                    <a
-                                      href={currentTask.task_pdf_url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1"
-                                    >
+                                    <a href={currentTask.task_pdf_url} target="_blank" rel="noreferrer"
+                                      className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1">
                                       <BookOpen className="h-3 w-3" /> View Reference Document
                                     </a>
                                   )}
@@ -6551,7 +6610,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               </div>
                             ) : (
                               <div className="text-center py-4 bg-white/50 border border-dashed border-indigo-200 rounded-2xl">
-                                <p className="text-xs text-slate-455 italic">No task assigned for Week {camTrackerWeek} yet.</p>
+                                <p className="text-xs text-slate-455 italic">No task assigned for Week {activeWeek} · {activeSubject}.</p>
                               </div>
                             )}
                           </div>
@@ -6564,14 +6623,30 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           Submissions &amp; Evaluations Audit
                         </h3>
                         {(() => {
-                          const classStudents = students.filter(
-                            s => s.classGroup && s.classGroup.toLowerCase().trim() === activeClass.toLowerCase().trim()
-                          );
+                          if (!activeDept || !activeSemester || !activeSubject || activeWeek === null) {
+                            return (
+                              <div className="text-center py-8">
+                                <p className="text-xs text-slate-455 italic">Select department, semester, subject and week to view student submissions.</p>
+                              </div>
+                            );
+                          }
+
+                          // Students matched by dept + semester from DB with fallback cohort matching
+                          const classStudents = students.filter(s => {
+                            if (s.college_id && activeCollegeId && s.college_id !== activeCollegeId) return false;
+                            if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
+                            const sDept = (s.department || "").toLowerCase().trim();
+                            const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
+                            return (sDept === activeDept.toLowerCase().trim() || sDept.includes(activeDept.toLowerCase().trim()) || activeDept.toLowerCase().trim().includes(sDept)) &&
+                                   (sSem === activeSemester.toLowerCase().trim() || !activeSemester);
+                          });
 
                           if (classStudents.length === 0) {
                             return (
                               <div className="text-center py-8">
-                                <p className="text-xs text-slate-455 italic">No students registered in class &ldquo;{activeClass}&rdquo;.</p>
+                                <p className="text-xs text-slate-455 italic">
+                                  No students found for {activeDept} · {activeSemester}.
+                                </p>
                               </div>
                             );
                           }
@@ -6591,9 +6666,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   {classStudents.map(student => {
                                     const entry = studentTracker.find(
                                       e => e.student_id === student.id &&
-                                           e.class_group.toLowerCase().trim() === activeClass.toLowerCase().trim() &&
-                                           e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim() &&
-                                           e.week_number === camTrackerWeek
+                                           (isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
+                                           e.week_number === activeWeek
                                     );
 
                                     const marks = entry?.marks !== undefined && entry?.marks !== null ? entry.marks : null;
@@ -6611,7 +6685,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       <tr key={student.id} className="hover:bg-slate-50/40 transition-colors text-slate-700">
                                         <td className="p-3">
                                           <div className="font-bold text-slate-800">{student.name}</div>
-                                          <div className="text-[9px] text-slate-400 font-mono mt-0.5">{student.id}</div>
+                                          <div className="text-[9px] text-slate-400 mt-0.5">{student.classGroup || "—"}</div>
+                                          <div className="text-[9px] text-slate-400 font-mono">{student.id}</div>
                                         </td>
                                         <td className="p-3">
                                           {submissionUrl ? (
@@ -6676,7 +6751,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                           {/* Download Template: 3-part selector (Dept + Shift + Sem) + Download button */}
                           {(() => {
-                            const campusDeptNames = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
+                            const campusDeptNames = collegeCourses.map(c => c.name);
                             const deptOptions = campusDeptNames.length > 0 ? campusDeptNames : FACULTY_DEPARTMENTS;
                             const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
                             const selectedDept = templateDept || deptOptions[0] || "Computer Science";
@@ -7346,23 +7421,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         />
                       </div>
 
-                       {isCampusShiftBased && (
-                         <div className="space-y-1">
-                          <label className="text-[10px] text-slate-400 uppercase tracking-wider block">Shift Assignment</label>
-                          <select
-                            required
-                            value={mentorForm.shift}
-                            onChange={(e) => setMentorForm({ ...mentorForm, shift: e.target.value as any })}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                          >
-                            <option value="general">General Shift</option>
-                            <option value="shift_1">Shift 1</option>
-                            <option value="shift_2">Shift 2</option>
-                          </select>
-                        </div>
-                       )}
-
-                      <div className="space-y-1">
+                       <div className="space-y-1">
                         <label className="text-[10px] text-slate-400 uppercase tracking-wider block">Subject Group / Category</label>
                         <select
                           required
@@ -7865,7 +7924,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="p-3 bg-white border border-slate-200 rounded-2xl flex flex-col justify-center gap-1.5 shadow-xs sm:col-span-1">
                           <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Target Class Cohort</label>
                           {(() => {
-                            const campusDeptNames = coursesList.filter(c => c.college_id === activeCollegeId).map(c => c.name);
+                            const campusDeptNames = collegeCourses.map(c => c.name);
                             const deptOptions = campusDeptNames.length > 0 ? campusDeptNames : FACULTY_DEPARTMENTS;
                             const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
                             const current = studentImportPreview.targetClassGroup || "";

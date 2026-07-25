@@ -15,7 +15,6 @@ export interface Mentor {
   headerName?: string;
   subjects?: string;
   classes?: string;
-  shift?: ShiftType;
   college_id?: string;
   subject_group?: string;
 }
@@ -424,7 +423,7 @@ interface AppContextProps {
   deleteAcademicYear: (yearName: string) => Promise<{ success: boolean; message?: string }>;
   saveAcademicEvent: (event: any) => Promise<{ success: boolean; event?: any; message?: string }>;
   deleteAcademicEvent: (id: string) => Promise<{ success: boolean; message?: string }>;
-  saveFacultyConfig: (mentorId: string, maxHours: number, shift: string) => Promise<{ success: boolean; message?: string }>;
+  saveFacultyConfig: (mentorId: string, maxHours: number, shift?: string) => Promise<{ success: boolean; message?: string }>;
   signupRequests: any[];
   submitSignupRequest: (reqData: any) => Promise<{ success: boolean; message: string }>;
   approveSignupRequest: (id: string, mappingData: any) => Promise<{ success: boolean; message: string }>;
@@ -731,10 +730,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setCurrentMentor(m);
             localStorage.setItem("fp_user_snapshot", JSON.stringify(m));
             setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
-            if (m.shift) {
-              setCurrentShiftState(m.shift as ShiftType);
-              localStorage.setItem("fp_current_shift", m.shift);
-            }
           }
         } else if (parsedRole === "cam" && storedCamId) {
           let camFound = false;
@@ -875,10 +870,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
       if (m) {
         localStorage.setItem("fp_mentor_id", m.id);
-        if (m.shift) {
-          setCurrentShiftState(m.shift);
-          localStorage.setItem("fp_current_shift", m.shift);
-        }
       }
     } else if (role === "cam" && userId) {
       localStorage.setItem("fp_cam_id", userId);
@@ -1852,12 +1843,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const targetShiftKey = (shift || "general").toLowerCase().replace(/\s+/g, "_");
         const deptMentors = mentors.filter((m) => {
           if (!m.subjects || !m.subjects.trim()) return false;
-          if (m.shift) {
-            const mShiftKey = m.shift.toLowerCase().replace(/\s+/g, "_");
-            if (mShiftKey !== "general" && targetShiftKey !== "general" && mShiftKey !== targetShiftKey) {
-              return false;
-            }
-          }
           if (m.department) {
             const normDept = m.department.toLowerCase().replace(/[^a-z0-9]/g, "");
             const normGroup = normGroupName.replace(/[^a-z0-9]/g, "");
@@ -2602,12 +2587,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const saveFacultyConfig = async (mentorId: string, maxHours: number, shift: string) => {
+  const saveFacultyConfig = async (mentorId: string, maxHours: number, shift?: string) => {
     try {
       const res = await fetch("/api/faculty-constraints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mentorId, maxHours, shift }),
+        body: JSON.stringify({ mentorId, maxHours, ...(shift ? { shift } : {}) }),
       });
       const data = await res.json();
       if (data.success) {

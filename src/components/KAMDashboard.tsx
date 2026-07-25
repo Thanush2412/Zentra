@@ -227,7 +227,6 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                         <th className="p-3 text-left">Faculty Name</th>
                         <th className="p-3 text-left">Department</th>
                         <th className="p-3 text-left">Email</th>
-                        <th className="p-3 text-center">Shift</th>
                         <th className="p-3 text-center">Slots</th>
                         <th className="p-3 text-center">Status</th>
                       </tr>
@@ -247,11 +246,6 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                             </td>
                             <td className="p-3 text-slate-600 dark:text-slate-400">{m.department || "—"}</td>
                             <td className="p-3 text-slate-500 dark:text-slate-400 font-mono text-[10px]">{m.email}</td>
-                            <td className="p-3 text-center">
-                              <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[9px] font-black text-slate-600 dark:text-slate-300 uppercase">
-                                {m.shift || "general"}
-                              </span>
-                            </td>
                             <td className="p-3 text-center font-black text-slate-800 dark:text-white">{mentorSlots.length}</td>
                             <td className="p-3 text-center">
                               <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${

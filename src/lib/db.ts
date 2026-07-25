@@ -122,7 +122,6 @@ export function getDb(): Promise<TursoDbAdapter> {
       avatar TEXT NOT NULL,
       subjects TEXT,
       classes TEXT,
-      shift TEXT,
       college_id TEXT,
       employee_id TEXT,
       phone TEXT,

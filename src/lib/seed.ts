@@ -218,7 +218,6 @@ interface Mentor {
   department: string;
   subjects: string;
   classes: string;
-  shift: string;
   college_id?: string;
 }
 
@@ -260,25 +259,13 @@ function isClassMatch(classLabel: string, classesStr: string): boolean {
   return false;
 }
 
-function findMentor(course: string, label: string, shift: string, dbMentors: Mentor[]): Mentor | null {
-  const shiftLower = shift.toLowerCase();
-
+function findMentor(course: string, label: string, dbMentors: Mentor[]): Mentor | null {
   // Find candidates based on subject match
   let candidates = dbMentors.filter(m => isSubjectMatch(course, m.subjects));
 
-  // Filter candidates by class match
-  let classCandidates = candidates.filter(m => isClassMatch(label, m.classes));
+  // Narrow by class match if possible
+  const classCandidates = candidates.filter(m => isClassMatch(label, m.classes));
   if (classCandidates.length > 0) candidates = classCandidates;
-
-  // Filter by shift
-  let shiftMatches = candidates.filter(m => {
-    const mShift = m.shift.toLowerCase();
-    if (shiftLower === 'shift_1' && (mShift === 'shift_1' || mShift === 'i' || mShift === '1')) return true;
-    if (shiftLower === 'shift_2' && (mShift === 'shift_2' || mShift === 'ii' || mShift === '2')) return true;
-    if (shiftLower === 'general' || mShift === 'general') return true;
-    return false;
-  });
-  if (shiftMatches.length > 0) return shiftMatches[0];
 
   if (candidates.length > 0) return candidates[0];
 
@@ -300,13 +287,6 @@ function findMentor(course: string, label: string, shift: string, dbMentors: Men
   });
   
   if (deptMentors.length > 0) {
-    const shiftMatches = deptMentors.filter(m => {
-      const mShift = m.shift.toLowerCase();
-      if (shiftLower === 'shift_1' && (mShift === 'shift_1' || mShift === 'i' || mShift === '1')) return true;
-      if (shiftLower === 'shift_2' && (mShift === 'shift_2' || mShift === 'ii' || mShift === '2')) return true;
-      return false;
-    });
-    if (shiftMatches.length > 0) return shiftMatches[0];
     return deptMentors[0];
   }
 
@@ -440,8 +420,7 @@ function parseExcelData() {
           name: String(row[2]).trim(),
           dept: row[1] ? getCanonicalDept(String(row[1])) : '',
           subjects: row[3] ? String(row[3]).trim() : '',
-          classes: row[4] ? String(row[4]).trim() : '',
-          shift: row[5] !== undefined ? String(row[5]).trim() : 'general'
+          classes: row[4] ? String(row[4]).trim() : ''
         });
       }
     }
@@ -1122,14 +1101,6 @@ export async function seedDatabase() {
     initials = initials.slice(0, 2);
     if (!initials) initials = "M";
 
-    let mShift = "general";
-    const shiftStr = String(m.shift).trim().toLowerCase();
-    if (shiftStr.includes("1") || shiftStr === "i" || shiftStr === "shift_1") {
-      mShift = "shift_1";
-    } else if (shiftStr.includes("2") || shiftStr === "ii" || shiftStr === "shift_2") {
-      mShift = "shift_2";
-    }
-
     const collegeId = (cleanDept.toLowerCase().includes("management") || cleanDept.toLowerCase().includes("fashion"))
       ? targetCollege2
       : targetCollege1;
@@ -1146,8 +1117,8 @@ export async function seedDatabase() {
     }
 
     await db.run(
-      `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, shift, college_id, subject_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      mentorId, cleanName, email, cleanDept, initials, m.subjects || "", m.classes || "", mShift, collegeId, subjectGroup
+      `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, college_id, subject_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      mentorId, cleanName, email, cleanDept, initials, m.subjects || "", m.classes || "", collegeId, subjectGroup
     );
 
     dbMentors.push({
@@ -1156,7 +1127,7 @@ export async function seedDatabase() {
       department: cleanDept,
       subjects: m.subjects || "",
       classes: m.classes || "",
-      shift: mShift
+      college_id: collegeId
     });
   }
 
@@ -1311,7 +1282,7 @@ export async function seedDatabase() {
           canonicalCourseName = matchedName;
         }
 
-        const mentor = findMentor(canonicalCourseName, label, shift, dbMentors);
+        const mentor = findMentor(canonicalCourseName, label, dbMentors);
         const mentorId = mentor ? mentor.id : 'm1';
         const collegeId = mentor ? (mentor.college_id || 'college_1') : 'college_1';
 

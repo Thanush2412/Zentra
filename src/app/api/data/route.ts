@@ -86,14 +86,14 @@ export async function GET(request: Request) {
 
     if (collegeId) {
       filteredColleges = colleges;
-      filteredCourses = courses.filter((c: any) => c.college_id === collegeId);
+      filteredCourses = courses.filter((c: any) => c.college_id === collegeId || !c.college_id);
 
       filteredMentors = mentors.filter((m: any) => m.college_id === collegeId);
       const mentorIds = new Set(filteredMentors.map((m: any) => m.id));
 
       filteredSlots = slots.filter((s: any) => s.college_id === collegeId || (s.mentorId && mentorIds.has(s.mentorId)));
 
-      filteredSubjects = subjects.filter((s: any) => s.college_id === collegeId);
+      filteredSubjects = subjects.filter((s: any) => s.college_id === collegeId || !s.college_id);
 
       filteredStudents = students.filter((s: any) => s.college_id === collegeId);
       
@@ -101,8 +101,9 @@ export async function GET(request: Request) {
       filteredStudentAttendance = studentAttendance.filter((sa: any) => studentIds.has(sa.studentId || sa.student_id));
       filteredLeaveRequests = leaveRequests.filter((lr: any) => studentIds.has(lr.studentId || lr.student_id));
       
-      filteredWeeklyTasks = weeklyTasks;
-      filteredStudentTracker = studentTracker;
+      // Scope weekly tasks and tracker entries to this college's students and mentors
+      filteredWeeklyTasks = weeklyTasks.filter((t: any) => mentorIds.has(t.mentor_id));
+      filteredStudentTracker = studentTracker.filter((e: any) => studentIds.has(e.student_id));
 
       filteredRequests = requests.filter((r: any) => mentorIds.has(r.requestorId) || mentorIds.has(r.targetStaffId));
       filteredApprovedHandovers = approvedHandovers.filter((h: any) => mentorIds.has(h.originalMentorId) || mentorIds.has(h.coverStaffId));
@@ -122,7 +123,6 @@ export async function GET(request: Request) {
         avatar: m.avatar,
         subjects: m.subjects,
         classes: m.classes,
-        shift: m.shift,
         college_id: m.college_id,
         employee_id: m.employee_id,
         phone: m.phone,
