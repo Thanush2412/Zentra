@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb, syncMentorSubjectGroups } from "@/lib/db";
+import { hashPassword } from "@/lib/auth";
 
 export async function POST(request: Request) {
   try {
@@ -21,12 +22,13 @@ export async function POST(request: Request) {
     // Clean old credentials associated with this email
     await db.run("DELETE FROM users WHERE LOWER(email) = ?", cleanEmail);
 
-    // Create corresponding entry in centralized users table
+    // Create corresponding entry in centralized users table with hashed default password
     const now = new Date().toISOString();
+    const defaultHashed = hashPassword("password123");
     await db.run(
       `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, cleanEmail, "password123", "mentor", id, "Active", now, now]
+      [id, cleanEmail, defaultHashed, "mentor", id, "Active", now, now]
     );
 
     await syncMentorSubjectGroups(db);
@@ -58,12 +60,16 @@ export async function PUT(request: Request) {
     // Clean old credentials associated with this email (excluding current Mentor ID)
     await db.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, id]);
 
+    // Check existing user to preserve password_hash
+    const existingUser = await db.get("SELECT password_hash FROM users WHERE role = 'mentor' AND reference_id = ?", id);
+    const passHashToKeep = existingUser?.password_hash || hashPassword("password123");
+
     // Create or update centralized users table entry
     const now = new Date().toISOString();
     await db.run(
       `INSERT OR REPLACE INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, cleanEmail, "password123", "mentor", id, "Active", now, now]
+      [id, cleanEmail, passHashToKeep, "mentor", id, "Active", now, now]
     );
 
     await syncMentorSubjectGroups(db);

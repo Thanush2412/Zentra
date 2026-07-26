@@ -82,34 +82,28 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, message: "Missing id" }, { status: 400 });
     }
 
-    await db.run("BEGIN TRANSACTION;");
+    // Look up the subject first so we can cascade-delete related slots
+    const subject = await db.get("SELECT name, department FROM subjects WHERE id = ?", id);
 
-    try {
-      const subject = await db.get("SELECT name, department FROM subjects WHERE id = ?", id);
-      if (subject) {
-        const slotsList = await db.all(
-          "SELECT id FROM slots WHERE LOWER(course) = LOWER(?) AND (LOWER(department) = LOWER(?) OR department IS NULL OR department = '')",
-          subject.name, subject.department
-        );
-        const slotIds = slotsList.map(s => s.id);
+    if (subject) {
+      const slotsList = await db.all(
+        "SELECT id FROM slots WHERE LOWER(course) = LOWER(?) AND (LOWER(department) = LOWER(?) OR department IS NULL OR department = '')",
+        subject.name, subject.department
+      );
+      const slotIds = slotsList.map((s: any) => s.id);
 
-        if (slotIds.length > 0) {
-          const placeholders = slotIds.map(() => "?").join(",");
-          await db.run(`DELETE FROM student_attendance WHERE slotId IN (${placeholders})`, slotIds);
-          await db.run(`DELETE FROM handover_requests WHERE slotId IN (${placeholders})`, slotIds);
-          await db.run(`DELETE FROM approved_handovers WHERE slotId IN (${placeholders})`, slotIds);
-          await db.run(`DELETE FROM slots WHERE id IN (${placeholders})`, slotIds);
-        }
+      if (slotIds.length > 0) {
+        const placeholders = slotIds.map(() => "?").join(",");
+        await db.run(`DELETE FROM student_attendance WHERE slotId IN (${placeholders})`, slotIds);
+        await db.run(`DELETE FROM handover_requests WHERE slotId IN (${placeholders})`, slotIds);
+        await db.run(`DELETE FROM approved_handovers WHERE slotId IN (${placeholders})`, slotIds);
+        await db.run(`DELETE FROM slots WHERE id IN (${placeholders})`, slotIds);
       }
-
-      await db.run(`DELETE FROM subjects WHERE id = ?`, id);
-
-      await db.run("COMMIT;");
-      return NextResponse.json({ success: true, message: "Subject and all associated slots deleted successfully." });
-    } catch (txError) {
-      try { await db.run("ROLLBACK;"); } catch (_) {}
-      throw txError;
     }
+
+    await db.run(`DELETE FROM subjects WHERE id = ?`, id);
+
+    return NextResponse.json({ success: true, message: "Subject and all associated slots deleted successfully." });
   } catch (error: any) {
     console.error("API DELETE Subjects error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

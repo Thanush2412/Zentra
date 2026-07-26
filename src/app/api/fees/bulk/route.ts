@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { hashPassword } from "@/lib/auth";
 
 export async function POST(request: Request) {
   try {
@@ -106,18 +107,20 @@ export async function POST(request: Request) {
           const dept = row.t && String(row.t).toLowerCase().includes("fintec") ? "B. Com(Fintech)" : (row.year || "B. Com");
           const classGroup = `${dept} Year II`;
 
+          const defaultPassHash = hashPassword("123456");
+
           // Insert into students table
           await db.run(
             `INSERT INTO students (id, name, email, classGroup, department, college_id, phone, register_number, password_hash, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [newStudentId, row.studentName, email, classGroup, dept, collegeId, row.phone || "", rowReg, "123456", now, now]
+            [newStudentId, row.studentName, email, classGroup, dept, collegeId, row.phone || "", rowReg, defaultPassHash, now, now]
           );
 
           // Insert into users table
           await db.run(
             `INSERT INTO users (id, email, password_hash, role, reference_id, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [newStudentId, email, "123456", "student", newStudentId, now, now]
+            [newStudentId, email, defaultPassHash, "student", newStudentId, now, now]
           );
 
           // Assign to student reference for subsequent fee insertion

@@ -137,36 +137,29 @@ export async function POST(request: Request) {
       }
 
       if (status === "approved") {
-        await db.run("BEGIN TRANSACTION;");
-        try {
-          // Update the main demo session with proposed values
-          await db.run(
-            `UPDATE demo_sessions 
-             SET mentorId = COALESCE(?, mentorId),
-                 mentorName = COALESCE(?, mentorName),
-                 smeId = COALESCE(?, smeId),
-                 smeName = COALESCE(?, smeName),
-                 dateStr = COALESCE(?, dateStr),
-                 timeSlot = COALESCE(?, timeSlot)
-             WHERE id = ?`,
-            [
-              req.proposedMentorId,
-              req.proposedMentorName,
-              req.proposedSmeId,
-              req.proposedSmeName,
-              req.proposedDateStr,
-              req.proposedTimeSlot,
-              req.sessionId
-            ]
-          );
+        // Update the main demo session with proposed values
+        await db.run(
+          `UPDATE demo_sessions 
+           SET mentorId = COALESCE(?, mentorId),
+               mentorName = COALESCE(?, mentorName),
+               smeId = COALESCE(?, smeId),
+               smeName = COALESCE(?, smeName),
+               dateStr = COALESCE(?, dateStr),
+               timeSlot = COALESCE(?, timeSlot)
+           WHERE id = ?`,
+          [
+            req.proposedMentorId,
+            req.proposedMentorName,
+            req.proposedSmeId,
+            req.proposedSmeName,
+            req.proposedDateStr,
+            req.proposedTimeSlot,
+            req.sessionId
+          ]
+        );
 
-          // Update the request status
-          await db.run("UPDATE demo_swap_requests SET status = 'approved' WHERE id = ?", [requestId]);
-          await db.run("COMMIT;");
-        } catch (txError) {
-          await db.run("ROLLBACK;");
-          throw txError;
-        }
+        // Update the request status
+        await db.run("UPDATE demo_swap_requests SET status = 'approved' WHERE id = ?", [requestId]);
 
         // Audit Log
         const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);

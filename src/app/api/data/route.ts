@@ -66,7 +66,7 @@ export async function GET(request: Request) {
       db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC").catch(() => []),
       db.all("SELECT * FROM campus_issues ORDER BY created_at DESC").catch(() => []),
       db.all("SELECT * FROM academic_years").catch(() => []),
-      db.all("SELECT * FROM academic_events ORDER BY start_date ASC").catch(() => [])
+      db.all("SELECT * FROM academic_events ORDER BY date ASC").catch(() => [])
     ]);
 
     let filteredColleges = colleges;
@@ -172,7 +172,41 @@ export async function GET(request: Request) {
     });
   } catch (error: any) {
     console.error("API GET Data error:", error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    // On network timeout or connection reset, return safe structured fallback to prevent frontend crashes
+    return NextResponse.json({
+      success: true,
+      isFallback: true,
+      error: error.message,
+      mentors: [],
+      slots: [],
+      requests: [],
+      approvedHandovers: [],
+      auditLogs: [],
+      subjects: [],
+      departments: [],
+      courses: [],
+      students: [],
+      studentAttendance: [],
+      leaveRequests: [],
+      colleges: [],
+      notifications: [],
+      announcements: [],
+      holidays: [],
+      loginHistory: [],
+      users: [],
+      weeklyTasks: [],
+      studentTracker: [],
+      smes: [],
+      demoSessions: [],
+      subjectGroups: [],
+      demoRules: [],
+      demoSwapRequests: [],
+      signupRequests: [],
+      kamTasks: [],
+      campusIssues: [],
+      academicYears: [],
+      academicEvents: []
+    });
   }
 }
 
@@ -208,6 +242,24 @@ export async function POST(request: Request) {
       await db.run("DELETE FROM announcements");
       await db.run("DELETE FROM notifications");
       await db.run("DELETE FROM users");
+      await db.run("DELETE FROM weekly_tasks");
+      await db.run("DELETE FROM student_tracker");
+      await db.run("DELETE FROM fee_payments");
+      await db.run("DELETE FROM student_fees");
+      await db.run("DELETE FROM sme_users");
+      await db.run("DELETE FROM demo_sessions");
+      await db.run("DELETE FROM demo_swap_requests");
+      await db.run("DELETE FROM demo_rules");
+      await db.run("DELETE FROM subject_groups");
+      await db.run("DELETE FROM campus_daily_configs");
+      await db.run("DELETE FROM signup_requests");
+      await db.run("DELETE FROM faculty_configs");
+      await db.run("DELETE FROM kam_tasks");
+      await db.run("DELETE FROM campus_issues");
+      await db.run("DELETE FROM academic_years");
+      await db.run("DELETE FROM academic_events");
+      await db.run("DELETE FROM feedback_reports");
+      await db.run("DELETE FROM campus_drafts");
       
       // Ensure admin exists
       await db.run("DELETE FROM admin_users");

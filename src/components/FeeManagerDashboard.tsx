@@ -366,6 +366,12 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     return Array.from(set).sort();
   }, [availableYears]);
 
+  useEffect(() => {
+    if (availableYears.length > 0 && !availableYears.includes(selectedReportYear)) {
+      setSelectedReportYear(availableYears[0]);
+    }
+  }, [availableYears]);
+
   const reportsData = useMemo(() => {
     if (!data) return null;
 

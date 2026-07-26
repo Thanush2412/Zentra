@@ -4,25 +4,7 @@ import { getDb } from "@/lib/db";
 export async function GET() {
   try {
     const db = await getDb();
-    let issues = await db.all("SELECT * FROM campus_issues ORDER BY escalatedAt DESC");
-    
-    if (issues.length === 0) {
-      // Auto-seed default issues
-      await db.run(
-        `INSERT INTO campus_issues 
-         (id, title, type, priority, desc, status, collegeId, collegeName, escalated, escalatedAt, resolvedAt) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ["i1", "Smartboard malfunctioning in Hall 102", "infrastructure", "medium", "Interactive display is flickering during Lectures.", "resolved", "college_1", "Sri Amaraavathi College", 0, "2026-06-28", "2026-06-28"]
-      );
-      await db.run(
-        `INSERT INTO campus_issues 
-         (id, title, type, priority, desc, status, collegeId, collegeName, escalated, escalatedAt) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ["i2", "Low attendance alert for CS-A cohort", "student", "high", "Average attendance for B.SC CS Test Prep has dropped to 68%.", "pending", "college_1", "Sri Amaraavathi College", 1, "2026-06-28"]
-      );
-      issues = await db.all("SELECT * FROM campus_issues ORDER BY escalatedAt DESC");
-    }
-
+    const issues = await db.all("SELECT * FROM campus_issues ORDER BY escalatedAt DESC");
     return NextResponse.json({ success: true, issues });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

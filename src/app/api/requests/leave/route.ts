@@ -71,7 +71,8 @@ export async function PUT(request: Request) {
     // If approved, update student attendance records for that day to 'present' (excused) for all classes of their classGroup
     if (status === "approved") {
       // Find all slots scheduled for this student's classGroup on the day of the week matching dateStr
-      const reqDate = new Date(leaveReq.dateStr);
+      const dateString = leaveReq.dateStr.includes("T") ? leaveReq.dateStr : leaveReq.dateStr + "T00:00:00";
+      const reqDate = new Date(dateString);
       const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
       const dayOfWeek = days[reqDate.getDay()];
 

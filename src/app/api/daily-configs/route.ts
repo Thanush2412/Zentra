@@ -27,44 +27,58 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { college_id, dateStr, day_type, day_order, notes, session_mode } = body;
+    const { college_id, dateStr, startDate, endDate, day_type, day_order, notes, session_mode } = body;
 
-    if (!college_id || !dateStr || !day_type || !day_order) {
+    if (!college_id || (!dateStr && (!startDate || !endDate)) || !day_type || !day_order) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
-    const id = `${college_id}_${dateStr}`;
-    
-    await db.run(
-      `INSERT OR REPLACE INTO campus_daily_configs (id, college_id, dateStr, day_type, day_order, session_mode, notes, updated_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-      id, college_id, dateStr, day_type, day_order, session_mode || "Offline", notes || ""
-    );
+    // Build array of dates to process
+    const datesToProcess: string[] = [];
+    if (startDate && endDate) {
+      let cur = new Date(startDate);
+      const end = new Date(endDate);
+      while (cur <= end) {
+        datesToProcess.push(cur.toISOString().split("T")[0]);
+        cur.setDate(cur.getDate() + 1);
+      }
+    } else if (dateStr) {
+      datesToProcess.push(dateStr);
+    }
 
-    // 1. Insert Database Notifications for all Students & Mentors of this college
-    try {
-      const users = await db.all(
-        `SELECT id FROM users WHERE reference_id IN (SELECT id FROM mentors WHERE college_id = ?)
-         UNION
-         SELECT id FROM users WHERE reference_id IN (SELECT id FROM students WHERE college_id = ?)`,
-        college_id
+    for (const dStr of datesToProcess) {
+      const id = `${college_id}_${dStr}`;
+      await db.run(
+        `INSERT OR REPLACE INTO campus_daily_configs (id, college_id, dateStr, day_type, day_order, session_mode, notes, updated_at) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        id, college_id, dStr, day_type, day_order, session_mode || "Offline", notes || ""
       );
 
-      for (const u of users) {
-        const notifId = "n_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
-        const displayType = day_type === "holiday" ? "Holiday" : day_type === "event" ? "Event" : day_type === "exam_day" ? "Exam Day" : "Working Day";
-        await db.run(
-          `INSERT INTO notifications (id, user_id, title, message, type, is_read, created_at)
-           VALUES (?, ?, ?, ?, ?, 0, datetime('now'))`,
-          notifId,
-          u.id,
-          `Campus Schedule Update: ${dateStr}`,
-          `The calendar schedule for ${dateStr} has been configured as a ${displayType} (${day_order === "None" ? "No Day Order" : day_order}) operating in ${session_mode || "Offline"} mode. Notes: ${notes || "None"}`,
-          day_type === "holiday" ? "warning" : "info"
+      // 1. Insert Database Notifications for all Students & Mentors of this college
+      try {
+        const users = await db.all(
+          `SELECT id FROM users WHERE reference_id IN (SELECT id FROM mentors WHERE college_id = ?)
+           UNION
+           SELECT id FROM users WHERE reference_id IN (SELECT id FROM students WHERE college_id = ?)`,
+          college_id
         );
+
+        for (const u of users) {
+          const notifId = "n_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
+          const displayType = day_type === "holiday" ? "Holiday" : day_type === "event" ? "Event" : day_type === "exam_day" ? "Exam Day" : "Working Day";
+          await db.run(
+            `INSERT INTO notifications (id, user_id, title, message, type, is_read, created_at)
+             VALUES (?, ?, ?, ?, ?, 0, datetime('now'))`,
+            notifId,
+            u.id,
+            `Campus Schedule Update: ${dStr}`,
+            `The calendar schedule for ${dStr} has been configured as a ${displayType} (${day_order === "None" ? "No Day Order" : day_order}) operating in ${session_mode || "Offline"} mode. Notes: ${notes || "None"}`,
+            day_type === "holiday" ? "warning" : "info"
+          );
+        }
+      } catch (errNotif) {
+        console.error("Failed to write daily-config db notifications:", errNotif);
       }
-    } catch (errNotif) {
-      console.error("Failed to write daily-config db notifications:", errNotif);
     }
 
     // 2. Dispatch Email Notifications to all Mentors of this college

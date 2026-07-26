@@ -10,8 +10,9 @@ import {
   ArrowRightLeft, TrendingUp, Clock, XCircle, ChevronRight,
   GraduationCap, BookOpen, Eye, CheckCircle, Calendar,
   ChevronDown, ChevronUp, Search, Activity, Layers,
-  IndianRupee, BarChart2, BookMarked, AlertCircle, UserCheck
+  IndianRupee, BarChart2, BookMarked, AlertCircle, UserCheck, Loader2
 } from "lucide-react";
+import { LoadingButton } from "./ui/LoadingButton";
 import { Button } from "./Button";
 import { Card } from "./Card";
 import { Panel } from "./Panel";
@@ -674,6 +675,10 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
   const [taskCollegeId, setTaskCollegeId] = useState("");
   const [taskPriority, setTaskPriority] = useState("medium");
   const [taskDueDate, setTaskDueDate] = useState("");
+  const [loadingActions, setLoadingActions] = useState<Record<string, boolean>>({});
+  const setActionLoading = (key: string, loading: boolean) => {
+    setLoadingActions(prev => ({ ...prev, [key]: loading }));
+  };
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -751,25 +756,40 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskTitle.trim() || !taskDueDate) return;
-    const res = await saveKamTask({ title: taskTitle, collegeId: taskCollegeId, priority: taskPriority, status: "pending", dueDate: taskDueDate });
-    if (res.success) { setTaskTitle(""); setTaskDueDate(""); toast("Task assigned successfully.", "success"); }
-    else toast(res.message || "Failed to create task", "error");
+    setActionLoading('submit_task', true);
+    try {
+      const res = await saveKamTask({ title: taskTitle, collegeId: taskCollegeId, priority: taskPriority, status: "pending", dueDate: taskDueDate });
+      if (res.success) { setTaskTitle(""); setTaskDueDate(""); toast("Task assigned successfully.", "success"); }
+      else toast(res.message || "Failed to create task", "error");
+    } finally {
+      setActionLoading('submit_task', false);
+    }
   };
 
   const handleDeleteTask = async (id: string) => {
-    const res = await deleteKamTask(id);
-    if (res.success) {
-      await refreshData();
-      toast("Task deleted.", "success");
-    } else toast(res.message || "Failed to delete task", "error");
+    setActionLoading(`delete_task_${id}`, true);
+    try {
+      const res = await deleteKamTask(id);
+      if (res.success) {
+        await refreshData();
+        toast("Task deleted.", "success");
+      } else toast(res.message || "Failed to delete task", "error");
+    } finally {
+      setActionLoading(`delete_task_${id}`, false);
+    }
   };
 
   const handleResolveEscalation = async (id: string) => {
-    const res = await updateCampusIssueStatus(id, "resolved", new Date().toLocaleDateString());
-    if (res.success) {
-      await refreshData();
-      toast("Issue resolved.", "success");
-    } else toast(res.message || "Failed to resolve", "error");
+    setActionLoading(`resolve_issue_${id}`, true);
+    try {
+      const res = await updateCampusIssueStatus(id, "resolved", new Date().toLocaleDateString());
+      if (res.success) {
+        await refreshData();
+        toast("Issue resolved.", "success");
+      } else toast(res.message || "Failed to resolve", "error");
+    } finally {
+      setActionLoading(`resolve_issue_${id}`, false);
+    }
   };
 
   // ── Portfolio-wide computed stats (must be declared BEFORE getNotificationCount) ─────
@@ -1056,6 +1076,234 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                   );
                 })}
               </div>
+
+              {/* ── Infographics Row ── */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+                {/* Campus Comparison Bar Chart */}
+                <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Campus Comparison</h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Faculty & students per campus</p>
+                    </div>
+                    <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-wider">
+                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-indigo-500 inline-block" />Faculty</span>
+                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-500 inline-block" />Students</span>
+                    </div>
+                  </div>
+                  {activeColleges.length === 0 ? (
+                    <div className="h-36 flex items-center justify-center text-xs text-slate-400 italic">No campuses assigned.</div>
+                  ) : (() => {
+                    const barData = activeColleges.map(c => ({
+                      name: c.name.length > 18 ? c.name.substring(0, 16) + "…" : c.name,
+                      faculty: mentors.filter(m => m.college_id === c.id).length,
+                      students: students.filter(s => s.college_id === c.id).length,
+                    }));
+                    const maxVal = Math.max(...barData.flatMap(d => [d.faculty, d.students]), 1);
+                    const chartH = 140;
+                    const barGroupW = Math.max(40, Math.floor(560 / Math.max(barData.length, 1)));
+                    const barW = Math.max(10, Math.floor(barGroupW * 0.35));
+                    const gap = 4;
+                    const totalW = barData.length * barGroupW;
+
+                    return (
+                      <div className="overflow-x-auto">
+                        <svg width={Math.max(totalW, 300)} height={chartH + 32} className="block mx-auto" style={{ minWidth: "100%" }}>
+                          {/* Gridlines */}
+                          {[0.25, 0.5, 0.75, 1].map(f => {
+                            const y = chartH - Math.round(f * chartH);
+                            return (
+                              <g key={f}>
+                                <line x1={0} y1={y} x2={Math.max(totalW, 300)} y2={y}
+                                  stroke="currentColor" strokeOpacity={0.06} strokeWidth={1} strokeDasharray="4 3" className="text-slate-400 dark:text-slate-600" />
+                                <text x={2} y={y - 2} fontSize={7} fill="currentColor" fillOpacity={0.35} className="text-slate-500">
+                                  {Math.round(f * maxVal)}
+                                </text>
+                              </g>
+                            );
+                          })}
+                          {barData.map((d, i) => {
+                            const x = i * barGroupW + barGroupW / 2;
+                            const fH = Math.max(3, Math.round((d.faculty / maxVal) * chartH));
+                            const sH = Math.max(3, Math.round((d.students / maxVal) * chartH));
+                            return (
+                              <g key={d.name}>
+                                {/* Faculty bar */}
+                                <rect
+                                  x={x - barW - gap / 2}
+                                  y={chartH - fH}
+                                  width={barW}
+                                  height={fH}
+                                  rx={3}
+                                  className="fill-indigo-500 dark:fill-indigo-400"
+                                  opacity={0.85}
+                                />
+                                {/* Students bar */}
+                                <rect
+                                  x={x + gap / 2}
+                                  y={chartH - sH}
+                                  width={barW}
+                                  height={sH}
+                                  rx={3}
+                                  className="fill-emerald-500 dark:fill-emerald-400"
+                                  opacity={0.85}
+                                />
+                                {/* Values */}
+                                {fH > 12 && (
+                                  <text x={x - barW / 2 - gap / 2} y={chartH - fH + 9} textAnchor="middle" fontSize={7} fill="white" fontWeight="700">{d.faculty}</text>
+                                )}
+                                {sH > 12 && (
+                                  <text x={x + barW / 2 + gap / 2} y={chartH - sH + 9} textAnchor="middle" fontSize={7} fill="white" fontWeight="700">{d.students}</text>
+                                )}
+                                {/* Campus label */}
+                                <text x={x} y={chartH + 14} textAnchor="middle" fontSize={8} fill="currentColor" fillOpacity={0.55} className="text-slate-500" fontWeight="600">
+                                  {d.name}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        </svg>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Request Pipeline Donut */}
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 shadow-sm flex flex-col">
+                  <div className="mb-4">
+                    <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Request Pipeline</h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">All handover requests status</p>
+                  </div>
+                  {(() => {
+                    const portfolioReqs = requests.filter(r => portfolioMentorIds.has(r.requestorId));
+                    const approved = portfolioReqs.filter(r => r.status === "approved").length;
+                    const pending = portfolioReqs.filter(r => r.status === "pending" || r.status === "pending_cam").length;
+                    const rejected = portfolioReqs.filter(r => r.status === "rejected").length;
+                    const total = portfolioReqs.length;
+                    if (total === 0) return (
+                      <div className="flex-1 flex items-center justify-center text-xs text-slate-400 italic">No requests yet.</div>
+                    );
+                    const segments = [
+                      { label: "Approved", value: approved, color: "#10b981" },
+                      { label: "Pending", value: pending, color: "#f59e0b" },
+                      { label: "Rejected", value: rejected, color: "#ef4444" },
+                    ].filter(s => s.value > 0);
+                    const r = 44, cx = 70, cy = 70, strokeW = 18;
+                    const circumference = 2 * Math.PI * r;
+                    let offset = 0;
+                    const arcs = segments.map(s => {
+                      const dash = (s.value / total) * circumference;
+                      const arc = { ...s, dash, offset };
+                      offset += dash;
+                      return arc;
+                    });
+                    return (
+                      <div className="flex flex-col items-center gap-4 flex-1 justify-center">
+                        <div className="relative">
+                          <svg width={140} height={140} viewBox="0 0 140 140">
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" strokeWidth={strokeW} className="text-slate-100 dark:text-slate-800" />
+                            {arcs.map(arc => (
+                              <circle key={arc.label} cx={cx} cy={cy} r={r} fill="none"
+                                stroke={arc.color} strokeWidth={strokeW}
+                                strokeDasharray={`${arc.dash} ${circumference - arc.dash}`}
+                                strokeDashoffset={circumference / 4 - arc.offset}
+                                strokeLinecap="butt"
+                                style={{ transition: "stroke-dasharray 0.5s ease" }}
+                              />
+                            ))}
+                            <text x={cx} y={cy - 6} textAnchor="middle" fontSize={20} fontWeight="900" fill="currentColor" className="text-slate-800 dark:text-white">{total}</text>
+                            <text x={cx} y={cy + 10} textAnchor="middle" fontSize={8} fill="currentColor" fillOpacity={0.5} className="text-slate-500" fontWeight="700" letterSpacing="1">TOTAL</text>
+                          </svg>
+                        </div>
+                        <div className="w-full space-y-2">
+                          {[
+                            { label: "Approved", value: approved, color: "bg-emerald-500" },
+                            { label: "Pending", value: pending, color: "bg-amber-400" },
+                            { label: "Rejected", value: rejected, color: "bg-rose-500" },
+                          ].map(s => (
+                            <div key={s.label} className="flex items-center gap-2">
+                              <span className={`h-2 w-2 rounded-full ${s.color} shrink-0`} />
+                              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex-1">{s.label}</span>
+                              <span className="text-[10px] font-black text-slate-800 dark:text-white">{s.value}</span>
+                              <span className="text-[9px] text-slate-400 font-semibold w-8 text-right">{total > 0 ? Math.round((s.value / total) * 100) : 0}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* ── Portfolio Health Row: Attendance + Fee gauges ── */}
+              {activeColleges.length > 0 && (() => {
+                const healthData = activeColleges.map(college => {
+                  const camData = camDataMap[college.id];
+                  const feeStats = feeStatsMap[college.id];
+                  const collegeStudentIds = new Set(students.filter(s => s.college_id === college.id).map(s => s.id));
+                  const collegeAtt = studentAttendance.filter((a: any) => collegeStudentIds.has(a.studentId));
+                  const presentCount = collegeAtt.filter((a: any) => a.status === "present" || a.status === "od").length;
+                  const attRate = collegeAtt.length > 0 ? Math.round((presentCount / collegeAtt.length) * 100) : null;
+                  const feeRate = feeStats?.collectionRate ?? null;
+                  return { name: college.name, attRate, feeRate };
+                });
+                return (
+                  <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 shadow-sm">
+                    <div className="mb-4">
+                      <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Portfolio Health</h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Attendance & fee collection rates per campus</p>
+                    </div>
+                    <div className="space-y-3">
+                      {healthData.map(d => (
+                        <div key={d.name} className="grid grid-cols-1 sm:grid-cols-[1fr_2fr_2fr] gap-x-4 gap-y-1.5 items-center">
+                          <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate">{d.name}</span>
+                          {/* Attendance bar */}
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-700"
+                                style={{
+                                  width: d.attRate !== null ? `${d.attRate}%` : "0%",
+                                  background: d.attRate === null ? "#e2e8f0"
+                                    : d.attRate >= 75 ? "linear-gradient(90deg,#10b981,#34d399)"
+                                    : "linear-gradient(90deg,#ef4444,#f87171)"
+                                }}
+                              />
+                            </div>
+                            <span className={`text-[10px] font-black w-10 text-right shrink-0 ${
+                              d.attRate === null ? "text-slate-400"
+                              : d.attRate >= 75 ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-rose-600 dark:text-rose-400"
+                            }`}>{d.attRate !== null ? `${d.attRate}%` : "—"}</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide w-14 shrink-0">Attend.</span>
+                          </div>
+                          {/* Fee bar */}
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-700"
+                                style={{
+                                  width: d.feeRate !== null ? `${d.feeRate}%` : "0%",
+                                  background: d.feeRate === null ? "#e2e8f0"
+                                    : d.feeRate >= 80 ? "linear-gradient(90deg,#6366f1,#a855f7)"
+                                    : "linear-gradient(90deg,#f59e0b,#fbbf24)"
+                                }}
+                              />
+                            </div>
+                            <span className={`text-[10px] font-black w-10 text-right shrink-0 ${
+                              d.feeRate === null ? "text-slate-400"
+                              : d.feeRate >= 80 ? "text-indigo-600 dark:text-indigo-400"
+                              : "text-amber-600 dark:text-amber-400"
+                            }`}>{d.feeRate !== null ? `${d.feeRate}%` : "—"}</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide w-14 shrink-0">Fees</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Per-Campus Summary Cards */}
               <Panel title="Campus Network Overview" subtitle="Snapshot of all colleges under your KAM portfolio">
@@ -1404,7 +1652,16 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                           options={[{ value: "high", label: "High" }, { value: "medium", label: "Medium" }, { value: "low", label: "Low" }]} />
                         <Input label="Due Date" type="date" value={taskDueDate} onChange={e => setTaskDueDate(e.target.value)} required />
                       </div>
-                      <Button type="submit" variant="gradient" size="md" icon={<PlusCircle className="h-4 w-4" />} className="w-full mt-2">Assign Task</Button>
+                      <LoadingButton
+                        type="submit"
+                        isLoading={loadingActions['submit_task']}
+                        loadingText="Assigning..."
+                        variant="gradient"
+                        icon={<PlusCircle className="h-4 w-4" />}
+                        className="w-full mt-2"
+                      >
+                        Assign Task
+                      </LoadingButton>
                     </form>
                   </Panel>
 
@@ -1458,10 +1715,15 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                               </div>
                               <button
                                 onClick={() => handleDeleteTask(t.id)}
-                                className="shrink-0 p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                                disabled={loadingActions[`delete_task_${t.id}`]}
+                                className="shrink-0 p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Delete task"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                {loadingActions[`delete_task_${t.id}`] ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
                               </button>
                             </div>
                           );
@@ -1501,7 +1763,15 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                           </div>
                         </div>
                         {esc.status === "pending" || esc.status === "open" ? (
-                          <Button variant="secondary" size="xs" onClick={() => handleResolveEscalation(esc.id)} className="w-full">Mark Resolved</Button>
+                          <LoadingButton
+                            variant="secondary"
+                            isLoading={loadingActions[`resolve_issue_${esc.id}`]}
+                            loadingText="Resolving..."
+                            onClick={() => handleResolveEscalation(esc.id)}
+                            className="w-full"
+                          >
+                            Mark Resolved
+                          </LoadingButton>
                         ) : (
                           <span className="w-full py-1.5 bg-emerald-500/10 text-emerald-650 dark:text-emerald-450 font-black border border-emerald-500/20 text-[10px] rounded text-center block">✓ Resolved</span>
                         )}

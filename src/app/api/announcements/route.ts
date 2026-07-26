@@ -1,6 +1,35 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
+export async function GET(request: Request) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    const collegeId = searchParams.get("college_id");
+    const targetRole = searchParams.get("target_role");
+
+    let query = "SELECT * FROM announcements WHERE 1=1";
+    const params: any[] = [];
+
+    if (collegeId) {
+      query += " AND (college_id = ? OR college_id IS NULL)";
+      params.push(collegeId);
+    }
+
+    if (targetRole) {
+      query += " AND (target_role = ? OR target_role = 'All' OR target_role IS NULL)";
+      params.push(targetRole);
+    }
+
+    query += " ORDER BY created_at DESC";
+
+    const announcements = await db.all(query, params);
+    return NextResponse.json({ success: true, announcements });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const db = await getDb();

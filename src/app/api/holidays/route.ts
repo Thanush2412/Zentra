@@ -26,6 +26,28 @@ export async function POST(request: Request) {
   }
 }
 
+export async function PUT(request: Request) {
+  try {
+    const db = await getDb();
+    const body = await request.json();
+    const { id, title, date, type, college_id } = body;
+
+    if (!id || !title || !date || !type) {
+      return NextResponse.json({ success: false, message: "Missing required fields for update" }, { status: 400 });
+    }
+
+    await db.run(
+      `UPDATE holidays SET title = ?, date = ?, type = ?, college_id = ? WHERE id = ?`,
+      [title, date, type, college_id || null, id]
+    );
+
+    return NextResponse.json({ success: true, message: "Holiday updated successfully." });
+  } catch (error: any) {
+    console.error("API PUT Holidays error:", error);
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     const db = await getDb();

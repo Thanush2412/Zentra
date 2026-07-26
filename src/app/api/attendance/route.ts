@@ -104,9 +104,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: `Status is already ${newStatus}.` });
       }
 
-      await db.run("BEGIN TRANSACTION;");
-      try {
-        if (existing) {
+      if (existing) {
           // Update existing
           await db.run(
             "UPDATE student_attendance SET status = ?, markedBy = ?, timestamp = ? WHERE studentId = ? AND slotId = ? AND dateStr = ?",
@@ -121,11 +119,13 @@ export async function POST(request: Request) {
           );
         }
 
-        // Increment student correction counter
-        await db.run(
-          "UPDATE students SET correction_count = COALESCE(correction_count, 0) + 1 WHERE id = ?",
-          [studentId]
-        );
+        // Increment student correction counter (only for non-admin standard corrections)
+        if (!isAdminOverride) {
+          await db.run(
+            "UPDATE students SET correction_count = COALESCE(correction_count, 0) + 1 WHERE id = ?",
+            [studentId]
+          );
+        }
 
         // Log into audit trail
         const logId = `l_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -147,16 +147,11 @@ export async function POST(request: Request) {
           ]
         );
 
-        await db.run("COMMIT;");
         return NextResponse.json({
           success: true,
           message: "Attendance corrected successfully.",
           newCount: currentCount + 1
         });
-      } catch (txError) {
-        await db.run("ROLLBACK;");
-        throw txError;
-      }
     }
 
     // ── FACULTY ATTENDANCE SUBMISSION ───────────────────────────────
@@ -182,9 +177,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Slot not found." }, { status: 404 });
     }
 
-    await db.run("BEGIN TRANSACTION;");
-    try {
-      // Delete existing
+    // Delete existing
       await db.run("DELETE FROM student_attendance WHERE slotId = ? AND dateStr = ?", [slotId, dateStr]);
 
       if (coveredSubject) {
@@ -233,12 +226,7 @@ export async function POST(request: Request) {
         [logId, "booking", description, actorName || "Faculty", actorRole || "Mentor", timestamp]
       );
 
-      await db.run("COMMIT;");
       return NextResponse.json({ success: true, message: "Attendance marked successfully.", insertedCount });
-    } catch (err) {
-      await db.run("ROLLBACK;");
-      throw err;
-    }
   } catch (error: any) {
     console.error("API POST Attendance error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

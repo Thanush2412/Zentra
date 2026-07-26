@@ -83,8 +83,14 @@ export function formatZentraEmail({
 
 export async function sendMail({ to, subject, htmlBody }: { to: string; subject: string; htmlBody: string }) {
   try {
-    // For demo purposes, we always send / copy to thanush@faceprep.in
-    const recipients = [to, "thanush@faceprep.in"].filter(Boolean).join(",");
+    // Validate recipient email address (Fix P2)
+    if (!to || !to.includes("@")) {
+      return { success: false, error: "Invalid recipient email address" };
+    }
+
+    // Opt-in audit BCC via env variable (Fix P1)
+    const auditBcc = process.env.ADMIN_AUDIT_EMAIL || "";
+    const recipients = [to.trim(), auditBcc].filter(Boolean).join(",");
     const gasUrl = process.env.NEXT_PUBLIC_GAS_MAIL_URL || "";
     
     if (!gasUrl) {

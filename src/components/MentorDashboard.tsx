@@ -39,7 +39,8 @@ import {
   Menu,
   Download,
   Lock,
-  Trash2
+  Trash2,
+  Loader2
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup } from "@/lib/utils";
@@ -1575,17 +1576,22 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       finalSubject = customSubjName.trim();
     }
 
-    await requestHandover(
-      currentMentor.id,
-      selectedCell.slot.id,
-      selectedCell.dateStr,
-      selectedCell.dateFormatted,
-      targetStaffId,
-      reasonText,
-      finalSubject
-    );
+    setSwapSubmitting(true);
+    try {
+      await requestHandover(
+        currentMentor.id,
+        selectedCell.slot.id,
+        selectedCell.dateStr,
+        selectedCell.dateFormatted,
+        targetStaffId,
+        reasonText,
+        finalSubject
+      );
 
-    setIsModalOpen(false);
+      setIsModalOpen(false);
+    } finally {
+      setSwapSubmitting(false);
+    }
   };
 
   return (
@@ -4389,7 +4395,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           disabled={isSubmittingAttendance || !isDayConfigSet}
                           className="flex-1 bg-slate-900 hover:bg-slate-900/90 text-white font-semibold rounded-md py-2.5 text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {isSubmittingAttendance ? "Saving..." : !isDayConfigSet ? "Type of Day Not Set" : "Confirm & Save"}
+                          {isSubmittingAttendance ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin shrink-0 text-current" />
+                              <span>Saving...</span>
+                            </>
+                          ) : !isDayConfigSet ? (
+                            "Type of Day Not Set"
+                          ) : (
+                            "Confirm & Save"
+                          )}
                         </button>
                       </div>
                     </div>
@@ -4539,10 +4554,20 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </button>
                     <button
                       type="submit"
-                      className="flex-1 btn-gradient text-white font-extrabold rounded-xl py-2.5 text-xs flex items-center justify-center gap-1.5 shadow-md transition-colors cursor-pointer border-none"
+                      disabled={swapSubmitting}
+                      className="flex-1 btn-gradient text-white font-extrabold rounded-xl py-2.5 text-xs flex items-center justify-center gap-1.5 shadow-md transition-colors cursor-pointer border-none disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      <Send className="h-3.5 w-3.5" />
-                      Request Handover
+                      {swapSubmitting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin shrink-0 text-white" />
+                          <span>Submitting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-3.5 w-3.5" />
+                          <span>Request Handover</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -6251,7 +6276,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     onClick={handleSubmitInternalSwap}
                     className="flex-grow px-4 py-2.5 text-xs font-black text-white bg-indigo-650 hover:bg-indigo-700 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-1.5 shadow-xs"
                   >
-                    {demoSwapSubmitting ? "Submitting..." : "Send Proposal"}
+                    {demoSwapSubmitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin shrink-0 text-current" />
+                        <span>Submitting...</span>
+                      </>
+                    ) : (
+                      "Send Proposal"
+                    )}
                   </button>
                 </div>
               </div>

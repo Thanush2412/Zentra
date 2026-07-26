@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { verifyPassword, hashPassword } from "@/lib/auth";
 
 export async function POST(request: Request) {
   try {
@@ -29,8 +30,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify current password
-    if (user.password_hash !== currentPassword) {
+    // Verify current password securely
+    if (!verifyPassword(currentPassword, user.password_hash)) {
       return NextResponse.json(
         { success: false, message: "Current password is incorrect." },
         { status: 400 }
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const hashedNewPass = hashPassword(trimmedNewPass);
     const nowStr = new Date().toISOString();
 
     // Update main users table
@@ -60,7 +62,7 @@ export async function POST(request: Request) {
       // Try with the must_change_password column
       await db.run(
         "UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
-        [trimmedNewPass, nowStr, user.id]
+        [hashedNewPass, nowStr, user.id]
       );
     } catch (error: any) {
       if (error.message?.includes('no such column: must_change_password')) {
@@ -68,7 +70,7 @@ export async function POST(request: Request) {
         console.log("Column must_change_password doesn't exist, updating without it");
         await db.run(
           "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-          [trimmedNewPass, nowStr, user.id]
+          [hashedNewPass, nowStr, user.id]
         );
         
         // Try to add the column now
@@ -88,17 +90,17 @@ export async function POST(request: Request) {
     if (user.role === "student") {
       await db.run(
         "UPDATE students SET password_hash = ?, updated_at = ? WHERE id = ?",
-        [trimmedNewPass, nowStr, user.reference_id]
+        [hashedNewPass, nowStr, user.reference_id]
       );
     } else if (user.role === "mentor") {
       await db.run(
         "UPDATE mentors SET password_hash = ?, updated_at = ? WHERE id = ?",
-        [trimmedNewPass, nowStr, user.reference_id]
+        [hashedNewPass, nowStr, user.reference_id]
       );
     } else if (user.role === "sme") {
       await db.run(
         "UPDATE sme_users SET password = ? WHERE id = ?",
-        [trimmedNewPass, user.reference_id]
+        [hashedNewPass, user.reference_id]
       );
     }
 

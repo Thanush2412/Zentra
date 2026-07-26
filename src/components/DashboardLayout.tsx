@@ -61,15 +61,23 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const [isSavingPass, setIsSavingPass] = useState(false);
   const [passError, setPassError] = useState("");
   const [passSuccess, setPassSuccess] = useState("");
+  const [refreshedAtTime, setRefreshedAtTime] = useState<string>("");
+
+  useEffect(() => {
+    setRefreshedAtTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+  }, []);
+
+  const storedUserEmail = typeof window !== "undefined" ? localStorage.getItem("fp_user_email") : null;
 
   const currentUserEmail =
+    storedUserEmail ||
     (currentRole === "mentor" && currentMentor?.email) ||
     (currentRole === "hr" && currentHR?.email) ||
     (currentRole === "cam" && currentCAM?.email) ||
     (currentRole === "kam" && currentKAM?.email) ||
     (currentRole === "admin" && currentAdmin?.email) ||
     (currentRole === "student" && currentStudent?.email) ||
-    (currentRole === "fee_manager" && "tharani.rajan@faceprep.in") ||
+    (currentRole === "fee_manager" && "fee.manager@zentra.edu") ||
     (currentRole === "sme" && currentSME?.email) ||
     (currentRole === "allocator" && "allocator@zentra.edu") ||
     "";
@@ -172,18 +180,29 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     });
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      const currentUid = localStorage.getItem("fp_user_id") || localStorage.getItem("fp_header_id");
+      await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "logout", userId: currentUid })
+      });
+    } catch (_) {}
+
     localStorage.removeItem("fp_logged_in");
     localStorage.removeItem("fp_must_change_pass");
     localStorage.removeItem("fp_current_role");
+    localStorage.removeItem("fp_user_id");
+    localStorage.removeItem("fp_user_email");
+    localStorage.removeItem("fp_user_name");
+    localStorage.removeItem("fp_user_snapshot");
     localStorage.removeItem("fp_mentor_id");
     localStorage.removeItem("fp_header_id");
     localStorage.removeItem("fp_cam_id");
     localStorage.removeItem("fp_kam_id");
     localStorage.removeItem("fp_admin_id");
     localStorage.removeItem("fp_student_id");
-    
-    // Clear other role identifiers
     localStorage.removeItem("fp_current_shift");
 
     // Fresh redirect to login page
@@ -233,13 +252,25 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
           </button>
 
           {/* Profile Dropdown trigger */}
+          {/* Last Refreshed Badge */}
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Refreshed at {refreshedAtTime || "Just now"}</span>
+          </div>
+
           <div className="relative">
             <button
               onClick={() => setShowProfileDropdown((p) => !p)}
               className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-gray-55 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
             >
-              <div className="h-7 w-7 rounded-full btn-gradient flex items-center justify-center font-extrabold text-white text-[10px] shadow-sm shrink-0">
-                {currentRole === "mentor" && (currentMentor?.avatar || "M")}
+              <div className="h-7 w-7 rounded-full btn-gradient flex items-center justify-center font-extrabold text-white text-[10px] shadow-sm shrink-0 overflow-hidden">
+                {currentRole === "mentor" ? (
+                  currentMentor?.avatar && currentMentor.avatar.startsWith("http") ? (
+                    <img src={currentMentor.avatar} alt="Mentor Avatar" className="h-full w-full object-cover" />
+                  ) : (
+                    (currentMentor?.name || "Faculty").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+                  )
+                ) : null}
                 {currentRole === "hr" && "HR"}
                 {currentRole === "cam" && (currentCAM?.name || "Campus Manager").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
                 {currentRole === "kam" && (currentKAM?.name || "KAM Owner").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
@@ -257,9 +288,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                   {currentRole === "kam" && (currentKAM?.name || "Key Account Manager")}
                   {currentRole === "admin" && (currentAdmin?.name || "System Admin")}
                   {currentRole === "student" && (currentStudent?.name || "Student")}
-                  {currentRole === "fee_manager" && "Tharani Rajan"}
+                  {currentRole === "fee_manager" && ((typeof window !== "undefined" && localStorage.getItem("fp_user_name")) || "Fee Operations Manager")}
                   {currentRole === "sme" && (currentSME?.name || "SME Evaluator")}
-                  {currentRole === "allocator" && "Mrs. Janaki Dev"}
+                  {currentRole === "allocator" && ((typeof window !== "undefined" && localStorage.getItem("fp_user_name")) || "Demo Allocator Head")}
                 </span>
                 <span className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider block mt-0.5">
                   {currentRole}
@@ -280,9 +311,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                     {currentRole === "kam" && (currentKAM?.name || "Key Account Manager")}
                     {currentRole === "admin" && (currentAdmin?.name || "System Admin")}
                     {currentRole === "student" && (currentStudent?.name || "Student")}
-                    {currentRole === "fee_manager" && "Tharani Rajan"}
+                    {currentRole === "fee_manager" && ((typeof window !== "undefined" && localStorage.getItem("fp_user_name")) || "Fee Operations Manager")}
                     {currentRole === "sme" && (currentSME?.name || "SME Evaluator")}
-                    {currentRole === "allocator" && "Mrs. Janaki Dev"}
+                    {currentRole === "allocator" && ((typeof window !== "undefined" && localStorage.getItem("fp_user_name")) || "Demo Allocator Head")}
                   </p>
                   <p className="text-[10px] text-gray-400 font-mono truncate mt-0.5">
                     {currentRole === "mentor" && (currentMentor?.email || "mentor@university.edu")}
@@ -291,9 +322,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                     {currentRole === "kam" && (currentKAM?.email || "kam@university.edu")}
                     {currentRole === "admin" && (currentAdmin?.email || "admin@university.edu")}
                     {currentRole === "student" && (currentStudent?.email || "student@university.edu")}
-                    {currentRole === "fee_manager" && "tharani.rajan@faceprep.in"}
+                    {currentRole === "fee_manager" && (currentUserEmail || "fee.manager@zentra.edu")}
                     {currentRole === "sme" && (currentSME?.email || "sme@zentra.edu")}
-                    {currentRole === "allocator" && "allocator@zentra.edu"}
+                    {currentRole === "allocator" && (currentUserEmail || "allocator@zentra.edu")}
                   </p>
                   <span className="mt-2 inline-block text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-slate-700 text-indigo-650 dark:text-indigo-400 border border-indigo-100/50 dark:border-slate-600">
                     {currentRole}
@@ -342,6 +373,22 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       <main className="flex-grow flex flex-col relative overflow-hidden">
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#00000002_1px,transparent_1px),linear-gradient(to_bottom,#00000002_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none" />
         {children}
+
+        {/* Global Floating Feedback Button */}
+        <div className="fixed bottom-4 right-4 z-40">
+          <button
+            type="button"
+            onClick={() => {
+              const el = document.getElementById("global-feedback-modal");
+              if (el) el.classList.remove("hidden");
+            }}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-slate-900 dark:bg-indigo-600 text-white font-bold text-xs shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer border border-slate-700/50"
+            title="Report an Issue or Feedback"
+          >
+            <AlertCircle className="h-4 w-4 text-indigo-400 dark:text-white" />
+            <span className="hidden sm:inline">Report Issue / Feedback</span>
+          </button>
+        </div>
       </main>
 
       {/* Change Password Glassmorphic Modal */}
@@ -540,6 +587,104 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
           </div>
         </div>
       )}
+
+      {/* Global Feedback & Issue Modal */}
+      <div id="global-feedback-modal" className="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 overflow-hidden">
+          <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold">
+                <AlertCircle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Report Issue / Feedback</h3>
+                <p className="text-[11px] text-slate-400 font-medium">Send feedback directly to the administration</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById("global-feedback-modal");
+                if (el) el.classList.add("hidden");
+              }}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const form = e.target as HTMLFormElement;
+              const type = (form.elements.namedItem("type") as HTMLSelectElement).value;
+              const title = (form.elements.namedItem("title") as HTMLInputElement).value;
+              const description = (form.elements.namedItem("description") as HTMLTextAreaElement).value;
+              try {
+                const res = await fetch("/api/feedback", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    userId: currentUserEmail,
+                    userRole: currentRole,
+                    type,
+                    title,
+                    description
+                  })
+                });
+                const data = await res.json();
+                if (data.success) {
+                  alert("Thank you! Your feedback has been submitted to the system administrator.");
+                  form.reset();
+                  const el = document.getElementById("global-feedback-modal");
+                  if (el) el.classList.add("hidden");
+                } else {
+                  alert(data.message || "Failed to submit feedback.");
+                }
+              } catch (err: any) {
+                alert("Failed to submit feedback: " + err.message);
+              }
+            }}
+            className="mt-4 space-y-4 text-xs font-semibold text-slate-700 dark:text-slate-200"
+          >
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Issue Category</label>
+              <select name="type" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold focus:outline-none focus:border-indigo-500">
+                <option value="bug">Bug / Error Report</option>
+                <option value="feature">Feature Request</option>
+                <option value="suggestion">General Suggestion</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Title / Summary</label>
+              <input required name="title" type="text" placeholder="e.g. Schedule button non-responsive on mobile" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:border-indigo-500 font-bold" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Detailed Description</label>
+              <textarea required name="description" rows={4} placeholder="Describe what happened and how to reproduce it..." className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:border-indigo-500 font-medium resize-none" />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById("global-feedback-modal");
+                  if (el) el.classList.add("hidden");
+                }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-xs shadow-md transition-all cursor-pointer hover:opacity-90"
+              >
+                Submit Feedback
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
   );
 }

@@ -53,28 +53,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: "Demo allocated successfully!" });
 
     } else if (action === "bulk-book") {
-      const { sessions } = body;
+      const sessions = body.sessions;
       if (!Array.isArray(sessions)) {
         return NextResponse.json({ success: false, message: "Invalid sessions format" }, { status: 400 });
       }
 
-      await db.run("BEGIN TRANSACTION;");
-      try {
-        for (const sess of sessions) {
-          const { mentorId, mentorName, smeId, smeName, dateStr, timeSlot, subject, stream, week } = sess;
-          const sessionId = "ds_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
-          await db.run(
-            `INSERT INTO demo_sessions (id, mentorId, mentorName, smeId, smeName, dateStr, timeSlot, subject, stream, week, status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)`,
-            [sessionId, mentorId, mentorName, smeId, smeName, dateStr, timeSlot, subject, stream, week, new Date().toISOString()]
-          );
-        }
-        await db.run("COMMIT;");
-        return NextResponse.json({ success: true, message: "Bulk demos allocated successfully!" });
-      } catch (txError) {
-        await db.run("ROLLBACK;");
-        throw txError;
+      for (const sess of sessions) {
+        const { mentorId, mentorName, smeId, smeName, dateStr, timeSlot, subject, stream, week } = sess;
+
+        // Skip if a session for this mentor, date, and time slot already exists
+        const existingDemo = await db.get(
+          "SELECT id FROM demo_sessions WHERE mentorId = ? AND dateStr = ? AND timeSlot = ?",
+          [mentorId, dateStr, timeSlot]
+        );
+        if (existingDemo) continue;
+
+        const sessionId = "ds_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+        await db.run(
+          `INSERT INTO demo_sessions (id, mentorId, mentorName, smeId, smeName, dateStr, timeSlot, subject, stream, week, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)`,
+          [sessionId, mentorId, mentorName, smeId, smeName, dateStr, timeSlot, subject, stream, week, new Date().toISOString()]
+        );
       }
+      return NextResponse.json({ success: true, message: "Bulk demos allocated successfully!" });
 
     } else if (action === "update") {
       const {
@@ -124,16 +125,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "One or both sessions not found" }, { status: 404 });
       }
 
-      await db.run("BEGIN TRANSACTION;");
-      try {
-        await db.run("UPDATE demo_sessions SET dateStr = ?, timeSlot = ? WHERE id = ?", [s2.dateStr, s2.timeSlot, s1.id]);
-        await db.run("UPDATE demo_sessions SET dateStr = ?, timeSlot = ? WHERE id = ?", [s1.dateStr, s1.timeSlot, s2.id]);
-        await db.run("COMMIT;");
-        return NextResponse.json({ success: true, message: "Demo sessions swapped successfully." });
-      } catch (txError) {
-        await db.run("ROLLBACK;");
-        throw txError;
-      }
+      await db.run("UPDATE demo_sessions SET dateStr = ?, timeSlot = ? WHERE id = ?", [s2.dateStr, s2.timeSlot, s1.id]);
+      await db.run("UPDATE demo_sessions SET dateStr = ?, timeSlot = ? WHERE id = ?", [s1.dateStr, s1.timeSlot, s2.id]);
+      return NextResponse.json({ success: true, message: "Demo sessions swapped successfully." });
 
     } else if (action === "evaluate") {
       const { sessionId, marks, comments } = body;

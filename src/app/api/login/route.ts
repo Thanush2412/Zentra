@@ -1,10 +1,26 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { verifyPassword, hashPassword } from "@/lib/auth";
 
 export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
+
+    if (body.action === "logout") {
+      const { userId } = body;
+      if (userId) {
+        const lastSession = await db.get(
+          "SELECT id FROM login_history WHERE user_id = ? AND logout_time IS NULL ORDER BY login_time DESC LIMIT 1",
+          [userId]
+        );
+        if (lastSession) {
+          await db.run("UPDATE login_history SET logout_time = ? WHERE id = ?", [new Date().toISOString(), lastSession.id]);
+        }
+      }
+      return NextResponse.json({ success: true, message: "Logged out successfully." });
+    }
+
     const { email, password } = body;
 
     if (!email || !password) {
@@ -23,8 +39,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "No account found with this email or ID in the database." });
     }
 
-    if (password !== user.password_hash) {
+    const isPasswordValid = verifyPassword(password, user.password_hash);
+    if (!isPasswordValid) {
       return NextResponse.json({ success: false, message: "Incorrect password. Please try again." });
+    }
+
+    // Transparently upgrade legacy plaintext password to secure hash on successful login
+    if (!user.password_hash.includes(":")) {
+      const newHashed = hashPassword(password);
+      await db.run("UPDATE users SET password_hash = ? WHERE id = ?", [newHashed, user.id]);
     }
 
     // Retrieve college_id if applicable for the role
@@ -41,7 +64,7 @@ export async function POST(request: Request) {
     }
 
     // Check if this is user's first login, password change is enforced, or password is default 'password123'
-    const isDefaultPassword = user.password_hash === "password123";
+    const isDefaultPassword = user.password_hash === "password123" || verifyPassword("password123", user.password_hash);
     const mustChangePassword = user.must_change_password === 1 || !user.last_login || isDefaultPassword;
 
     // Record login history

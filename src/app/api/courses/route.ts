@@ -105,54 +105,46 @@ export async function PUT(request: Request) {
 
     const oldName = currentCourse.name;
 
-    // Run transaction to rename course and cascade changes
-    await db.run("BEGIN TRANSACTION;");
-    try {
-      // 1. Rename course in master list
-      await db.run(
-        "UPDATE courses SET name = ?, college_id = ?, code = ?, description = ?, hod_name = ?, established_year = ?, status = ?, years = ?, start_date = ?, end_date = ?, start_year = ?, end_year = ?, default_room = ?, default_shift = ?, shift_based = ? WHERE id = ?",
-        cleanName,
-        college_id || currentCourse.college_id,
-        code || "",
-        description || "",
-        "",
-        established_year || "",
-        status || "Active",
-        years !== undefined ? Number(years) : 4,
-        start_date || "",
-        end_date || "",
-        start_year || "",
-        end_year || "",
-        default_room || null,
-        default_shift || null,
-        shift_based === undefined ? (currentCourse.shift_based || 0) : Number(shift_based),
-        id
-      );
+    // Run cascade updates for course rename
+    // 1. Rename course in master list
+    await db.run(
+      "UPDATE courses SET name = ?, college_id = ?, code = ?, description = ?, hod_name = ?, established_year = ?, status = ?, years = ?, start_date = ?, end_date = ?, start_year = ?, end_year = ?, default_room = ?, default_shift = ?, shift_based = ? WHERE id = ?",
+      cleanName,
+      college_id || currentCourse.college_id,
+      code || "",
+      description || "",
+      "",
+      established_year || "",
+      status || "Active",
+      years !== undefined ? Number(years) : 4,
+      start_date || "",
+      end_date || "",
+      start_year || "",
+      end_year || "",
+      default_room || null,
+      default_shift || null,
+      shift_based === undefined ? (currentCourse.shift_based || 0) : Number(shift_based),
+      id
+    );
 
-      // 2. Cascade rename to mentors table
-      await db.run("UPDATE mentors SET department = ? WHERE department = ?", cleanName, oldName);
+    // 2. Cascade rename to mentors table
+    await db.run("UPDATE mentors SET department = ? WHERE department = ?", cleanName, oldName);
 
-      // 3. Cascade rename to subjects table
-      await db.run("UPDATE subjects SET department = ? WHERE department = ?", cleanName, oldName);
+    // 3. Cascade rename to subjects table
+    await db.run("UPDATE subjects SET department = ? WHERE department = ?", cleanName, oldName);
 
-      // 4. Cascade rename to slots table (Bug #24 fix)
-      await db.run("UPDATE slots SET department = ? WHERE department = ?", cleanName, oldName);
+    // 4. Cascade rename to slots table (Bug #24 fix)
+    await db.run("UPDATE slots SET department = ? WHERE department = ?", cleanName, oldName);
 
-      // 5. Cascade rename to handover_requests.classGroup where it contains the old department (Bug #26 fix)
-      // classGroup format: "<CourseName> - SEM X" — update if starts with old name
-      await db.run(
-        "UPDATE handover_requests SET classGroup = REPLACE(classGroup, ?, ?) WHERE classGroup LIKE ?",
-        oldName, cleanName, `${oldName}%`
-      );
+    // 5. Cascade rename to handover_requests.classGroup where it contains the old department (Bug #26 fix)
+    // classGroup format: "<CourseName> - SEM X" — update if starts with old name
+    await db.run(
+      "UPDATE handover_requests SET classGroup = REPLACE(classGroup, ?, ?) WHERE classGroup LIKE ?",
+      oldName, cleanName, `${oldName}%`
+    );
 
-      // 6. Cascade rename in students table department field
-      await db.run("UPDATE students SET department = ? WHERE department = ?", cleanName, oldName);
-
-      await db.run("COMMIT;");
-    } catch (txError) {
-      try { await db.run("ROLLBACK;"); } catch (_) {}
-      throw txError;
-    }
+    // 6. Cascade rename in students table department field
+    await db.run("UPDATE students SET department = ? WHERE department = ?", cleanName, oldName);
 
     return NextResponse.json({ success: true, message: "Course updated and cascaded successfully." });
   } catch (error: any) {
@@ -199,10 +191,7 @@ export async function DELETE(request: Request) {
       return isDeptMatch(deptOrGroup || "", courseName, id);
     };
 
-    await db.run("BEGIN TRANSACTION;");
-
-    try {
-      // 1. Delete slots for this department/classGroup and cascade to student_attendance, handover records
+    // 1. Delete slots for this department/classGroup and cascade to student_attendance, handover records
       const allSlots = await db.all("SELECT id, department, classGroup FROM slots");
       const slotsToDelete = allSlots.filter(s => isMatch(s.department) || isMatch(s.classGroup));
       const slotIds = slotsToDelete.map(s => s.id);
@@ -268,14 +257,8 @@ export async function DELETE(request: Request) {
       await db.run("DELETE FROM courses WHERE id = ?", id);
       await db.run("DELETE FROM departments WHERE id = ? OR name = ?", id, courseName);
 
-      try { await db.run("COMMIT;"); } catch (_) {}
-
       const deletedSummary = `Deleted: ${slotsToDelete.length} slots, ${studentsToDelete.length} students, ${mentorsToDelete.length} mentors, ${subjectsToDelete.length} subjects.`;
       return NextResponse.json({ success: true, message: `Course and all associated data deleted successfully. ${deletedSummary}`, deletedCounts: { slots: slotsToDelete.length, students: studentsToDelete.length, mentors: mentorsToDelete.length, subjects: subjectsToDelete.length } });
-    } catch (txError) {
-      try { await db.run("ROLLBACK;"); } catch (_) {}
-      throw txError;
-    }
   } catch (error: any) {
     console.error("API DELETE Courses error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

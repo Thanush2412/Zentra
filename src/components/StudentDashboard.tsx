@@ -35,7 +35,8 @@ import {
   Upload,
   RefreshCw,
   Menu,
-  Edit2
+  Edit2,
+  Loader2
 } from "lucide-react";
 import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup } from "@/lib/utils";
 
@@ -175,16 +176,30 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   // Dribbble Styled Task Management States
   const [tasksFilter, setTasksFilter] = useState<"all" | "todo" | "progress" | "done">("all");
-  const [tasks, setTasks] = useState([
-    { id: "t1", title: "Conduct virtual experiment on chemical reactions and prepare report", subject: "Chemistry", date: "Jun 30", status: "todo" },
-    { id: "t2", title: "Complete term-matching task in biology lab handbook", subject: "Biology", date: "Jul 3", status: "progress" },
-    { id: "t3", title: "Study the influence of cultural traditions on contemporary art", subject: "Art History", date: "Jun 27", status: "done" },
-    { id: "t4", title: "Revise normal forms for Database Management Systems exam", subject: "DBMS", date: "Jul 5", status: "todo" }
-  ]);
+  const [tasks, setTasks] = useState<Array<{ id: string; title: string; subject: string; date: string; status: string }>>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("fp_student_tasks");
+      if (saved) {
+        try { return JSON.parse(saved); } catch (_) {}
+      }
+    }
+    return [
+      { id: "t1", title: "Conduct virtual experiment on chemical reactions and prepare report", subject: "Chemistry", date: "Jun 30", status: "todo" },
+      { id: "t2", title: "Complete term-matching task in biology lab handbook", subject: "Biology", date: "Jul 3", status: "progress" },
+      { id: "t3", title: "Study the influence of cultural traditions on contemporary art", subject: "Art History", date: "Jun 27", status: "done" },
+      { id: "t4", title: "Revise normal forms for Database Management Systems exam", subject: "DBMS", date: "Jul 5", status: "todo" }
+    ];
+  });
   const [showAddTaskForm, setShowAddTaskForm] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskSubject, setNewTaskSubject] = useState("General");
   const [newTaskDate, setNewTaskDate] = useState("Jul 1");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("fp_student_tasks", JSON.stringify(tasks));
+    }
+  }, [tasks]);
 
   useEffect(() => {
     const saved = localStorage.getItem("fp_allowed_profile_edit_classes");
@@ -1542,10 +1557,19 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <button
                   type="submit"
                   disabled={submittingLeave}
-                  className="w-full py-2 btn-gradient text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-sm transition-all hover:scale-[1.01] cursor-pointer"
+                  className="w-full py-2 btn-gradient text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-sm transition-all hover:scale-[1.01] cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
                 >
-                  <Plus className="h-4 w-4" />
-                  {submittingLeave ? "Submitting..." : "Submit Request"}
+                  {submittingLeave ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin shrink-0 text-white" />
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4" />
+                      <span>Submit Request</span>
+                    </>
+                  )}
                 </button>
               </form>
             </div>
@@ -1637,12 +1661,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                  {Object.keys(courseStats).length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="p-6 text-center text-slate-400 italic">No exams scheduled.</td>
-                    </tr>
-                  ) : (
-                    Object.keys(courseStats).map((courseName, idx) => {
+                  {(Object.keys(courseStats).length > 0 ? Object.keys(courseStats) : ["Computer Science & Programming", "Database Management Systems", "Data Structures & Algorithms", "Mathematics & Statistics"]).map((courseName, idx) => {
                       // Deterministic exam schedule details
                       const examDaysAhead = idx * 2 + 10;
                       const d = new Date();
@@ -1664,8 +1683,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           <td className="p-3 text-center font-bold text-indigo-700">{idx * 4 + 17}</td>
                         </tr>
                       );
-                    })
-                  )}
+                    })}
                 </tbody>
               </table>
             </div>
@@ -1677,8 +1695,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3">
               <div>
-                <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Library OPAC Book Finder</h2>
-                <p className="text-[11px] text-slate-450 mt-1">Search the complete physical college library catalog and locate books instantly.</p>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Library OPAC Book Finder</h2>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[8.5px] font-black uppercase tracking-wider">
+                    Demo Catalog
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-450 mt-1">Search the sample physical college library catalog and locate books instantly.</p>
               </div>
 
               {/* Search input bar */}
@@ -1709,7 +1732,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <tbody className="divide-y divide-slate-150 bg-white font-medium">
                   {filteredBooks.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-6 text-center text-slate-400 italic">No matches found for search query.</td>
+                      <td colSpan={6} className="p-8 text-center text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-1.5 py-4">
+                          <Book className="h-7 w-7 text-slate-300" />
+                          <p className="font-bold text-slate-600 text-xs">No Matching Books Found</p>
+                          <p className="text-[11px] text-slate-400">Try searching with a different book title, author, or subject area.</p>
+                        </div>
+                      </td>
                     </tr>
                   ) : (
                     filteredBooks.map((book) => (
@@ -2131,17 +2160,28 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                            className="flex-1 text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-205 focus:outline-none focus:border-[#D528A2] bg-white text-slate-805 disabled:bg-slate-50 disabled:text-slate-400"
                                          />
                                          <div className="flex gap-2 shrink-0">
-                                           <button
-                                             type="submit"
-                                             disabled={isPastDeadline || isSubmitting}
-                                             className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
-                                               isPastDeadline 
-                                                 ? "bg-slate-200 text-slate-500 cursor-not-allowed" 
-                                                 : "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
-                                             }`}
-                                           >
-                                             {isPastDeadline ? "Deadline Passed" : isSubmitting ? "Submitting..." : currentUrl ? "Update" : "Submit"}
-                                           </button>
+                                            <button
+                                              type="submit"
+                                              disabled={isPastDeadline || isSubmitting}
+                                              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 ${
+                                                isPastDeadline 
+                                                  ? "bg-slate-200 text-slate-500 cursor-not-allowed" 
+                                                  : "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                                              }`}
+                                            >
+                                              {isSubmitting ? (
+                                                <>
+                                                  <Loader2 className="h-4 w-4 animate-spin shrink-0 text-white" />
+                                                  <span>Submitting...</span>
+                                                </>
+                                              ) : isPastDeadline ? (
+                                                "Deadline Passed"
+                                              ) : currentUrl ? (
+                                                "Update"
+                                              ) : (
+                                                "Submit"
+                                              )}
+                                            </button>
                                            {currentUrl && (
                                              <button
                                                type="button"
@@ -2333,18 +2373,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     </div>
 
                     <div className="space-y-1">
-                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Register Number</span>
-                      {isEditingProfile ? (
-                        <input
-                          type="text"
-                          value={editRegisterNumber}
-                          onChange={e => setEditRegisterNumber(e.target.value)}
-                          placeholder="e.g. 2113411033001"
-                          className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
-                        />
-                      ) : (
-                        <span className="text-xs font-extrabold text-slate-800 block">{currentStudent.register_number || <span className="text-slate-400 italic">Not Added</span>}</span>
-                      )}
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Register Number (Institutional)</span>
+                      <span className="text-xs font-extrabold text-slate-800 block">{currentStudent.register_number || <span className="text-slate-400 italic">Not Assigned</span>}</span>
                     </div>
 
                     <div className="space-y-1">
@@ -2373,7 +2403,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-855 block">{currentStudent.aadhar_number || <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-855 block font-mono">
+                          {currentStudent.aadhar_number
+                            ? `XXXX-XXXX-${currentStudent.aadhar_number.replace(/\D/g, "").slice(-4) || "XXXX"}`
+                            : <span className="text-slate-400 italic font-sans">Not Added</span>}
+                        </span>
                       )}
                     </div>
 

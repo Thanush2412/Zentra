@@ -28,6 +28,12 @@ export async function PATCH(request: Request) {
 
     if (action === "reject") {
       await db.run("UPDATE signup_requests SET status = 'rejected' WHERE id = ?", [id]);
+      // Log audit trail for notification
+      const logId = "l_" + Date.now();
+      await db.run(
+        "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'signup_rejection', ?, 'Admin', 'Super Admin', ?)",
+        [logId, `Signup request for ${req.name} (${req.email}) was REJECTED by Admin`, new Date().toISOString()]
+      );
       return NextResponse.json({ success: true, message: "Request rejected successfully." });
     }
 
@@ -121,6 +127,13 @@ export async function PATCH(request: Request) {
 
       // Update signup request status
       await db.run("UPDATE signup_requests SET status = 'approved' WHERE id = ?", [id]);
+
+      // Log audit trail for approval notification
+      const logId = "l_" + Date.now();
+      await db.run(
+        "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'signup_approval', ?, 'Admin', 'Super Admin', ?)",
+        [logId, `Signup request for ${req.name} (${req.email}) was APPROVED as ${targetRole.toUpperCase()} by Admin`, new Date().toISOString()]
+      );
 
       return NextResponse.json({ success: true, message: `Request approved and mapped as ${targetRole}!` });
     }

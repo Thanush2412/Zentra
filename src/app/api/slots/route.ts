@@ -21,18 +21,17 @@ export async function POST(request: Request) {
     const cleanLocation = location.trim();
     const activeShift = shift || "general";
 
-    // 1. Check Collision: Is this mentor already booked?
+    // 1. Check Collision: Is this mentor already booked at this day and time across any shift?
     const mentorCollision = await db.get(
-      "SELECT * FROM slots WHERE mentorId = ? AND day = ? AND time = ? AND shift = ?",
+      "SELECT * FROM slots WHERE mentorId = ? AND day = ? AND time = ?",
       mentorId,
       day,
-      time,
-      activeShift
+      time
     );
     if (mentorCollision) {
       return NextResponse.json({
         success: false,
-        message: `Conflict: Mentor already has class "${mentorCollision.course}" scheduled at [${day}, ${time}] in ${activeShift.replace("_", " ")}.`
+        message: `Conflict: Mentor already has class "${mentorCollision.course}" scheduled at [${day}, ${time}] in shift "${mentorCollision.shift.replace("_", " ")}".`
       });
     }
 
@@ -203,19 +202,18 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: false, message: "Slot not found" }, { status: 404 });
     }
 
-    // 1. Check Collision: Is this mentor already booked? (excluding the current slot itself)
+    // 1. Check Collision: Is this mentor already booked at this day and time across any shift? (excluding current slot)
     const mentorCollision = await db.get(
-      "SELECT * FROM slots WHERE mentorId = ? AND day = ? AND time = ? AND shift = ? AND id != ?",
+      "SELECT * FROM slots WHERE mentorId = ? AND day = ? AND time = ? AND id != ?",
       mentorId,
       day,
       time,
-      activeShift,
       id
     );
     if (mentorCollision) {
       return NextResponse.json({
         success: false,
-        message: `Conflict: Mentor already has class "${mentorCollision.course}" scheduled at [${day}, ${time}] in ${activeShift.replace("_", " ")}.`
+        message: `Conflict: Mentor already has class "${mentorCollision.course}" scheduled at [${day}, ${time}] in shift "${mentorCollision.shift.replace("_", " ")}".`
       });
     }
 

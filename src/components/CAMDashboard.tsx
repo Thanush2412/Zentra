@@ -12,12 +12,13 @@ import { Card } from "./Card";
 import { Panel } from "./Panel";
 import { Input } from "./Input";
 import { Select } from "./Select";
+import { LoadingButton } from "./ui/LoadingButton";
 import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList } from "../lib/utils";
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,
   PlusCircle, Check, ArrowRight, Settings, MessageSquare, ShieldAlert,
-  Award, TrendingUp, FileText, RefreshCw, Plus, Trash2, Edit2, Download, Upload, ChevronDown, Loader2,
+  Award, TrendingUp, FileText, RefreshCw, Plus, Trash2, Edit2, Download, Upload, ChevronDown, Loader2, Save,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle, User, SlidersHorizontal, CalendarCheck2, IndianRupee, BadgePercent, X, Mail, Lock, Menu
 } from "lucide-react";
 
@@ -70,9 +71,9 @@ const formatYearWiseRooms = (defaultRoomStr?: string) => {
 const fmt = (n: number) => "₹" + n.toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
 const FeeBadge = ({ status }: { status: string }) => {
-  if (status === "paid") return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#D528A2]/10 text-[#D528A2] text-[10px] font-bold">Yes Paid</span>;
+  if (status === "paid") return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#D528A2]/10 text-[#D528A2] text-[10px] font-bold">Paid</span>;
   if (status === "partial") return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#F4A863]/10 text-[#F4A863] text-[10px] font-bold">⏳ Partial</span>;
-  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold">No Unpaid</span>;
+  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold">Unpaid</span>;
 };
 
 const CAMFeePanel: React.FC<{ camId: string }> = ({ camId }) => {
@@ -94,8 +95,6 @@ const CAMFeePanel: React.FC<{ camId: string }> = ({ camId }) => {
 
   React.useEffect(() => { fetchData(); }, [camId]);
 
-
-
   if (loading) return <div className="py-16 text-center text-sm text-slate-400">Loading fee data…</div>;
   if (!data) return <div className="py-16 text-center text-sm text-rose-400">Failed to load fee data.</div>;
 
@@ -106,7 +105,21 @@ const CAMFeePanel: React.FC<{ camId: string }> = ({ camId }) => {
 
   return (
     <div className="space-y-6">
-
+      {/* Summary Stats Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Fee Target</p>
+          <p className="text-lg font-black text-slate-900 mt-1">{fmt(data.stats?.totalFees || 0)}</p>
+        </div>
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Collected</p>
+          <p className="text-lg font-black text-emerald-600 mt-1">{fmt(data.stats?.totalPaid || 0)}</p>
+        </div>
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Outstanding Balance</p>
+          <p className="text-lg font-black text-rose-600 mt-1">{fmt(data.stats?.totalOutstanding || 0)}</p>
+        </div>
+      </div>
 
       {/* Search */}
       <div className="flex items-center gap-3">
@@ -373,6 +386,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<any | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
+  // Centralized loading state tracker for all async operations
+  const [loadingActions, setLoadingActions] = useState<Record<string, boolean>>({});
+  const setActionLoading = (key: string, loading: boolean) => {
+    setLoadingActions(prev => ({ ...prev, [key]: loading }));
+  };
+
   const handleSingleDeleteStudent = async (st: any) => {
     if (!st || !st.id) return;
     const ok = await showConfirm({
@@ -382,15 +401,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       danger: true
     });
     if (ok) {
-      const res = await deleteStudent(st.id);
-      if (res.success) {
-        toast(`Student ${st.name} deleted successfully.`, "success");
-        setSelectedStudentIds(prev => prev.filter(id => id !== st.id));
-        if (selectedStudentForDetail?.id === st.id) {
-          setSelectedStudentForDetail(null);
+      setActionLoading(`delete_student_${st.id}`, true);
+      try {
+        const res = await deleteStudent(st.id);
+        if (res.success) {
+          toast(`Student ${st.name} deleted successfully.`, "success");
+          setSelectedStudentIds(prev => prev.filter(id => id !== st.id));
+          if (selectedStudentForDetail?.id === st.id) {
+            setSelectedStudentForDetail(null);
+          }
+        } else {
+          toast(res.message || "Failed to delete student.", "error");
         }
-      } else {
-        toast(res.message || "Failed to delete student.", "error");
+      } finally {
+        setActionLoading(`delete_student_${st.id}`, false);
       }
     }
   };
@@ -405,15 +429,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       danger: true
     });
     if (ok) {
-      const res = await bulkDeleteStudents(idsToDelete);
-      if (res.success) {
-        toast(`${res.count || idsToDelete.length} student record(s) deleted successfully.`, "success");
-        setSelectedStudentIds(prev => prev.filter(id => !idsToDelete.includes(id)));
-        if (selectedStudentForDetail && idsToDelete.includes(selectedStudentForDetail.id)) {
-          setSelectedStudentForDetail(null);
+      setActionLoading('bulk_delete_students', true);
+      try {
+        const res = await bulkDeleteStudents(idsToDelete);
+        if (res.success) {
+          toast(`${res.count || idsToDelete.length} student record(s) deleted successfully.`, "success");
+          setSelectedStudentIds(prev => prev.filter(id => !idsToDelete.includes(id)));
+          if (selectedStudentForDetail && idsToDelete.includes(selectedStudentForDetail.id)) {
+            setSelectedStudentForDetail(null);
+          }
+        } else {
+          toast(res.message || "Failed to delete selected students.", "error");
         }
-      } else {
-        toast(res.message || "Failed to delete selected students.", "error");
+      } finally {
+        setActionLoading('bulk_delete_students', false);
       }
     }
   };
@@ -1003,6 +1032,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       subject_group: mentorForm.subject_group.trim()
     };
 
+    setActionLoading('submit_mentor', true);
     try {
       let res;
       if (editingMentor) {
@@ -1018,11 +1048,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       }
     } catch (err: any) {
       setModalError(err.message || "An unexpected error occurred.");
+    } finally {
+      setActionLoading('submit_mentor', false);
     }
   };
 
   const handleDeleteMentor = async (id: string) => {
     if (await showConfirm({ message: "Are you sure you want to delete this mentor? This will also delete all slots assigned to them.", danger: true, confirmLabel: "Delete" })) {
+      setActionLoading(`delete_mentor_${id}`, true);
       try {
         const res = await deleteMentor(id);
         if (res.success) {
@@ -1032,6 +1065,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         }
       } catch (err: any) {
         toast(err.message || "An error occurred while deleting.", "error");
+      } finally {
+        setActionLoading(`delete_mentor_${id}`, false);
       }
     }
   };
@@ -1113,7 +1148,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [collegeHours, setCollegeHours] = useState({ start: "08:30 AM", end: "04:30 PM" });
 
   // Daily Day Type & Day Order Config states
-  const [dailyDateStr, setDailyDateStr] = useState(new Date().toISOString().split("T")[0]);
+  const [dailyStartDateStr, setDailyStartDateStr] = useState(new Date().toISOString().split("T")[0]);
+  const [dailyEndDateStr, setDailyEndDateStr] = useState(new Date().toISOString().split("T")[0]);
   const [dailyDayType, setDailyDayType] = useState<"regular" | "special" | "holiday" | "event" | "exam_day">("regular");
   const [dailyDayOrder, setDailyDayOrder] = useState("Day 1");
   const [dailySessionMode, setDailySessionMode] = useState<"Online" | "Offline">("Offline");
@@ -1744,54 +1780,59 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const matchedDept = coursesList.find((c: any) => c.name === subjectForm.department);
     const derivedShift = matchedDept?.default_shift === "shift_1" ? "Shift 1" : matchedDept?.default_shift === "shift_2" ? "Shift 2" : "General";
 
-    if (editingSubject) {
-      const res = await updateSubject({
-        ...editingSubject,
-        name: subjectForm.name.trim(),
-        department: subjectForm.department,
-        semester: subjectForm.semester,
-        type: subjectForm.type,
-        year: subjectForm.year,
-        weekly_hours: Number(subjectForm.weekly_hours),
-        shift: derivedShift,
-        subject_group: subjectForm.subject_group,
-        college_id: subjectForm.college_id || activeCollegeId
-      });
-      if (res.success) {
-        setShowSubjectModal(false);
-        toast("Subject updated successfully.", "success");
-      } else {
-        setSubjectModalError("Error updating subject: " + res.message);
-      }
-    } else {
-      const res = await createSubject({
-        name: subjectForm.name.trim(),
-        department: subjectForm.department,
-        semester: subjectForm.semester,
-        type: subjectForm.type,
-        year: subjectForm.year,
-        weekly_hours: Number(subjectForm.weekly_hours),
-        shift: derivedShift,
-        subject_group: subjectForm.subject_group,
-        college_id: subjectForm.college_id || activeCollegeId
-      });
-      if (res.success) {
-        if (subjectForm.mentorIds && subjectForm.mentorIds.length > 0) {
-          for (const mId of subjectForm.mentorIds) {
-            const mentor = mentors.find((m: any) => m.id === mId);
-            if (!mentor) continue;
-            const existingSubs = mentor.subjects ? mentor.subjects.split(/\n|,|;/).map((s: string) => s.trim()).filter(Boolean) : [];
-            if (!existingSubs.includes(subjectForm.name.trim())) {
-              existingSubs.push(subjectForm.name.trim());
-            }
-            await updateMentor({ ...mentor, subjects: existingSubs.join("\n") });
-          }
+    setActionLoading('submit_subject', true);
+    try {
+      if (editingSubject) {
+        const res = await updateSubject({
+          ...editingSubject,
+          name: subjectForm.name.trim(),
+          department: subjectForm.department,
+          semester: subjectForm.semester,
+          type: subjectForm.type,
+          year: subjectForm.year,
+          weekly_hours: Number(subjectForm.weekly_hours),
+          shift: derivedShift,
+          subject_group: subjectForm.subject_group,
+          college_id: subjectForm.college_id || activeCollegeId
+        });
+        if (res.success) {
+          setShowSubjectModal(false);
+          toast("Subject updated successfully.", "success");
+        } else {
+          setSubjectModalError("Error updating subject: " + res.message);
         }
-        setShowSubjectModal(false);
-        toast("Subject created successfully.", "success");
       } else {
-        setSubjectModalError("Error creating subject: " + res.message);
+        const res = await createSubject({
+          name: subjectForm.name.trim(),
+          department: subjectForm.department,
+          semester: subjectForm.semester,
+          type: subjectForm.type,
+          year: subjectForm.year,
+          weekly_hours: Number(subjectForm.weekly_hours),
+          shift: derivedShift,
+          subject_group: subjectForm.subject_group,
+          college_id: subjectForm.college_id || activeCollegeId
+        });
+        if (res.success) {
+          if (subjectForm.mentorIds && subjectForm.mentorIds.length > 0) {
+            for (const mId of subjectForm.mentorIds) {
+              const mentor = mentors.find((m: any) => m.id === mId);
+              if (!mentor) continue;
+              const existingSubs = mentor.subjects ? mentor.subjects.split(/\n|,|;/).map((s: string) => s.trim()).filter(Boolean) : [];
+              if (!existingSubs.includes(subjectForm.name.trim())) {
+                existingSubs.push(subjectForm.name.trim());
+              }
+              await updateMentor({ ...mentor, subjects: existingSubs.join("\n") });
+            }
+          }
+          setShowSubjectModal(false);
+          toast("Subject created successfully.", "success");
+        } else {
+          setSubjectModalError("Error creating subject: " + res.message);
+        }
       }
+    } finally {
+      setActionLoading('submit_subject', false);
     }
   };
 
@@ -1825,11 +1866,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
   const handleDeleteSubject = async (id: string) => {
     if (await showConfirm({ message: "Delete this subject from database?", danger: true, confirmLabel: "Delete" })) {
-      const res = await deleteSubject(id);
-      if (res.success) {
-        toast("Subject deleted from database successfully.", "success");
-      } else {
-        toast("Error deleting subject: " + res.message, "error");
+      setActionLoading(`delete_subject_${id}`, true);
+      try {
+        const res = await deleteSubject(id);
+        if (res.success) {
+          toast("Subject deleted from database successfully.", "success");
+        } else {
+          toast("Error deleting subject: " + res.message, "error");
+        }
+      } finally {
+        setActionLoading(`delete_subject_${id}`, false);
       }
     }
   };
@@ -1965,12 +2011,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   };
 
   const handleSaveFacultyConfig = async (id: string) => {
-    const res = await saveFacultyConfig(id, editingWorkloadVal, editingShiftVal);
-    if (res.success) {
-      setEditingFacultyId(null);
-      toast("Faculty configurations saved successfully.", "success");
-    } else {
-      toast(res.message || "Failed to save configurations", "error");
+    setActionLoading(`save_faculty_${id}`, true);
+    try {
+      const res = await saveFacultyConfig(id, editingWorkloadVal, editingShiftVal);
+      if (res.success) {
+        setEditingFacultyId(null);
+        toast("Faculty configurations saved successfully.", "success");
+      } else {
+        toast(res.message || "Failed to save configurations", "error");
+      }
+    } finally {
+      setActionLoading(`save_faculty_${id}`, false);
     }
   };
 
@@ -2054,7 +2105,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
   const handleSaveDailyConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeCollegeId) return;
+    if (!activeCollegeId) {
+      toast("Please select a college before saving configuration.", "error");
+      return;
+    }
+    if (dailyStartDateStr > dailyEndDateStr) {
+      toast("Start Date cannot be after End Date.", "error");
+      return;
+    }
     setIsDailySaving(true);
     try {
       const res = await fetch("/api/daily-configs", {
@@ -2062,7 +2120,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           college_id: activeCollegeId,
-          dateStr: dailyDateStr,
+          startDate: dailyStartDateStr,
+          endDate: dailyEndDateStr,
+          dateStr: dailyStartDateStr,
           day_type: dailyDayType,
           day_order: dailyDayType === "holiday" ? "None" : dailyDayOrder,
           session_mode: dailySessionMode,
@@ -3493,6 +3553,178 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 ))}
               </div>
 
+              {/* Daily Day Order & Status Settings Banner & Quick Config Panel */}
+              <div className="bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-pink-500/10 border border-indigo-200/80 rounded-3xl p-6 shadow-sm space-y-5 animate-gsap-card">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-indigo-100/80 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black shadow-md shrink-0">
+                      <Calendar className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900 tracking-tight">Daily Day Order & Status Settings</h3>
+                      <p className="text-xs font-semibold text-slate-500 mt-0.5">
+                        Set working day order, holiday status, exam days, and session modes for active schedules.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-indigo-200/60 shadow-xs self-start sm:self-auto">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs font-bold text-slate-700">
+                      Today: <span className="text-indigo-600 font-extrabold">{dailyDayType === "holiday" ? "Holiday" : dailyDayOrder}</span> ({dailyDayType.toUpperCase()})
+                    </span>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSaveDailyConfig} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 items-end bg-white/80 p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">From Date</label>
+                    <input
+                      type="date"
+                      value={dailyStartDateStr}
+                      onChange={e => {
+                        setDailyStartDateStr(e.target.value);
+                        if (e.target.value > dailyEndDateStr) {
+                          setDailyEndDateStr(e.target.value);
+                        }
+                      }}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none shadow-xs cursor-pointer text-slate-800"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">To Date</label>
+                    <input
+                      type="date"
+                      value={dailyEndDateStr}
+                      min={dailyStartDateStr}
+                      onChange={e => setDailyEndDateStr(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none shadow-xs cursor-pointer text-slate-800"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Day Type</label>
+                    <select
+                      value={dailyDayType}
+                      onChange={e => {
+                        const val = e.target.value as any;
+                        setDailyDayType(val);
+                        if (val === "holiday") {
+                          setDailyDayOrder("None");
+                        } else if (dailyDayOrder === "None") {
+                          setDailyDayOrder("Day 1");
+                        }
+                      }}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none shadow-xs cursor-pointer text-slate-800"
+                    >
+                      <option value="regular">Working Day</option>
+                      <option value="holiday">Holiday</option>
+                      <option value="event">Event</option>
+                      <option value="exam_day">Exam Day</option>
+                      <option value="special">Special Day</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Day Order</label>
+                    <select
+                      value={dailyDayOrder}
+                      onChange={e => setDailyDayOrder(e.target.value)}
+                      disabled={dailyDayType === "holiday"}
+                      className={`w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none shadow-xs cursor-pointer text-slate-800 ${
+                        dailyDayType === "holiday" ? "bg-slate-100 text-slate-400 cursor-not-allowed" : ""
+                      }`}
+                    >
+                      {Array.from({ length: workingDays.length > 0 ? workingDays.length : 5 }).map((_, idx) => (
+                        <option key={idx} value={`Day ${idx + 1}`}>{`Day ${idx + 1}`}</option>
+                      ))}
+                      <option value="None">None</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Session Mode</label>
+                    <select
+                      value={dailySessionMode}
+                      onChange={e => setDailySessionMode(e.target.value as any)}
+                      disabled={dailyDayType === "holiday"}
+                      className={`w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none shadow-xs cursor-pointer text-slate-800 ${
+                        dailyDayType === "holiday" ? "bg-slate-100 text-slate-400 cursor-not-allowed" : ""
+                      }`}
+                    >
+                      <option value="Offline">Offline (In-Person)</option>
+                      <option value="Online">Online (Remote)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Notes / Reason</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Day 1, Lab session..."
+                      value={dailyNotes}
+                      onChange={e => setDailyNotes(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none text-slate-800"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block opacity-0 pointer-events-none hidden lg:block">Action</label>
+                    <button
+                      type="submit"
+                      disabled={isDailySaving}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-extrabold text-xs rounded-xl shadow-md cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isDailySaving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                          <span>Saving...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4 shrink-0" />
+                          <span>Save Settings</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Recent Day Order Records Log */}
+                {dailyConfigsList.length > 0 && (
+                  <div className="bg-white/60 p-3 rounded-2xl border border-indigo-100/60 space-y-2">
+                    <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Recent Day Order Records</h4>
+                    <div className="max-h-[140px] overflow-y-auto space-y-1 pr-1 divide-y divide-slate-100">
+                      {dailyConfigsList.slice(0, 5).map(log => (
+                        <div key={log.id} className="flex justify-between items-center py-1.5 first:pt-0 last:pb-0 text-xs font-medium">
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold text-slate-800">{log.dateStr}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                              log.day_type === "holiday" 
+                                ? "bg-rose-100 text-rose-700" 
+                                : log.day_type === "special" 
+                                ? "bg-amber-100 text-amber-800" 
+                                : log.day_type === "event"
+                                ? "bg-blue-100 text-blue-800"
+                                : log.day_type === "exam_day"
+                                ? "bg-purple-100 text-purple-800"
+                                : "bg-emerald-100 text-emerald-800"
+                            }`}>
+                              {log.day_type}
+                            </span>
+                            <span className="font-bold text-indigo-600">{log.day_order}</span>
+                            <span className="text-slate-400 font-medium">({log.session_mode || "Offline"})</span>
+                          </div>
+                          {log.notes && <span className="text-[11px] text-slate-500 italic max-w-xs truncate">{log.notes}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Panel
@@ -3655,13 +3887,30 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 {/* Daily Day Order & Day Type Setup */}
                 <div className="space-y-4 bg-slate-50/50 p-5 rounded-2xl border border-slate-200 lg:col-span-2">
                   <h3 className="text-xs font-black text-indigo-655 uppercase tracking-wider border-b border-slate-100 pb-2">Daily Day Order & Status Settings</h3>
-                  <form onSubmit={handleSaveDailyConfig} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                  <form onSubmit={handleSaveDailyConfig} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 items-end">
                     <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 uppercase font-bold block">Date</label>
+                      <label className="text-[10px] text-slate-400 uppercase font-bold block">From Date</label>
                       <input
                         type="date"
-                        value={dailyDateStr}
-                        onChange={e => setDailyDateStr(e.target.value)}
+                        value={dailyStartDateStr}
+                        onChange={e => {
+                          setDailyStartDateStr(e.target.value);
+                          if (e.target.value > dailyEndDateStr) {
+                            setDailyEndDateStr(e.target.value);
+                          }
+                        }}
+                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 uppercase font-bold block">To Date</label>
+                      <input
+                        type="date"
+                        value={dailyEndDateStr}
+                        min={dailyStartDateStr}
+                        onChange={e => setDailyEndDateStr(e.target.value)}
                         className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer"
                         required
                       />
@@ -3722,25 +3971,36 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       </select>
                     </div>
 
-                    <div className="space-y-1 flex gap-2">
-                      <div className="flex-1">
-                        <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Notes / Description</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Day Order 1, Biometric down..."
-                          value={dailyNotes}
-                          onChange={e => setDailyNotes(e.target.value)}
-                          className="w-full p-2 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none"
-                        />
-                      </div>
-                      <Button
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 uppercase font-bold block">Notes / Description</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Day Order 1, Biometric down..."
+                        value={dailyNotes}
+                        onChange={e => setDailyNotes(e.target.value)}
+                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 uppercase font-bold block opacity-0 pointer-events-none hidden lg:block">Action</label>
+                      <button
                         type="submit"
-                        variant="primary"
-                        size="md"
                         disabled={isDailySaving}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-extrabold text-xs rounded-xl shadow-md cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {isDailySaving ? "Saving..." : "Save"}
-                      </Button>
+                        {isDailySaving ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                            <span>Saving...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="h-4 w-4 shrink-0" />
+                            <span>Save Settings</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   </form>
 
@@ -4218,7 +4478,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                     </div>
                                                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                       <button onClick={() => handleStartEditSubject(sub)} className="p-1 text-slate-400 hover:text-indigo-600 cursor-pointer"><Edit2 className="h-3 w-3" /></button>
-                                                      <button onClick={() => handleDeleteSubject(sub.id)} className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="h-3 w-3" /></button>
+                                                      <button 
+                                                        onClick={() => handleDeleteSubject(sub.id)} 
+                                                        disabled={loadingActions[`delete_subject_${sub.id}`]}
+                                                        className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                                      >
+                                                        {loadingActions[`delete_subject_${sub.id}`] ? (
+                                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                                        ) : (
+                                                          <Trash2 className="h-3 w-3" />
+                                                        )}
+                                                      </button>
                                                     </div>
                                                   </div>
                                                 ))}
@@ -4247,7 +4517,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                     </div>
                                                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                       <button onClick={() => handleStartEditSubject(sub)} className="p-1 text-slate-400 hover:text-purple-600 cursor-pointer"><Edit2 className="h-3 w-3" /></button>
-                                                      <button onClick={() => handleDeleteSubject(sub.id)} className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="h-3 w-3" /></button>
+                                                      <button 
+                                                        onClick={() => handleDeleteSubject(sub.id)} 
+                                                        disabled={loadingActions[`delete_subject_${sub.id}`]}
+                                                        className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                                      >
+                                                        {loadingActions[`delete_subject_${sub.id}`] ? (
+                                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                                        ) : (
+                                                          <Trash2 className="h-3 w-3" />
+                                                        )}
+                                                      </button>
                                                     </div>
                                                   </div>
                                                 ))}
@@ -6075,27 +6355,49 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         <div className="flex gap-2 justify-end">
                                           <button
                                             type="button"
+                                            disabled={loadingActions[`approve_req_${req.id}`]}
                                             onClick={async () => {
                                               if (await showConfirm({ message: "Approve this Emergency Handover Request? It will be forwarded to the cover staff.", confirmLabel: "Approve", title: "Approve Emergency Handover" })) {
-                                                await handleRequest(req.id, "approved", "", "Campus Manager");
-                                                toast("Emergency request approved and forwarded to the cover staff.", "success");
+                                                setActionLoading(`approve_req_${req.id}`, true);
+                                                try {
+                                                  await handleRequest(req.id, "approved", "", "Campus Manager");
+                                                  toast("Emergency request approved and forwarded to the cover staff.", "success");
+                                                } finally {
+                                                  setActionLoading(`approve_req_${req.id}`, false);
+                                                }
                                               }
                                             }}
-                                            className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9.5px] font-bold shadow-sm transition-colors"
+                                            className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
                                           >
-                                            Approve Emergency
+                                            {loadingActions[`approve_req_${req.id}`] ? (
+                                              <>
+                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                                Approving...
+                                              </>
+                                            ) : "Approve Emergency"}
                                           </button>
                                           <button
                                             type="button"
+                                            disabled={loadingActions[`reject_req_${req.id}`]}
                                             onClick={async () => {
                                               if (await showConfirm({ message: "Are you sure you want to reject this emergency handover request?", danger: true, confirmLabel: "Reject" })) {
-                                                await handleRequest(req.id, "rejected", "", "Campus Manager");
-                                                toast("Emergency request rejected.", "info");
+                                                setActionLoading(`reject_req_${req.id}`, true);
+                                                try {
+                                                  await handleRequest(req.id, "rejected", "", "Campus Manager");
+                                                  toast("Emergency request rejected.", "info");
+                                                } finally {
+                                                  setActionLoading(`reject_req_${req.id}`, false);
+                                                }
                                               }
                                             }}
-                                            className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors"
+                                            className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
                                           >
-                                            Reject
+                                            {loadingActions[`reject_req_${req.id}`] ? (
+                                              <>
+                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                                Rejecting...
+                                              </>
+                                            ) : "Reject"}
                                           </button>
                                         </div>
                                       ) : camMentor && req.targetStaffId === camMentor.id ? (
@@ -6115,15 +6417,26 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           </button>
                                           <button
                                             type="button"
+                                            disabled={loadingActions[`reject_regular_req_${req.id}`]}
                                             onClick={async () => {
                                               if (await showConfirm({ message: "Are you sure you want to reject this handover request?", danger: true, confirmLabel: "Reject" })) {
-                                                await handleRequest(req.id, "rejected", "", "Campus Manager");
-                                                toast("Request rejected successfully.", "info");
+                                                setActionLoading(`reject_regular_req_${req.id}`, true);
+                                                try {
+                                                  await handleRequest(req.id, "rejected", "", "Campus Manager");
+                                                  toast("Request rejected successfully.", "info");
+                                                } finally {
+                                                  setActionLoading(`reject_regular_req_${req.id}`, false);
+                                                }
                                               }
                                             }}
-                                            className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors"
+                                            className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
                                           >
-                                            Reject
+                                            {loadingActions[`reject_regular_req_${req.id}`] ? (
+                                              <>
+                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                                Rejecting...
+                                              </>
+                                            ) : "Reject"}
                                           </button>
                                         </div>
                                       ) : (
@@ -6233,7 +6546,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <button onClick={() => setReviewingRequestId(null)} className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors">
                                     Cancel
                                   </button>
-                                  <button 
+                                  <LoadingButton 
+                                    isLoading={loadingActions[`approve_review_${reviewReq.id}`]}
+                                    loadingText="Approving..."
+                                    variant="secondary"
                                     onClick={async () => {
                                       let finalCourseName = reviewReq.course;
                                       if (handoverSubject === "substitute_own") { 
@@ -6243,14 +6559,19 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         if (!customSubjName.trim()) { toast("Please enter a custom subject name.", "warning"); return; }
                                         finalCourseName = customSubjName.trim(); 
                                       }
-                                      await handleRequest(reviewReq.id, "approved", reviewReason, "Campus Manager", finalCourseName);
-                                      setReviewingRequestId(null); 
-                                      setReviewReason("");
+                                      setActionLoading(`approve_review_${reviewReq.id}`, true);
+                                      try {
+                                        await handleRequest(reviewReq.id, "approved", reviewReason, "Campus Manager", finalCourseName);
+                                        setReviewingRequestId(null); 
+                                        setReviewReason("");
+                                      } finally {
+                                        setActionLoading(`approve_review_${reviewReq.id}`, false);
+                                      }
                                     }} 
-                                    className="px-4 py-2 bg-teal-600 text-white rounded-xl text-xs font-bold hover:bg-teal-700 shadow-sm"
+                                    className="px-4 py-2 rounded-xl text-xs font-bold shadow-sm"
                                   >
                                     Confirm Approve
-                                  </button>
+                                  </LoadingButton>
                                 </div>
                               </div>
                             </div>
@@ -6617,6 +6938,217 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         );
                       })()}
 
+                      {/* ── Student Performance Analytics ── */}
+                      {activeDept && activeSemester && activeSubject && (() => {
+                        // Compute students in this class group
+                        const chartClassGroup = `${activeDept} - ${activeSemester}`;
+                        const classStudentsForChart = students.filter(s => {
+                          if (s.college_id && activeCollegeId && s.college_id !== activeCollegeId) return false;
+                          if (s.classGroup && isCohortMatching(s.classGroup, chartClassGroup, coursesList, subjectsList)) return true;
+                          const sDept = (s.department || "").toLowerCase().trim();
+                          const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
+                          return (sDept === activeDept.toLowerCase().trim() || sDept.includes(activeDept.toLowerCase().trim()) || activeDept.toLowerCase().trim().includes(sDept)) &&
+                                 (sSem === activeSemester.toLowerCase().trim() || !activeSemester);
+                        });
+                        const studentCount = classStudentsForChart.length;
+                        if (studentCount === 0) return null;
+
+                        // ── Data for current week: marks distribution + submission rate ──
+                        const weekEntries = studentTracker.filter(
+                          e => classStudentsForChart.some(s => s.id === e.student_id) &&
+                               (isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
+                               e.week_number === activeWeek
+                        );
+                        const submitted = weekEntries.filter(e => e.submission_url).length;
+                        const graded = weekEntries.filter(e => e.marks !== null && e.marks !== undefined).length;
+                        const submissionRate = Math.round((submitted / studentCount) * 100);
+                        const gradingRate = Math.round((graded / studentCount) * 100);
+
+                        // Marks buckets: 0-4, 5-6, 7-8, 9-10
+                        const buckets = [
+                          { label: "0–4", color: "#ef4444", count: 0 },
+                          { label: "5–6", color: "#f59e0b", count: 0 },
+                          { label: "7–8", color: "#6366f1", count: 0 },
+                          { label: "9–10", color: "#10b981", count: 0 },
+                        ];
+                        weekEntries.forEach(e => {
+                          const m = e.marks;
+                          if (m === null || m === undefined) return;
+                          if (m <= 4) buckets[0].count++;
+                          else if (m <= 6) buckets[1].count++;
+                          else if (m <= 8) buckets[2].count++;
+                          else buckets[3].count++;
+                        });
+                        const maxBucket = Math.max(...buckets.map(b => b.count), 1);
+
+                        // ── Week-over-week trend (all 15 weeks) ──
+                        const weekTrend = Array.from({ length: 15 }, (_, i) => {
+                          const wk = i + 1;
+                          const wkEntries = studentTracker.filter(
+                            e => classStudentsForChart.some(s => s.id === e.student_id) &&
+                                 (isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
+                                 e.week_number === wk &&
+                                 e.marks !== null && e.marks !== undefined
+                          );
+                          const avg = wkEntries.length > 0
+                            ? wkEntries.reduce((s, e) => s + (e.marks ?? 0), 0) / wkEntries.length
+                            : null;
+                          const sub = studentTracker.filter(
+                            e => classStudentsForChart.some(s => s.id === e.student_id) &&
+                                 (isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
+                                 e.week_number === wk && e.submission_url
+                          ).length;
+                          return { week: wk, avg, sub, total: studentCount };
+                        });
+                        const hasAnyTrendData = weekTrend.some(w => w.avg !== null);
+
+                        // Donut helpers
+                        const donutR = 36, donutCx = 50, donutCy = 50, donutSW = 14;
+                        const donutCirc = 2 * Math.PI * donutR;
+
+                        // Trend chart dimensions
+                        const tW = 400, tH = 80, tPad = 8;
+                        const tPoints = weekTrend.map((w, i) => ({
+                          x: tPad + (i / 14) * (tW - tPad * 2),
+                          y: w.avg !== null ? tH - tPad - ((w.avg / 10) * (tH - tPad * 2)) : null,
+                          avg: w.avg,
+                          sub: w.sub,
+                          week: w.week,
+                        }));
+                        const pathParts: string[] = [];
+                        tPoints.forEach((p, i) => {
+                          if (p.y === null) return;
+                          const cmd = i === 0 || tPoints[i - 1].y === null ? `M${p.x},${p.y}` : `L${p.x},${p.y}`;
+                          pathParts.push(cmd);
+                        });
+                        const trendPath = pathParts.join(" ");
+
+                        return (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                            {/* Marks Distribution Bar Chart */}
+                            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs">
+                              <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider mb-3">
+                                Week {activeWeek} — Marks Distribution
+                              </h4>
+                              <div className="space-y-2.5">
+                                {buckets.map(b => (
+                                  <div key={b.label} className="flex items-center gap-2">
+                                    <span className="text-[9px] font-bold text-slate-500 w-8 shrink-0">{b.label}</span>
+                                    <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+                                      <div
+                                        className="h-full rounded-full transition-all duration-700"
+                                        style={{ width: `${Math.round((b.count / maxBucket) * 100)}%`, backgroundColor: b.color }}
+                                      />
+                                    </div>
+                                    <span className="text-[10px] font-black text-slate-700 w-4 shrink-0 text-right">{b.count}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-center">
+                                <div>
+                                  <div className="text-base font-black text-slate-800">{graded}</div>
+                                  <div className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Graded</div>
+                                </div>
+                                <div>
+                                  <div className="text-base font-black text-slate-800">
+                                    {graded > 0 ? (weekEntries.filter(e => e.marks !== null && e.marks !== undefined).reduce((s, e) => s + (e.marks ?? 0), 0) / graded).toFixed(1) : "—"}
+                                  </div>
+                                  <div className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Avg Marks</div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Submission + Grading Rate Donuts */}
+                            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-col">
+                              <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider mb-3">
+                                Week {activeWeek} — Completion Rate
+                              </h4>
+                              <div className="flex flex-1 items-center justify-around">
+                                {[
+                                  { label: "Submitted", value: submissionRate, count: submitted, color: "#6366f1", track: "#e0e7ff" },
+                                  { label: "Graded", value: gradingRate, count: graded, color: "#10b981", track: "#d1fae5" },
+                                ].map(d => {
+                                  const dash = (d.value / 100) * donutCirc;
+                                  return (
+                                    <div key={d.label} className="flex flex-col items-center gap-1">
+                                      <svg width={100} height={100} viewBox="0 0 100 100">
+                                        <circle cx={donutCx} cy={donutCy} r={donutR} fill="none" stroke={d.track} strokeWidth={donutSW} />
+                                        <circle cx={donutCx} cy={donutCy} r={donutR} fill="none"
+                                          stroke={d.color} strokeWidth={donutSW}
+                                          strokeDasharray={`${dash} ${donutCirc - dash}`}
+                                          strokeDashoffset={donutCirc / 4}
+                                          strokeLinecap="round"
+                                          style={{ transition: "stroke-dasharray 0.6s ease" }}
+                                        />
+                                        <text x={donutCx} y={donutCy - 5} textAnchor="middle" fontSize={16} fontWeight="900" fill={d.color}>{d.value}%</text>
+                                        <text x={donutCx} y={donutCy + 10} textAnchor="middle" fontSize={8} fill="#94a3b8" fontWeight="700">
+                                          {d.count}/{studentCount}
+                                        </text>
+                                      </svg>
+                                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">{d.label}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Week-over-Week Trend */}
+                            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs">
+                              <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider mb-3">
+                                Avg Marks Trend — All Weeks
+                              </h4>
+                              {!hasAnyTrendData ? (
+                                <div className="h-20 flex items-center justify-center text-[10px] text-slate-400 italic">No graded data yet.</div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <svg width={tW} height={tH + 20} viewBox={`0 0 ${tW} ${tH + 20}`} style={{ minWidth: "100%" }}>
+                                    {/* Reference lines at 5 and 10 */}
+                                    {[5, 10].map(v => {
+                                      const ly = tH - tPad - ((v / 10) * (tH - tPad * 2));
+                                      return (
+                                        <g key={v}>
+                                          <line x1={tPad} y1={ly} x2={tW - tPad} y2={ly} stroke="#e2e8f0" strokeWidth={1} strokeDasharray="3 3" />
+                                          <text x={tPad - 1} y={ly - 2} fontSize={6} fill="#94a3b8" textAnchor="start">{v}</text>
+                                        </g>
+                                      );
+                                    })}
+                                    {/* Shaded area under trend */}
+                                    {trendPath && (() => {
+                                      const firstPt = tPoints.find(p => p.y !== null);
+                                      const lastPt = [...tPoints].reverse().find(p => p.y !== null);
+                                      if (!firstPt || !lastPt) return null;
+                                      const areaPath = `${trendPath} L${lastPt.x},${tH - tPad} L${firstPt.x},${tH - tPad} Z`;
+                                      return <path d={areaPath} fill="#6366f1" fillOpacity={0.08} />;
+                                    })()}
+                                    {/* Trend line */}
+                                    {trendPath && <path d={trendPath} fill="none" stroke="#6366f1" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}
+                                    {/* Data points */}
+                                    {tPoints.map(p => p.y !== null ? (
+                                      <g key={p.week}>
+                                        <circle cx={p.x} cy={p.y!} r={3} fill="#6366f1" />
+                                        <text x={p.x} y={tH + 15} textAnchor="middle" fontSize={6} fill="#94a3b8" fontWeight="600">W{p.week}</text>
+                                      </g>
+                                    ) : (
+                                      <text key={p.week} x={p.x} y={tH + 15} textAnchor="middle" fontSize={6} fill="#cbd5e1">W{p.week}</text>
+                                    ))}
+                                    {/* Current week highlight */}
+                                    {tPoints[activeWeek - 1]?.y !== null && (
+                                      <circle cx={tPoints[activeWeek - 1].x} cy={tPoints[activeWeek - 1].y!} r={5} fill="none" stroke="#6366f1" strokeWidth={2} />
+                                    )}
+                                  </svg>
+                                </div>
+                              )}
+                              <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[9px] text-slate-400 font-semibold">
+                                <span>Week 1</span>
+                                <span className="text-[8px] text-indigo-400 font-black">● Week {activeWeek} selected</span>
+                                <span>Week 15</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {/* Submissions & Marks Audit Table */}
                       <div className="bg-white border border-slate-250/60 rounded-3xl p-6 shadow-xs space-y-4">
                         <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">
@@ -6978,11 +7510,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             </button>
                             <button
                               type="button"
+                              disabled={loadingActions['bulk_delete_students']}
                               onClick={() => handleBulkDeleteStudents()}
-                              className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                              className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              Delete Selected ({selectedStudentIds.length})
+                              {loadingActions['bulk_delete_students'] ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  Deleting...
+                                </>
+                              ) : (
+                                <>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Delete Selected ({selectedStudentIds.length})
+                                </>
+                              )}
                             </button>
                           </div>
                         </div>
@@ -7046,11 +7588,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 {filtered.length > 1 && (
                                   <button
                                     type="button"
+                                    disabled={loadingActions['bulk_delete_students']}
                                     onClick={() => handleBulkDeleteStudents(allFilteredIds)}
-                                    className="text-rose-600 hover:text-rose-700 font-bold text-[11px] hover:underline flex items-center gap-1 cursor-pointer"
+                                    className="text-rose-600 hover:text-rose-700 font-bold text-[11px] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
-                                    <Trash2 className="h-3 w-3" />
-                                    Delete All Filtered ({filtered.length})
+                                    {loadingActions['bulk_delete_students'] ? (
+                                      <>
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        Deleting All...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Trash2 className="h-3 w-3" />
+                                        Delete All Filtered ({filtered.length})
+                                      </>
+                                    )}
                                   </button>
                                 )}
                               </div>
@@ -7155,11 +7707,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                               </button>
                                               <button
                                                 type="button"
+                                                disabled={loadingActions[`delete_student_${st.id}`]}
                                                 onClick={() => handleSingleDeleteStudent(st)}
-                                                className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10.5px] font-extrabold transition-colors cursor-pointer flex items-center gap-1"
+                                                className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10.5px] font-extrabold transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 title="Delete student record"
                                               >
-                                                <Trash2 className="h-3.5 w-3.5" />
+                                                {loadingActions[`delete_student_${st.id}`] ? (
+                                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                ) : (
+                                                  <Trash2 className="h-3.5 w-3.5" />
+                                                )}
                                               </button>
                                             </div>
                                           </td>
@@ -7327,14 +7884,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </div>
 
                         <div className="flex gap-2 pt-2">
-                          <Button
-                            variant="success"
-                            size="md"
+                          <LoadingButton
+                            isLoading={loadingActions[`save_faculty_${editingFacultyId}`]}
+                            loadingText="Saving..."
+                            variant="primary"
                             onClick={() => handleSaveFacultyConfig(editingFacultyId)}
                             className="flex-1"
                           >
                             Save Configuration
-                          </Button>
+                          </LoadingButton>
                           <Button
                             variant="secondary"
                             size="md"
@@ -7529,12 +8087,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         >
                           Cancel
                         </button>
-                        <button
+                        <LoadingButton
                           type="submit"
-                          className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                          isLoading={loadingActions['submit_mentor']}
+                          loadingText={editingMentor ? "Saving..." : "Creating..."}
+                          variant="gradient"
+                          className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
                         >
                           {editingMentor ? "Save Changes" : "Create Mentor"}
-                        </button>
+                        </LoadingButton>
                       </div>
                     </form>
                   </div>
@@ -7737,13 +8298,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           type="submit"
                           disabled={isCorrectionSubmitting || !correctionSlotId || (studentCorrectionCount >= 2 && !isAdminOverride)}
-                          className={`flex-grow py-2.5 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer text-center border border-indigo-650 ${
+                          className={`flex-grow py-2.5 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer text-center border border-indigo-650 flex items-center justify-center gap-2 ${
                             isCorrectionSubmitting || !correctionSlotId || (studentCorrectionCount >= 2 && !isAdminOverride)
                               ? "bg-slate-300 border-slate-300 text-slate-400 cursor-not-allowed"
                               : "btn-gradient hover:opacity-95"
                           }`}
                         >
-                          {isCorrectionSubmitting ? "Saving..." : "Apply Correction"}
+                          {isCorrectionSubmitting ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin shrink-0 text-current" />
+                              <span>Saving...</span>
+                            </>
+                          ) : (
+                            "Apply Correction"
+                          )}
                         </button>
                       </div>
                     </form>
@@ -8246,11 +8814,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                       <button
                         type="button"
+                        disabled={selectedStudentForDetail ? loadingActions[`delete_student_${selectedStudentForDetail.id}`] : false}
                         onClick={() => handleSingleDeleteStudent(selectedStudentForDetail)}
-                        className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                        className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Delete Student Record
+                        {selectedStudentForDetail && loadingActions[`delete_student_${selectedStudentForDetail.id}`] ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Deleting...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete Student Record
+                          </>
+                        )}
                       </button>
                       <button
                         type="button"
@@ -8525,13 +9103,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         >
                           Cancel
                         </Button>
-                        <Button
+                        <LoadingButton
                           type="submit"
+                          isLoading={loadingActions['submit_subject']}
+                          loadingText={editingSubject ? "Saving..." : "Creating..."}
                           variant="primary"
-                          size="md"
                         >
                           {editingSubject ? "Save Changes" : "Create Subject"}
-                        </Button>
+                        </LoadingButton>
                       </div>
                     </form>
                   </div>

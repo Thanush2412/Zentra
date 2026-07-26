@@ -46,6 +46,7 @@ import {
 import * as XLSX from "xlsx";
 import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
+import { LoadingButton } from "./ui/LoadingButton";
 
 const generateCodeFromName = (name: string): string => {
   const words = name.replace(/with|and|for/gi, "").split(/\s+/).filter(Boolean);
@@ -202,6 +203,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   }, []);
   const [drillDownCollegeId, setDrillDownCollegeId] = useState<string | null>(null);
+  const [loadingActions, setLoadingActions] = useState<Record<string, boolean>>({});
+  const setActionLoading = (key: string, loading: boolean) => {
+    setLoadingActions(prev => ({ ...prev, [key]: loading }));
+  };
 
   // New features relational lists
   const [announcements, setAnnouncements] = useState<any[]>([]);
@@ -677,6 +682,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleDeleteAnnouncement = async (id: string) => {
     if (await showConfirm({ message: "Are you sure you want to delete this announcement?", danger: true, confirmLabel: "Delete" })) {
+      setActionLoading(`announcement_${id}`, true);
       try {
         const res = await fetch(`/api/announcements?id=${id}`, { method: "DELETE" });
         const data = await res.json();
@@ -687,6 +693,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       } catch (err) {
         console.error("Delete announcement error:", err);
+      } finally {
+        setActionLoading(`announcement_${id}`, false);
       }
     }
   };
@@ -694,6 +702,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleAddHoliday = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!holForm.title.trim() || !holForm.date) return;
+    setActionLoading('submit_holiday', true);
     try {
       const res = await fetch("/api/holidays", {
         method: "POST",
@@ -710,11 +719,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (err) {
       console.error("Add holiday error:", err);
+    } finally {
+      setActionLoading('submit_holiday', false);
     }
   };
 
   const handleDeleteHoliday = async (id: string) => {
     if (await showConfirm({ message: "Are you sure you want to delete this holiday?", danger: true, confirmLabel: "Delete" })) {
+      setActionLoading(`holiday_${id}`, true);
       try {
         const res = await fetch(`/api/holidays?id=${id}`, { method: "DELETE" });
         const data = await res.json();
@@ -725,6 +737,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       } catch (err) {
         console.error("Delete holiday error:", err);
+      } finally {
+        setActionLoading(`holiday_${id}`, false);
       }
     }
   };
@@ -772,6 +786,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     e.preventDefault();
     if (!approvingSignup) return;
 
+    setActionLoading('approve_signup', true);
     try {
       const res = await approveSignupRequest(approvingSignup.id, {
         role: approvingRole,
@@ -797,11 +812,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (err: any) {
       toast(err.message || "An error occurred.", "error");
+    } finally {
+      setActionLoading('approve_signup', false);
     }
   };
 
   const handleRejectSignup = async (id: string) => {
     if (await showConfirm({ message: "Are you sure you want to reject this signup request?", danger: true, confirmLabel: "Reject" })) {
+      setActionLoading(`reject_signup_${id}`, true);
       try {
         const res = await rejectSignupRequest(id);
         if (res.success) {
@@ -812,12 +830,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       } catch (err: any) {
         toast(err.message || "An error occurred.", "error");
+      } finally {
+        setActionLoading(`reject_signup_${id}`, false);
       }
     }
   };
 
   const handleDeleteSignupRequest = async (id: string) => {
     if (await showConfirm({ message: "Are you sure you want to permanently delete this request log?", danger: true, confirmLabel: "Delete" })) {
+      setActionLoading(`delete_signup_${id}`, true);
       try {
         const res = await deleteSignupRequest(id);
         if (res.success) {
@@ -828,6 +849,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       } catch (err: any) {
         toast(err.message || "An error occurred.", "error");
+      } finally {
+        setActionLoading(`delete_signup_${id}`, false);
       }
     }
   };
@@ -1329,11 +1352,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (err: any) {
       setModalError(err.message || "An unexpected error occurred.");
+    } finally {
+      setActionLoading('submit_campus', false);
     }
   };
 
   const handleDeleteCampus = async (id: string) => {
     if (await showConfirm({ title: "Delete Campus", message: "Are you sure you want to delete this campus?\n\nThis will permanently delete all associated mentors, students, courses, slots, and attendance records. This action cannot be undone.", danger: true, confirmLabel: "Delete Campus" })) {
+      setActionLoading(`campus_${id}`, true);
       try {
         const res = await deleteCollege(id);
         if (res.success) {
@@ -1350,6 +1376,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       } catch (err: any) {
         toast(err.message || "An error occurred while deleting.", "error");
+      } finally {
+        setActionLoading(`campus_${id}`, false);
       }
     }
   };
@@ -1380,6 +1408,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleKamSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError(null);
+    setActionLoading('submit_kam', true);
     try {
       let res;
       if (editingKam) {
@@ -1395,11 +1424,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (err: any) {
       setModalError(err.message || "An unexpected error occurred.");
+    } finally {
+      setActionLoading('submit_kam', false);
     }
   };
 
   const handleDeleteKam = async (id: string) => {
     if (await showConfirm({ message: "Are you sure you want to delete this KAM? This action cannot be undone.", danger: true, confirmLabel: "Delete" })) {
+      setActionLoading(`kam_${id}`, true);
       try {
         const res = await deleteKAM(id);
         if (res.success) {
@@ -1410,6 +1442,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       } catch (err: any) {
         toast(err.message || "An error occurred while deleting.", "error");
+      } finally {
+        setActionLoading(`kam_${id}`, false);
       }
     }
   };
@@ -1442,6 +1476,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleCamSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError(null);
+    setActionLoading('submit_cam', true);
     try {
       let res;
       if (editingCam) {
@@ -1457,11 +1492,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (err: any) {
       setModalError(err.message || "An unexpected error occurred.");
+    } finally {
+      setActionLoading('submit_cam', false);
     }
   };
 
   const handleDeleteCam = async (id: string) => {
     if (await showConfirm({ message: "Are you sure you want to delete this Campus Manager? This action cannot be undone.", danger: true, confirmLabel: "Delete" })) {
+      setActionLoading(`cam_${id}`, true);
       try {
         const res = await deleteCAM(id);
         if (res.success) {
@@ -1472,6 +1510,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       } catch (err: any) {
         toast(err.message || "An error occurred while deleting.", "error");
+      } finally {
+        setActionLoading(`cam_${id}`, false);
       }
     }
   };
@@ -1509,6 +1549,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
 
+    setActionLoading('submit_sme', true);
     try {
       if (isEditingSme) {
         const res = await updateSmeUser(smeForm.id, smeForm.name, smeForm.email, smeForm.subject);
@@ -1529,11 +1570,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (e: any) {
       toast(e.message || "An error occurred.", "error");
+    } finally {
+      setActionLoading('submit_sme', false);
     }
   };
 
   const handleDeleteSme = async (id: string) => {
     if (await showConfirm({ message: "Are you sure you want to delete this SME? They will also lose their login credentials." })) {
+      setActionLoading(`sme_${id}`, true);
       try {
         const res = await deleteSmeUser(id);
         if (res.success) {
@@ -1543,6 +1587,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       } catch (e: any) {
         toast(e.message || "An error occurred.", "error");
+      } finally {
+        setActionLoading(`sme_${id}`, false);
       }
     }
   };
@@ -1609,6 +1655,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       subject_group: mentorForm.subject_group.trim()
     };
 
+    setActionLoading('submit_mentor', true);
     try {
       let res;
       if (editingMentor) {
@@ -1624,11 +1671,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (err: any) {
       setModalError(err.message || "An unexpected error occurred.");
+    } finally {
+      setActionLoading('submit_mentor', false);
     }
   };
 
   const handleDeleteMentor = async (id: string) => {
     if (await showConfirm({ message: "Are you sure you want to delete this mentor? This will also delete all slots assigned to them.", danger: true, confirmLabel: "Delete" })) {
+      setActionLoading(`mentor_${id}`, true);
       try {
         const res = await deleteMentor(id);
         if (res.success) {
@@ -1639,6 +1689,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       } catch (err: any) {
         toast(err.message || "An error occurred while deleting.", "error");
+      } finally {
+        setActionLoading(`mentor_${id}`, false);
       }
     }
   };
@@ -2695,10 +2747,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                         <button
                           onClick={() => handleDeleteCampus(col.id)}
+                          disabled={loadingActions[`campus_${col.id}`]}
                           title="Delete Campus"
-                          className="p-2 bg-gray-50 border border-gray-200 text-gray-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
+                          className="p-2 bg-gray-50 border border-gray-200 text-gray-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {loadingActions[`campus_${col.id}`] ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                         </button>
                       </div>
                     </div>
@@ -2776,9 +2833,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </button>
                             <button
                               onClick={() => handleDeleteKam(kam.id)}
-                              className="p-1.5 bg-gray-50 border border-gray-250 text-gray-655 hover:text-rose-600 hover:bg-rose-55 rounded-lg transition-all cursor-pointer"
+                              disabled={loadingActions[`kam_${kam.id}`]}
+                              className="p-1.5 bg-gray-50 border border-gray-250 text-gray-655 hover:text-rose-600 hover:bg-rose-55 rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              {loadingActions[`kam_${kam.id}`] ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
                             </button>
                           </div>
                         </td>
@@ -2963,9 +3025,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </button>
                             <button
                               onClick={() => handleDeleteCam(cam.id)}
-                              className="p-1.5 bg-gray-50 border border-gray-255 text-gray-655 hover:text-rose-600 hover:bg-rose-55 rounded-lg transition-all cursor-pointer"
+                              disabled={loadingActions[`cam_${cam.id}`]}
+                              className="p-1.5 bg-gray-50 border border-gray-255 text-gray-655 hover:text-rose-600 hover:bg-rose-55 rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              {loadingActions[`cam_${cam.id}`] ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
                             </button>
                           </div>
                         </td>
@@ -3135,10 +3202,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </button>
                             <button
                               onClick={() => handleDeleteMentor(m.id)}
-                              className="p-1.5 hover:bg-rose-50 border border-transparent hover:border-rose-250 text-gray-655 hover:text-rose-600 rounded-lg transition-all cursor-pointer"
+                              disabled={loadingActions[`mentor_${m.id}`]}
+                              className="p-1.5 hover:bg-rose-50 border border-transparent hover:border-rose-250 text-gray-655 hover:text-rose-600 rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                               title="Delete Mentor"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              {loadingActions[`mentor_${m.id}`] ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
                             </button>
                           </div>
                         </td>
@@ -4238,10 +4310,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <h3 className="text-sm font-bold text-gray-900 leading-snug">{ann.title}</h3>
                           <button
                             onClick={() => handleDeleteAnnouncement(ann.id)}
-                            className="p-1 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                            disabled={loadingActions[`announcement_${ann.id}`]}
+                            className="p-1 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Delete Announcement"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            {loadingActions[`announcement_${ann.id}`] ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
                           </button>
                         </div>
                         <p className="text-xs text-gray-600 font-semibold leading-relaxed whitespace-pre-line">{ann.description}</p>
@@ -4320,10 +4397,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <td className="p-4 text-right">
                             <button
                               onClick={() => handleDeleteHoliday(hol.id)}
-                              className="p-1.5 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                              disabled={loadingActions[`holiday_${hol.id}`]}
+                              className="p-1.5 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                               title="Delete Holiday"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              {loadingActions[`holiday_${hol.id}`] ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
                             </button>
                           </td>
                         </tr>
@@ -4471,6 +4553,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <button
                                     onClick={() => {
                                       setApprovingSignup(req);
+                                      setApprovingRole(req.requested_role || "student");
                                       setMappingCollegeId(req.college_id || "");
                                       setMappingType("create_new");
                                       setShowApprovalModal(true);
@@ -4480,20 +4563,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     Approve & Map
                                   </button>
                                   <button
-                                    onClick={() => handleRejectSignup(req.id)}
-                                    className="px-2.5 py-1.5 bg-rose-50 border border-rose-250 text-rose-700 hover:bg-rose-100 rounded-xl transition-all cursor-pointer font-bold text-[10px]"
-                                  >
-                                    Reject
-                                  </button>
+                                     onClick={() => handleRejectSignup(req.id)}
+                                     disabled={loadingActions[`reject_signup_${req.id}`]}
+                                     className="px-2.5 py-1.5 bg-rose-50 border border-rose-250 text-rose-700 hover:bg-rose-100 rounded-xl transition-all cursor-pointer font-bold text-[10px] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                   >
+                                     {loadingActions[`reject_signup_${req.id}`] ? (
+                                       <Loader2 className="h-3 w-3 animate-spin" />
+                                     ) : (
+                                       "Reject"
+                                     )}
+                                   </button>
                                 </>
                               )}
                               <button
-                                onClick={() => handleDeleteSignupRequest(req.id)}
-                                className="p-1.5 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer inline-flex items-center align-middle"
-                                title="Delete Log"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
+                                 onClick={() => handleDeleteSignupRequest(req.id)}
+                                 disabled={loadingActions[`delete_signup_${req.id}`]}
+                                 className="p-1.5 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer inline-flex items-center align-middle disabled:opacity-50 disabled:cursor-not-allowed"
+                                 title="Delete Log"
+                               >
+                                 {loadingActions[`delete_signup_${req.id}`] ? (
+                                   <Loader2 className="h-4 w-4 animate-spin" />
+                                 ) : (
+                                   <Trash2 className="h-4 w-4" />
+                                 )}
+                               </button>
                             </td>
                           </tr>
                         );
@@ -4712,12 +4805,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         >
                           Cancel
                         </button>
-                        <button
+                        <LoadingButton
                           type="submit"
-                          className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-center cursor-pointer transition-colors shadow"
+                          isLoading={loadingActions['approve_signup']}
+                          loadingText="Approving..."
+                          variant="primary"
+                          className="flex-1 py-2 text-center"
                         >
                           Approve & Save
-                        </button>
+                        </LoadingButton>
                       </div>
                     </form>
                   </div>
@@ -4777,10 +4873,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </button>
                           <button
                             onClick={() => handleDeleteSme(sme.id)}
-                            className="p-1.5 hover:bg-rose-50 hover:text-rose-650 rounded-lg text-gray-400 transition-colors cursor-pointer inline-flex"
+                            disabled={loadingActions[`sme_${sme.id}`]}
+                            className="p-1.5 hover:bg-rose-50 hover:text-rose-650 rounded-lg text-gray-400 transition-colors cursor-pointer inline-flex disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Delete SME"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            {loadingActions[`sme_${sme.id}`] ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
                           </button>
                         </td>
                       </tr>
@@ -6330,12 +6431,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         Next Step →
                       </button>
                     ) : (
-                      <button
+                      <LoadingButton
                         type="submit"
-                        className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                        isLoading={loadingActions['submit_campus']}
+                        loadingText={editingCampus ? "Saving..." : "Creating..."}
+                        variant="gradient"
+                        className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
                       >
                         {editingCampus ? "Save Changes" : "Yes Create Campus"}
-                      </button>
+                      </LoadingButton>
                     )}
                   </div>
                 </div>
@@ -6422,12 +6526,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 >
                   Cancel
                 </button>
-                <button
+                <LoadingButton
                   type="submit"
-                  className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  isLoading={loadingActions['submit_kam']}
+                  loadingText={editingKam ? "Saving..." : "Creating..."}
+                  variant="gradient"
+                  className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
                 >
                   {editingKam ? "Save Changes" : "Create KAM"}
-                </button>
+                </LoadingButton>
               </div>
             </form>
           </div>
@@ -6531,12 +6638,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 >
                   Cancel
                 </button>
-                <button
+                <LoadingButton
                   type="submit"
-                  className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  isLoading={loadingActions['submit_cam']}
+                  loadingText={editingCam ? "Saving..." : "Creating..."}
+                  variant="gradient"
+                  className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
                 >
                   {editingCam ? "Save Changes" : "Create Campus Manager"}
-                </button>
+                </LoadingButton>
               </div>
             </form>
           </div>
@@ -6614,13 +6724,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 >
                   Cancel
                 </button>
-                <button
+                <LoadingButton
                   type="button"
+                  isLoading={loadingActions['submit_sme']}
+                  loadingText="Saving..."
+                  variant="secondary"
                   onClick={handleSaveSme}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-md cursor-pointer"
                 >
                   Save SME
-                </button>
+                </LoadingButton>
               </div>
             </div>
           </div>
@@ -6825,12 +6938,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 >
                   Cancel
                 </button>
-                <button
+                <LoadingButton
                   type="submit"
-                  className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  isLoading={loadingActions['submit_mentor']}
+                  loadingText={editingMentor ? "Saving..." : "Creating..."}
+                  variant="gradient"
+                  className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
                 >
                   {editingMentor ? "Save Changes" : "Create Mentor"}
-                </button>
+                </LoadingButton>
               </div>
             </form>
           </div>
@@ -7636,12 +7752,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 >
                   Cancel
                 </button>
-                <button
+                <LoadingButton
                   type="submit"
-                  className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  isLoading={loadingActions['submit_holiday']}
+                  loadingText="Saving..."
+                  variant="gradient"
+                  className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
                 >
                   Save Holiday
-                </button>
+                </LoadingButton>
               </div>
             </form>
           </div>

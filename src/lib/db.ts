@@ -16,29 +16,54 @@ function normalizeParams(params: any[]): any[] {
   return args.map(arg => (arg === undefined ? null : arg));
 }
 
+async function executeWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 250): Promise<T> {
+  let attempt = 0;
+  while (attempt < retries) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      attempt++;
+      const isNetErr =
+        err?.code === "UND_ERR_CONNECT_TIMEOUT" ||
+        err?.code === "ECONNRESET" ||
+        err?.message?.includes("fetch failed") ||
+        err?.message?.includes("Connect Timeout") ||
+        err?.message?.includes("read ECONNRESET");
+
+      if (isNetErr && attempt < retries) {
+        console.warn(`[DB Retry] Network timeout/reset on DB call (attempt ${attempt}/${retries}). Retrying in ${delay * attempt}ms...`);
+        await new Promise(res => setTimeout(res, delay * attempt));
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw new Error("DB operation failed after maximum retries");
+}
+
 function createDbAdapter(client: Client): TursoDbAdapter {
   return {
     client,
     async get(sql: string, ...params: any[]) {
       const args = normalizeParams(params);
-      const res = await client.execute({ sql, args });
+      const res = await executeWithRetry(() => client.execute({ sql, args }));
       return res.rows[0] ? { ...res.rows[0] } : undefined;
     },
     async all(sql: string, ...params: any[]) {
       const args = normalizeParams(params);
-      const res = await client.execute({ sql, args });
+      const res = await executeWithRetry(() => client.execute({ sql, args }));
       return res.rows.map(row => ({ ...row }));
     },
     async run(sql: string, ...params: any[]) {
       const args = normalizeParams(params);
-      const res = await client.execute({ sql, args });
+      const res = await executeWithRetry(() => client.execute({ sql, args }));
       return {
         lastID: res.lastInsertRowid !== undefined ? Number(res.lastInsertRowid) : undefined,
         changes: res.rowsAffected
       };
     },
     async exec(sql: string) {
-      await client.executeMultiple(sql);
+      await executeWithRetry(() => client.executeMultiple(sql));
     }
   };
 }
@@ -53,17 +78,28 @@ export function getDb(): Promise<TursoDbAdapter> {
       const url = process.env.TURSO_DATABASE_URL || "file:database.sqlite";
       const authToken = process.env.TURSO_AUTH_TOKEN;
 
-      const client = createClient({
-        url,
-        authToken,
-      });
+      let client: Client;
+      try {
+        client = createClient({
+          url,
+          authToken,
+        });
+      } catch (err) {
+        console.warn("[DB Warning] Failed to initialize Turso Cloud client. Falling back to local SQLite database.");
+        client = createClient({ url: "file:database.sqlite" });
+      }
 
       dbInstance = createDbAdapter(client);
 
       // Enable foreign keys for references
       try {
         await dbInstance.exec("PRAGMA foreign_keys = ON;");
-      } catch (_) {}
+      } catch (err: any) {
+        console.warn("[DB Warning] Remote database connection failed during init. Initializing local SQLite fallback.", err?.message);
+        client = createClient({ url: "file:database.sqlite" });
+        dbInstance = createDbAdapter(client);
+        try { await dbInstance.exec("PRAGMA foreign_keys = ON;"); } catch (_) {}
+      }
 
       // Check for legacy schema and drop to trigger rebuild of corrected schemas
       try {
@@ -374,6 +410,9 @@ export function getDb(): Promise<TursoDbAdapter> {
       term_name TEXT NOT NULL,
       amount REAL NOT NULL,
       paid_amount REAL DEFAULT 0,
+      fpc_amount REAL DEFAULT 0,
+      fpc_pending REAL DEFAULT 0,
+      academic_year TEXT,
       due_date TEXT,
       status TEXT DEFAULT 'unpaid',
       pay_link TEXT,
@@ -394,6 +433,17 @@ export function getDb(): Promise<TursoDbAdapter> {
       payment_date TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(fee_id) REFERENCES student_fees(id),
       FOREIGN KEY(student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS feedback_reports (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      user_role TEXT,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS sme_users (

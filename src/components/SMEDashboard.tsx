@@ -453,15 +453,15 @@ export function SMEDashboard() {
 
       {/* Alerts */}
       {successMsg && (
-        <div className="p-4 bg-emerald-50 border border-emerald-250 text-emerald-800 rounded-2xl flex items-center gap-3 text-xs font-bold shadow-sm animate-in zoom-in-95">
-          <CheckCircle className="h-5 w-5 text-emerald-605 shrink-0" />
+        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl flex items-center gap-3 text-xs font-bold shadow-sm animate-in zoom-in-95">
+          <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" />
           <span>{successMsg}</span>
           <button onClick={() => setSuccessMsg("")} className="ml-auto text-emerald-500 hover:text-emerald-700"><X className="h-4 w-4" /></button>
         </div>
       )}
       {errorMsg && (
-        <div className="p-4 bg-rose-50 border border-rose-250 text-rose-800 rounded-2xl flex items-center gap-3 text-xs font-bold shadow-sm animate-in zoom-in-95">
-          <AlertCircle className="h-5 w-5 text-rose-605 shrink-0" />
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl flex items-center gap-3 text-xs font-bold shadow-sm animate-in zoom-in-95">
+          <AlertCircle className="h-5 w-5 text-rose-600 shrink-0" />
           <span>{errorMsg}</span>
           <button onClick={() => setErrorMsg("")} className="ml-auto text-rose-500 hover:text-rose-700"><X className="h-4 w-4" /></button>
         </div>
@@ -1078,7 +1078,7 @@ export function SMEDashboard() {
       {evaluationModalSession && (
         <div className="fixed inset-0 bg-slate-955/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="border-b border-slate-105 dark:border-slate-800 pb-3 flex items-center justify-between">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-850 dark:text-white uppercase tracking-wider">
                 SME Demo Evaluation Form
               </h3>
@@ -1152,7 +1152,7 @@ export function SMEDashboard() {
                 Cancel
               </button>
               <button type="button" disabled={submitting} onClick={handleConfirmEvaluation}
-                className="flex-1 px-4 py-2.5 text-xs font-black text-white bg-pink-500 hover:bg-pink-650 rounded-xl disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
+                className="flex-1 px-4 py-2.5 text-xs font-black text-white bg-pink-500 hover:bg-pink-600 rounded-xl disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
                 {submitting ? "Submitting..." : "Submit Evaluation"}
               </button>
             </div>
@@ -1164,7 +1164,7 @@ export function SMEDashboard() {
       {viewEvalSession && (
         <div className="fixed inset-0 bg-slate-955/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-5 animate-in zoom-in-95 duration-200">
-            <div className="border-b border-slate-105 dark:border-slate-800 pb-3 flex items-center justify-between">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-850 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                 <Lock className="h-4 w-4 text-emerald-500" />
                 Evaluation Record

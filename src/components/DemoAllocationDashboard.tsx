@@ -60,8 +60,8 @@ export function DemoAllocationDashboard() {
   const [selectedCollegeId, setSelectedCollegeId] = useState<string>("");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("All");
   
-  // Date selection - defaults to current date (e.g. 2026-07-15)
-  const [selectedDateStr, setSelectedDateStr] = useState<string>("2026-07-15");
+  // Date selection - defaults dynamically to current date
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
   // Scheduling generation states
   const [targetDemosCount, setTargetDemosCount] = useState<number>(1);
