@@ -1508,22 +1508,6 @@ export async function syncMentorSubjectGroups(db: any) {
       }
     }
 
-    // Fallback: If no match from subjects, determine by department
-    if (!matchedGroup && mentor.department) {
-      const deptLower = mentor.department.toLowerCase();
-      if (deptLower.includes("tamil")) {
-        matchedGroup = "Tamil";
-      } else if (deptLower.includes("english")) {
-        matchedGroup = "English";
-      } else if (deptLower.includes("computer") || deptLower.includes("data") || deptLower.includes("cs") || deptLower.includes("science")) {
-        matchedGroup = "Technical";
-      } else if (deptLower.includes("math") || deptLower.includes("aptitude")) {
-        matchedGroup = "Aptitude";
-      } else if (deptLower.includes("management") || deptLower.includes("commerce") || deptLower.includes("business")) {
-        matchedGroup = "General";
-      }
-    }
-
     if (matchedGroup) {
       // Ensure the mentor group exists in the mentor_groups table
       const groupExists = await db.get("SELECT name FROM mentor_groups WHERE LOWER(name) = ?", matchedGroup.toLowerCase());
@@ -1533,7 +1517,7 @@ export async function syncMentorSubjectGroups(db: any) {
         await db.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES (?, ?, ?)", [newGroupId, matchedGroup, `${matchedGroup} Group`]);
       }
 
-      await db.run("UPDATE mentors SET mentor_group = ?, subject_group = ? WHERE id = ?", [matchedGroup, matchedGroup, mentor.id]);
+      await db.run("UPDATE mentors SET mentor_group = ? WHERE id = ? AND (mentor_group IS NULL OR mentor_group = '')", [matchedGroup, mentor.id]);
     }
   }
 }

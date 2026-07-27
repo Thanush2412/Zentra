@@ -1066,11 +1066,7 @@ export async function seedDatabase() {
     ["sme_3", "Mr. Tharun Balaji", "tharun.sme@zentra.edu", "Technical"]
   );
 
-  // Seed default Subject Groups
-  await db.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES ('g1', 'English', 'English communication and vocabulary training.')");
-  await db.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES ('g2', 'Aptitude', 'Quantitative Aptitude, logical reasoning, and puzzle solving.')");
-  await db.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES ('g3', 'Soft Skills', 'Presentation skills, resume building, and interview prep.')");
-  await db.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES ('g4', 'Technical', 'Programming, data structures, and computer science courses.')");
+  // No default mock subject_groups seeded
 
 
 
