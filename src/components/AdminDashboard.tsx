@@ -1821,8 +1821,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setGroupSubjectSearch("");
     setGroupMentorSearch("");
     if (g) {
-      const associatedSubjectIds = (subjectsList || []).filter(s => s.mentor_group === g.name).map(s => s.id);
-      const associatedMentorIds = (mentors || []).filter(m => m.mentor_group === g.name).map(m => m.id);
+      const gNameLower = (g.name || "").trim().toLowerCase();
+      const associatedSubjectIds = (subjectsList || [])
+        .filter(s => (s.mentor_group || s.subject_group || "").trim().toLowerCase() === gNameLower)
+        .map(s => s.id);
+      const associatedMentorIds = (mentors || [])
+        .filter(m => (m.mentor_group || m.subject_group || m.department || "").trim().toLowerCase() === gNameLower)
+        .map(m => m.id);
       setGroupForm({
         id: g.id,
         name: g.name,
@@ -3899,13 +3904,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <th className="p-4 w-[15%]">ID</th>
                           <th className="p-4 w-[25%]">Group Name</th>
                           <th className="p-4 w-[40%]">Description</th>
-                          <th className="p-4 w-[10%] text-center">Subjects Count</th>
+                          <th className="p-4 w-[12%] text-center">Mentors Count</th>
                           <th className="p-4 w-[10%] text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-150 bg-white">
                         {(subjectGroups || []).map((g) => {
-                          const count = (subjectsList || []).filter(s => s.mentor_group === g.name).length;
+                          const count = (mentors || []).filter(m => (m.mentor_group || m.subject_group || m.department || "").trim().toLowerCase() === (g.name || "").trim().toLowerCase()).length;
                           return (
                             <tr key={g.id} className="hover:bg-gray-55/30 transition-colors">
                               <td className="p-4 font-mono text-[10px] text-gray-400 font-semibold">{g.id}</td>
@@ -7503,7 +7508,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   </div>
                                   <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                     {m.mentor_group ? (
-                                      <span className={`text-[8.5px] px-1 py-0.2 rounded font-black ${m.mentor_group === (editingGroup?.name)
+                                      <span className={`text-[8.5px] px-1 py-0.2 rounded font-black ${(m.mentor_group || "").trim().toLowerCase() === (editingGroup?.name || "").trim().toLowerCase()
                                           ? "bg-indigo-55 text-indigo-700 border border-indigo-100"
                                           : "bg-amber-50 text-amber-700 border border-amber-100"
                                         }`}>
