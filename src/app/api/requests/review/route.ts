@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { sendMail, formatZentraEmail } from "@/lib/mail";
+import { sendMail, renderHandoverApprovalEmail, renderHandoverRejectionEmail } from "@/lib/mail";
 
 export async function POST(request: Request) {
   try {
@@ -124,13 +124,26 @@ export async function POST(request: Request) {
       const isSwap = handoverRequest.request_type === "swap_compensate";
       const requestTypeLabel = isSwap ? "Swap Compensation" : "Class Handover";
 
-      const htmlBody = formatZentraEmail({
-        title: `${requestTypeLabel} Request ${status === "approved" ? "Approved" : "Rejected"}`,
-        badgeText: status === "approved" ? "Request Approved" : "Request Rejected",
-        badgeColor: status === "approved" ? "emerald" : "rose",
-        description: `The ${requestTypeLabel.toLowerCase()} request submitted by <strong>${handoverRequest.requestorName}</strong> has been <strong>${status}</strong> by <strong>${cleanApproverName}</strong> (${cleanActorRole}).`,
-        details: detailsList
-      });
+      const htmlBody = status === "approved"
+        ? renderHandoverApprovalEmail({
+            requestorName: handoverRequest.requestorName,
+            coverStaffName: handoverRequest.targetStaffName,
+            dateStr: handoverRequest.dateFormatted,
+            time: `${handoverRequest.time} (${handoverRequest.day})`,
+            course: handoverRequest.course,
+            classGroup: "General",
+            reviewerName: `${cleanApproverName} (${cleanActorRole})`
+          })
+        : renderHandoverRejectionEmail({
+            requestorName: handoverRequest.requestorName,
+            coverStaffName: handoverRequest.targetStaffName,
+            dateStr: handoverRequest.dateFormatted,
+            time: `${handoverRequest.time} (${handoverRequest.day})`,
+            course: handoverRequest.course,
+            classGroup: "General",
+            reviewerName: `${cleanApproverName} (${cleanActorRole})`,
+            rejectionReason: headerReason || "Scheduling conflict"
+          });
 
       await sendMail({
         to: requestorEmail,

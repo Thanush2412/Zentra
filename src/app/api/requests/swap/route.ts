@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { sendMail, formatZentraEmail } from "@/lib/mail";
+import { sendMail, renderDemoSwapEmail } from "@/lib/mail";
 
 export async function POST(request: Request) {
   try {
@@ -99,18 +99,13 @@ export async function POST(request: Request) {
     // Asynchronously trigger email notification
     try {
       const subject = `[FACE Prep E-Campus] New Swap Compensation Offer - ${offerSlot.course}`;
-      const htmlBody = formatZentraEmail({
-        title: "New Swap Compensation Offer",
-        badgeText: "Action Required: Swap Offer",
-        badgeColor: "amber",
-        description: `<strong>${requestor.name}</strong> has offered the course <strong>${offerSlot.course}</strong> as a swap compensation for a past handover request.`,
-        details: [
-          { label: "Offered Date", value: offerDateFormatted },
-          { label: "Time Slot/Hour", value: `${offerSlot.time} (${offerSlot.day})` },
-          { label: "Student Group", value: offerSlot.classGroup || "General" },
-          { label: "Target Faculty", value: targetStaff.name, highlight: true },
-          { label: "Reason", value: swapReason }
-        ]
+      const htmlBody = renderDemoSwapEmail({
+        requestorName: requestor.name,
+        targetMentorName: targetStaff.name,
+        dateStr: offerDateFormatted,
+        time: `${offerSlot.time} (${offerSlot.day})`,
+        course: offerSlot.course,
+        classGroup: offerSlot.classGroup || "General"
       });
       await sendMail({
         to: targetStaff.email,

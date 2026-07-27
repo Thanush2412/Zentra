@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { sendMail, formatZentraEmail } from "@/lib/mail";
+import { sendMail, renderHandoverRequestEmail } from "@/lib/mail";
 
 export async function POST(request: Request) {
   try {
@@ -121,19 +121,14 @@ export async function POST(request: Request) {
     // Asynchronously trigger email notification
     try {
       const subject = `[FACE Prep E-Campus] New Class Handover Request - ${subjectName || slot.course}`;
-      const htmlBody = formatZentraEmail({
-        title: "New Class Handover Request",
-        badgeText: isEmergency ? "Emergency Action Required" : "Action Required",
-        badgeColor: isEmergency ? "rose" : "indigo",
-        description: `<strong>${requestor.name}</strong> has submitted a class handover request for the course <strong>${subjectName || slot.course}</strong>.`,
-        details: [
-          { label: "Date", value: dateFormatted },
-          { label: "Time Slot", value: `${slot.time} (${slot.day})` },
-          { label: "Student Group", value: slot.classGroup || "General" },
-          { label: "Cover Faculty", value: coverStaff.name, highlight: true },
-          { label: "Reason", value: reason },
-          { label: "Emergency Request", value: isEmergency ? "Yes (Requires CM Approval)" : "No" }
-        ]
+      const htmlBody = renderHandoverRequestEmail({
+        requestorName: requestor.name,
+        coverStaffName: coverStaff.name,
+        dateStr: dateFormatted,
+        time: `${slot.time} (${slot.day})`,
+        course: subjectName || slot.course,
+        classGroup: slot.classGroup || "General",
+        reason
       });
       await sendMail({
         to: coverStaff.email,
