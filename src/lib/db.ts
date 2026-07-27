@@ -639,11 +639,11 @@ export function getDb(): Promise<TursoDbAdapter> {
     }
   } catch (_) {}
 
-  // Sync existing subject_group values to mentor_group if mentor_group is NULL
+  // Sync existing subject_group & department values to mentor_group so they are 100% unified
   try {
-    await dbInstance.exec("UPDATE mentors SET mentor_group = subject_group WHERE mentor_group IS NULL AND subject_group IS NOT NULL;");
-    await dbInstance.exec("UPDATE subjects SET mentor_group = subject_group WHERE mentor_group IS NULL AND subject_group IS NOT NULL;");
-    await dbInstance.exec("UPDATE sme_users SET mentor_group = subject WHERE mentor_group IS NULL AND subject IS NOT NULL;");
+    await dbInstance.exec("UPDATE mentors SET mentor_group = COALESCE(mentor_group, subject_group, department, 'General'), department = COALESCE(mentor_group, subject_group, department, 'General');");
+    await dbInstance.exec("UPDATE subjects SET mentor_group = COALESCE(mentor_group, subject_group, 'General') WHERE mentor_group IS NULL;");
+    await dbInstance.exec("UPDATE sme_users SET mentor_group = COALESCE(mentor_group, subject, 'General') WHERE mentor_group IS NULL;");
   } catch (_) {}
 
     const adminCount = await dbInstance.get("SELECT COUNT(*) as count FROM admin_users");

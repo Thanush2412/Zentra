@@ -3119,7 +3119,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase tracking-wider">
                       <th className="px-5 py-4">Mentor</th>
                       <th className="px-5 py-4">Email</th>
-                      <th className="px-5 py-4">Department</th>
                       <th className="px-5 py-4">Mentor Group</th>
                       <th className="px-5 py-4">Assigned Campus</th>
                       {isCampusShiftBased && <th className="px-5 py-4">Shift</th>}
@@ -3145,12 +3144,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </td>
                           <td className="px-5 py-4 font-mono font-semibold text-gray-600">{m.email}</td>
                           <td className="px-5 py-4">
-                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-755 border border-indigo-100 text-[10px] font-bold block w-fit">
-                              {m.department}
-                            </span>
-                          </td>
-                          <td className="px-5 py-4">
-                            <span className="px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-755 border border-purple-100 text-[10px] font-extrabold block w-fit">
+                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-extrabold block w-fit">
                               {mentorGrp}
                             </span>
                           </td>
@@ -6808,28 +6802,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Group</label>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Mentor Group</label>
                   <select
                     required
                     value={mentorForm.department}
-                    onChange={(e) => setMentorForm({ ...mentorForm, department: e.target.value })}
+                    onChange={(e) => setMentorForm({ ...mentorForm, department: e.target.value, subject_group: e.target.value })}
                     className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
                   >
-                    <option value="">— Select Group —</option>
-                    {subjectGroups.map(sg => (
-                      <option key={sg.id} value={sg.name}>{sg.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Group / Category</label>
-                  <select
-                    required
-                    value={mentorForm.subject_group}
-                    onChange={(e) => setMentorForm({ ...mentorForm, subject_group: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                  >
+                    <option value="">— Select Mentor Group —</option>
                     {subjectGroups.map(sg => (
                       <option key={sg.id} value={sg.name}>{sg.name}</option>
                     ))}
@@ -7163,7 +7143,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   />
                                   <div className="min-w-0 flex-1">
                                     <div className="font-bold text-gray-800 truncate text-xs">{m.name}</div>
-                                    {m.department && <div className="text-[9px] text-gray-400 truncate">{m.department}</div>}
+                                    {(m.mentor_group || m.subject_group || m.department) && <div className="text-[9px] text-gray-400 truncate">{m.mentor_group || m.subject_group || m.department}</div>}
                                   </div>
                                   {checked && (
                                     <span className="text-[9px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">

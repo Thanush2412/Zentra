@@ -6,17 +6,19 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { id, name, email, department, avatar, subjects, classes, college_id, subject_group } = body;
+    const { id, name, email, department, avatar, subjects, classes, college_id, subject_group, mentor_group } = body;
+    // Unified group: mentor_group is the authoritative single field; department mirrors it
+    const unifiedGroup = (mentor_group || subject_group || department || "General").trim();
 
-    if (!id || !name || !email || !department || !avatar) {
+    if (!id || !name || !email || !unifiedGroup || !avatar) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
     const cleanEmail = email.toLowerCase().trim();
 
     await db.run(
-      `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, college_id, subject_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, name, cleanEmail, department, avatar, subjects || "", classes || "", college_id || null, subject_group || null
+      `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, college_id, subject_group, mentor_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, name, cleanEmail, unifiedGroup, avatar, subjects || "", classes || "", college_id || null, unifiedGroup, unifiedGroup
     );
 
     // Clean old credentials associated with this email
@@ -44,17 +46,18 @@ export async function PUT(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { id, name, email, department, avatar, subjects, classes, college_id, subject_group } = body;
+    const { id, name, email, department, avatar, subjects, classes, college_id, subject_group, mentor_group } = body;
+    const unifiedGroup = (mentor_group || subject_group || department || "General").trim();
 
-    if (!id || !name || !email || !department || !avatar) {
+    if (!id || !name || !email || !unifiedGroup || !avatar) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
     const cleanEmail = email.toLowerCase().trim();
 
     await db.run(
-      `UPDATE mentors SET name = ?, email = ?, department = ?, avatar = ?, subjects = ?, classes = ?, college_id = ?, subject_group = ? WHERE id = ?`,
-      name, cleanEmail, department, avatar, subjects || "", classes || "", college_id || null, subject_group || null, id
+      `UPDATE mentors SET name = ?, email = ?, department = ?, avatar = ?, subjects = ?, classes = ?, college_id = ?, subject_group = ?, mentor_group = ? WHERE id = ?`,
+      name, cleanEmail, unifiedGroup, avatar, subjects || "", classes || "", college_id || null, unifiedGroup, unifiedGroup, id
     );
 
     // Clean old credentials associated with this email (excluding current Mentor ID)

@@ -35,7 +35,9 @@ export async function POST(request: Request) {
       const rawCollegeId = item.college_id || item.collegeId || item.CollegeId || fallbackCollegeId;
       const rawSubjects = item.subjects || item.Subjects || item["Subjects"] || "";
       const rawClasses = item.classes || item.Classes || item["Classes"] || "";
-      const rawSubjectGroup = item.subject_group || item.subjectGroup || item["Subject Group"] || null;
+      const rawSubjectGroup = item.mentor_group || item.subject_group || item.subjectGroup || item["Subject Group"] || item["Mentor Group"] || rawDept;
+      // Unified group: mentor_group, subject_group, and department all mirror the same value
+      const cleanDept = (rawSubjectGroup || String(rawDept)).trim();
 
       if (!rawName || !rawEmail) {
         errors.push(`Row ${i + 1}: Skipped due to missing Name or Email.`);
@@ -44,8 +46,7 @@ export async function POST(request: Request) {
 
       const cleanEmail = String(rawEmail).toLowerCase().trim();
       const cleanName = String(rawName).trim();
-      const cleanDept = String(rawDept).trim();
-      
+
       // Standardize shift string
       let cleanShift = String(rawShift).toLowerCase().trim();
       if (cleanShift.includes("1") || cleanShift.includes("shift 1")) cleanShift = "shift_1";
@@ -61,14 +62,14 @@ export async function POST(request: Request) {
 
       if (existing) {
         await db.run(
-          `UPDATE mentors SET name = ?, department = ?, avatar = ?, subjects = ?, classes = ?, shift = ?, college_id = ?, subject_group = ? WHERE id = ?`,
-          cleanName, cleanDept, avatar, rawSubjects, rawClasses, cleanShift, rawCollegeId, rawSubjectGroup, targetId
+          `UPDATE mentors SET name = ?, department = ?, avatar = ?, subjects = ?, classes = ?, shift = ?, college_id = ?, subject_group = ?, mentor_group = ? WHERE id = ?`,
+          cleanName, cleanDept, avatar, rawSubjects, rawClasses, cleanShift, rawCollegeId, cleanDept, cleanDept, targetId
         );
       } else {
         await db.run(
-          `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, shift, college_id, subject_group)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          targetId, cleanName, cleanEmail, cleanDept, avatar, rawSubjects, rawClasses, cleanShift, rawCollegeId, rawSubjectGroup
+          `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, shift, college_id, subject_group, mentor_group)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          targetId, cleanName, cleanEmail, cleanDept, avatar, rawSubjects, rawClasses, cleanShift, rawCollegeId, cleanDept, cleanDept
         );
       }
 

@@ -4677,7 +4677,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <div className="min-w-0 flex-1">
                                       <h4 className="text-xs font-black text-slate-800 truncate pr-6" title={m.name}>{m.name}</h4>
                                       <span className="text-[9.5px] text-slate-400 font-bold block truncate mt-0.5">
-                                        Dept: {m.department} {m.subject_group ? `• Group: ${m.subject_group}` : ""}
+                                        Mentor Group: {m.mentor_group || m.subject_group || m.department || "General"}
                                       </span>
                                     </div>
                                   </div>
@@ -9115,7 +9115,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         />
                                         <div className="leading-tight flex-1">
                                           <div className="font-bold text-slate-800 text-[11px]">{m.name}</div>
-                                          <div className="text-[9px] text-slate-400 font-semibold">{m.department || "Faculty"}</div>
+                                          <div className="text-[9px] text-slate-400 font-semibold">{m.mentor_group || m.subject_group || m.department || "General"}</div>
                                         </div>
                                       </label>
                                     );
