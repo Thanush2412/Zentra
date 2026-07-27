@@ -84,9 +84,9 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
     if (c.includes("sem vi") || c.includes("semester vi") || c.includes("sem 6") || c.includes("semester 6")) return "Sem VI";
     
     // Fallbacks
-    if (c.includes("1st sem") || c.includes("first sem") || c.includes("1st") || c.includes("first")) return "Sem I";
-    if (c.includes("2nd sem") || c.includes("second sem") || c.includes("2nd") || c.includes("second")) return "Sem II";
-    if (c.includes("3rd sem") || c.includes("third sem") || c.includes("3rd") || c.includes("third")) return "Sem III";
+    if (c.includes("1st sem") || c.includes("first sem")) return "Sem I";
+    if (c.includes("2nd sem") || c.includes("second sem")) return "Sem II";
+    if (c.includes("3rd sem") || c.includes("third sem")) return "Sem III";
     if (c.includes("4th sem") || c.includes("fourth sem")) return "Sem IV";
     if (c.includes("5th sem") || c.includes("fifth sem")) return "Sem V";
     if (c.includes("6th sem") || c.includes("sixth sem")) return "Sem VI";
