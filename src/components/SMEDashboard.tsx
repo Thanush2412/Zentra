@@ -306,7 +306,7 @@ export function SMEDashboard() {
       if (dailyLoad >= 2) return;
 
       let score = 0;
-      const mentorGrp = m.mentor_group || m.subject_group || "General";
+      const mentorGrp = m.mentor_group || m.mentor_group || "General";
       const targetGrp = subjectGroup || session.subject || "";
 
       // 1. Same Mentor Group (+25)
@@ -443,7 +443,7 @@ export function SMEDashboard() {
   };
   const getMentorDept = (mentorId: string) => {
     const mentor = mentors.find(m => m.id === mentorId);
-    return mentor?.department || "";
+    return mentor?.mentor_group || "";
   };
 
   // ── Tab definitions ───────────────────────────────────────────────
@@ -1242,3 +1242,4 @@ export function SMEDashboard() {
   </div>
   );
 }
+

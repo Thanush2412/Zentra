@@ -80,7 +80,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
 
   // Curriculum health: subjects mapped vs departments
   const collegeDepts = departments.length;
-  const mappedDepts = new Set(subjects.map((s: any) => s.department)).size;
+  const mappedDepts = new Set(subjects.map((s: any) => s.mentor_group)).size;
   const subjectCount = subjects.length;
 
   // Leave requests for this college's mentors
@@ -88,7 +88,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
   const pendingLeaves = leaveRequests.filter((l: any) => mentorIds.has(l.mentorId) && l.status === "pending").length;
 
   const filteredMentors = mentors.filter(m =>
-    !search || (m.name || "").toLowerCase().includes(search.toLowerCase()) || (m.department || "").toLowerCase().includes(search.toLowerCase())
+    !search || (m.name || "").toLowerCase().includes(search.toLowerCase()) || (m.mentor_group || "").toLowerCase().includes(search.toLowerCase())
   );
   const filteredStudents = students.filter(s =>
     !search || (s.name || "").toLowerCase().includes(search.toLowerCase()) || (s.classGroup || "").toLowerCase().includes(search.toLowerCase())
@@ -260,7 +260,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                                 <span className="font-bold text-slate-800 dark:text-white">{m.name}</span>
                               </div>
                             </td>
-                            <td className="p-3 text-slate-600 dark:text-slate-400">{m.department || "—"}</td>
+                            <td className="p-3 text-slate-600 dark:text-slate-400">{m.mentor_group || "—"}</td>
                             <td className="p-3 text-slate-500 dark:text-slate-400 font-mono text-[10px]">{m.email}</td>
                             <td className="p-3 text-center font-black text-slate-800 dark:text-white">{mentorSlots.length}</td>
                             <td className="p-3 text-center">
@@ -547,7 +547,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                         return (
                           <tr key={m.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                             <td className="p-3 font-bold text-slate-800 dark:text-white">{m.name}</td>
-                            <td className="p-3 text-slate-500 dark:text-slate-400 text-[10px]">{m.department || "—"}</td>
+                            <td className="p-3 text-slate-500 dark:text-slate-400 text-[10px]">{m.mentor_group || "—"}</td>
                             <td className="p-3 text-center text-slate-700 dark:text-slate-300 font-black">{mSlots.length}</td>
                             <td className="p-3 text-center text-slate-700 dark:text-slate-300 font-black">{mAttCount}</td>
                           </tr>
@@ -608,7 +608,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                       {departments.length === 0 ? (
                         <tr><td colSpan={4} className="p-4 text-center text-xs text-slate-400 italic">No departments found.</td></tr>
                       ) : departments.map((dept: any) => {
-                        const deptSubs = subjects.filter((s: any) => s.department === dept.name);
+                        const deptSubs = subjects.filter((s: any) => s.mentor_group === dept.name);
                         const mapped = deptSubs.length > 0;
                         return (
                           <tr key={dept.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
@@ -2151,7 +2151,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 const m = mentors.find(m => m.id === id);
                 if (!m || !portfolioMentorIds.has(m.id)) return;
                 const college = activeColleges.find(c => c.id === m.college_id);
-                if (!ledgerMap.has(m.id)) ledgerMap.set(m.id, { mentorId: m.id, mentorName: m.name, department: m.department || "—", collegeName: college?.name || "—", given: 0, received: 0, swapsPending: 0, swapsSettled: 0, balance: 0 });
+                if (!ledgerMap.has(m.id)) ledgerMap.set(m.id, { mentorId: m.id, mentorName: m.name, department: m.mentor_group || "—", collegeName: college?.name || "—", given: 0, received: 0, swapsPending: 0, swapsSettled: 0, balance: 0 });
                 ledgerMap.get(m.id)![field]++;
               });
             });
@@ -2219,8 +2219,8 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                             return (
                               <tr key={req.id} className="hover:bg-indigo-50/20 dark:hover:bg-indigo-500/5 transition-colors">
                                 <td className="p-3"><span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[8.5px] font-black uppercase">{campus?.name || "—"}</span></td>
-                                <td className="p-3"><div className="font-black text-rose-700 dark:text-rose-400">{debtorMentor?.name || req.requestorName}</div><div className="text-[9px] text-slate-400">{debtorMentor?.department || ""}</div></td>
-                                <td className="p-3"><div className="font-black text-emerald-700 dark:text-emerald-400">{creditorMentor?.name || req.targetStaffName}</div><div className="text-[9px] text-slate-400">{creditorMentor?.department || ""}</div></td>
+                                <td className="p-3"><div className="font-black text-rose-700 dark:text-rose-400">{debtorMentor?.name || req.requestorName}</div><div className="text-[9px] text-slate-400">{debtorMentor?.mentor_group || ""}</div></td>
+                                <td className="p-3"><div className="font-black text-emerald-700 dark:text-emerald-400">{creditorMentor?.name || req.targetStaffName}</div><div className="text-[9px] text-slate-400">{creditorMentor?.mentor_group || ""}</div></td>
                                 <td className="p-3"><div className="font-bold text-slate-800 dark:text-white max-w-[150px] truncate">{req.course}</div><div className="text-[9px] text-slate-400">{req.dateFormatted}</div></td>
                                 <td className="p-3 text-slate-505 font-medium whitespace-nowrap">{req.dateStr}</td>
                                 <td className="p-3 text-center">
@@ -2512,3 +2512,4 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
     </div>
   );
 };
+

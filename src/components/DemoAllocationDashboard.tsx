@@ -123,11 +123,11 @@ export function DemoAllocationDashboard() {
     const groups = new Set<string>();
     mentors.forEach(m => {
       if (selectedCollegeId === "all" || m.college_id === selectedCollegeId) {
-        if (m.department) {
-          groups.add(m.department.trim());
+        if (m.mentor_group) {
+          groups.add(m.mentor_group.trim());
         }
-        if (m.subject_group) {
-          groups.add(m.subject_group.trim());
+        if (m.mentor_group) {
+          groups.add(m.mentor_group.trim());
         }
       }
     });
@@ -147,8 +147,8 @@ export function DemoAllocationDashboard() {
       
       let matchGroup = true;
       if (selectedGroupId !== "All") {
-        matchGroup = m.department === selectedGroupId || 
-                     m.subject_group?.toLowerCase().trim() === selectedGroupId.toLowerCase().trim();
+        matchGroup = m.mentor_group === selectedGroupId || 
+                     m.mentor_group?.toLowerCase().trim() === selectedGroupId.toLowerCase().trim();
       }
       
       return matchCollege && matchGroup;
@@ -436,7 +436,7 @@ export function DemoAllocationDashboard() {
     }
     let demands: Demand[] = [];
     for (const mentor of mentorsToSchedule) {
-      const subjectGroup = mentor.subject_group || "General";
+      const subjectGroup = mentor.mentor_group || "General";
       const mentorClasses = slots.filter(s => s.mentorId === mentor.id && s.classGroup);
       const stream = (mentorClasses.length > 0 ? mentorClasses[0].classGroup : null) || "General Stream";
 
@@ -1176,7 +1176,7 @@ export function DemoAllocationDashboard() {
                                                   smeName: smes[0]?.name || "",
                                                   dateStr: date.dateStr,
                                                   timeSlot: time,
-                                                  subject: mentor.subject_group || "General",
+                                                  subject: mentor.mentor_group || "General",
                                                   stream: (slots.filter(s => s.mentorId === mentor.id && s.classGroup)[0]?.classGroup) || "General Stream",
                                                   week: 1
                                                 });
@@ -1862,7 +1862,7 @@ export function DemoAllocationDashboard() {
                             smeName: smes[0]?.name || "",
                             dateStr: cellPopover.dateStr,
                             timeSlot: cellPopover.timeSlot,
-                            subject: mentor.subject_group || "General",
+                            subject: mentor.mentor_group || "General",
                             stream: (slots.filter(s => s.mentorId === mentor.id && s.classGroup)[0]?.classGroup) || "General Stream",
                             week: 1
                           });
@@ -2142,3 +2142,4 @@ export function DemoAllocationDashboard() {
     </div>
   );
 }
+

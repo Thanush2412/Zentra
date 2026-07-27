@@ -536,22 +536,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     id: string;
     name: string;
     email: string;
-    department: string;
+    mentor_group: string;
     avatar: string;
     subjects: string;
     classes: string;
     college_id: string;
-    subject_group: string;
   }>({
     id: "",
     name: "",
     email: "",
-    department: "",
+    mentor_group: "",
     avatar: "",
     subjects: "",
     classes: "",
     college_id: "",
-    subject_group: "",
   });
   const [editingMentor, setEditingMentor] = useState<boolean>(false);
   const [mentorSubjectSearch, setMentorSubjectSearch] = useState("");
@@ -571,7 +569,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     year: string;
     weekly_hours: number;
     mentorIds: string[];
-    subject_group: string;
+    mentor_group: string;
   }>({
     id: "",
     name: "",
@@ -582,7 +580,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     year: "Year 1",
     weekly_hours: 4,
     mentorIds: [],
-    subject_group: "General"
+    mentor_group: "General"
   });
   const [editingSubject, setEditingSubject] = useState<any>(null);
 
@@ -1602,12 +1600,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         id: m.id,
         name: m.name,
         email: m.email,
-        department: m.department,
+        mentor_group: m.mentor_group || m.subject_group || m.department || "General",
         avatar: m.avatar,
         subjects: m.subjects || "",
         classes: m.classes || "",
         college_id: m.college_id || colleges[0]?.id || "",
-        subject_group: m.subject_group || "General"
       });
       setEditingMentor(true);
     } else {
@@ -1615,12 +1612,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         id: "m" + (mentors.length + 1),
         name: "",
         email: "",
-        department: "",
+        mentor_group: "",
         avatar: "",
         subjects: "",
         classes: "",
         college_id: colleges[0]?.id || "",
-        subject_group: "General"
       });
       setEditingMentor(false);
     }
@@ -1630,8 +1626,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleMentorSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError(null);
-    if (!mentorForm.name.trim() || !mentorForm.email.trim() || !mentorForm.department.trim()) {
-      setModalError("Name, Email, and Department are required.");
+    if (!mentorForm.name.trim() || !mentorForm.email.trim() || !mentorForm.mentor_group.trim()) {
+      setModalError("Name, Email, and Mentor Group are required.");
       return;
     }
 
@@ -1646,13 +1642,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       id: mentorForm.id,
       name: mentorForm.name.trim(),
       email: mentorForm.email.trim(),
-      department: mentorForm.department.trim(),
+      department: mentorForm.mentor_group.trim(),
       avatar: initials,
-      headerId: null, // HOD role is removed
+      headerId: null,
       subjects: mentorForm.subjects.trim(),
       classes: mentorForm.classes.trim(),
       college_id: mentorForm.college_id,
-      subject_group: mentorForm.subject_group.trim()
+      subject_group: mentorForm.mentor_group.trim(),
+      mentor_group: mentorForm.mentor_group.trim()
     };
 
     setActionLoading('submit_mentor', true);
@@ -1719,7 +1716,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         year: s.year || "Year 1",
         weekly_hours: s.weekly_hours || 4,
         mentorIds: [],
-        subject_group: s.subject_group || "General"
+        mentor_group: s.mentor_group || "General"
       });
       setEditingSubject(s);
       setLockDeptAndYear(false);
@@ -1739,7 +1736,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         year: defaultYear || "Year 1",
         weekly_hours: 4,
         mentorIds: [],
-        subject_group: "General"
+        mentor_group: "General"
       });
       setEditingSubject(null);
       setLockDeptAndYear(!!defaultDept);
@@ -1767,7 +1764,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       college_id: subjectForm.college_id || undefined,
       year: subjectForm.year,
       weekly_hours: subjectForm.weekly_hours,
-      subject_group: subjectForm.subject_group
+      subject_group: subjectForm.mentor_group,
+      mentor_group: subjectForm.mentor_group
     };
 
     try {
@@ -1820,7 +1818,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setModalError(null);
     setGroupSubjectSearch("");
     if (g) {
-      const associatedIds = (subjectsList || []).filter(s => s.subject_group === g.name).map(s => s.id);
+      const associatedIds = (subjectsList || []).filter(s => s.mentor_group === g.name).map(s => s.id);
       setGroupForm({
         id: g.id,
         name: g.name,
@@ -2077,7 +2075,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const colName = colleges.find(c => c.id === m.college_id)?.name || "";
     return m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       m.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (m.mentor_group || m.subject_group || m.department || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       colName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (m.subjects || "").toLowerCase().includes(searchQuery.toLowerCase());
   });
@@ -2653,7 +2651,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {colleges.map((col) => {
                   const colMentors = mentors.filter(m => m.college_id === col.id);
                   const colSlots = slots.filter(s => colMentors.some(m => m.id === s.mentorId));
-                  const colDeptsCount = Array.from(new Set(colMentors.map(m => m.department).filter(Boolean))).length;
+                  const colDeptsCount = Array.from(new Set(colMentors.map(m => m.mentor_group).filter(Boolean))).length;
                   const cam = camList.find(cm => cm.college_id === col.id);
                   const kamOwner = kamList.find(k => k.id === col.kam_id);
 
@@ -2991,7 +2989,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       const camMentors = mentors.filter(m => m.college_id === cam.college_id);
                       const camSlots = slots.filter(s => camMentors.some(m => m.id === s.mentorId));
-                      const camDeptsCount = Array.from(new Set(camMentors.map(m => m.department).filter(Boolean))).length;
+                      const camDeptsCount = Array.from(new Set(camMentors.map(m => m.mentor_group).filter(Boolean))).length;
 
                       return (
                         <tr key={cam.id} className="hover:bg-gray-55/50 transition-colors">
@@ -3130,7 +3128,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {filteredMentors.map((m) => {
                       const col = colleges.find(c => c.id === m.college_id);
                       const mentorSubjectsList = m.subjects ? m.subjects.split("\n").map(s => s.trim()).filter(Boolean) : [];
-                      const mentorGrp = m.mentor_group || m.subject_group || "General";
+                      const mentorGrp = m.mentor_group || m.mentor_group || "General";
                       return (
                         <tr key={m.id} className="hover:bg-gray-50/50 transition-colors font-medium text-gray-755">
                           <td className="px-5 py-4 flex items-center gap-3">
@@ -3818,7 +3816,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <td className="p-4 text-gray-600 font-semibold">{sub.department}</td>
                                 <td className="p-4">
                                   <span className="px-2 py-0.5 rounded-full bg-pink-50 border border-pink-100 text-pink-700 text-[10px] font-bold">
-                                    {sub.subject_group || "General"}
+                                    {sub.mentor_group || "General"}
                                   </span>
                                 </td>
                                 <td className="p-4">
@@ -3901,7 +3899,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </thead>
                       <tbody className="divide-y divide-gray-150 bg-white">
                         {(subjectGroups || []).map((g) => {
-                          const count = (subjectsList || []).filter(s => s.subject_group === g.name).length;
+                          const count = (subjectsList || []).filter(s => s.mentor_group === g.name).length;
                           return (
                             <tr key={g.id} className="hover:bg-gray-55/30 transition-colors">
                               <td className="p-4 font-mono text-[10px] text-gray-400 font-semibold">{g.id}</td>
@@ -6805,8 +6803,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Mentor Group</label>
                   <select
                     required
-                    value={mentorForm.department}
-                    onChange={(e) => setMentorForm({ ...mentorForm, department: e.target.value, subject_group: e.target.value })}
+                    value={mentorForm.mentor_group}
+                    onChange={(e) => setMentorForm({ ...mentorForm, mentor_group: e.target.value })}
                     className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
                   >
                     <option value="">— Select Mentor Group —</option>
@@ -6834,9 +6832,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {(() => {
                       const searched = (subjectsList || []).filter(s => {
                         const matchesSearch = s.name.toLowerCase().includes(mentorSubjectSearch.toLowerCase()) ||
-                          s.department.toLowerCase().includes(mentorSubjectSearch.toLowerCase());
-                        if (!mentorSubjectSearch && mentorForm.department) {
-                          return s.department.toLowerCase() === mentorForm.department.toLowerCase();
+                          (s.subject_group || s.department || "").toLowerCase().includes(mentorSubjectSearch.toLowerCase());
+                        if (!mentorSubjectSearch && mentorForm.mentor_group) {
+                          const mg = mentorForm.mentor_group.toLowerCase();
+                          const sg = (s.subject_group || s.department || "").toLowerCase();
+                          return sg === mg || sg.includes(mg) || mg.includes(sg);
                         }
                         return matchesSearch;
                       });
@@ -7064,11 +7064,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Group / Category</label>
+                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Mentor Group</label>
                       <select
                         required
-                        value={subjectForm.subject_group}
-                        onChange={(e) => setSubjectForm({ ...subjectForm, subject_group: e.target.value })}
+                        value={subjectForm.mentor_group}
+                        onChange={(e) => setSubjectForm({ ...subjectForm, mentor_group: e.target.value })}
                         className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
                       >
                         {subjectGroups.map(sg => (
@@ -7143,7 +7143,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   />
                                   <div className="min-w-0 flex-1">
                                     <div className="font-bold text-gray-800 truncate text-xs">{m.name}</div>
-                                    {(m.mentor_group || m.subject_group || m.department) && <div className="text-[9px] text-gray-400 truncate">{m.mentor_group || m.subject_group || m.department}</div>}
+                                    {(m.mentor_group) && <div className="text-[9px] text-gray-400 truncate">{m.mentor_group}</div>}
                                   </div>
                                   {checked && (
                                     <span className="text-[9px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
@@ -7490,12 +7490,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <span className="font-bold text-gray-800">{s.name}</span>
                                   <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                     <span className="text-[9px] text-gray-400 font-semibold">{s.department} • {s.semester}</span>
-                                    {s.subject_group && s.subject_group !== "General" && (
-                                      <span className={`text-[8.5px] px-1 py-0.2 rounded font-black ${s.subject_group === (editingGroup?.name)
+                                    {s.mentor_group && s.mentor_group !== "General" && (
+                                      <span className={`text-[8.5px] px-1 py-0.2 rounded font-black ${s.mentor_group === (editingGroup?.name)
                                           ? "bg-indigo-55 text-indigo-700 border border-indigo-100"
                                           : "bg-amber-50 text-amber-700 border border-amber-100"
                                         }`}>
-                                        Group: {s.subject_group}
+                                        Group: {s.mentor_group}
                                       </span>
                                     )}
                                   </div>
@@ -7854,3 +7854,4 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     </div>
   );
 };
+

@@ -214,7 +214,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     const peerMentors = mentors.filter(m => 
       m.college_id === currentMentor.college_id &&
       m.id !== currentMentor.id &&
-      m.subject_group?.toLowerCase().trim() === subjectGroup.toLowerCase().trim()
+      m.mentor_group?.toLowerCase().trim() === subjectGroup.toLowerCase().trim()
     );
 
     const candidates: any[] = [];
@@ -248,7 +248,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       candidates.push({
         mentorId: m.id,
         mentorName: m.name,
-        subjectGroup: m.subject_group || "General",
+        subjectGroup: m.mentor_group || "General",
         weeklyCount: weeklyLoad,
         score: 100 - (weeklyLoad * 5)
       });
@@ -336,7 +336,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
     // Fallback 2: Check active student class groups in students table
     if (rawItems.length === 0 && students.length > 0) {
-      const deptLower = currentMentor?.department ? currentMentor.department.toLowerCase().trim() : "";
+      const deptLower = currentMentor?.mentor_group ? currentMentor.mentor_group.toLowerCase().trim() : "";
       const studentClasses = students
         .filter(s => {
           if (!s.classGroup) return false;
@@ -355,13 +355,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
 
     // Fallback 3: Check courses/departments in campus matching mentor's department
-    if (rawItems.length === 0 && currentMentor?.department) {
-      const deptLower = currentMentor.department.toLowerCase().trim();
+    if (rawItems.length === 0 && currentMentor?.mentor_group) {
+      const deptLower = currentMentor.mentor_group.toLowerCase().trim();
       const matchingCourses = coursesList
         .filter(c => c.college_id === currentMentor.college_id || !c.college_id)
         .filter(c => c.name.toLowerCase().includes(deptLower) || deptLower.includes(c.name.toLowerCase()));
 
-      const deptNames = matchingCourses.length > 0 ? matchingCourses.map(c => c.name) : [currentMentor.department];
+      const deptNames = matchingCourses.length > 0 ? matchingCourses.map(c => c.name) : [currentMentor.mentor_group];
       const sems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"];
       const shifts = ["Shift 1", "Shift 2"];
 
@@ -412,11 +412,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
 
     // Fallback 2: Check subjects matching mentor's department in subjectsList
-    if (rawSubjects.length === 0 && currentMentor?.department) {
-      const deptLower = currentMentor.department.toLowerCase().trim();
+    if (rawSubjects.length === 0 && currentMentor?.mentor_group) {
+      const deptLower = currentMentor.mentor_group.toLowerCase().trim();
       const deptSubjs = subjectsList
         .filter(s => (s.college_id === currentMentor.college_id || !s.college_id) &&
-                     s.department && (s.department.toLowerCase().includes(deptLower) || deptLower.includes(s.department.toLowerCase())))
+                     s.mentor_group && (s.mentor_group.toLowerCase().includes(deptLower) || deptLower.includes(s.mentor_group.toLowerCase())))
         .map(s => s.name);
       rawSubjects = Array.from(new Set(deptSubjs));
     }
@@ -833,10 +833,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const getCoveringStaffOptions = (slot: Slot) => {
     if (!currentMentor) return { sorted: [], classGroupMentorIds: new Set<string>(), classGroupMentorSubjects: new Map<string, string[]>() };
     const myId = currentMentor.id;
-    const myDept = currentMentor.department;
+    const myDept = currentMentor.mentor_group;
 
     // 1. Get all mentors in the same department (excluding current mentor)
-    const sameDeptMentors = mentors.filter(m => m.id !== myId && m.department === myDept);
+    const sameDeptMentors = mentors.filter(m => m.id !== myId && m.mentor_group === myDept);
     
     // 2. Get all mentors who teach the same class group (excluding current mentor) and their subjects
     const classGroupMentorIds = new Set<string>();
@@ -1130,7 +1130,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
   // Calculate unique active semesters in this teacher's department & college
   const deptMentors = mentors.filter(
-    (m) => m.college_id === currentMentor.college_id && m.department === currentMentor.department
+    (m) => m.college_id === currentMentor.college_id && m.mentor_group === currentMentor.mentor_group
   );
   const deptMentorIds = new Set(deptMentors.map((m) => m.id));
   const deptSlots = slots.filter((s) => deptMentorIds.has(s.mentorId));
@@ -1144,7 +1144,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   });
 
   const getCohortLabelForSemester = (semLabel: string) => {
-    const mentorDept = currentMentor?.department;
+    const mentorDept = currentMentor?.mentor_group;
     if (!mentorDept) return "";
     const course = (coursesList || []).find(c => c.name === mentorDept);
     if (!course) return "";
@@ -3011,7 +3011,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     Faculty Mentor
                   </span>
                   <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-150 text-[9px] font-black text-slate-700 uppercase">
-                    {currentMentor.department}
+                    {currentMentor.mentor_group}
                   </span>
                 </div>
               </div>
@@ -4591,12 +4591,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           ? campusDepts
           : Array.from(new Set(mentorClasses.map(c => getDeptFromClassGroup(c) || c))).filter(Boolean);
 
-        const activeDept = trackerDept || deptOptions[0] || currentMentor?.department || "Computer Science";
+        const activeDept = trackerDept || deptOptions[0] || currentMentor?.mentor_group || "Computer Science";
 
         const semesterOptions = Array.from(new Set(
           subjectsList
             .filter(s => (!s.college_id || s.college_id === currentMentor?.college_id) &&
-                         s.department?.toLowerCase().trim() === activeDept.toLowerCase().trim())
+                         s.mentor_group?.toLowerCase().trim() === activeDept.toLowerCase().trim())
             .map(s => s.semester)
             .filter(Boolean)
         )).sort((a, b) => {
@@ -4611,7 +4611,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
         const subjectObjs = subjectsList.filter(s =>
           (!s.college_id || s.college_id === currentMentor?.college_id) &&
-          s.department?.toLowerCase().trim() === activeDept.toLowerCase().trim() &&
+          s.mentor_group?.toLowerCase().trim() === activeDept.toLowerCase().trim() &&
           s.semester?.toLowerCase().trim() === activeSem.toLowerCase().trim()
         );
         // Only show subjects THIS mentor actually handles (from their slots or profile subjects)
@@ -6329,3 +6329,4 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     </div>
   );
 };
+
