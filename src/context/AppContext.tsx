@@ -17,13 +17,13 @@ export interface Mentor {
   name: string;
   email: string;
   role: "mentor";
-  department: string;
   avatar: string;
   headerId?: string | null;
   headerName?: string;
   subjects?: string;
   classes?: string;
   college_id?: string;
+  department?: string;
   subject_group?: string;
   mentor_group?: string;
 }

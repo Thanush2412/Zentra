@@ -982,12 +982,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         id: m.id,
         name: m.name,
         email: m.email,
-        department: m.department,
+        department: m.mentor_group || m.department || "General",
         avatar: m.avatar,
         subjects: m.subjects || "",
         classes: m.classes || "",
         college_id: m.college_id || activeCollegeId,
-        subject_group: m.subject_group || "General"
+        subject_group: m.mentor_group || m.subject_group || "General"
       });
       setEditingMentor(true);
     } else {

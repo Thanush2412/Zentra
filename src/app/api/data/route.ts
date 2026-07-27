@@ -121,7 +121,6 @@ export async function GET(request: Request) {
         name: m.name,
         email: m.email,
         role: "mentor",
-        department: m.department,
         avatar: m.avatar,
         subjects: m.subjects,
         classes: m.classes,
@@ -137,7 +136,6 @@ export async function GET(request: Request) {
         last_login: m.last_login,
         created_at: m.created_at,
         updated_at: m.updated_at,
-        subject_group: m.mentor_group || m.subject_group,
         mentor_group: m.mentor_group || m.subject_group || m.department || "General"
       })),
       slots: filteredSlots,
