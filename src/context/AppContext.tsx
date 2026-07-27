@@ -433,8 +433,8 @@ interface AppContextProps {
   gradeStudentTask: (entryData: { studentId: string; classGroup: string; subject: string; weekNumber: number; submissionUrl?: string; vivaAssessment?: string; marks?: number; gradedBy?: string }) => Promise<{ success: boolean; entry?: StudentTrackerEntry; message?: string }>;
   deleteWeeklyTask: (classGroup: string, subject: string, weekNumber: number) => Promise<{ success: boolean; message?: string }>;
   subjectGroups: Array<{ id: string; name: string; description: string }>;
-  createSubjectGroup: (name: string, description: string, subjectIds?: string[]) => Promise<{ success: boolean; message: string }>;
-  updateSubjectGroup: (id: string, name: string, description: string, subjectIds?: string[]) => Promise<{ success: boolean; message: string }>;
+  createSubjectGroup: (name: string, description: string, subjectIds?: string[], mentorIds?: string[]) => Promise<{ success: boolean; message: string }>;
+  updateSubjectGroup: (id: string, name: string, description: string, subjectIds?: string[], mentorIds?: string[]) => Promise<{ success: boolean; message: string }>;
   deleteSubjectGroup: (id: string) => Promise<{ success: boolean; message: string }>;
   updateSmeSubjectGroup: (id: string, subject: string | null) => Promise<{ success: boolean; message: string }>;
   createSmeUser: (id: string, name: string, email: string, subject?: string) => Promise<{ success: boolean; message: string }>;
@@ -1283,12 +1283,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const createSubjectGroup = async (name: string, description: string, subjectIds?: string[]): Promise<{ success: boolean; message: string }> => {
+  const createSubjectGroup = async (name: string, description: string, subjectIds?: string[], mentorIds?: string[]): Promise<{ success: boolean; message: string }> => {
     try {
       const res = await fetch("/api/subject-groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description, subjectIds })
+        body: JSON.stringify({ name, description, subjectIds, mentorIds })
       });
       const data = await res.json();
       if (data.success) {
@@ -1301,12 +1301,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const updateSubjectGroup = async (id: string, name: string, description: string, subjectIds?: string[]): Promise<{ success: boolean; message: string }> => {
+  const updateSubjectGroup = async (id: string, name: string, description: string, subjectIds?: string[], mentorIds?: string[]): Promise<{ success: boolean; message: string }> => {
     try {
       const res = await fetch("/api/subject-groups", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, name, description, subjectIds })
+        body: JSON.stringify({ id, name, description, subjectIds, mentorIds })
       });
       const data = await res.json();
       if (data.success) {

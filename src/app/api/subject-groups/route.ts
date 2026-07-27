@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { name, description, subjectIds } = body;
+    const { name, description, subjectIds, mentorIds } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json({ success: false, message: "Group name is required." }, { status: 400 });
@@ -29,20 +29,30 @@ export async function POST(request: Request) {
       [id, cleanName, description || ""]
     );
 
+    // Map selected Mentors to this Mentor Group
+    if (Array.isArray(mentorIds) && mentorIds.length > 0) {
+      const placeholders = mentorIds.map(() => "?").join(",");
+      await db.run(
+        `UPDATE mentors SET mentor_group = ?, subject_group = ? WHERE id IN (${placeholders})`,
+        [cleanName, cleanName, ...mentorIds]
+      );
+    }
+
+    // Map selected Subjects to this Group
     if (Array.isArray(subjectIds) && subjectIds.length > 0) {
       const placeholders = subjectIds.map(() => "?").join(",");
       await db.run(
-        `UPDATE subjects SET subject_group = ? WHERE id IN (${placeholders})`,
-        [cleanName, ...subjectIds]
+        `UPDATE subjects SET mentor_group = ?, subject_group = ? WHERE id IN (${placeholders})`,
+        [cleanName, cleanName, ...subjectIds]
       );
     }
 
     await syncMentorSubjectGroups(db);
 
-    return NextResponse.json({ success: true, message: "Subject group created successfully.", id });
+    return NextResponse.json({ success: true, message: "Mentor group created successfully.", id });
   } catch (error: any) {
     if (error.message.includes("UNIQUE constraint failed")) {
-      return NextResponse.json({ success: false, message: "A subject group with this name already exists." }, { status: 400 });
+      return NextResponse.json({ success: false, message: "A mentor group with this name already exists." }, { status: 400 });
     }
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
@@ -52,7 +62,7 @@ export async function PUT(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { id, name, description, subjectIds } = body;
+    const { id, name, description, subjectIds, mentorIds } = body;
 
     if (!id || !name || !name.trim()) {
       return NextResponse.json({ success: false, message: "ID and name are required." }, { status: 400 });
@@ -63,7 +73,7 @@ export async function PUT(request: Request) {
     // Get original name to update references
     const original = await db.get("SELECT name FROM subject_groups WHERE id = ?", id);
     if (!original) {
-      return NextResponse.json({ success: false, message: "Subject group not found." }, { status: 404 });
+      return NextResponse.json({ success: false, message: "Mentor group not found." }, { status: 404 });
     }
 
     await db.run(
@@ -71,29 +81,36 @@ export async function PUT(request: Request) {
       [cleanName, description || "", id]
     );
 
-    // Reset subjects currently in original group name to NULL
-    await db.run("UPDATE subjects SET subject_group = NULL WHERE subject_group = ?", original.name);
+    // Reset mentors currently in original group name to NULL
+    await db.run("UPDATE mentors SET mentor_group = NULL, subject_group = NULL WHERE mentor_group = ? OR subject_group = ?", [original.name, original.name]);
 
-    // Set selected ones to the new name
-    if (Array.isArray(subjectIds) && subjectIds.length > 0) {
-      const placeholders = subjectIds.map(() => "?").join(",");
+    // Reset subjects currently in original group name to NULL
+    await db.run("UPDATE subjects SET mentor_group = NULL, subject_group = NULL WHERE mentor_group = ? OR subject_group = ?", [original.name, original.name]);
+
+    // Set selected Mentors to cleanName
+    if (Array.isArray(mentorIds) && mentorIds.length > 0) {
+      const placeholders = mentorIds.map(() => "?").join(",");
       await db.run(
-        `UPDATE subjects SET subject_group = ? WHERE id IN (${placeholders})`,
-        [cleanName, ...subjectIds]
+        `UPDATE mentors SET mentor_group = ?, subject_group = ? WHERE id IN (${placeholders})`,
+        [cleanName, cleanName, ...mentorIds]
       );
     }
 
-    if (original.name !== cleanName) {
-      // Update mentor references
-      await db.run("UPDATE mentors SET subject_group = ? WHERE subject_group = ?", [cleanName, original.name]);
+    // Set selected Subjects to cleanName
+    if (Array.isArray(subjectIds) && subjectIds.length > 0) {
+      const placeholders = subjectIds.map(() => "?").join(",");
+      await db.run(
+        `UPDATE subjects SET mentor_group = ?, subject_group = ? WHERE id IN (${placeholders})`,
+        [cleanName, cleanName, ...subjectIds]
+      );
     }
 
     await syncMentorSubjectGroups(db);
 
-    return NextResponse.json({ success: true, message: "Subject group updated successfully." });
+    return NextResponse.json({ success: true, message: "Mentor group updated successfully." });
   } catch (error: any) {
     if (error.message.includes("UNIQUE constraint failed")) {
-      return NextResponse.json({ success: false, message: "A subject group with this name already exists." }, { status: 400 });
+      return NextResponse.json({ success: false, message: "A mentor group with this name already exists." }, { status: 400 });
     }
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
@@ -111,19 +128,19 @@ export async function DELETE(request: Request) {
 
     const original = await db.get("SELECT name FROM subject_groups WHERE id = ?", id);
     if (!original) {
-      return NextResponse.json({ success: false, message: "Subject group not found." }, { status: 404 });
+      return NextResponse.json({ success: false, message: "Mentor group not found." }, { status: 404 });
     }
 
     // Delete group
     await db.run("DELETE FROM subject_groups WHERE id = ?", id);
 
     // Reset references to NULL
-    await db.run("UPDATE mentors SET subject_group = NULL WHERE subject_group = ?", original.name);
-    await db.run("UPDATE subjects SET subject_group = NULL WHERE subject_group = ?", original.name);
+    await db.run("UPDATE mentors SET mentor_group = NULL, subject_group = NULL WHERE mentor_group = ? OR subject_group = ?", [original.name, original.name]);
+    await db.run("UPDATE subjects SET mentor_group = NULL, subject_group = NULL WHERE mentor_group = ? OR subject_group = ?", [original.name, original.name]);
 
     await syncMentorSubjectGroups(db);
 
-    return NextResponse.json({ success: true, message: "Subject group deleted successfully." });
+    return NextResponse.json({ success: true, message: "Mentor group deleted successfully." });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }

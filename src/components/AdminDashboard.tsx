@@ -592,14 +592,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [lockDeptAndYear, setLockDeptAndYear] = useState(false);
   const [subjectsSubTab, setSubjectsSubTab] = useState<"catalog" | "groups">("catalog");
   const [showGroupModal, setShowGroupModal] = useState(false);
-  const [groupForm, setGroupForm] = useState<{ id: string; name: string; description: string; subjectIds: string[] }>({
+  const [groupForm, setGroupForm] = useState<{ id: string; name: string; description: string; subjectIds: string[]; mentorIds: string[] }>({
     id: "",
     name: "",
     description: "",
-    subjectIds: []
+    subjectIds: [],
+    mentorIds: []
   });
   const [editingGroup, setEditingGroup] = useState<any>(null);
   const [groupSubjectSearch, setGroupSubjectSearch] = useState("");
+  const [groupMentorSearch, setGroupMentorSearch] = useState("");
 
   const toggleDeptYear = (deptId: string, year: string) => {
     const key = `${deptId}_${year}`;
@@ -1817,13 +1819,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleOpenGroupModal = (g?: any) => {
     setModalError(null);
     setGroupSubjectSearch("");
+    setGroupMentorSearch("");
     if (g) {
-      const associatedIds = (subjectsList || []).filter(s => s.mentor_group === g.name).map(s => s.id);
+      const associatedSubjectIds = (subjectsList || []).filter(s => s.mentor_group === g.name).map(s => s.id);
+      const associatedMentorIds = (mentors || []).filter(m => m.mentor_group === g.name).map(m => m.id);
       setGroupForm({
         id: g.id,
         name: g.name,
         description: g.description || "",
-        subjectIds: associatedIds
+        subjectIds: associatedSubjectIds,
+        mentorIds: associatedMentorIds
       });
       setEditingGroup(g);
     } else {
@@ -1831,7 +1836,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         id: "",
         name: "",
         description: "",
-        subjectIds: []
+        subjectIds: [],
+        mentorIds: []
       });
       setEditingGroup(null);
     }
@@ -1849,16 +1855,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       let res;
       if (editingGroup) {
-        res = await updateSubjectGroup(editingGroup.id, groupForm.name.trim(), groupForm.description.trim(), groupForm.subjectIds);
+        res = await updateSubjectGroup(editingGroup.id, groupForm.name.trim(), groupForm.description.trim(), groupForm.subjectIds, groupForm.mentorIds);
       } else {
-        res = await createSubjectGroup(groupForm.name.trim(), groupForm.description.trim(), groupForm.subjectIds);
+        res = await createSubjectGroup(groupForm.name.trim(), groupForm.description.trim(), groupForm.subjectIds, groupForm.mentorIds);
       }
       if (res.success) {
         setShowGroupModal(false);
         await fetchAdminDetails();
-        toast(editingGroup ? "Subject group updated." : "Subject group created.", "success");
+        toast(editingGroup ? "Mentor group updated." : "Mentor group created.", "success");
       } else {
-        setModalError(res.message || "Failed to save subject group.");
+        setModalError(res.message || "Failed to save mentor group.");
       }
     } catch (err: any) {
       setModalError(err.message || "An unexpected error occurred.");
@@ -7397,14 +7403,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* ── Subject Group Modal ── */}
+        {/* ── Mentor Group Modal ── */}
         {showGroupModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
               <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
                 <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5 font-sans">
                   <Layers className="h-5 w-5 text-indigo-650" />
-                  {editingGroup ? "Edit Subject Group" : "Create Subject Group"}
+                  {editingGroup ? "Edit Mentor Group" : "Create Mentor Group"}
                 </h3>
                 <button onClick={() => setShowGroupModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
                   <X className="h-4 w-4" />
@@ -7420,82 +7426,92 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 )}
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Group Name</label>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Mentor Group Name</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. English, Aptitude, Soft Skills, Technical"
+                    placeholder="e.g. Computer Science, Management, Mathematics, English"
                     value={groupForm.name}
                     onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })}
                     className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655"
-                    disabled={editingGroup && editingGroup.name === "General"}
                   />
-                  {editingGroup && editingGroup.name === "General" && (
-                    <p className="text-[9px] text-amber-605 mt-1 font-bold">The default "General" group name cannot be modified.</p>
-                  )}
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Description</label>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Description</label>
                   <textarea
-                    placeholder="Provide a brief description for this subject group..."
+                    placeholder="Provide a brief description for this mentor group domain..."
                     value={groupForm.description}
                     onChange={(e) => setGroupForm({ ...groupForm, description: e.target.value })}
                     className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 h-20 resize-none"
                   />
                 </div>
 
-                {/* Map Subjects checklist */}
+                {/* Map Faculty Mentors checklist */}
                 <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Map Subjects to Group</label>
-                  <div className="relative mb-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Map Faculty Mentors to Group</label>
+                    <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                      {groupForm.mentorIds.length} Mentors Mapped
+                    </span>
+                  </div>
+                  <p className="text-[9.5px] text-gray-400 font-medium">Select faculty mentors to assign to this mentor group domain.</p>
+
+                  <div className="relative mt-1 mb-1.5">
                     <Search className="absolute left-2.5 top-1.5 h-3.5 w-3.5 text-gray-400" />
                     <input
                       type="text"
-                      placeholder="Search subject catalog..."
-                      value={groupSubjectSearch}
-                      onChange={(e) => setGroupSubjectSearch(e.target.value)}
+                      placeholder="Search faculty mentors by name or email..."
+                      value={groupMentorSearch}
+                      onChange={(e) => setGroupMentorSearch(e.target.value)}
                       className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-650 font-bold"
                     />
                   </div>
 
                   <div className="border border-gray-150 rounded-xl bg-gray-55 p-3.5 max-h-44 overflow-y-auto space-y-1.5 text-[11px] font-bold">
                     {(() => {
-                      const searched = (subjectsList || []).filter(s =>
-                        s.name.toLowerCase().includes(groupSubjectSearch.toLowerCase()) ||
-                        s.department.toLowerCase().includes(groupSubjectSearch.toLowerCase())
+                      const searchedMentors = (mentors || []).filter(m =>
+                        (m.name || "").toLowerCase().includes(groupMentorSearch.toLowerCase()) ||
+                        (m.email || "").toLowerCase().includes(groupMentorSearch.toLowerCase()) ||
+                        (m.mentor_group || "").toLowerCase().includes(groupMentorSearch.toLowerCase())
                       );
 
                       return (
                         <>
-                          {searched.map(s => {
-                            const isChecked = groupForm.subjectIds.includes(s.id);
+                          {searchedMentors.map(m => {
+                            const isChecked = groupForm.mentorIds.includes(m.id);
                             return (
-                              <label key={s.id} className="flex items-start gap-2 py-1 px-1.5 hover:bg-white rounded cursor-pointer transition-colors text-gray-700">
+                              <label key={m.id} className="flex items-start gap-2 py-1 px-1.5 hover:bg-white rounded cursor-pointer transition-colors text-gray-700">
                                 <input
                                   type="checkbox"
                                   checked={isChecked}
                                   onChange={(e) => {
                                     let next;
                                     if (e.target.checked) {
-                                      next = [...groupForm.subjectIds, s.id];
+                                      next = [...groupForm.mentorIds, m.id];
                                     } else {
-                                      next = groupForm.subjectIds.filter(id => id !== s.id);
+                                      next = groupForm.mentorIds.filter(id => id !== m.id);
                                     }
-                                    setGroupForm({ ...groupForm, subjectIds: next });
+                                    setGroupForm({ ...groupForm, mentorIds: next });
                                   }}
                                   className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer mt-0.5"
                                 />
                                 <div className="leading-tight flex-1">
-                                  <span className="font-bold text-gray-800">{s.name}</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-gray-800">{m.name}</span>
+                                    <span className="text-[9px] text-gray-400 font-normal">({m.email})</span>
+                                  </div>
                                   <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                    <span className="text-[9px] text-gray-400 font-semibold">{s.department} • {s.semester}</span>
-                                    {s.mentor_group && s.mentor_group !== "General" && (
-                                      <span className={`text-[8.5px] px-1 py-0.2 rounded font-black ${s.mentor_group === (editingGroup?.name)
+                                    {m.mentor_group ? (
+                                      <span className={`text-[8.5px] px-1 py-0.2 rounded font-black ${m.mentor_group === (editingGroup?.name)
                                           ? "bg-indigo-55 text-indigo-700 border border-indigo-100"
                                           : "bg-amber-50 text-amber-700 border border-amber-100"
                                         }`}>
-                                        Group: {s.mentor_group}
+                                        Group: {m.mentor_group}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[8.5px] px-1 py-0.2 rounded font-semibold text-gray-400 bg-gray-100">
+                                        Unassigned
                                       </span>
                                     )}
                                   </div>
@@ -7503,9 +7519,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </label>
                             );
                           })}
-                          {searched.length === 0 && (
+                          {searchedMentors.length === 0 && (
                             <div className="text-center text-gray-400 italic py-2 text-[10px]">
-                              No subjects found.
+                              No mentors found matching "{groupMentorSearch}".
                             </div>
                           )}
                         </>
@@ -7526,7 +7542,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     type="submit"
                     className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
                   >
-                    {editingGroup ? "Save Changes" : "Create Group"}
+                    {editingGroup ? "Save Mentor Group" : "Create Mentor Group"}
                   </button>
                 </div>
               </form>
