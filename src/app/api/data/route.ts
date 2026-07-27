@@ -137,7 +137,8 @@ export async function GET(request: Request) {
         last_login: m.last_login,
         created_at: m.created_at,
         updated_at: m.updated_at,
-        subject_group: m.subject_group
+        subject_group: m.mentor_group || m.subject_group,
+        mentor_group: m.mentor_group || m.subject_group || m.department || "General"
       })),
       slots: filteredSlots,
       requests: filteredRequests,
