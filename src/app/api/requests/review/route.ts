@@ -108,7 +108,7 @@ export async function POST(request: Request) {
     try {
       const requestor = await db.get("SELECT email FROM mentors WHERE id = ?", handoverRequest.requestorId);
       const requestorEmail = requestor?.email || "thanush@faceprep.in";
-      const subject = `[Zentra] Handover Request ${status === "approved" ? "Approved" : "Rejected"} - ${handoverRequest.course}`;
+      const subject = `[FACE Prep E-Campus] Handover Request ${status === "approved" ? "Approved" : "Rejected"} - ${handoverRequest.course}`;
       
       const detailsList = [
         { label: "Course", value: handoverRequest.course },

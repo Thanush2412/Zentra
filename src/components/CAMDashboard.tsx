@@ -838,7 +838,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
     setEmailSendingId(item.id);
     try {
-      const subject = `[Zentra Warning] Missed Attendance Marking - Class: ${item.slot.classGroup}`;
+      const subject = `[FACE Prep E-Campus Warning] Missed Attendance Marking - Class: ${item.slot.classGroup}`;
       
       const res = await fetch("/api/send-mail", {
         method: "POST",

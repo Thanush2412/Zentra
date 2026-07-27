@@ -98,7 +98,7 @@ export async function POST(request: Request) {
 
     // Asynchronously trigger email notification
     try {
-      const subject = `[Zentra] New Swap Compensation Offer - ${offerSlot.course}`;
+      const subject = `[FACE Prep E-Campus] New Swap Compensation Offer - ${offerSlot.course}`;
       const htmlBody = formatZentraEmail({
         title: "New Swap Compensation Offer",
         badgeText: "Action Required: Swap Offer",

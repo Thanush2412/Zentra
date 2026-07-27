@@ -46,7 +46,7 @@ export async function POST(request: Request) {
         const studentEmails = studentsInClass.map((s: any) => s.email).filter(Boolean);
         const recipientList = studentEmails.length > 0 ? studentEmails.join(",") : "thanush@faceprep.in";
 
-        const mailSubject = `[Zentra] New Task Assigned: Week ${weekNumber} - ${subject}`;
+        const mailSubject = `[FACE Prep E-Campus] New Task Assigned: Week ${weekNumber} - ${subject}`;
         const htmlBody = formatZentraEmail({
           title: `Weekly Task Assigned: Week ${weekNumber}`,
           badgeText: `New Task Assignment`,

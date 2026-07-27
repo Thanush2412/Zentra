@@ -103,7 +103,7 @@ export async function POST(request: Request) {
 
           await sendMail({
             to: m.email,
-            subject: `[Zentra] Campus Schedule Update - ${dateStr}`,
+            subject: `[FACE Prep E-Campus] Campus Schedule Update - ${dateStr}`,
             htmlBody: emailHtml
           });
         }

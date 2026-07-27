@@ -4,7 +4,7 @@ export function formatZentraEmail({
   badgeColor,
   description,
   details,
-  footerText = "This is an automated operational notification from Zentra by FPC."
+  footerText = "This is an automated operational notification from FACE Prep E-Campus."
 }: {
   title: string;
   badgeText: string;
@@ -38,11 +38,12 @@ export function formatZentraEmail({
       <div style="max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 18px rgba(15, 23, 42, 0.04); border: 1px solid #e2e8f0;">
         
         <!-- Header Branding (Brand Gradient background as per website logo) -->
-        <div style="background: linear-gradient(135deg, #D528A2 0%, #F4A863 100%); padding: 28px 24px; text-align: center; border-bottom: 1px solid #f1f5f9;">
-          <div style="display: inline-block; background-color: rgba(255, 255, 255, 0.2); border-radius: 14px; padding: 8px 16px; font-weight: 800; font-size: 18px; color: #ffffff; letter-spacing: 0.05em; border: 1px solid rgba(255, 255, 255, 0.25); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);">
-            <span style="font-weight: 900; color: #ffffff;">Z</span>ENTRA <span style="font-size: 10px; color: rgba(255, 255, 255, 0.9); font-weight: 700;">by FPC</span>
+        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); padding: 28px 24px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+          <div style="display: inline-block; background-color: rgba(255, 255, 255, 0.95); border-radius: 14px; padding: 10px 20px; border: 1px solid rgba(255, 255, 255, 0.25); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);">
+            <span style="font-weight: 900; font-size: 18px; color: #000000; letter-spacing: -0.02em;">FACE <span style="color: #D528A2;">Prep</span></span>
+            <span style="display: block; font-size: 11px; font-weight: 800; color: #0f172a; tracking: 0.1em; text-transform: uppercase;">E-CAMPUS</span>
           </div>
-          <div style="color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 10px; opacity: 0.95;">University Scheduling Ecosystem</div>
+          <div style="color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 10px; opacity: 0.95;">University Operations Platform</div>
         </div>
  
         <!-- Body Content -->
@@ -67,14 +68,14 @@ export function formatZentraEmail({
           <!-- Call to Action Banner -->
           <div style="background-color: #f8fafc; border-radius: 16px; padding: 16px; text-align: center; border: 1px solid #f1f5f9;">
             <span style="font-size: 12px; color: #475569; font-weight: 600; display: block; margin-bottom: 2px;">Need to take action?</span>
-            <a href="https://zentra-scheduler.university.edu" style="font-size: 12px; color: #D528A2; font-weight: 700; text-decoration: none; display: inline-block;">Log in to your Zentra Portal &rarr;</a>
+            <a href="#" style="font-size: 12px; color: #D528A2; font-weight: 700; text-decoration: none; display: inline-block;">Log in to your FACE Prep E-Campus Portal &rarr;</a>
           </div>
         </div>
  
         <!-- Footer -->
         <div style="background-color: #f8fafc; padding: 20px 24px; text-align: center; border-top: 1px solid #f1f5f9;">
           <p style="color: #94a3b8; font-size: 11px; margin: 0; font-weight: 600;">${footerText}</p>
-          <p style="color: #cbd5e1; font-size: 10px; margin-top: 4px; font-weight: 500;">&copy; 2026 FacePrep. All rights reserved.</p>
+          <p style="color: #cbd5e1; font-size: 10px; margin-top: 4px; font-weight: 500;">&copy; 2026 FACE Prep E-Campus. All rights reserved.</p>
         </div>
       </div>
     </div>

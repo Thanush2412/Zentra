@@ -120,7 +120,7 @@ export async function POST(request: Request) {
 
     // Asynchronously trigger email notification
     try {
-      const subject = `[Zentra] New Class Handover Request - ${subjectName || slot.course}`;
+      const subject = `[FACE Prep E-Campus] New Class Handover Request - ${subjectName || slot.course}`;
       const htmlBody = formatZentraEmail({
         title: "New Class Handover Request",
         badgeText: isEmergency ? "Emergency Action Required" : "Action Required",

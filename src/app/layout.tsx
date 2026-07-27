@@ -15,12 +15,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Zentra by FPC - Timetable & Slot Booking Dashboard",
-  description: "Advanced Slot Booking, Conversions, and HR Audit Log Dashboard",
+  title: "FACE Prep E-Campus - Operations & Timetable System",
+  description: "Advanced Slot Booking, Operations, and Student Academic Management Platform",
   icons: {
-    icon: "/logo.svg",
-    shortcut: "/logo.svg",
-    apple: "/logo.svg",
+    icon: "/E-Campus.png",
+    shortcut: "/E-Campus.png",
+    apple: "/E-Campus.png",
   },
 };
 

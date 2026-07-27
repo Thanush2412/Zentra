@@ -220,12 +220,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       <header className="floating-header w-[92%] sm:w-[85%] md:w-[80%] lg:w-[75%] max-w-[1200px] mx-auto self-center mt-3 md:mt-4 px-3 sm:px-6 py-3 md:py-4 flex items-center justify-between z-30 transition-all rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-md bg-white/80 dark:bg-slate-900/80 backdrop-blur-md">
         {/* Left: Brand */}
         <div className="flex items-center gap-3">
-          <img src="/logo.svg" alt="Zentra Logo" className="h-8 sm:h-9 md:h-10 w-auto object-contain shrink-0 max-h-10" />
-          <div>
-            <span className="text-[13px] font-bold tracking-tight text-gray-900 dark:text-white leading-none block">
-              Zentra
-            </span>
-            <span className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider block mt-0.5 truncate max-w-[85px] sm:max-w-none">
+          <img src="/E-Campus.png" alt="FACE Prep E-Campus Logo" className="h-8 sm:h-9 md:h-10 w-auto object-contain shrink-0 max-h-10" />
+          <div className="border-l border-slate-200 dark:border-slate-700 pl-3">
+            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider block truncate max-w-[120px] sm:max-w-none">
               {currentRole === "mentor" && "Faculty Workspace"}
               {currentRole === "hr" && "HR Audit Portal"}
               {currentRole === "cam" && "Campus Manager"}
@@ -699,11 +696,11 @@ export function ProfessionalLoader({ message = "Loading your workspace..." }: { 
       {/* Glassmorphic Card */}
       <div className="relative z-10 flex flex-col items-center p-8 sm:p-10 rounded-3xl border border-slate-200/90 bg-white/95 backdrop-blur-xl shadow-2xl max-w-sm w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-300">
         
-        {/* Zentra Logo Header */}
+        {/* FACE Prep E-Campus Logo Header */}
         <div className="relative mb-6 flex items-center justify-center">
           <div className="absolute -inset-3 rounded-2xl bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-[#D528A2]/20 blur-md animate-pulse" />
           <div className="relative flex items-center justify-center px-6 py-3.5 rounded-2xl bg-white border border-slate-200 shadow-md">
-            <img src="/logo.svg" alt="Zentra Logo" className="h-10 w-auto object-contain" />
+            <img src="/E-Campus.png" alt="FACE Prep E-Campus Logo" className="h-10 w-auto object-contain" />
           </div>
         </div>
 
