@@ -18,9 +18,9 @@ export const metadata: Metadata = {
   title: "FACE Prep E-Campus - Operations & Timetable System",
   description: "Advanced Slot Booking, Operations, and Student Academic Management Platform",
   icons: {
-    icon: "/E-Campus.png",
-    shortcut: "/E-Campus.png",
-    apple: "/E-Campus.png",
+    icon: "/faceprep-fav.png",
+    shortcut: "/faceprep-fav.png",
+    apple: "/faceprep-fav.png",
   },
 };
 
