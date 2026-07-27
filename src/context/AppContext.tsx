@@ -4,6 +4,14 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { resolveClassGroupDetailsFromState } from "@/lib/utils";
 import { useToast } from "@/context/ToastContext";
 
+export interface MentorGroup {
+  id: string;
+  name: string;
+  description?: string;
+  color?: string;
+  is_active?: number;
+}
+
 export interface Mentor {
   id: string;
   name: string;
@@ -17,6 +25,7 @@ export interface Mentor {
   classes?: string;
   college_id?: string;
   subject_group?: string;
+  mentor_group?: string;
 }
 
 export interface HeaderUser {
@@ -242,6 +251,7 @@ export interface Subject {
   year?: string;
   weekly_hours?: number;
   subject_group?: string;
+  mentor_group?: string;
   shift?: string;
 }
 

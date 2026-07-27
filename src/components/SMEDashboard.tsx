@@ -304,11 +304,27 @@ export function SMEDashboard() {
       if (hasDemo) return;
       const dailyLoad = demoSessions.filter(ds => ds.mentorId === m.id && ds.dateStr === session.dateStr).length;
       if (dailyLoad >= 2) return;
-      let score = 40;
-      const isExactSubjectMatch = m.subject_group?.toLowerCase().trim() === subjectGroup?.toLowerCase().trim();
-      if (isExactSubjectMatch) score += 25;
+
+      let score = 0;
+      const mentorGrp = m.mentor_group || m.subject_group || "General";
+      const targetGrp = subjectGroup || session.subject || "";
+
+      // 1. Same Mentor Group (+25)
+      const isSameGroup = mentorGrp.toLowerCase().trim() === targetGrp.toLowerCase().trim();
+      if (isSameGroup) score += 25;
+
+      // 2. Same Subject (+15)
+      const isSameSubject = (m.subjects || "").toLowerCase().includes((session.subject || "").toLowerCase());
+      if (isSameSubject) score += 15;
+
+      // 3. Free Slot (+20)
+      score += 20;
+
+      // 4. Less Weekly Load (+15)
       const weeklyLoad = demoSessions.filter(ds => ds.mentorId === m.id).length;
       score += Math.max(0, 15 - (weeklyLoad * 5));
+
+      // 5. No Consecutive Classes (+10)
       const idx = derivedTimeSlots.indexOf(session.timeSlot);
       let consecutiveClash = false;
       if (idx !== -1) {
@@ -319,13 +335,23 @@ export function SMEDashboard() {
         if (hasPrev || hasNext) consecutiveClash = true;
       }
       if (!consecutiveClash) score += 10;
-      score += 5;
+
+      // 6. Regular Working Hours (+5)
       const isRegular = standardSlots.includes(session.timeSlot?.trim().toLowerCase());
       if (isRegular) score += 5;
+
+      // 7. Same College (+10)
+      const isSameCollege = !session.college_id || m.college_id === session.college_id;
+      if (isSameCollege) score += 10;
+
       mentorSwaps.push({
-        mentorId: m.id, mentorName: m.name, subjectGroup: m.subject_group || "General",
-        score, weeklyCount: weeklyLoad,
-        reason: isExactSubjectMatch ? "Subject Match, Free Slot, Low Workload" : "Free Slot, General Helper"
+        mentorId: m.id, 
+        mentorName: m.name, 
+        mentorGroup: mentorGrp,
+        subjectGroup: mentorGrp,
+        score, 
+        weeklyCount: weeklyLoad,
+        reason: isSameGroup ? "Same Mentor Group & Free Slot" : "Available Proxy Mentor"
       });
     });
 

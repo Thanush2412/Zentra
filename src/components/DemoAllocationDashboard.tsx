@@ -1712,9 +1712,9 @@ export function DemoAllocationDashboard() {
                 </select>
               </div>
 
-              {/* Subject Area */}
+              {/* Mentor Group Area */}
               <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-405 tracking-wider">Subject Group</label>
+                <label className="text-[10px] font-black uppercase text-slate-405 tracking-wider">Mentor Group</label>
                 <input
                   type="text"
                   value={editSession.subject}

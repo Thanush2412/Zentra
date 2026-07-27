@@ -515,6 +515,14 @@ export function getDb(): Promise<TursoDbAdapter> {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS mentor_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT,
+      color TEXT DEFAULT '#4f46e5',
+      is_active INTEGER DEFAULT 1
+    );
+
     CREATE TABLE IF NOT EXISTS subject_groups (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,
@@ -602,77 +610,41 @@ export function getDb(): Promise<TursoDbAdapter> {
   try {
     await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN subject_group TEXT;`);
   } catch (_) {}
+  try {
+    await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN mentor_group TEXT;`);
+  } catch (_) {}
 
   try {
     await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN subject_group TEXT;`);
   } catch (_) {}
-
-  // Migrations for kam_tasks table
   try {
-    await dbInstance.exec(`ALTER TABLE kam_tasks ADD COLUMN collegeId TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE kam_tasks ADD COLUMN assigned_cam_id TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE kam_tasks ADD COLUMN description TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE kam_tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium';`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE kam_tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'pending';`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE kam_tasks ADD COLUMN dueDate TEXT NOT NULL DEFAULT '';`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE kam_tasks ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP;`);
+    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN mentor_group TEXT;`);
   } catch (_) {}
 
-  // Migrations for campus_issues table
   try {
-    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN collegeId TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN collegeName TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN escalated INTEGER DEFAULT 0;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN escalatedAt TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN resolvedAt TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN notes TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN type TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN priority TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN desc TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN status TEXT DEFAULT 'pending';`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP;`);
+    await dbInstance.exec(`ALTER TABLE sme_users ADD COLUMN mentor_group TEXT;`);
   } catch (_) {}
 
-  const groupCount = await dbInstance.get("SELECT COUNT(*) as count FROM subject_groups");
-  if (!groupCount || groupCount.count === 0) {
-    await dbInstance.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES ('g1', 'English', 'English communication and vocabulary training.')");
-    await dbInstance.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES ('g2', 'Aptitude', 'Quantitative Aptitude, logical reasoning, and puzzle solving.')");
-    await dbInstance.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES ('g3', 'Soft Skills', 'Presentation skills, resume building, and interview prep.')");
-    await dbInstance.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES ('g4', 'Technical', 'Programming, data structures, and computer science courses.')");
-    await dbInstance.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES ('g5', 'General', 'Miscellaneous or general stream curriculum.')");
-  }
+  // Dynamic migration: populate mentor_groups table from subject_groups if mentor_groups is empty
+  try {
+    const mgCount = await dbInstance.get("SELECT COUNT(*) as count FROM mentor_groups");
+    if (!mgCount || mgCount.count === 0) {
+      const existingSubGroups = await dbInstance.all("SELECT * FROM subject_groups");
+      for (const sg of existingSubGroups) {
+        await dbInstance.run(
+          "INSERT OR IGNORE INTO mentor_groups (id, name, description) VALUES (?, ?, ?)",
+          [sg.id || `mg_${sg.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`, sg.name, sg.description || `${sg.name} Mentor Group`]
+        );
+      }
+    }
+  } catch (_) {}
+
+  // Sync existing subject_group values to mentor_group if mentor_group is NULL
+  try {
+    await dbInstance.exec("UPDATE mentors SET mentor_group = subject_group WHERE mentor_group IS NULL AND subject_group IS NOT NULL;");
+    await dbInstance.exec("UPDATE subjects SET mentor_group = subject_group WHERE mentor_group IS NULL AND subject_group IS NOT NULL;");
+    await dbInstance.exec("UPDATE sme_users SET mentor_group = subject WHERE mentor_group IS NULL AND subject IS NOT NULL;");
+  } catch (_) {}
 
     const adminCount = await dbInstance.get("SELECT COUNT(*) as count FROM admin_users");
     if (!adminCount || adminCount.count === 0) {
@@ -1515,8 +1487,8 @@ export function parseClassGroupDetails(classGroup: string) {
 export async function syncMentorSubjectGroups(db: any) {
   // Fetch all mentors
   const mentors = await db.all("SELECT id, subjects, department FROM mentors");
-  // Fetch all subjects that are mapped to a subject_group
-  const subjects = await db.all("SELECT name, subject_group FROM subjects WHERE subject_group IS NOT NULL AND subject_group != ''");
+  // Fetch all subjects that are mapped to a mentor_group or subject_group
+  const subjects = await db.all("SELECT name, COALESCE(mentor_group, subject_group) as group_name FROM subjects WHERE (mentor_group IS NOT NULL AND mentor_group != '') OR (subject_group IS NOT NULL AND subject_group != '')");
 
   for (const mentor of mentors) {
     const mentorSubjects = (mentor.subjects || "")
@@ -1534,7 +1506,7 @@ export async function syncMentorSubjectGroups(db: any) {
             ms.includes(sub.name.toLowerCase())
         )
       ) {
-        matchedGroup = sub.subject_group;
+        matchedGroup = sub.group_name;
         break;
       }
     }
@@ -1556,16 +1528,15 @@ export async function syncMentorSubjectGroups(db: any) {
     }
 
     if (matchedGroup) {
-      // Ensure the subject group exists in the subject_groups table
-      const groupExists = await db.get("SELECT name FROM subject_groups WHERE LOWER(name) = ?", matchedGroup.toLowerCase());
+      // Ensure the mentor group exists in the mentor_groups table
+      const groupExists = await db.get("SELECT name FROM mentor_groups WHERE LOWER(name) = ?", matchedGroup.toLowerCase());
       if (!groupExists) {
-        const newGroupId = "g_" + matchedGroup.toLowerCase().replace(/[^a-z]/g, "");
+        const newGroupId = "mg_" + matchedGroup.toLowerCase().replace(/[^a-z0-9]/g, "");
+        await db.run("INSERT OR IGNORE INTO mentor_groups (id, name, description) VALUES (?, ?, ?)", [newGroupId, matchedGroup, `${matchedGroup} Mentor Group`]);
         await db.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES (?, ?, ?)", [newGroupId, matchedGroup, `${matchedGroup} Group`]);
       }
 
-      await db.run("UPDATE mentors SET subject_group = ? WHERE id = ?", [matchedGroup, mentor.id]);
-    } else {
-      await db.run("UPDATE mentors SET subject_group = NULL WHERE id = ?", [mentor.id]);
+      await db.run("UPDATE mentors SET mentor_group = ?, subject_group = ? WHERE id = ?", [matchedGroup, matchedGroup, mentor.id]);
     }
   }
 }

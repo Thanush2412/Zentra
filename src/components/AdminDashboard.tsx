@@ -3710,7 +3710,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onClick={() => setSubjectsSubTab("groups")}
                 className={`pb-2 px-1 text-xs font-black transition-all ${subjectsSubTab === "groups" ? "border-b-2 border-indigo-650 text-indigo-650" : "text-gray-405 hover:text-gray-600"}`}
               >
-                Subject Groups
+                Mentor Groups
               </button>
             </div>
 
@@ -3891,15 +3891,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="space-y-6">
                 <div className="flex justify-between items-center bg-white p-4 border border-gray-150 rounded-2xl shadow-xs">
                   <div>
-                    <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Configured Subject Groups</h3>
-                    <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Create custom groups to cluster subjects (e.g. English, Aptitude, Soft Skills) and allocate them on timetables.</p>
+                    <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Configured Mentor Groups</h3>
+                    <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Create custom groups to cluster mentors and SMEs (e.g. Technical, Aptitude, Soft Skills) and allocate demo sessions.</p>
                   </div>
                   <button
                     onClick={() => handleOpenGroupModal()}
                     className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border-none"
                   >
                     <Plus className="h-4 w-4" />
-                    Create Subject Group
+                    Create Mentor Group
                   </button>
                 </div>
 
