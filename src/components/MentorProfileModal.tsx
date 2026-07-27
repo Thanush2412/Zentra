@@ -14,7 +14,8 @@ import {
   CheckCircle,
   Briefcase,
   Layers,
-  Award
+  Award,
+  Sparkles
 } from "lucide-react";
 import { formatTimeLabel, isSubjectNameMatch } from "@/lib/utils";
 
@@ -276,7 +277,14 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
 
             <div className="flex items-center gap-2 text-slate-600 bg-white border border-slate-100 p-2.5 rounded-xl">
               <Building2 className="h-4 w-4 text-slate-400 shrink-0" />
-              <span className="truncate font-bold text-slate-700">{mentor.department}</span>
+              <span className="truncate font-bold text-slate-700">Department: {mentor.department}</span>
+            </div>
+
+            <div className="flex items-center gap-2 text-purple-700 bg-purple-50/60 border border-purple-100 p-2.5 rounded-xl">
+              <Sparkles className="h-4 w-4 text-purple-500 shrink-0" />
+              <span className="truncate font-extrabold">
+                Mentor Group: {mentor.mentor_group || mentor.subject_group || "General"}
+              </span>
             </div>
 
             <div className="flex items-center gap-2 text-slate-600 bg-white border border-slate-100 p-2.5 rounded-xl">

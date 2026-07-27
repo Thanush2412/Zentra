@@ -3,19 +3,19 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useApp, SHIFT_TIME_SLOTS, Slot, Mentor, AuditLog, College, Subject, Department } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
-import { 
-  Building2, 
-  Users, 
-  Grid, 
-  History, 
-  Search, 
-  MapPin, 
-  Clock, 
-  Network, 
-  Briefcase, 
-  ShieldAlert, 
+import {
+  Building2,
+  Users,
+  Grid,
+  History,
+  Search,
+  MapPin,
+  Clock,
+  Network,
+  Briefcase,
+  ShieldAlert,
   ShieldCheck,
-  ChevronRight, 
+  ChevronRight,
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
@@ -297,10 +297,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const wb = XLSX.utils.book_new();
     const ws1 = XLSX.utils.json_to_sheet(facultyData);
     const ws2 = XLSX.utils.json_to_sheet(mappingGuide);
-    
+
     XLSX.utils.book_append_sheet(wb, ws1, "Faculty Directory");
     XLSX.utils.book_append_sheet(wb, ws2, "Timetable Mapping Guide");
-    
+
     const safeName = targetCollegeName.replace(/[^a-zA-Z0-9]/g, "_");
     XLSX.writeFile(wb, `Faculty_Timetable_Template_${safeName}.xlsx`);
     toast(`Faculty & Timetable import template downloaded for ${targetCollegeName}.`, "success");
@@ -459,7 +459,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [shift2Timings, setShift2Timings] = useState("");
   const [generalTimings, setGeneralTimings] = useState("");
   const [isDeptSubmitting, setIsDeptSubmitting] = useState<boolean>(false);
-  
+
   const [activeConfigShift, setActiveConfigShift] = useState<"shift_1" | "shift_2" | "general">("general");
   const [shiftConfigsParams, setShiftConfigsParams] = useState<Record<"shift_1" | "shift_2" | "general", ShiftParams>>({
     shift_1: { label: "Shift 1", startTime: "08:30 AM", periodDuration: 50, periodsCount: 5, mode: "duration", breaks: [] },
@@ -907,7 +907,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const clearCampusDraftFromDb = async () => {
     try {
       await fetch("/api/campus-draft", { method: "DELETE" });
-    } catch (_) {}
+    } catch (_) { }
     setDraftLastSaved(null);
     setHasRestoredDraft(false);
     setCampusWizardStep(1);
@@ -941,7 +941,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleOpenCampusModal = (col?: College) => {
     setModalError(null);
     setActiveConfigShift("general");
-    
+
     const defaultShift1Breaks = [
       { id: "b1", name: "Tea Break", afterPeriod: 2, duration: 15 },
       { id: "b2", name: "Lunch Break", afterPeriod: 4, duration: 35 }
@@ -1006,7 +1006,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               };
             });
           }
-        } catch (_) {}
+        } catch (_) { }
       }
       if (!s1) s1 = SHIFT_TIME_SLOTS.shift_1.join("\n");
       if (!s2) s2 = SHIFT_TIME_SLOTS.shift_2.join("\n");
@@ -1064,7 +1064,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 if (counts[y] > 0) sections[y] = counts[y];
               }
             }
-          } catch (_) {}
+          } catch (_) { }
         }
         return { ...c, isExisting: true, sections, sectionRooms };
       }));
@@ -1072,7 +1072,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setShift1Timings(SHIFT_TIME_SLOTS.shift_1.join("\n"));
       setShift2Timings(SHIFT_TIME_SLOTS.shift_2.join("\n"));
       setGeneralTimings(SHIFT_TIME_SLOTS.general.join("\n"));
- 
+
       setEditingCampus(false);
       setCampusSuccessCreatedId(null);
 
@@ -1114,7 +1114,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setNewBreakDuration(15);
     setCampusFieldErrors({});
     setCourseFieldErrors({});
-    
+
     setShowCampusModal(true);
   };
 
@@ -1125,8 +1125,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       parsedRooms = { ...c.sectionRooms };
     } else if (c.default_room) {
       try {
-        parsedRooms = typeof c.default_room === "string" && c.default_room.startsWith("{") 
-          ? JSON.parse(c.default_room) 
+        parsedRooms = typeof c.default_room === "string" && c.default_room.startsWith("{")
+          ? JSON.parse(c.default_room)
           : { "Year 1 Section A": c.default_room };
       } catch (_) {
         parsedRooms = { "Year 1 Section A": c.default_room };
@@ -1188,7 +1188,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       };
 
       const allSemsMap = finalMap["All Semesters"] || shiftConfigsParams;
-      
+
       // Ensure at least one break is configured for active shifts
       for (const sem of Object.keys(finalMap)) {
         const semParams = finalMap[sem];
@@ -1212,7 +1212,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const s1Schedule = calculateShiftSchedule(allSemsMap.shift_1);
       const s2Schedule = calculateShiftSchedule(allSemsMap.shift_2);
       const genSchedule = calculateShiftSchedule(allSemsMap.general);
-      
+
       if (s1Schedule.error && campusForm.has_shifts === 1) {
         setModalError(`All Semesters - Shift 1: ${s1Schedule.error}`);
         return;
@@ -1231,7 +1231,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const compiledGeneral = genSchedule.items.filter(item => item.type === "period").map(item => `${item.startTimeStr} - ${item.endTimeStr}`);
 
       const semesterConfigsCompiled: Record<string, any> = {};
-      
+
       for (const sem of Object.keys(finalMap)) {
         if (sem === "All Semesters") continue;
         const semParams = finalMap[sem];
@@ -1267,7 +1267,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         custom_shift_params: allSemsMap,
         semester_configs: semesterConfigsCompiled
       };
-      
+
       // Auto-compile rooms list from all wizard courses
       const allRooms = new Set<string>();
       wizardCourses.forEach(c => {
@@ -1280,14 +1280,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   allRooms.add(r.trim());
                 }
               });
-            } catch (_) {}
+            } catch (_) { }
           } else {
             allRooms.add(c.default_room.trim());
           }
         }
       });
       const autoRoomsList = Array.from(allRooms).join(", ");
-      
+
       let collegeId = campusForm.id;
       if (!editingCampus) {
         const cleanCode = campusForm.code || generateCodeFromName(campusForm.name) || Date.now().toString();
@@ -1300,7 +1300,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         rooms: autoRoomsList || campusForm.rooms,
         shift_configs: JSON.stringify(parsedConfigs)
       };
-      
+
       let res;
       if (editingCampus) {
         res = await updateCollege(updatedForm);
@@ -1973,7 +1973,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       } else if (deptForm.default_room) {
         currentRooms = { 1: deptForm.default_room };
       }
-    } catch (_) {}
+    } catch (_) { }
     currentRooms[yearNum] = roomVal;
     setDeptForm(prev => ({
       ...prev,
@@ -2053,11 +2053,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const filteredSlots = slots.filter(slot => {
     const mentorObj = mentors.find(m => m.id === slot.mentorId);
     const collegeId = slot.college_id || mentorObj?.college_id || "college_1";
-    
+
     const matchesSearch = slot.course.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (mentorObj?.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          slot.location.toLowerCase().includes(searchQuery.toLowerCase());
-                          
+      (mentorObj?.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      slot.location.toLowerCase().includes(searchQuery.toLowerCase());
+
     const matchesCollege = collegeFilter === "all" || collegeId === collegeFilter;
     const matchesDay = dayFilter === "all" || slot.day === dayFilter;
     const matchesShift = shiftFilter === "all" || slot.shift === shiftFilter;
@@ -2068,26 +2068,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Filter audit logs
   const filteredLogs = auditLogs.filter(log => {
     return log.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           log.actorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           log.actorRole.toLowerCase().includes(searchQuery.toLowerCase());
+      log.actorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      log.actorRole.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   // Filter mentors
   const filteredMentors = mentors.filter(m => {
     const colName = colleges.find(c => c.id === m.college_id)?.name || "";
     return m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           m.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           m.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           colName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           (m.subjects || "").toLowerCase().includes(searchQuery.toLowerCase());
+      m.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      m.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      colName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (m.subjects || "").toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   // Filter subjects
   const filteredSubjects = (subjectsList || []).filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           s.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           s.semester.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           (colleges.find(c => c.id === s.college_id)?.name || "").toLowerCase().includes(searchQuery.toLowerCase());
+      s.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.semester.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (colleges.find(c => c.id === s.college_id)?.name || "").toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCollege = subjectCollegeFilter === "all" || s.college_id === subjectCollegeFilter;
     const matchesSemester = subjectSemesterFilter === "all" || s.semester === subjectSemesterFilter;
     return matchesSearch && matchesCollege && matchesSemester;
@@ -2096,14 +2096,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   return (
     <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 font-sans h-full overflow-hidden">
       {/* ── Sticky Left Sidebar — nav items + collapse only ── */}
-      <aside className={`hidden md:flex shrink-0 flex-col sticky top-0 z-30 floating-sidebar transition-all duration-300 h-full ${
-        isCollapsed ? "w-[72px]" : "w-[230px]"
-      }`}>
+      <aside className={`hidden md:flex shrink-0 flex-col sticky top-0 z-30 floating-sidebar transition-all duration-300 h-full ${isCollapsed ? "w-[72px]" : "w-[230px]"
+        }`}>
 
         {/* Collapse / Expand toggle */}
-        <div className={`flex items-center shrink-0 py-3 border-b border-slate-100 ${
-          isCollapsed ? "justify-center" : "justify-end px-3"
-        }`}>
+        <div className={`flex items-center shrink-0 py-3 border-b border-slate-100 ${isCollapsed ? "justify-center" : "justify-end px-3"
+          }`}>
           <button
             onClick={() => setIsCollapsed((prev) => {
               const next = !prev;
@@ -2127,13 +2125,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div key={group.title} className="group/nav-group relative">
                 {/* Category Header Row */}
                 <div
-                  className={`w-full flex items-center justify-between rounded-xl transition-all duration-150 cursor-pointer ${
-                    isCollapsed ? "justify-center p-3" : "px-4 py-3"
-                  } ${
-                    hasActiveItem
+                  className={`w-full flex items-center justify-between rounded-xl transition-all duration-150 cursor-pointer ${isCollapsed ? "justify-center p-3" : "px-4 py-3"
+                    } ${hasActiveItem
                       ? "bg-[#D528A2]/10 text-[#D528A2] font-extrabold shadow-sm border border-[#D528A2]/20"
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent"
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-3">
                     <GroupIcon className={`h-5 w-5 shrink-0 ${hasActiveItem ? "text-[#D528A2]" : "text-slate-400"}`} />
@@ -2144,9 +2140,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     )}
                   </div>
                   {!isCollapsed && (
-                    <ChevronRight className={`h-4 w-4 shrink-0 transition-transform duration-200 group-hover/nav-group:translate-x-1 ${
-                      hasActiveItem ? "text-[#D528A2]/80" : "text-slate-400"
-                    }`} />
+                    <ChevronRight className={`h-4 w-4 shrink-0 transition-transform duration-200 group-hover/nav-group:translate-x-1 ${hasActiveItem ? "text-[#D528A2]/80" : "text-slate-400"
+                      }`} />
                   )}
                 </div>
 
@@ -2165,11 +2160,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           onClick={() => {
                             setActiveTab(t.id as any);
                           }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[12.5px] font-semibold transition-all duration-150 cursor-pointer text-left border-none ${
-                            isActive
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[12.5px] font-semibold transition-all duration-150 cursor-pointer text-left border-none ${isActive
                               ? "sidebar-active-item font-black shadow-sm"
                               : "text-slate-650 hover:text-[#D528A2] hover:bg-[#D528A2]/5"
-                          }`}
+                            }`}
                         >
                           <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-white" : "text-slate-450 group-hover:text-[#D528A2]"}`} />
                           <span className="truncate">{t.label}</span>
@@ -2200,9 +2194,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 key={t.id}
                 onClick={() => setActiveTab(t.id as any)}
-                className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 py-1.5 rounded-xl transition-all cursor-pointer ${
-                  isActive ? "text-indigo-600" : "text-slate-400"
-                }`}
+                className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 py-1.5 rounded-xl transition-all cursor-pointer ${isActive ? "text-indigo-600" : "text-slate-400"
+                  }`}
               >
                 <Icon className={`h-4.5 w-4.5 transition-transform ${isActive ? "scale-110" : ""}`} />
                 <span className={`text-[8px] font-semibold tracking-wide leading-none ${isActive ? "text-indigo-600" : "text-slate-400"}`}>
@@ -2487,7 +2480,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="bg-gray-50 border border-gray-150 rounded-2xl p-4 shadow-inner space-y-3 max-h-[300px] overflow-y-auto text-xs">
                     {/* Super Admin Level */}
                     <div className="space-y-2">
-                      <div 
+                      <div
                         onClick={() => toggleNode("admin")}
                         className="flex items-center gap-2 p-2.5 bg-white border border-indigo-150 rounded-xl shadow-xs cursor-pointer hover:border-indigo-350 transition-all"
                       >
@@ -2506,7 +2499,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             const kamColleges = colleges.filter(c => c.kam_id === kam.id);
                             return (
                               <div key={kam.id} className="space-y-1">
-                                <div 
+                                <div
                                   onClick={() => toggleNode(kamNodeId)}
                                   className="flex items-center gap-2 p-2 bg-white border border-gray-200 rounded-xl shadow-xs cursor-pointer hover:border-indigo-250 transition-all"
                                 >
@@ -2546,7 +2539,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <History className="h-5 w-5 text-indigo-650" />
                     <h3 className="text-sm font-bold text-gray-900">Recent Audit Logs</h3>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setActiveTab("logs")}
                     className="text-indigo-650 hover:text-indigo-800 font-extrabold text-[10px] transition-all bg-transparent border-none cursor-pointer p-0"
                   >
@@ -2593,930 +2586,928 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <p className="text-[15px] font-normal text-gray-500 mt-1">Manage all active university campuses</p>
                 </div>
                 <button
-                onClick={() => handleOpenCampusModal()}
-                className="h-11 px-5 rounded-xl text-xs font-bold btn-gradient flex items-center gap-1.5 cursor-pointer shadow-sm text-white"
-              >
-                <Plus className="h-4 w-4" />
-                Add Campus
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* ── UNFINISHED DRAFT CARD ── */}
-              {draftLastSaved && (
-                <div className="lg:col-span-3 bg-white p-6 rounded-2xl border-2 border-amber-200/90 shadow-sm space-y-4 relative overflow-hidden animate-fadeIn">
-                  <div className="flex items-center justify-between flex-wrap gap-4 border-b border-gray-100 pb-4">
-                    <div className="flex items-center gap-3.5">
-                      <div className="p-3 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200">
-                        <Sparkles className="h-5 w-5 text-amber-600 animate-pulse" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                          <h3 className="font-extrabold text-base text-gray-900 tracking-tight">
-                            Unfinished Campus Setup: <span className="text-indigo-650">{campusForm.name || "Untitled Campus"}</span>
-                          </h3>
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5 shadow-2xs">
-                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                            Draft Auto-Saved ({draftLastSaved})
-                          </span>
+                  onClick={() => handleOpenCampusModal()}
+                  className="h-11 px-5 rounded-xl text-xs font-bold btn-gradient flex items-center gap-1.5 cursor-pointer shadow-sm text-white"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Campus
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* ── UNFINISHED DRAFT CARD ── */}
+                {draftLastSaved && (
+                  <div className="lg:col-span-3 bg-white p-6 rounded-2xl border-2 border-amber-200/90 shadow-sm space-y-4 relative overflow-hidden animate-fadeIn">
+                    <div className="flex items-center justify-between flex-wrap gap-4 border-b border-gray-100 pb-4">
+                      <div className="flex items-center gap-3.5">
+                        <div className="p-3 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200">
+                          <Sparkles className="h-5 w-5 text-amber-600 animate-pulse" />
                         </div>
-                        <p className="text-xs text-gray-500 font-semibold mt-1 flex items-center gap-2 flex-wrap">
-                          <span>Step {campusWizardStep} of 4</span>
-                          <span>•</span>
-                          <span>{wizardCourses.length} Course(s) Added</span>
-                          {campusForm.address && (
-                            <>
-                              <span>•</span>
-                              <span className="flex items-center gap-1 text-gray-600">
-                                <MapPin className="h-3 w-3 text-gray-400" />
-                                {campusForm.address}
-                              </span>
-                            </>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={clearCampusDraftFromDb}
-                        className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:text-rose-600 bg-gray-100 hover:bg-rose-50 border border-gray-200 hover:border-rose-200 transition-all cursor-pointer"
-                      >
-                        Discard Draft
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenCampusModal()}
-                        className="px-5 py-2 rounded-xl text-xs font-extrabold btn-gradient shadow-sm flex items-center gap-1.5 cursor-pointer"
-                      >
-                        Resume Setup →
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {colleges.map((col) => {
-                const colMentors = mentors.filter(m => m.college_id === col.id);
-                const colSlots = slots.filter(s => colMentors.some(m => m.id === s.mentorId));
-                const colDeptsCount = Array.from(new Set(colMentors.map(m => m.department).filter(Boolean))).length;
-                const cam = camList.find(cm => cm.college_id === col.id);
-                const kamOwner = kamList.find(k => k.id === col.kam_id);
-                
-                // Helper to split long titles elegantly
-                const renderCampusName = (name: string) => {
-                  if (name.includes(" of ")) {
-                    const parts = name.split(" of ");
-                    return (
-                      <>
-                        <div className="text-[20px] font-semibold text-gray-900 leading-snug">{parts[0]}</div>
-                        <div className="text-[13px] font-medium text-gray-400 mt-0.5">of {parts[1]}</div>
-                      </>
-                    );
-                  }
-                  return <div className="text-[20px] font-semibold text-gray-900 leading-snug">{name}</div>;
-                };
-
-                return (
-                  <div key={col.id} className="p-6 rounded-2xl border border-gray-200 bg-white hover:shadow-md transition-all flex flex-col justify-between min-h-[320px] relative overflow-hidden group">
-                    {/* Shift badge in top-right corner with 12px padding */}
-                    <div className="absolute top-3 right-3">
-                      <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${
-                        col.has_shifts === 0 
-                          ? "bg-amber-50 text-amber-700 border border-amber-200" 
-                          : "bg-teal-50 text-teal-700 border border-teal-200"
-                      }`}>
-                        {col.has_shifts === 0 ? "General Shift Only" : "Multi-Shift"}
-                      </span>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div>
-                        {renderCampusName(col.name)}
-                        <p className="text-[13px] text-gray-400 mt-1 flex items-center gap-1 font-medium">
-                          <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                          {col.address || "No Address Added"}
-                        </p>
-                      </div>
-
-                      {/* Fixed width label columns (120px label, remaining value) */}
-                      <div className="bg-gray-55 border border-gray-150 rounded-xl p-3.5 text-[13px] space-y-1.5">
-                        <div className="flex text-gray-500">
-                          <span className="w-[120px] shrink-0 font-medium">KAM Owner</span>
-                          <span className="font-bold text-gray-900">: {kamOwner ? kamOwner.name : "Unassigned"}</span>
-                        </div>
-                        <div className="flex text-gray-500">
-                          <span className="w-[120px] shrink-0 font-medium">Campus Manager</span>
-                          <span className="font-bold text-gray-900">: {cam ? cam.name : "Unassigned"}</span>
+                        <div>
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <h3 className="font-extrabold text-base text-gray-900 tracking-tight">
+                              Unfinished Campus Setup: <span className="text-indigo-650">{campusForm.name || "Untitled Campus"}</span>
+                            </h3>
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5 shadow-2xs">
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                              Draft Auto-Saved ({draftLastSaved})
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 font-semibold mt-1 flex items-center gap-2 flex-wrap">
+                            <span>Step {campusWizardStep} of 4</span>
+                            <span>•</span>
+                            <span>{wizardCourses.length} Course(s) Added</span>
+                            {campusForm.address && (
+                              <>
+                                <span>•</span>
+                                <span className="flex items-center gap-1 text-gray-600">
+                                  <MapPin className="h-3 w-3 text-gray-400" />
+                                  {campusForm.address}
+                                </span>
+                              </>
+                            )}
+                          </p>
                         </div>
                       </div>
 
-                      {/* Statistics Row: Symmetrical vertical layout */}
-                      <div className="grid grid-cols-3 gap-2.5 text-center">
-                        <div className="bg-gray-55 p-2 rounded-xl border border-gray-100 flex flex-col items-center justify-center">
-                          <div className="font-bold text-gray-900 text-lg leading-none">{colMentors.length}</div>
-                          <div className="text-[10px] text-gray-400 font-semibold mt-1">Faculty</div>
-                        </div>
-                        <div className="bg-gray-55 p-2 rounded-xl border border-gray-100 flex flex-col items-center justify-center">
-                          <div className="font-bold text-gray-900 text-lg leading-none">{colSlots.length}</div>
-                          <div className="text-[10px] text-gray-400 font-semibold mt-1">Slots</div>
-                        </div>
-                        <div className="bg-gray-55 p-2 rounded-xl border border-gray-100 flex flex-col items-center justify-center">
-                          <div className="font-bold text-gray-900 text-lg leading-none">{colDeptsCount}</div>
-                          <div className="text-[10px] text-gray-400 font-semibold mt-1">Depts</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bottom Buttons: Manage Campus button first, edit/delete with 20px gap below */}
-                    <div className="flex flex-col gap-3 mt-auto pt-4 border-t border-gray-100">
-                      <button
-                        onClick={() => setDrillDownCollegeId(col.id)}
-                        className="w-full btn-gradient font-bold py-2.5 rounded-xl text-xs text-white transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        Manage Campus Console
-                      </button>
-                      <div className="flex justify-center gap-5">
+                      <div className="flex items-center gap-3">
                         <button
-                          onClick={() => handleOpenCampusModal(col)}
-                          title="Edit Campus Details"
-                          className="p-2 bg-gray-50 border border-gray-200 text-gray-500 hover:text-indigo-650 hover:bg-indigo-50 rounded-xl transition-all cursor-pointer"
+                          type="button"
+                          onClick={clearCampusDraftFromDb}
+                          className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:text-rose-600 bg-gray-100 hover:bg-rose-50 border border-gray-200 hover:border-rose-200 transition-all cursor-pointer"
                         >
-                          <Edit className="h-4 w-4" />
+                          Discard Draft
                         </button>
                         <button
-                          onClick={() => handleDeleteCampus(col.id)}
-                          disabled={loadingActions[`campus_${col.id}`]}
-                          title="Delete Campus"
-                          className="p-2 bg-gray-50 border border-gray-200 text-gray-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          type="button"
+                          onClick={() => handleOpenCampusModal()}
+                          className="px-5 py-2 rounded-xl text-xs font-extrabold btn-gradient shadow-sm flex items-center gap-1.5 cursor-pointer"
                         >
-                          {loadingActions[`campus_${col.id}`] ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
+                          Resume Setup →
                         </button>
                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                )}
 
-        {/* ── Tab: Key Account Managers ── */}
-        {activeTab === "kams" && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="flex items-center justify-between border-b border-gray-150 pb-3 flex-wrap gap-4">
-              <div className="flex items-center gap-2">
-                <Briefcase className="h-5 w-5 text-indigo-655" />
-                <h2 className="text-lg font-bold text-gray-900">Key Account Managers Directory</h2>
-              </div>
-              <button
-                onClick={() => handleOpenKamModal()}
-                className="btn-gradient shadow-sm text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                Add KAM
-              </button>
-            </div>
+                {colleges.map((col) => {
+                  const colMentors = mentors.filter(m => m.college_id === col.id);
+                  const colSlots = slots.filter(s => colMentors.some(m => m.id === s.mentorId));
+                  const colDeptsCount = Array.from(new Set(colMentors.map(m => m.department).filter(Boolean))).length;
+                  const cam = camList.find(cm => cm.college_id === col.id);
+                  const kamOwner = kamList.find(k => k.id === col.kam_id);
 
-            <div className="overflow-x-auto rounded-2xl border border-gray-200">
-              <table className="w-full border-collapse text-left text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
-                    <th className="p-4">Name</th>
-                    <th className="p-4">Email</th>
-                    <th className="p-4">Role Title</th>
-                    <th className="p-4">Assigned Campuses</th>
-                    <th className="p-4 text-center">Managed Mentors</th>
-                    <th className="p-4 text-center">Total Scheduled Hours</th>
-                    <th className="p-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-150 bg-white">
-                  {kamList.map((kam) => {
-                    const kamColleges = colleges.filter(c => c.kam_id === kam.id);
-                    const kamMentors = mentors.filter(m => kamColleges.some(c => c.id === m.college_id));
-                    const kamSlots = slots.filter(s => kamMentors.some(m => m.id === s.mentorId));
-                    return (
-                      <tr key={kam.id} className="hover:bg-gray-55/50 transition-colors">
-                        <td className="p-4 font-bold text-gray-955 flex items-center gap-2">
-                          <div className="h-7 w-7 rounded-full bg-indigo-50 border border-indigo-150 text-indigo-600 flex items-center justify-center font-extrabold text-[10px]">
-                            {kam.name.split(" ").map(w => w[0]).join("")}
-                          </div>
-                          {kam.name}
-                        </td>
-                        <td className="p-4 text-gray-550">{kam.email}</td>
-                        <td className="p-4 text-gray-800 font-medium">{kam.title}</td>
-                        <td className="p-4">
-                          <div className="flex flex-wrap gap-1">
-                            {kamColleges.map(c => (
-                              <span key={c.id} className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-[10px] font-bold text-indigo-700">
-                                {c.name}
-                              </span>
-                            ))}
-                            {kamColleges.length === 0 && <span className="text-gray-400 italic">None</span>}
-                          </div>
-                        </td>
-                        <td className="p-4 text-center font-bold text-gray-805">{kamMentors.length}</td>
-                        <td className="p-4 text-center font-black text-indigo-650 text-sm">{kamSlots.length} hr(s)</td>
-                        <td className="p-4 text-right whitespace-nowrap">
-                          <div className="flex justify-end gap-1.5">
-                            <button
-                              onClick={() => handleOpenKamModal(kam)}
-                              className="p-1.5 bg-gray-50 border border-gray-250 text-gray-650 hover:text-indigo-600 hover:bg-indigo-55 rounded-lg transition-all cursor-pointer"
-                            >
-                              <Edit className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteKam(kam.id)}
-                              disabled={loadingActions[`kam_${kam.id}`]}
-                              className="p-1.5 bg-gray-50 border border-gray-250 text-gray-655 hover:text-rose-600 hover:bg-rose-55 rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {loadingActions[`kam_${kam.id}`] ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {kamList.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="p-8 text-center text-gray-400 italic">No Key Account Managers found. Click "Add KAM" to create one.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  // Helper to split long titles elegantly
+                  const renderCampusName = (name: string) => {
+                    if (name.includes(" of ")) {
+                      const parts = name.split(" of ");
+                      return (
+                        <>
+                          <div className="text-[20px] font-semibold text-gray-900 leading-snug">{parts[0]}</div>
+                          <div className="text-[13px] font-medium text-gray-400 mt-0.5">of {parts[1]}</div>
+                        </>
+                      );
+                    }
+                    return <div className="text-[20px] font-semibold text-gray-900 leading-snug">{name}</div>;
+                  };
 
-          {/* ── Charts Row ── */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Donut: Mentors Overview */}
-            <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-gray-900">Mentors Overview</h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold">This Month</span>
-              </div>
-              <div className="flex items-center gap-5">
-                {/* SVG donut */}
-                <div className="relative flex-shrink-0">
-                  <svg width="90" height="90" viewBox="0 0 90 90">
-                    <circle cx="45" cy="45" r="34" fill="none" stroke="#e5e7eb" strokeWidth="12" />
-                    {/* Active — ~70% */}
-                    <circle cx="45" cy="45" r="34" fill="none" stroke="#6366f1" strokeWidth="12"
-                      strokeDasharray={`${Math.round(2*Math.PI*34*0.706)} ${Math.round(2*Math.PI*34)}`}
-                      strokeDashoffset={Math.round(2*Math.PI*34*0.25)} strokeLinecap="round" />
-                    {/* On Leave — ~17.6% */}
-                    <circle cx="45" cy="45" r="34" fill="none" stroke="#f59e0b" strokeWidth="12"
-                      strokeDasharray={`${Math.round(2*Math.PI*34*0.176)} ${Math.round(2*Math.PI*34)}`}
-                      strokeDashoffset={Math.round(-2*Math.PI*34*0.456)} strokeLinecap="round" />
-                    {/* Inactive — ~11.8% */}
-                    <circle cx="45" cy="45" r="34" fill="none" stroke="#f43f5e" strokeWidth="12"
-                      strokeDasharray={`${Math.round(2*Math.PI*34*0.118)} ${Math.round(2*Math.PI*34)}`}
-                      strokeDashoffset={Math.round(-2*Math.PI*34*0.632)} strokeLinecap="round" />
-                    <text x="45" y="49" textAnchor="middle" className="text-xs font-black" fontSize="14" fontWeight="800" fill="currentColor">{mentors.length}</text>
-                    <text x="45" y="60" textAnchor="middle" fontSize="8" fill="#9ca3af">Total</text>
-                  </svg>
-                </div>
-                <div className="space-y-1.5 text-[11px]">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 shrink-0" />
-                    <span className="text-gray-600">Active</span>
-                    <span className="ml-auto font-bold text-gray-900">{Math.round(mentors.length * 0.706)} ({(70.6).toFixed(1)}%)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-amber-400 shrink-0" />
-                    <span className="text-gray-600">On Leave</span>
-                    <span className="ml-auto font-bold text-gray-900">{Math.round(mentors.length * 0.176)} ({(17.6).toFixed(1)}%)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-rose-400 shrink-0" />
-                    <span className="text-gray-600">Inactive</span>
-                    <span className="ml-auto font-bold text-gray-900">{Math.round(mentors.length * 0.118)} ({(11.8).toFixed(1)}%)</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Line: Scheduled Hours Trend */}
-            <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-gray-900">Scheduled Hours Trend</h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold">This Month</span>
-              </div>
-              <div className="relative h-[90px]">
-                <svg width="100%" height="100%" viewBox="0 0 300 90" preserveAspectRatio="none">
-                  <defs>
-                    <linearGradient id="lineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
-                      <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  <path d="M0,80 C30,75 60,60 90,50 C120,40 150,30 180,22 C210,15 240,18 270,12 L300,8"
-                    fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" />
-                  <path d="M0,80 C30,75 60,60 90,50 C120,40 150,30 180,22 C210,15 240,18 270,12 L300,8 L300,90 L0,90 Z"
-                    fill="url(#lineGrad)" />
-                  <circle cx="270" cy="12" r="4" fill="#6366f1" stroke="white" strokeWidth="2" />
-                </svg>
-                <div className="flex justify-between text-[9px] text-gray-400 mt-1">
-                  <span>May 1</span><span>May 8</span><span>May 15</span><span>May 22</span><span>May 29</span>
-                </div>
-              </div>
-            </div>
-
-            {/* System Activity feed */}
-            <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm space-y-3">
-              <h3 className="text-sm font-bold text-gray-900">System Activity</h3>
-              <div className="space-y-3">
-                {[
-                  { icon: UserCheck, color: "bg-emerald-50 text-emerald-600", title: "New mentor added", sub: `Dr. ${mentors[0]?.name ?? "Faculty"} added`, time: "2h ago" },
-                  { icon: Grid, color: "bg-amber-50 text-amber-600", title: "Schedule updated", sub: "Chemistry Lab schedule updated", time: "4h ago" },
-                  { icon: GraduationCap, color: "bg-indigo-50 text-indigo-600", title: "New course created", sub: "AI course added", time: "1d ago" },
-                  { icon: ShieldCheck, color: "bg-slate-100 text-slate-600", title: "User login", sub: `Admin logged in`, time: "1d ago" },
-                ].map((ev, i) => {
-                  const Ev = ev.icon;
                   return (
-                    <div key={i} className="flex items-start gap-3">
-                      <div className={`h-7 w-7 rounded-lg ${ev.color} flex items-center justify-center shrink-0`}>
-                        <Ev className="h-3.5 w-3.5" />
+                    <div key={col.id} className="p-6 rounded-2xl border border-gray-200 bg-white hover:shadow-md transition-all flex flex-col justify-between min-h-[320px] relative overflow-hidden group">
+                      {/* Shift badge in top-right corner with 12px padding */}
+                      <div className="absolute top-3 right-3">
+                        <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${col.has_shifts === 0
+                            ? "bg-amber-50 text-amber-700 border border-amber-200"
+                            : "bg-teal-50 text-teal-700 border border-teal-200"
+                          }`}>
+                          {col.has_shifts === 0 ? "General Shift Only" : "Multi-Shift"}
+                        </span>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[11px] font-bold text-gray-900 leading-tight">{ev.title}</p>
-                        <p className="text-[10px] text-gray-400 truncate">{ev.sub}</p>
+
+                      <div className="space-y-4">
+                        <div>
+                          {renderCampusName(col.name)}
+                          <p className="text-[13px] text-gray-400 mt-1 flex items-center gap-1 font-medium">
+                            <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                            {col.address || "No Address Added"}
+                          </p>
+                        </div>
+
+                        {/* Fixed width label columns (120px label, remaining value) */}
+                        <div className="bg-gray-55 border border-gray-150 rounded-xl p-3.5 text-[13px] space-y-1.5">
+                          <div className="flex text-gray-500">
+                            <span className="w-[120px] shrink-0 font-medium">KAM Owner</span>
+                            <span className="font-bold text-gray-900">: {kamOwner ? kamOwner.name : "Unassigned"}</span>
+                          </div>
+                          <div className="flex text-gray-500">
+                            <span className="w-[120px] shrink-0 font-medium">Campus Manager</span>
+                            <span className="font-bold text-gray-900">: {cam ? cam.name : "Unassigned"}</span>
+                          </div>
+                        </div>
+
+                        {/* Statistics Row: Symmetrical vertical layout */}
+                        <div className="grid grid-cols-3 gap-2.5 text-center">
+                          <div className="bg-gray-55 p-2 rounded-xl border border-gray-100 flex flex-col items-center justify-center">
+                            <div className="font-bold text-gray-900 text-lg leading-none">{colMentors.length}</div>
+                            <div className="text-[10px] text-gray-400 font-semibold mt-1">Faculty</div>
+                          </div>
+                          <div className="bg-gray-55 p-2 rounded-xl border border-gray-100 flex flex-col items-center justify-center">
+                            <div className="font-bold text-gray-900 text-lg leading-none">{colSlots.length}</div>
+                            <div className="text-[10px] text-gray-400 font-semibold mt-1">Slots</div>
+                          </div>
+                          <div className="bg-gray-55 p-2 rounded-xl border border-gray-100 flex flex-col items-center justify-center">
+                            <div className="font-bold text-gray-900 text-lg leading-none">{colDeptsCount}</div>
+                            <div className="text-[10px] text-gray-400 font-semibold mt-1">Depts</div>
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-[9px] text-gray-400 whitespace-nowrap shrink-0">{ev.time}</span>
+
+                      {/* Bottom Buttons: Manage Campus button first, edit/delete with 20px gap below */}
+                      <div className="flex flex-col gap-3 mt-auto pt-4 border-t border-gray-100">
+                        <button
+                          onClick={() => setDrillDownCollegeId(col.id)}
+                          className="w-full btn-gradient font-bold py-2.5 rounded-xl text-xs text-white transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          Manage Campus Console
+                        </button>
+                        <div className="flex justify-center gap-5">
+                          <button
+                            onClick={() => handleOpenCampusModal(col)}
+                            title="Edit Campus Details"
+                            className="p-2 bg-gray-50 border border-gray-200 text-gray-500 hover:text-indigo-650 hover:bg-indigo-50 rounded-xl transition-all cursor-pointer"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCampus(col.id)}
+                            disabled={loadingActions[`campus_${col.id}`]}
+                            title="Delete Campus"
+                            className="p-2 bg-gray-50 border border-gray-200 text-gray-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {loadingActions[`campus_${col.id}`] ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </div>
-          </div>
-        </div>
-        )}
+          )}
 
-        {/* ── Tab: Campus Managers ── */}
-        {activeTab === "cams" && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="flex items-center justify-between border-b border-gray-150 pb-3 flex-wrap gap-4">
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-indigo-655" />
-                <h2 className="text-lg font-bold text-gray-900">Campus Managers (CM) Directory</h2>
-              </div>
-              <button
-                onClick={() => handleOpenCamModal()}
-                className="btn-gradient shadow-sm text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                Add Campus Manager
-              </button>
-            </div>
-
-            <div className="overflow-x-auto rounded-2xl border border-gray-200">
-              <table className="w-full border-collapse text-left text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
-                    <th className="p-4">Name</th>
-                    <th className="p-4">Email Address</th>
-                    <th className="p-4">Reporting Campus</th>
-                    <th className="p-4">Reporting KAM Manager</th>
-                    <th className="p-4 text-center">Courses</th>
-                    <th className="p-4 text-center">Faculty Count</th>
-                    <th className="p-4 text-center">Slots Booked</th>
-                    <th className="p-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-150 bg-white">
-                  {camList.map((cam) => {
-                    const colObj = colleges.find(c => c.id === cam.college_id);
-                    const kamObj = kamList.find(k => k.id === cam.kam_id);
-                    
-                    const camMentors = mentors.filter(m => m.college_id === cam.college_id);
-                    const camSlots = slots.filter(s => camMentors.some(m => m.id === s.mentorId));
-                    const camDeptsCount = Array.from(new Set(camMentors.map(m => m.department).filter(Boolean))).length;
-                    
-                    return (
-                      <tr key={cam.id} className="hover:bg-gray-55/50 transition-colors">
-                        <td className="p-4 font-bold text-gray-955 flex items-center gap-2">
-                          <div className="h-7 w-7 rounded-full bg-indigo-50 border border-indigo-150 text-indigo-600 flex items-center justify-center font-extrabold text-[10px]">
-                            {cam.name.split(" ").map(w => w[0]).join("")}
-                          </div>
-                          {cam.name}
-                        </td>
-                        <td className="p-4 text-gray-550">{cam.email}</td>
-                        <td className="p-4 text-gray-800 font-bold">{cam.college_name || (colObj ? colObj.name : "Unassigned")}</td>
-                        <td className="p-4 font-medium text-gray-600">{kamObj ? kamObj.name : "Unassigned"}</td>
-                        <td className="p-4 text-center font-bold text-gray-805">{camDeptsCount}</td>
-                        <td className="p-4 text-center font-bold text-gray-805">{camMentors.length}</td>
-                        <td className="p-4 text-center font-black text-indigo-650 text-sm">{camSlots.length}</td>
-                        <td className="p-4 text-right whitespace-nowrap">
-                          <div className="flex justify-end gap-1.5">
-                            <button
-                              onClick={() => handleOpenCamModal(cam)}
-                              className="p-1.5 bg-gray-50 border border-gray-250 text-gray-655 hover:text-indigo-600 hover:bg-indigo-55 rounded-lg transition-all cursor-pointer"
-                            >
-                              <Edit className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteCam(cam.id)}
-                              disabled={loadingActions[`cam_${cam.id}`]}
-                              className="p-1.5 bg-gray-50 border border-gray-255 text-gray-655 hover:text-rose-600 hover:bg-rose-55 rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {loadingActions[`cam_${cam.id}`] ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {camList.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="p-8 text-center text-gray-400 italic">No Campus Managers found. Click "Add Campus Manager" to create one.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ── Tab: Faculty Mentors ── */}
-        {activeTab === "mentors" && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="flex items-center justify-between border-b border-gray-150 pb-3 flex-wrap gap-4">
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-indigo-655" />
-                <h2 className="text-lg font-bold text-gray-900">Faculty Mentors Directory</h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-                {/* College Selector Dropdown */}
-                <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-205 rounded-xl px-2.5 py-1 text-xs">
-                  <Building2 className="h-4 w-4 text-indigo-600 shrink-0" />
-                  <select
-                    value={templateCollegeId}
-                    onChange={(e) => setTemplateCollegeId(e.target.value)}
-                    className="bg-transparent font-bold text-gray-800 focus:outline-none cursor-pointer py-0.5 text-xs max-w-[180px] truncate"
-                  >
-                    {colleges.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+          {/* ── Tab: Key Account Managers ── */}
+          {activeTab === "kams" && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-gray-150 pb-3 flex-wrap gap-4">
+                <div className="flex items-center gap-2">
+                  <Briefcase className="h-5 w-5 text-indigo-655" />
+                  <h2 className="text-lg font-bold text-gray-900">Key Account Managers Directory</h2>
                 </div>
-
-                {/* Template Download Button */}
                 <button
-                  type="button"
-                  onClick={handleDownloadFacultyTemplate}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs"
-                  title="Download Faculty Excel Template for Selected College"
-                >
-                  <Download className="h-4 w-4" />
-                  Template
-                </button>
-
-                {/* Bulk Import Button */}
-                <label className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs">
-                  <Upload className="h-4 w-4" />
-                  Bulk Import
-                  <input
-                    type="file"
-                    accept=".xlsx, .xls, .csv"
-                    onChange={handleFacultyFileSelect}
-                    className="hidden"
-                  />
-                </label>
-
-                {/* Search Bar */}
-                <div className="relative w-full sm:w-56 flex-1 sm:flex-none">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search faculty..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="bg-gray-50 border border-gray-205 rounded-xl pl-9 pr-4 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 transition-all w-full font-medium text-gray-800"
-                  />
-                </div>
-
-                {/* Add Mentor Button */}
-                <button
-                  onClick={() => handleOpenMentorModal()}
-                  className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                  onClick={() => handleOpenKamModal()}
+                  className="btn-gradient shadow-sm text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                 >
                   <Plus className="h-4 w-4" />
-                  Add Mentor
+                  Add KAM
                 </button>
               </div>
-            </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-gray-200">
-              <table className="w-full border-collapse text-left text-xs min-w-[850px]">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase tracking-wider">
-                    <th className="px-5 py-4">Mentor</th>
-                    <th className="px-5 py-4">Email</th>
-                    <th className="px-5 py-4">Department</th>
-                    <th className="px-5 py-4">Assigned Campus</th>
-                    {isCampusShiftBased && <th className="px-5 py-4">Shift</th>}
-                    <th className="px-5 py-4">Mapped Subjects</th>
-                    <th className="px-5 py-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-150">
-                  {filteredMentors.map((m) => {
-                    const col = colleges.find(c => c.id === m.college_id);
-                    const mentorSubjectsList = m.subjects ? m.subjects.split("\n").map(s => s.trim()).filter(Boolean) : [];
-                    return (
-                      <tr key={m.id} className="hover:bg-gray-50/50 transition-colors font-medium text-gray-755">
-                        <td className="px-5 py-4 flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-full btn-gradient flex items-center justify-center font-extrabold text-white text-[11px] shadow-sm shrink-0">
-                            {m.avatar}
+              <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
+                      <th className="p-4">Name</th>
+                      <th className="p-4">Email</th>
+                      <th className="p-4">Role Title</th>
+                      <th className="p-4">Assigned Campuses</th>
+                      <th className="p-4 text-center">Managed Mentors</th>
+                      <th className="p-4 text-center">Total Scheduled Hours</th>
+                      <th className="p-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-150 bg-white">
+                    {kamList.map((kam) => {
+                      const kamColleges = colleges.filter(c => c.kam_id === kam.id);
+                      const kamMentors = mentors.filter(m => kamColleges.some(c => c.id === m.college_id));
+                      const kamSlots = slots.filter(s => kamMentors.some(m => m.id === s.mentorId));
+                      return (
+                        <tr key={kam.id} className="hover:bg-gray-55/50 transition-colors">
+                          <td className="p-4 font-bold text-gray-955 flex items-center gap-2">
+                            <div className="h-7 w-7 rounded-full bg-indigo-50 border border-indigo-150 text-indigo-600 flex items-center justify-center font-extrabold text-[10px]">
+                              {kam.name.split(" ").map(w => w[0]).join("")}
+                            </div>
+                            {kam.name}
+                          </td>
+                          <td className="p-4 text-gray-550">{kam.email}</td>
+                          <td className="p-4 text-gray-800 font-medium">{kam.title}</td>
+                          <td className="p-4">
+                            <div className="flex flex-wrap gap-1">
+                              {kamColleges.map(c => (
+                                <span key={c.id} className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-[10px] font-bold text-indigo-700">
+                                  {c.name}
+                                </span>
+                              ))}
+                              {kamColleges.length === 0 && <span className="text-gray-400 italic">None</span>}
+                            </div>
+                          </td>
+                          <td className="p-4 text-center font-bold text-gray-805">{kamMentors.length}</td>
+                          <td className="p-4 text-center font-black text-indigo-650 text-sm">{kamSlots.length} hr(s)</td>
+                          <td className="p-4 text-right whitespace-nowrap">
+                            <div className="flex justify-end gap-1.5">
+                              <button
+                                onClick={() => handleOpenKamModal(kam)}
+                                className="p-1.5 bg-gray-50 border border-gray-250 text-gray-650 hover:text-indigo-600 hover:bg-indigo-55 rounded-lg transition-all cursor-pointer"
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteKam(kam.id)}
+                                disabled={loadingActions[`kam_${kam.id}`]}
+                                className="p-1.5 bg-gray-50 border border-gray-250 text-gray-655 hover:text-rose-600 hover:bg-rose-55 rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {loadingActions[`kam_${kam.id}`] ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {kamList.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="p-8 text-center text-gray-400 italic">No Key Account Managers found. Click "Add KAM" to create one.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* ── Charts Row ── */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Donut: Mentors Overview */}
+                <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-gray-900">Mentors Overview</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold">This Month</span>
+                  </div>
+                  <div className="flex items-center gap-5">
+                    {/* SVG donut */}
+                    <div className="relative flex-shrink-0">
+                      <svg width="90" height="90" viewBox="0 0 90 90">
+                        <circle cx="45" cy="45" r="34" fill="none" stroke="#e5e7eb" strokeWidth="12" />
+                        {/* Active — ~70% */}
+                        <circle cx="45" cy="45" r="34" fill="none" stroke="#6366f1" strokeWidth="12"
+                          strokeDasharray={`${Math.round(2 * Math.PI * 34 * 0.706)} ${Math.round(2 * Math.PI * 34)}`}
+                          strokeDashoffset={Math.round(2 * Math.PI * 34 * 0.25)} strokeLinecap="round" />
+                        {/* On Leave — ~17.6% */}
+                        <circle cx="45" cy="45" r="34" fill="none" stroke="#f59e0b" strokeWidth="12"
+                          strokeDasharray={`${Math.round(2 * Math.PI * 34 * 0.176)} ${Math.round(2 * Math.PI * 34)}`}
+                          strokeDashoffset={Math.round(-2 * Math.PI * 34 * 0.456)} strokeLinecap="round" />
+                        {/* Inactive — ~11.8% */}
+                        <circle cx="45" cy="45" r="34" fill="none" stroke="#f43f5e" strokeWidth="12"
+                          strokeDasharray={`${Math.round(2 * Math.PI * 34 * 0.118)} ${Math.round(2 * Math.PI * 34)}`}
+                          strokeDashoffset={Math.round(-2 * Math.PI * 34 * 0.632)} strokeLinecap="round" />
+                        <text x="45" y="49" textAnchor="middle" className="text-xs font-black" fontSize="14" fontWeight="800" fill="currentColor">{mentors.length}</text>
+                        <text x="45" y="60" textAnchor="middle" fontSize="8" fill="#9ca3af">Total</text>
+                      </svg>
+                    </div>
+                    <div className="space-y-1.5 text-[11px]">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 shrink-0" />
+                        <span className="text-gray-600">Active</span>
+                        <span className="ml-auto font-bold text-gray-900">{Math.round(mentors.length * 0.706)} ({(70.6).toFixed(1)}%)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-amber-400 shrink-0" />
+                        <span className="text-gray-600">On Leave</span>
+                        <span className="ml-auto font-bold text-gray-900">{Math.round(mentors.length * 0.176)} ({(17.6).toFixed(1)}%)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-rose-400 shrink-0" />
+                        <span className="text-gray-600">Inactive</span>
+                        <span className="ml-auto font-bold text-gray-900">{Math.round(mentors.length * 0.118)} ({(11.8).toFixed(1)}%)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Line: Scheduled Hours Trend */}
+                <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-gray-900">Scheduled Hours Trend</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold">This Month</span>
+                  </div>
+                  <div className="relative h-[90px]">
+                    <svg width="100%" height="100%" viewBox="0 0 300 90" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="lineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                          <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
+                          <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      <path d="M0,80 C30,75 60,60 90,50 C120,40 150,30 180,22 C210,15 240,18 270,12 L300,8"
+                        fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" />
+                      <path d="M0,80 C30,75 60,60 90,50 C120,40 150,30 180,22 C210,15 240,18 270,12 L300,8 L300,90 L0,90 Z"
+                        fill="url(#lineGrad)" />
+                      <circle cx="270" cy="12" r="4" fill="#6366f1" stroke="white" strokeWidth="2" />
+                    </svg>
+                    <div className="flex justify-between text-[9px] text-gray-400 mt-1">
+                      <span>May 1</span><span>May 8</span><span>May 15</span><span>May 22</span><span>May 29</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* System Activity feed */}
+                <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm space-y-3">
+                  <h3 className="text-sm font-bold text-gray-900">System Activity</h3>
+                  <div className="space-y-3">
+                    {[
+                      { icon: UserCheck, color: "bg-emerald-50 text-emerald-600", title: "New mentor added", sub: `Dr. ${mentors[0]?.name ?? "Faculty"} added`, time: "2h ago" },
+                      { icon: Grid, color: "bg-amber-50 text-amber-600", title: "Schedule updated", sub: "Chemistry Lab schedule updated", time: "4h ago" },
+                      { icon: GraduationCap, color: "bg-indigo-50 text-indigo-600", title: "New course created", sub: "AI course added", time: "1d ago" },
+                      { icon: ShieldCheck, color: "bg-slate-100 text-slate-600", title: "User login", sub: `Admin logged in`, time: "1d ago" },
+                    ].map((ev, i) => {
+                      const Ev = ev.icon;
+                      return (
+                        <div key={i} className="flex items-start gap-3">
+                          <div className={`h-7 w-7 rounded-lg ${ev.color} flex items-center justify-center shrink-0`}>
+                            <Ev className="h-3.5 w-3.5" />
                           </div>
-                          <div>
-                            <span className="font-bold text-gray-900 block">{m.name}</span>
-                            <span className="text-[10px] text-gray-400 font-mono font-semibold">{m.id}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-bold text-gray-900 leading-tight">{ev.title}</p>
+                            <p className="text-[10px] text-gray-400 truncate">{ev.sub}</p>
                           </div>
-                        </td>
-                        <td className="px-5 py-4 font-mono font-semibold text-gray-600">{m.email}</td>
-                        <td className="px-5 py-4">
-                          <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-755 border border-indigo-100 text-[10px] font-bold block w-fit">
-                            {m.department}
-                          </span>
-                          {m.subject_group && (
-                            <span className="text-[9px] text-gray-400 font-bold block mt-1">
-                              Group: {m.subject_group}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-5 py-4 text-gray-900 font-bold">{col ? col.name : <span className="text-gray-400 italic">Unassigned</span>}</td>
-                        {isCampusShiftBased && (
-                          <td className="px-5 py-4 uppercase">
-                            <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-50 text-slate-600 border border-slate-200">
-                              —
+                          <span className="text-[9px] text-gray-400 whitespace-nowrap shrink-0">{ev.time}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Tab: Campus Managers ── */}
+          {activeTab === "cams" && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-gray-150 pb-3 flex-wrap gap-4">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-indigo-655" />
+                  <h2 className="text-lg font-bold text-gray-900">Campus Managers (CM) Directory</h2>
+                </div>
+                <button
+                  onClick={() => handleOpenCamModal()}
+                  className="btn-gradient shadow-sm text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Campus Manager
+                </button>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
+                      <th className="p-4">Name</th>
+                      <th className="p-4">Email Address</th>
+                      <th className="p-4">Reporting Campus</th>
+                      <th className="p-4">Reporting KAM Manager</th>
+                      <th className="p-4 text-center">Courses</th>
+                      <th className="p-4 text-center">Faculty Count</th>
+                      <th className="p-4 text-center">Slots Booked</th>
+                      <th className="p-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-150 bg-white">
+                    {camList.map((cam) => {
+                      const colObj = colleges.find(c => c.id === cam.college_id);
+                      const kamObj = kamList.find(k => k.id === cam.kam_id);
+
+                      const camMentors = mentors.filter(m => m.college_id === cam.college_id);
+                      const camSlots = slots.filter(s => camMentors.some(m => m.id === s.mentorId));
+                      const camDeptsCount = Array.from(new Set(camMentors.map(m => m.department).filter(Boolean))).length;
+
+                      return (
+                        <tr key={cam.id} className="hover:bg-gray-55/50 transition-colors">
+                          <td className="p-4 font-bold text-gray-955 flex items-center gap-2">
+                            <div className="h-7 w-7 rounded-full bg-indigo-50 border border-indigo-150 text-indigo-600 flex items-center justify-center font-extrabold text-[10px]">
+                              {cam.name.split(" ").map(w => w[0]).join("")}
+                            </div>
+                            {cam.name}
+                          </td>
+                          <td className="p-4 text-gray-550">{cam.email}</td>
+                          <td className="p-4 text-gray-800 font-bold">{cam.college_name || (colObj ? colObj.name : "Unassigned")}</td>
+                          <td className="p-4 font-medium text-gray-600">{kamObj ? kamObj.name : "Unassigned"}</td>
+                          <td className="p-4 text-center font-bold text-gray-805">{camDeptsCount}</td>
+                          <td className="p-4 text-center font-bold text-gray-805">{camMentors.length}</td>
+                          <td className="p-4 text-center font-black text-indigo-650 text-sm">{camSlots.length}</td>
+                          <td className="p-4 text-right whitespace-nowrap">
+                            <div className="flex justify-end gap-1.5">
+                              <button
+                                onClick={() => handleOpenCamModal(cam)}
+                                className="p-1.5 bg-gray-50 border border-gray-250 text-gray-655 hover:text-indigo-600 hover:bg-indigo-55 rounded-lg transition-all cursor-pointer"
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCam(cam.id)}
+                                disabled={loadingActions[`cam_${cam.id}`]}
+                                className="p-1.5 bg-gray-50 border border-gray-255 text-gray-655 hover:text-rose-600 hover:bg-rose-55 rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {loadingActions[`cam_${cam.id}`] ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {camList.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-gray-400 italic">No Campus Managers found. Click "Add Campus Manager" to create one.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Tab: Faculty Mentors ── */}
+          {activeTab === "mentors" && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-gray-150 pb-3 flex-wrap gap-4">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-indigo-655" />
+                  <h2 className="text-lg font-bold text-gray-900">Faculty Mentors Directory</h2>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                  {/* College Selector Dropdown */}
+                  <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-205 rounded-xl px-2.5 py-1 text-xs">
+                    <Building2 className="h-4 w-4 text-indigo-600 shrink-0" />
+                    <select
+                      value={templateCollegeId}
+                      onChange={(e) => setTemplateCollegeId(e.target.value)}
+                      className="bg-transparent font-bold text-gray-800 focus:outline-none cursor-pointer py-0.5 text-xs max-w-[180px] truncate"
+                    >
+                      {colleges.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Template Download Button */}
+                  <button
+                    type="button"
+                    onClick={handleDownloadFacultyTemplate}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs"
+                    title="Download Faculty Excel Template for Selected College"
+                  >
+                    <Download className="h-4 w-4" />
+                    Template
+                  </button>
+
+                  {/* Bulk Import Button */}
+                  <label className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs">
+                    <Upload className="h-4 w-4" />
+                    Bulk Import
+                    <input
+                      type="file"
+                      accept=".xlsx, .xls, .csv"
+                      onChange={handleFacultyFileSelect}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {/* Search Bar */}
+                  <div className="relative w-full sm:w-56 flex-1 sm:flex-none">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search faculty..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="bg-gray-50 border border-gray-205 rounded-xl pl-9 pr-4 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 transition-all w-full font-medium text-gray-800"
+                    />
+                  </div>
+
+                  {/* Add Mentor Button */}
+                  <button
+                    onClick={() => handleOpenMentorModal()}
+                    className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Mentor
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                <table className="w-full border-collapse text-left text-xs min-w-[850px]">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase tracking-wider">
+                      <th className="px-5 py-4">Mentor</th>
+                      <th className="px-5 py-4">Email</th>
+                      <th className="px-5 py-4">Department</th>
+                      <th className="px-5 py-4">Mentor Group</th>
+                      <th className="px-5 py-4">Assigned Campus</th>
+                      {isCampusShiftBased && <th className="px-5 py-4">Shift</th>}
+                      <th className="px-5 py-4">Mapped Subjects</th>
+                      <th className="px-5 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-150">
+                    {filteredMentors.map((m) => {
+                      const col = colleges.find(c => c.id === m.college_id);
+                      const mentorSubjectsList = m.subjects ? m.subjects.split("\n").map(s => s.trim()).filter(Boolean) : [];
+                      const mentorGrp = m.mentor_group || m.subject_group || "General";
+                      return (
+                        <tr key={m.id} className="hover:bg-gray-50/50 transition-colors font-medium text-gray-755">
+                          <td className="px-5 py-4 flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-full btn-gradient flex items-center justify-center font-extrabold text-white text-[11px] shadow-sm shrink-0">
+                              {m.avatar}
+                            </div>
+                            <div>
+                              <span className="font-bold text-gray-900 block">{m.name}</span>
+                              <span className="text-[10px] text-gray-400 font-mono font-semibold">{m.id}</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 font-mono font-semibold text-gray-600">{m.email}</td>
+                          <td className="px-5 py-4">
+                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-755 border border-indigo-100 text-[10px] font-bold block w-fit">
+                              {m.department}
                             </span>
                           </td>
-                        )}
-                        <td className="px-5 py-4 max-w-xs">
-                          <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
-                            {mentorSubjectsList.length > 0 ? (
-                              mentorSubjectsList.map((sub, idx) => (
-                                <span key={idx} className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded text-[9.5px] text-gray-600 truncate">
-                                  {sub}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="text-gray-400 italic">No subjects mapped</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-5 py-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => {
-                                setSelectedProfileMentor(m);
-                                setIsProfileOpen(true);
-                              }}
-                              className="p-1.5 hover:bg-emerald-50 border border-transparent hover:border-emerald-250 text-emerald-600 hover:text-emerald-700 rounded-lg transition-all cursor-pointer"
-                              title="View Workload Profile"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleOpenMentorModal(m)}
-                              className="p-1.5 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 text-gray-650 hover:text-indigo-650 rounded-lg transition-all cursor-pointer"
-                              title="Edit Mentor"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteMentor(m.id)}
-                              disabled={loadingActions[`mentor_${m.id}`]}
-                              className="p-1.5 hover:bg-rose-50 border border-transparent hover:border-rose-250 text-gray-655 hover:text-rose-600 rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Delete Mentor"
-                            >
-                              {loadingActions[`mentor_${m.id}`] ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                          <td className="px-5 py-4">
+                            <span className="px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-755 border border-purple-100 text-[10px] font-extrabold block w-fit">
+                              {mentorGrp}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-gray-900 font-bold">{col ? col.name : <span className="text-gray-400 italic">Unassigned</span>}</td>
+                          {isCampusShiftBased && (
+                            <td className="px-5 py-4 uppercase">
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-50 text-slate-600 border border-slate-200">
+                                —
+                              </span>
+                            </td>
+                          )}
+                          <td className="px-5 py-4 max-w-xs">
+                            <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
+                              {mentorSubjectsList.length > 0 ? (
+                                mentorSubjectsList.map((sub, idx) => (
+                                  <span key={idx} className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded text-[9.5px] text-gray-600 truncate">
+                                    {sub}
+                                  </span>
+                                ))
                               ) : (
-                                <Trash2 className="h-4 w-4" />
+                                <span className="text-gray-400 italic">No subjects mapped</span>
                               )}
-                            </button>
-                          </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setSelectedProfileMentor(m);
+                                  setIsProfileOpen(true);
+                                }}
+                                className="p-1.5 hover:bg-emerald-50 border border-transparent hover:border-emerald-250 text-emerald-600 hover:text-emerald-700 rounded-lg transition-all cursor-pointer"
+                                title="View Workload Profile"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleOpenMentorModal(m)}
+                                className="p-1.5 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 text-gray-650 hover:text-indigo-650 rounded-lg transition-all cursor-pointer"
+                                title="Edit Mentor"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteMentor(m.id)}
+                                disabled={loadingActions[`mentor_${m.id}`]}
+                                className="p-1.5 hover:bg-rose-50 border border-transparent hover:border-rose-250 text-gray-655 hover:text-rose-600 rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Delete Mentor"
+                              >
+                                {loadingActions[`mentor_${m.id}`] ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredMentors.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-5 py-8 text-center text-gray-450 italic bg-white">
+                          No mentors found matching your search.
                         </td>
                       </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {activeTab === "courses" && (
+            <div className="space-y-6 animate-fadeIn font-sans text-xs">
+              <div className="flex items-center justify-between border-b border-gray-150 pb-3 flex-wrap gap-4">
+                <div className="flex items-center gap-2">
+                  <Layers className="h-5 w-5 text-indigo-655" />
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900 font-sans">Courses &amp; Curriculum</h2>
+                    <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Manage courses and their academic year curricula grouped by campus</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search name, subjects..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="bg-gray-55 border border-gray-205 rounded-xl pl-9 pr-4 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 transition-all w-56 font-semibold text-gray-800"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                {colleges.map((col) => {
+                  const isColExpanded = expandedColleges[col.id] !== false; // defaults to true
+                  const collegeDepts = coursesList.filter(d => d.college_id === col.id || (col.id === "college_1" && !d.college_id));
+                  const filteredDepts = collegeDepts.filter(dept => {
+                    const matchesDept = dept.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      dept.id.toLowerCase().includes(searchQuery.toLowerCase());
+                    const matchesSubjects = (subjectsList || []).some(
+                      s => s.department === dept.name && s.name.toLowerCase().includes(searchQuery.toLowerCase())
                     );
-                  })}
-                  {filteredMentors.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="px-5 py-8 text-center text-gray-450 italic bg-white">
-                        No mentors found matching your search.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-        {activeTab === "courses" && (
-          <div className="space-y-6 animate-fadeIn font-sans text-xs">
-            <div className="flex items-center justify-between border-b border-gray-150 pb-3 flex-wrap gap-4">
-              <div className="flex items-center gap-2">
-                <Layers className="h-5 w-5 text-indigo-655" />
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900 font-sans">Courses &amp; Curriculum</h2>
-                  <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Manage courses and their academic year curricula grouped by campus</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {/* Search */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search name, subjects..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="bg-gray-55 border border-gray-205 rounded-xl pl-9 pr-4 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 transition-all w-56 font-semibold text-gray-800"
-                  />
-                </div>
-              </div>
-            </div>
+                    return matchesDept || matchesSubjects;
+                  });
 
-            <div className="space-y-6">
-              {colleges.map((col) => {
-                const isColExpanded = expandedColleges[col.id] !== false; // defaults to true
-                const collegeDepts = coursesList.filter(d => d.college_id === col.id || (col.id === "college_1" && !d.college_id));
-                const filteredDepts = collegeDepts.filter(dept => {
-                  const matchesDept = dept.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                    dept.id.toLowerCase().includes(searchQuery.toLowerCase());
-                  const matchesSubjects = (subjectsList || []).some(
-                    s => s.department === dept.name && s.name.toLowerCase().includes(searchQuery.toLowerCase())
-                  );
-                  return matchesDept || matchesSubjects;
-                });
-
-                return (
-                  <div key={col.id} className="border border-gray-200 rounded-2xl bg-white shadow-sm overflow-hidden">
-                    {/* College section header */}
-                    <div className="p-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <button
-                        onClick={() => setExpandedColleges(prev => ({ ...prev, [col.id]: !prev[col.id] }))}
-                        className="flex flex-wrap items-center gap-x-2 gap-y-1 hover:text-indigo-650 transition-all text-left font-extrabold cursor-pointer border-none bg-transparent p-0 max-w-full"
-                      >
-                        {isColExpanded ? (
-                          <ChevronDown className="h-5 w-5 text-gray-555 shrink-0" />
-                        ) : (
-                          <ChevronRight className="h-5 w-5 text-gray-555 shrink-0" />
-                        )}
-                        <Building2 className="h-5 w-5 text-indigo-600 shrink-0" />
-                        <div className="leading-tight flex-1 min-w-0">
-                          <span className="text-sm font-black text-gray-900 block truncate sm:whitespace-normal">{col.name}</span>
-                          <span className="text-[10px] text-gray-400 block font-normal mt-0.5 truncate sm:whitespace-normal">{col.address || "No Address"}</span>
-                        </div>
-                        <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold ml-2 shrink-0">
-                          {filteredDepts.length} course(s)
-                        </span>
-                      </button>
-
-                      {/* Stylized Add Course Button that opens the rich modal */}
-                      <button
-                        type="button"
-                        onClick={() => handleOpenDeptModal(undefined, col.id)}
-                        className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer border-none"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        Add Course
-                      </button>
-                    </div>
-
-                    {isColExpanded && (
-                      <div className="p-4 space-y-4">
-                        {filteredDepts.length === 0 ? (
-                          <div className="text-center py-6 text-gray-400 italic">
-                            No courses found for this campus.
+                  return (
+                    <div key={col.id} className="border border-gray-200 rounded-2xl bg-white shadow-sm overflow-hidden">
+                      {/* College section header */}
+                      <div className="p-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <button
+                          onClick={() => setExpandedColleges(prev => ({ ...prev, [col.id]: !prev[col.id] }))}
+                          className="flex flex-wrap items-center gap-x-2 gap-y-1 hover:text-indigo-650 transition-all text-left font-extrabold cursor-pointer border-none bg-transparent p-0 max-w-full"
+                        >
+                          {isColExpanded ? (
+                            <ChevronDown className="h-5 w-5 text-gray-555 shrink-0" />
+                          ) : (
+                            <ChevronRight className="h-5 w-5 text-gray-555 shrink-0" />
+                          )}
+                          <Building2 className="h-5 w-5 text-indigo-600 shrink-0" />
+                          <div className="leading-tight flex-1 min-w-0">
+                            <span className="text-sm font-black text-gray-900 block truncate sm:whitespace-normal">{col.name}</span>
+                            <span className="text-[10px] text-gray-400 block font-normal mt-0.5 truncate sm:whitespace-normal">{col.address || "No Address"}</span>
                           </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {filteredDepts.map((dept) => {
-                              const facultyCount = mentors.filter(m => isMentorInProgram(m, dept.name, slots, subjectsList)).length;
-                              const deptSubjects = (subjectsList || []).filter(s => s.department === dept.name);
-                              const isDeptExpanded = expandedDepts[dept.id];
-                              const deptSlots = slots.filter(s => (s.department || getDeptFromClassGroup(s.classGroup)) === dept.name);
+                          <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold ml-2 shrink-0">
+                            {filteredDepts.length} course(s)
+                          </span>
+                        </button>
 
-                              return (
-                                <div key={dept.id} className="border border-gray-150 rounded-xl overflow-hidden bg-gray-50/20">
-                                  {/* Department row */}
-                                  <div className="p-3 bg-white border-b border-gray-150 flex items-center justify-between gap-4 flex-wrap">
-                                    <button
-                                      onClick={() => setExpandedDepts(prev => ({ ...prev, [dept.id]: !prev[dept.id] }))}
-                                      className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 hover:text-indigo-650 transition-all text-left font-bold cursor-pointer border-none bg-transparent p-0 max-w-full"
-                                    >
-                                      {isDeptExpanded ? (
-                                        <ChevronDown className="h-4 w-4 text-gray-555 shrink-0" />
-                                      ) : (
-                                        <ChevronRight className="h-4 w-4 text-gray-555 shrink-0" />
-                                      )}
-                                      <span className="text-xs font-black text-gray-900">{dept.name}</span>
-                                      {dept.code && (
-                                        <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-755 border border-indigo-100 text-[9px] font-bold">
-                                          {dept.code}
-                                        </span>
-                                      )}
-                                      {dept.start_year && dept.end_year && (
-                                        <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600 text-[9px] font-extrabold whitespace-nowrap">
-                                          {dept.start_year}–{dept.end_year}
-                                        </span>
-                                      )}
-                                      <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-bold whitespace-nowrap ${
-                                        dept.status === "Inactive" ? "bg-rose-50 text-rose-700 border border-rose-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                      }`}>
-                                        {dept.status || "Active"}
-                                      </span>
-                                      {/* Timetable badge: show per-shift breakdown */}
-                                      {(() => {
-                                        const shift1 = deptSlots.filter(s => s.shift === 'shift_1').length;
-                                        const shift2 = deptSlots.filter(s => s.shift === 'shift_2').length;
-                                        const general = deptSlots.filter(s => s.shift === 'general').length;
-                                        return deptSlots.length > 0 ? (
-                                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[8.5px] font-extrabold text-emerald-700 flex items-center gap-1 shadow-xs whitespace-nowrap">
-                                            <span className="h-1 w-1 rounded-full bg-emerald-600 animate-pulse shrink-0"></span>
-                                            {deptSlots.length} Slots
-                                            {shift1 > 0 && <span className="bg-teal-100 text-teal-700 px-1 py-0.5 rounded text-[7.5px] font-black">S1:{shift1}</span>}
-                                            {shift2 > 0 && <span className="bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded text-[7.5px] font-black">S2:{shift2}</span>}
-                                            {general > 0 && <span className="bg-amber-100 text-amber-700 px-1 py-0.5 rounded text-[7.5px] font-black">Gen:{general}</span>}
-                                          </span>
+                        {/* Stylized Add Course Button that opens the rich modal */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDeptModal(undefined, col.id)}
+                          className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer border-none"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Add Course
+                        </button>
+                      </div>
+
+                      {isColExpanded && (
+                        <div className="p-4 space-y-4">
+                          {filteredDepts.length === 0 ? (
+                            <div className="text-center py-6 text-gray-400 italic">
+                              No courses found for this campus.
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {filteredDepts.map((dept) => {
+                                const facultyCount = mentors.filter(m => isMentorInProgram(m, dept.name, slots, subjectsList)).length;
+                                const deptSubjects = (subjectsList || []).filter(s => s.department === dept.name);
+                                const isDeptExpanded = expandedDepts[dept.id];
+                                const deptSlots = slots.filter(s => (s.department || getDeptFromClassGroup(s.classGroup)) === dept.name);
+
+                                return (
+                                  <div key={dept.id} className="border border-gray-150 rounded-xl overflow-hidden bg-gray-50/20">
+                                    {/* Department row */}
+                                    <div className="p-3 bg-white border-b border-gray-150 flex items-center justify-between gap-4 flex-wrap">
+                                      <button
+                                        onClick={() => setExpandedDepts(prev => ({ ...prev, [dept.id]: !prev[dept.id] }))}
+                                        className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 hover:text-indigo-650 transition-all text-left font-bold cursor-pointer border-none bg-transparent p-0 max-w-full"
+                                      >
+                                        {isDeptExpanded ? (
+                                          <ChevronDown className="h-4 w-4 text-gray-555 shrink-0" />
                                         ) : (
-                                          <span className="px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-[8.5px] font-extrabold text-slate-400 whitespace-nowrap">
-                                            No Timetable
+                                          <ChevronRight className="h-4 w-4 text-gray-555 shrink-0" />
+                                        )}
+                                        <span className="text-xs font-black text-gray-900">{dept.name}</span>
+                                        {dept.code && (
+                                          <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-755 border border-indigo-100 text-[9px] font-bold">
+                                            {dept.code}
                                           </span>
-                                        );
-                                      })()}
-                                    </button>
+                                        )}
+                                        {dept.start_year && dept.end_year && (
+                                          <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600 text-[9px] font-extrabold whitespace-nowrap">
+                                            {dept.start_year}–{dept.end_year}
+                                          </span>
+                                        )}
+                                        <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-bold whitespace-nowrap ${dept.status === "Inactive" ? "bg-rose-50 text-rose-700 border border-rose-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                          }`}>
+                                          {dept.status || "Active"}
+                                        </span>
+                                        {/* Timetable badge: show per-shift breakdown */}
+                                        {(() => {
+                                          const shift1 = deptSlots.filter(s => s.shift === 'shift_1').length;
+                                          const shift2 = deptSlots.filter(s => s.shift === 'shift_2').length;
+                                          const general = deptSlots.filter(s => s.shift === 'general').length;
+                                          return deptSlots.length > 0 ? (
+                                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[8.5px] font-extrabold text-emerald-700 flex items-center gap-1 shadow-xs whitespace-nowrap">
+                                              <span className="h-1 w-1 rounded-full bg-emerald-600 animate-pulse shrink-0"></span>
+                                              {deptSlots.length} Slots
+                                              {shift1 > 0 && <span className="bg-teal-100 text-teal-700 px-1 py-0.5 rounded text-[7.5px] font-black">S1:{shift1}</span>}
+                                              {shift2 > 0 && <span className="bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded text-[7.5px] font-black">S2:{shift2}</span>}
+                                              {general > 0 && <span className="bg-amber-100 text-amber-700 px-1 py-0.5 rounded text-[7.5px] font-black">Gen:{general}</span>}
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-[8.5px] font-extrabold text-slate-400 whitespace-nowrap">
+                                              No Timetable
+                                            </span>
+                                          );
+                                        })()}
+                                      </button>
 
-                                    <div className="flex items-center gap-4 text-[11px] font-bold text-gray-600">
-                                      <span>Faculty: <span className="text-gray-900">{facultyCount}</span></span>
-                                      <span>Subjects: <span className="text-gray-900">{deptSubjects.length}</span></span>
-                                      
-                                      <div className="flex items-center gap-1.5 ml-2 border-l border-gray-200 pl-3">
-                                        <button
-                                          onClick={() => handleOpenDeptModal(dept)}
-                                          className="p-1 hover:bg-indigo-55 border border-transparent hover:border-indigo-150 text-gray-555 hover:text-indigo-650 rounded transition-all cursor-pointer bg-transparent"
-                                          title="Edit Course"
-                                        >
-                                          <Edit className="h-3.5 w-3.5" />
-                                        </button>
-                                        <button
-                                          onClick={() => handleDeleteDept(dept.id, dept.name)}
-                                          className="p-1 hover:bg-rose-55 border border-transparent hover:border-rose-250 text-gray-555 hover:text-rose-600 rounded transition-all cursor-pointer bg-transparent"
-                                          title="Delete Course"
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        </button>
+                                      <div className="flex items-center gap-4 text-[11px] font-bold text-gray-600">
+                                        <span>Faculty: <span className="text-gray-900">{facultyCount}</span></span>
+                                        <span>Subjects: <span className="text-gray-900">{deptSubjects.length}</span></span>
+
+                                        <div className="flex items-center gap-1.5 ml-2 border-l border-gray-200 pl-3">
+                                          <button
+                                            onClick={() => handleOpenDeptModal(dept)}
+                                            className="p-1 hover:bg-indigo-55 border border-transparent hover:border-indigo-150 text-gray-555 hover:text-indigo-650 rounded transition-all cursor-pointer bg-transparent"
+                                            title="Edit Course"
+                                          >
+                                            <Edit className="h-3.5 w-3.5" />
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteDept(dept.id, dept.name)}
+                                            className="p-1 hover:bg-rose-55 border border-transparent hover:border-rose-250 text-gray-555 hover:text-rose-600 rounded transition-all cursor-pointer bg-transparent"
+                                            title="Delete Course"
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </button>
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
 
-                                  {/* Department expanded: show Overview Card and Year collapsible cards */}
-                                  {isDeptExpanded && (
-                                    <div className="p-3 bg-gray-50/50 space-y-4">
-                                      {/* Course Overview Details Card */}
-                                      <div className="bg-white border border-gray-150 rounded-xl p-4 shadow-sm flex flex-col md:flex-row justify-between gap-4">
-                                        <div className="space-y-2 flex-1">
-                                          <div className="flex items-center gap-3">
-                                            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">Course Details</span>
+                                    {/* Department expanded: show Overview Card and Year collapsible cards */}
+                                    {isDeptExpanded && (
+                                      <div className="p-3 bg-gray-50/50 space-y-4">
+                                        {/* Course Overview Details Card */}
+                                        <div className="bg-white border border-gray-150 rounded-xl p-4 shadow-sm flex flex-col md:flex-row justify-between gap-4">
+                                          <div className="space-y-2 flex-1">
+                                            <div className="flex items-center gap-3">
+                                              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">Course Details</span>
+                                            </div>
+                                            <p className="text-[11px] text-gray-550 leading-relaxed font-semibold">
+                                              {dept.description || "No description provided for this course."}
+                                            </p>
                                           </div>
-                                          <p className="text-[11px] text-gray-550 leading-relaxed font-semibold">
-                                            {dept.description || "No description provided for this course."}
-                                          </p>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-[11px] font-bold text-gray-600 shrink-0 md:border-l md:border-gray-150 md:pl-6 md:min-w-[280px]">
-                                          <div>
-                                            <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Course Duration</span>
-                                            <span className="text-gray-900 font-extrabold">
-                                              {dept.years || 4} Year(s) ({Number(dept.years || 4) * 2} Semesters)
-                                            </span>
-                                          </div>
-                                          <div>
-                                            <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Code Prefix</span>
-                                            <span className="text-indigo-650 font-extrabold">{dept.code || "None"}</span>
-                                          </div>
-                                          <div>
-                                            <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Offerings</span>
-                                            <span className="text-gray-900 font-extrabold">{dept.default_shift === "all" ? "Shift 1, 2 & General" : dept.default_shift === "both" ? "Shift 1 & 2" : dept.default_shift === "shift_2" ? "Shift 2 (Evening)" : dept.default_shift === "shift_1" ? "Shift 1 (Day)" : "General Shift"}</span>
-                                          </div>
-                                          <div className="col-span-2">
-                                            <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Assigned Classrooms</span>
-                                            <span className="text-gray-900 font-extrabold block">
-                                              {formatYearWiseRooms(dept.default_room)}
-                                            </span>
-                                          </div>
-                                          <div>
-                                            <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Current Status</span>
-                                            <span className={`inline-flex items-center gap-1 text-[10px] ${
-                                              dept.status === "Inactive" ? "text-rose-600 font-extrabold" : "text-emerald-600 font-extrabold"
-                                            }`}>
-                                              <span className={`h-1.5 w-1.5 rounded-full ${
-                                                dept.status === "Inactive" ? "bg-rose-600" : "bg-emerald-600"
-                                              }`} />
-                                              {dept.status || "Active"}
-                                            </span>
+                                          <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-[11px] font-bold text-gray-600 shrink-0 md:border-l md:border-gray-150 md:pl-6 md:min-w-[280px]">
+                                            <div>
+                                              <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Course Duration</span>
+                                              <span className="text-gray-900 font-extrabold">
+                                                {dept.years || 4} Year(s) ({Number(dept.years || 4) * 2} Semesters)
+                                              </span>
+                                            </div>
+                                            <div>
+                                              <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Code Prefix</span>
+                                              <span className="text-indigo-650 font-extrabold">{dept.code || "None"}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Offerings</span>
+                                              <span className="text-gray-900 font-extrabold">{dept.default_shift === "all" ? "Shift 1, 2 & General" : dept.default_shift === "both" ? "Shift 1 & 2" : dept.default_shift === "shift_2" ? "Shift 2 (Evening)" : dept.default_shift === "shift_1" ? "Shift 1 (Day)" : "General Shift"}</span>
+                                            </div>
+                                            <div className="col-span-2">
+                                              <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Assigned Classrooms</span>
+                                              <span className="text-gray-900 font-extrabold block">
+                                                {formatYearWiseRooms(dept.default_room)}
+                                              </span>
+                                            </div>
+                                            <div>
+                                              <span className="text-[9px] uppercase tracking-wider text-gray-400 block mb-0.5">Current Status</span>
+                                              <span className={`inline-flex items-center gap-1 text-[10px] ${dept.status === "Inactive" ? "text-rose-600 font-extrabold" : "text-emerald-600 font-extrabold"
+                                                }`}>
+                                                <span className={`h-1.5 w-1.5 rounded-full ${dept.status === "Inactive" ? "bg-rose-600" : "bg-emerald-600"
+                                                  }`} />
+                                                {dept.status || "Active"}
+                                              </span>
+                                            </div>
                                           </div>
                                         </div>
-                                      </div>
 
-                                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                        {Array.from({ length: dept.years ? Number(dept.years) : 4 }, (_, i) => `Year ${i + 1}`).map((yr, i) => {
-                                          const yrSubjects = deptSubjects.filter(s => s.year === yr && (searchQuery === "" || s.name.toLowerCase().includes(searchQuery.toLowerCase())));
-                                          const yearKey = `${dept.id}_${yr}`;
-                                          const isYearExpanded = expandedDeptYears[yearKey] !== false; // default to expanded/true
+                                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                          {Array.from({ length: dept.years ? Number(dept.years) : 4 }, (_, i) => `Year ${i + 1}`).map((yr, i) => {
+                                            const yrSubjects = deptSubjects.filter(s => s.year === yr && (searchQuery === "" || s.name.toLowerCase().includes(searchQuery.toLowerCase())));
+                                            const yearKey = `${dept.id}_${yr}`;
+                                            const isYearExpanded = expandedDeptYears[yearKey] !== false; // default to expanded/true
 
-                                          const semOdd = `Semester ${2 * (i + 1) - 1}`;
-                                          const semEven = `Semester ${2 * (i + 1)}`;
-                                          const oddCount = yrSubjects.filter(s => s.semester === semOdd).length;
-                                          const evenCount = yrSubjects.filter(s => s.semester === semEven).length;
+                                            const semOdd = `Semester ${2 * (i + 1) - 1}`;
+                                            const semEven = `Semester ${2 * (i + 1)}`;
+                                            const oddCount = yrSubjects.filter(s => s.semester === semOdd).length;
+                                            const evenCount = yrSubjects.filter(s => s.semester === semEven).length;
 
-                                          return (
-                                            <div key={yr} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col">
-                                              {/* Year card header */}
-                                              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 border-b border-gray-150 font-bold text-gray-805 text-xs gap-2">
-                                                <button
-                                                  onClick={() => toggleDeptYear(dept.id, yr)}
-                                                  className="flex flex-wrap items-center gap-x-2 gap-y-1 hover:text-indigo-650 transition-all text-left font-extrabold cursor-pointer border-none bg-transparent p-0 max-w-full"
-                                                >
-                                                  {isYearExpanded ? (
-                                                    <ChevronDown className="h-4 w-4 text-gray-550 shrink-0" />
-                                                  ) : (
-                                                    <ChevronRight className="h-4 w-4 text-gray-555 shrink-0" />
-                                                  )}
-                                                  <div className="flex items-baseline gap-1.5">
-                                                    <span>{yr}</span>
-                                                    <span className="text-[10.5px] text-gray-400 font-semibold lowercase">
-                                                      (sem {2 * (i + 1) - 1}/{2 * (i + 1)})
-                                                    </span>
-                                                  </div>
-                                                  <div className="flex flex-wrap gap-1.5 sm:ml-2">
-                                                    <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[9px] font-extrabold whitespace-nowrap">
-                                                      Sem {2 * (i + 1) - 1}: {oddCount}
-                                                    </span>
-                                                    <span className="bg-purple-50 border border-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[9px] font-extrabold whitespace-nowrap">
-                                                      Sem {2 * (i + 1)}: {evenCount}
-                                                    </span>
-                                                  </div>
-                                                </button>
-                                                
-                                                <button
-                                                  onClick={() => handleOpenSubjectModal(undefined, dept.name, yr)}
-                                                  className="flex items-center justify-center gap-1 text-[10px] bg-indigo-50 border border-indigo-150 text-indigo-700 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 px-2 py-1 rounded-lg transition-all font-bold cursor-pointer w-full sm:w-auto shrink-0"
-                                                >
-                                                  <Plus className="h-3 w-3" />
-                                                  Add Subject
-                                                </button>
-                                              </div>
+                                            return (
+                                              <div key={yr} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col">
+                                                {/* Year card header */}
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 border-b border-gray-150 font-bold text-gray-805 text-xs gap-2">
+                                                  <button
+                                                    onClick={() => toggleDeptYear(dept.id, yr)}
+                                                    className="flex flex-wrap items-center gap-x-2 gap-y-1 hover:text-indigo-650 transition-all text-left font-extrabold cursor-pointer border-none bg-transparent p-0 max-w-full"
+                                                  >
+                                                    {isYearExpanded ? (
+                                                      <ChevronDown className="h-4 w-4 text-gray-550 shrink-0" />
+                                                    ) : (
+                                                      <ChevronRight className="h-4 w-4 text-gray-555 shrink-0" />
+                                                    )}
+                                                    <div className="flex items-baseline gap-1.5">
+                                                      <span>{yr}</span>
+                                                      <span className="text-[10.5px] text-gray-400 font-semibold lowercase">
+                                                        (sem {2 * (i + 1) - 1}/{2 * (i + 1)})
+                                                      </span>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1.5 sm:ml-2">
+                                                      <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[9px] font-extrabold whitespace-nowrap">
+                                                        Sem {2 * (i + 1) - 1}: {oddCount}
+                                                      </span>
+                                                      <span className="bg-purple-50 border border-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[9px] font-extrabold whitespace-nowrap">
+                                                        Sem {2 * (i + 1)}: {evenCount}
+                                                      </span>
+                                                    </div>
+                                                  </button>
 
-                                              {/* Year card body: subjects list grouped by semester */}
-                                               {isYearExpanded && (
-                                                 <div className="p-3.5 flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50/30">
-                                                   {/* Odd Semester Column */}
-                                                   <div className="flex flex-col border border-gray-150 rounded-xl p-3 bg-white shadow-xs">
-                                                     <div className="flex items-center justify-between pb-2 border-b border-gray-100 mb-2">
-                                                       <span className="font-extrabold text-[10px] uppercase tracking-wider text-indigo-700">{semOdd}</span>
-                                                       <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{oddCount} subject(s)</span>
-                                                     </div>
-                                                     {yrSubjects.filter(s => s.semester === semOdd).length === 0 ? (
-                                                       <div className="text-center py-6 text-gray-400 italic text-[10px] my-auto">No subjects mapped to {semOdd} yet.</div>
-                                                     ) : (
-                                                       <div className="overflow-x-auto">
-                                                         <table className="w-full border-collapse text-left text-[11px] font-medium text-gray-700 min-w-[340px]">
-                                                           <thead>
-                                                             <tr className="border-b border-gray-150 text-[9px] text-gray-400 font-extrabold uppercase tracking-wider bg-gray-50/50">
-                                                               <th className="px-2 py-1.5">Subject Name</th>
-                                                               <th className="px-2 py-1.5">Type</th>
+                                                  <button
+                                                    onClick={() => handleOpenSubjectModal(undefined, dept.name, yr)}
+                                                    className="flex items-center justify-center gap-1 text-[10px] bg-indigo-50 border border-indigo-150 text-indigo-700 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 px-2 py-1 rounded-lg transition-all font-bold cursor-pointer w-full sm:w-auto shrink-0"
+                                                  >
+                                                    <Plus className="h-3 w-3" />
+                                                    Add Subject
+                                                  </button>
+                                                </div>
+
+                                                {/* Year card body: subjects list grouped by semester */}
+                                                {isYearExpanded && (
+                                                  <div className="p-3.5 flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50/30">
+                                                    {/* Odd Semester Column */}
+                                                    <div className="flex flex-col border border-gray-150 rounded-xl p-3 bg-white shadow-xs">
+                                                      <div className="flex items-center justify-between pb-2 border-b border-gray-100 mb-2">
+                                                        <span className="font-extrabold text-[10px] uppercase tracking-wider text-indigo-700">{semOdd}</span>
+                                                        <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{oddCount} subject(s)</span>
+                                                      </div>
+                                                      {yrSubjects.filter(s => s.semester === semOdd).length === 0 ? (
+                                                        <div className="text-center py-6 text-gray-400 italic text-[10px] my-auto">No subjects mapped to {semOdd} yet.</div>
+                                                      ) : (
+                                                        <div className="overflow-x-auto">
+                                                          <table className="w-full border-collapse text-left text-[11px] font-medium text-gray-700 min-w-[340px]">
+                                                            <thead>
+                                                              <tr className="border-b border-gray-150 text-[9px] text-gray-400 font-extrabold uppercase tracking-wider bg-gray-50/50">
+                                                                <th className="px-2 py-1.5">Subject Name</th>
+                                                                <th className="px-2 py-1.5">Type</th>
                                                                 <th className="px-2 py-1.5">Timetable</th>
-                                                               <th className="px-2 py-1.5 text-right">Actions</th>
-                                                             </tr>
-                                                           </thead>
-                                                           <tbody className="divide-y divide-gray-100">
-                                                             {yrSubjects.filter(s => s.semester === semOdd).map(sub => (
-                                                               <tr key={sub.id} className="hover:bg-gray-50/30 transition-colors">
-                                                                 <td className="px-2 py-2">
-                                                                   <div className="font-bold text-gray-900 leading-tight">
-                                                                     {sub.name}
-                                                                   </div>
-                                                                   <div className="font-mono text-[8px] text-gray-400 mt-0.5">{sub.id}</div>
-                                                                 </td>
-                                                                 <td className="px-2 py-2">
+                                                                <th className="px-2 py-1.5 text-right">Actions</th>
+                                                              </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-gray-100">
+                                                              {yrSubjects.filter(s => s.semester === semOdd).map(sub => (
+                                                                <tr key={sub.id} className="hover:bg-gray-50/30 transition-colors">
+                                                                  <td className="px-2 py-2">
+                                                                    <div className="font-bold text-gray-900 leading-tight">
+                                                                      {sub.name}
+                                                                    </div>
+                                                                    <div className="font-mono text-[8px] text-gray-400 mt-0.5">{sub.id}</div>
+                                                                  </td>
+                                                                  <td className="px-2 py-2">
                                                                     {(() => {
                                                                       const t = (sub.type || "").toUpperCase();
                                                                       if (t === "SKILL" || t === "PRACTICAL") {
@@ -3547,60 +3538,60 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                                     })()}
                                                                   </td>
                                                                   <td className="px-2 py-2 text-right">
-                                                                   <div className="flex items-center justify-end gap-0.5">
-                                                                     <button
-                                                                       onClick={() => handleOpenSubjectModal(sub)}
-                                                                       className="p-1 hover:bg-indigo-50 border border-transparent hover:border-indigo-150 text-gray-555 hover:text-indigo-650 rounded transition-all cursor-pointer bg-transparent"
-                                                                       title="Edit Subject"
-                                                                     >
-                                                                       <Edit className="h-3 w-3" />
-                                                                     </button>
-                                                                     <button
-                                                                       onClick={() => handleDeleteSubject(sub.id)}
-                                                                       className="p-1 hover:bg-rose-50 border border-transparent hover:border-rose-150 text-gray-555 hover:text-rose-600 rounded transition-all cursor-pointer bg-transparent"
-                                                                       title="Delete Subject"
-                                                                     >
-                                                                       <Trash2 className="h-3 w-3" />
-                                                                     </button>
-                                                                   </div>
-                                                                 </td>
-                                                               </tr>
-                                                             ))}
-                                                           </tbody>
-                                                         </table>
-                                                       </div>
-                                                     )}
-                                                   </div>
+                                                                    <div className="flex items-center justify-end gap-0.5">
+                                                                      <button
+                                                                        onClick={() => handleOpenSubjectModal(sub)}
+                                                                        className="p-1 hover:bg-indigo-50 border border-transparent hover:border-indigo-150 text-gray-555 hover:text-indigo-650 rounded transition-all cursor-pointer bg-transparent"
+                                                                        title="Edit Subject"
+                                                                      >
+                                                                        <Edit className="h-3 w-3" />
+                                                                      </button>
+                                                                      <button
+                                                                        onClick={() => handleDeleteSubject(sub.id)}
+                                                                        className="p-1 hover:bg-rose-50 border border-transparent hover:border-rose-150 text-gray-555 hover:text-rose-600 rounded transition-all cursor-pointer bg-transparent"
+                                                                        title="Delete Subject"
+                                                                      >
+                                                                        <Trash2 className="h-3 w-3" />
+                                                                      </button>
+                                                                    </div>
+                                                                  </td>
+                                                                </tr>
+                                                              ))}
+                                                            </tbody>
+                                                          </table>
+                                                        </div>
+                                                      )}
+                                                    </div>
 
-                                                   {/* Even Semester Column */}
-                                                   <div className="flex flex-col border border-gray-150 rounded-xl p-3 bg-white shadow-xs">
-                                                     <div className="flex items-center justify-between pb-2 border-b border-gray-100 mb-2">
-                                                       <span className="font-extrabold text-[10px] uppercase tracking-wider text-purple-700">{semEven}</span>
-                                                       <span className="bg-purple-50 border border-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{evenCount} subject(s)</span>
-                                                     </div>
-                                                     {yrSubjects.filter(s => s.semester === semEven).length === 0 ? (
-                                                       <div className="text-center py-6 text-gray-400 italic text-[10px] my-auto">No subjects mapped to {semEven} yet.</div>
-                                                     ) : (
-                                                       <div className="overflow-x-auto">
-                                                         <table className="w-full border-collapse text-left text-[11px] font-medium text-gray-700 min-w-[340px]">
-                                                           <thead>
-                                                             <tr className="border-b border-gray-150 text-[9px] text-gray-400 font-extrabold uppercase tracking-wider bg-gray-50/50">
-                                                               <th className="px-2 py-1.5">Subject Name</th>
-                                                               <th className="px-2 py-1.5">Type</th>
+                                                    {/* Even Semester Column */}
+                                                    <div className="flex flex-col border border-gray-150 rounded-xl p-3 bg-white shadow-xs">
+                                                      <div className="flex items-center justify-between pb-2 border-b border-gray-100 mb-2">
+                                                        <span className="font-extrabold text-[10px] uppercase tracking-wider text-purple-700">{semEven}</span>
+                                                        <span className="bg-purple-50 border border-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{evenCount} subject(s)</span>
+                                                      </div>
+                                                      {yrSubjects.filter(s => s.semester === semEven).length === 0 ? (
+                                                        <div className="text-center py-6 text-gray-400 italic text-[10px] my-auto">No subjects mapped to {semEven} yet.</div>
+                                                      ) : (
+                                                        <div className="overflow-x-auto">
+                                                          <table className="w-full border-collapse text-left text-[11px] font-medium text-gray-700 min-w-[340px]">
+                                                            <thead>
+                                                              <tr className="border-b border-gray-150 text-[9px] text-gray-400 font-extrabold uppercase tracking-wider bg-gray-50/50">
+                                                                <th className="px-2 py-1.5">Subject Name</th>
+                                                                <th className="px-2 py-1.5">Type</th>
                                                                 <th className="px-2 py-1.5">Timetable</th>
-                                                               <th className="px-2 py-1.5 text-right">Actions</th>
-                                                             </tr>
-                                                           </thead>
-                                                           <tbody className="divide-y divide-gray-100">
-                                                             {yrSubjects.filter(s => s.semester === semEven).map(sub => (
-                                                               <tr key={sub.id} className="hover:bg-gray-50/30 transition-colors">
-                                                                 <td className="px-2 py-2">
-                                                                   <div className="font-bold text-gray-900 leading-tight">
-                                                                     {sub.name}
-                                                                   </div>
-                                                                   <div className="font-mono text-[8px] text-gray-400 mt-0.5">{sub.id}</div>
-                                                                 </td>
-                                                                 <td className="px-2 py-2">
+                                                                <th className="px-2 py-1.5 text-right">Actions</th>
+                                                              </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-gray-100">
+                                                              {yrSubjects.filter(s => s.semester === semEven).map(sub => (
+                                                                <tr key={sub.id} className="hover:bg-gray-50/30 transition-colors">
+                                                                  <td className="px-2 py-2">
+                                                                    <div className="font-bold text-gray-900 leading-tight">
+                                                                      {sub.name}
+                                                                    </div>
+                                                                    <div className="font-mono text-[8px] text-gray-400 mt-0.5">{sub.id}</div>
+                                                                  </td>
+                                                                  <td className="px-2 py-2">
                                                                     {(() => {
                                                                       const t = (sub.type || "").toUpperCase();
                                                                       if (t === "SKILL" || t === "PRACTICAL") {
@@ -3631,29 +3622,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                                     })()}
                                                                   </td>
                                                                   <td className="px-2 py-2 text-right">
-                                                                   <div className="flex items-center justify-end gap-0.5">
-                                                                     <button
-                                                                       onClick={() => handleOpenSubjectModal(sub)}
-                                                                       className="p-1 hover:bg-indigo-50 border border-transparent hover:border-indigo-150 text-gray-555 hover:text-indigo-650 rounded transition-all cursor-pointer bg-transparent"
-                                                                       title="Edit Subject"
-                                                                     >
-                                                                       <Edit className="h-3 w-3" />
-                                                                     </button>
-                                                                     <button
-                                                                       onClick={() => handleDeleteSubject(sub.id)}
-                                                                       className="p-1 hover:bg-rose-50 border border-transparent hover:border-rose-150 text-gray-555 hover:text-rose-600 rounded transition-all cursor-pointer bg-transparent"
-                                                                       title="Delete Subject"
-                                                                     >
-                                                                       <Trash2 className="h-3 w-3" />
-                                                                     </button>
-                                                                   </div>
-                                                                 </td>
-                                                               </tr>
-                                                             ))}
-                                                           </tbody>
-                                                         </table>
-                                                       </div>
-                                                     )}
+                                                                    <div className="flex items-center justify-end gap-0.5">
+                                                                      <button
+                                                                        onClick={() => handleOpenSubjectModal(sub)}
+                                                                        className="p-1 hover:bg-indigo-50 border border-transparent hover:border-indigo-150 text-gray-555 hover:text-indigo-650 rounded transition-all cursor-pointer bg-transparent"
+                                                                        title="Edit Subject"
+                                                                      >
+                                                                        <Edit className="h-3 w-3" />
+                                                                      </button>
+                                                                      <button
+                                                                        onClick={() => handleDeleteSubject(sub.id)}
+                                                                        className="p-1 hover:bg-rose-50 border border-transparent hover:border-rose-150 text-gray-555 hover:text-rose-600 rounded transition-all cursor-pointer bg-transparent"
+                                                                        title="Delete Subject"
+                                                                      >
+                                                                        <Trash2 className="h-3 w-3" />
+                                                                      </button>
+                                                                    </div>
+                                                                  </td>
+                                                                </tr>
+                                                              ))}
+                                                            </tbody>
+                                                          </table>
+                                                        </div>
+                                                      )}
                                                     </div>
                                                   </div>
                                                 )}
@@ -3677,273 +3668,409 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
-        {activeTab === "subjects" && (
-          <div className="space-y-6 animate-fadeIn font-sans text-xs">
-            <div className="flex items-center justify-between border-b border-gray-150 pb-3 flex-wrap gap-4">
-              <div className="flex items-center gap-2">
-                <GraduationCap className="h-5 w-5 text-indigo-655" />
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900 font-sans">Subjects Master Directory</h2>
-                  <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Manage individual syllabus items, semester mappings, and teaching slots</p>
+          {activeTab === "subjects" && (
+            <div className="space-y-6 animate-fadeIn font-sans text-xs">
+              <div className="flex items-center justify-between border-b border-gray-150 pb-3 flex-wrap gap-4">
+                <div className="flex items-center gap-2">
+                  <GraduationCap className="h-5 w-5 text-indigo-655" />
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900 font-sans">Subjects Master Directory</h2>
+                    <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Manage individual syllabus items, semester mappings, and teaching slots</p>
+                  </div>
                 </div>
+                {subjectsSubTab === "catalog" && (
+                  <button
+                    onClick={() => handleOpenSubjectModal()}
+                    className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer border-none"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Subject
+                  </button>
+                )}
               </div>
-              {subjectsSubTab === "catalog" && (
+
+              {/* Sub Tabs Selector */}
+              <div className="flex border-b border-gray-150 gap-6">
                 <button
-                  onClick={() => handleOpenSubjectModal()}
-                  className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer border-none"
+                  onClick={() => setSubjectsSubTab("catalog")}
+                  className={`pb-2 px-1 text-xs font-black transition-all ${subjectsSubTab === "catalog" ? "border-b-2 border-indigo-650 text-indigo-650" : "text-gray-405 hover:text-gray-600"}`}
                 >
-                  <Plus className="h-4 w-4" />
-                  Add Subject
+                  Subjects Catalog
                 </button>
+                <button
+                  onClick={() => setSubjectsSubTab("groups")}
+                  className={`pb-2 px-1 text-xs font-black transition-all ${subjectsSubTab === "groups" ? "border-b-2 border-indigo-650 text-indigo-650" : "text-gray-405 hover:text-gray-600"}`}
+                >
+                  Mentor Groups
+                </button>
+              </div>
+
+              {subjectsSubTab === "catalog" ? (
+                <>
+                  {/* Filters Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-gray-150 rounded-2xl shadow-xs">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search name, ID, course..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="bg-gray-55 border border-gray-205 rounded-xl pl-9 pr-4 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 transition-all w-56 font-semibold text-gray-800"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      {/* College filter */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Campus:</span>
+                        <select
+                          value={subjectCollegeFilter}
+                          onChange={(e) => setSubjectCollegeFilter(e.target.value)}
+                          className="bg-gray-55 border border-gray-205 rounded-xl px-3 py-1.5 font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 text-xs cursor-pointer"
+                        >
+                          <option value="all">All Campuses</option>
+                          {colleges.map((col) => (
+                            <option key={col.id} value={col.id}>{col.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Semester filter */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Semester:</span>
+                        <select
+                          value={subjectSemesterFilter}
+                          onChange={(e) => setSubjectSemesterFilter(e.target.value)}
+                          className="bg-gray-55 border border-gray-205 rounded-xl px-3 py-1.5 font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 text-xs cursor-pointer"
+                        >
+                          <option value="all">All Semesters</option>
+                          {Array.from({ length: 8 }, (_, i) => `Semester ${i + 1}`).map((sem) => (
+                            <option key={sem} value={sem}>{sem}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Subjects Table */}
+                  <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm bg-white">
+                    <table className="w-full border-collapse text-left text-xs min-w-[700px]">
+                      <thead>
+                        <tr className="bg-gray-55 border-b border-gray-200 text-gray-555 font-bold uppercase text-[9px] tracking-wider">
+                          <th className="p-4">ID</th>
+                          <th className="p-4">Subject Name</th>
+                          <th className="p-4">Campus</th>
+                          <th className="p-4">Department / Course</th>
+                          <th className="p-4">Subject Group</th>
+                          <th className="p-4">Year &amp; Semester</th>
+                          <th className="p-4">Type</th>
+                          <th className="p-4">Weekly Hours</th>
+                          <th className="p-4">Timetable Coverage</th>
+                          <th className="p-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-150 bg-white">
+                        {filteredSubjects.length === 0 ? (
+                          <tr>
+                            <td colSpan={10} className="p-8 text-center text-gray-450 italic bg-white">
+                              No subjects found matching the selected criteria.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredSubjects.map((sub) => {
+                            const campusName = colleges.find(c => c.id === sub.college_id)?.name || "Unknown Campus";
+                            const subSlots = slots.filter(
+                              slot => slot.course.toLowerCase() === sub.name.toLowerCase() &&
+                                (slot.department || getDeptFromClassGroup(slot.classGroup)) === sub.department
+                            );
+
+                            const targetHours = sub.weekly_hours || 4;
+                            const scheduledHours = subSlots.length;
+                            let statusBadge = null;
+
+                            if (scheduledHours === 0) {
+                              statusBadge = (
+                                <span className="px-2 py-0.5 rounded-full bg-slate-55 border border-slate-150 text-slate-400 text-[9.5px] font-bold">
+                                  Unscheduled (0/{targetHours} hrs)
+                                </span>
+                              );
+                            } else if (scheduledHours === targetHours) {
+                              statusBadge = (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[9.5px] font-black inline-flex items-center gap-1 shadow-xs">
+                                  <span className="h-1 w-1 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                                  Fully Scheduled ({scheduledHours}/{targetHours} hrs)
+                                </span>
+                              );
+                            } else if (scheduledHours < targetHours) {
+                              statusBadge = (
+                                <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[9.5px] font-extrabold inline-flex items-center gap-1 shadow-xs">
+                                  Under-scheduled ({scheduledHours}/{targetHours} hrs)
+                                </span>
+                              );
+                            } else {
+                              statusBadge = (
+                                <span className="px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-[9.5px] font-extrabold inline-flex items-center gap-1 shadow-xs">
+                                  Over-scheduled ({scheduledHours}/{targetHours} hrs)
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <tr key={sub.id} className="hover:bg-gray-55/30 transition-colors">
+                                <td className="p-4 font-mono text-[10px] text-gray-400 font-semibold">{sub.id}</td>
+                                <td className="p-4 font-bold text-gray-900">{sub.name}</td>
+                                <td className="p-4 text-gray-600 font-semibold">{campusName}</td>
+                                <td className="p-4 text-gray-600 font-semibold">{sub.department}</td>
+                                <td className="p-4">
+                                  <span className="px-2 py-0.5 rounded-full bg-pink-50 border border-pink-100 text-pink-700 text-[10px] font-bold">
+                                    {sub.subject_group || "General"}
+                                  </span>
+                                </td>
+                                <td className="p-4">
+                                  <span className="font-bold text-gray-855 block">{sub.year || "Year 1"}</span>
+                                  <span className="text-[10px] text-indigo-650 font-extrabold">{sub.semester}</span>
+                                </td>
+                                <td className="p-4">
+                                  {(() => {
+                                    const t = (sub.type || "").toUpperCase();
+                                    if (t === "SKILL" || t === "PRACTICAL") {
+                                      return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-purple-50 text-purple-700 border border-purple-200">Skill</span>;
+                                    }
+                                    if (t === "ACADEMIC" || t === "THEORY") {
+                                      return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">Theory</span>;
+                                    }
+                                    if (t === "LAB") {
+                                      return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">Lab</span>;
+                                    }
+                                    return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">{sub.type || "General"}</span>;
+                                  })()}
+                                </td>
+                                <td className="p-4 font-bold text-gray-800 text-[11px]">
+                                  {targetHours} hr(s)
+                                </td>
+                                <td className="p-4">
+                                  {statusBadge}
+                                </td>
+                                <td className="p-4 text-right whitespace-nowrap">
+                                  <div className="flex justify-end gap-1.5">
+                                    <button
+                                      onClick={() => handleOpenSubjectModal(sub)}
+                                      className="p-1.5 bg-gray-50 border border-gray-250 text-gray-655 hover:text-indigo-600 hover:bg-indigo-55 rounded-lg transition-all cursor-pointer"
+                                      title="Edit Subject"
+                                    >
+                                      <Edit className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteSubject(sub.id)}
+                                      className="p-1.5 bg-gray-50 border border-gray-250 text-gray-655 hover:text-rose-600 hover:bg-rose-55 rounded-lg transition-all cursor-pointer"
+                                      title="Delete Subject"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center bg-white p-4 border border-gray-150 rounded-2xl shadow-xs">
+                    <div>
+                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Configured Mentor Groups</h3>
+                      <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Create custom groups to cluster mentors and SMEs (e.g. Technical, Aptitude, Soft Skills) and allocate demo sessions.</p>
+                    </div>
+                    <button
+                      onClick={() => handleOpenGroupModal()}
+                      className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border-none"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Create Mentor Group
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm bg-white">
+                    <table className="w-full border-collapse text-left text-xs min-w-[600px]">
+                      <thead>
+                        <tr className="bg-gray-55 border-b border-gray-200 text-gray-555 font-bold uppercase text-[9px] tracking-wider">
+                          <th className="p-4 w-[15%]">ID</th>
+                          <th className="p-4 w-[25%]">Group Name</th>
+                          <th className="p-4 w-[40%]">Description</th>
+                          <th className="p-4 w-[10%] text-center">Subjects Count</th>
+                          <th className="p-4 w-[10%] text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-150 bg-white">
+                        {(subjectGroups || []).map((g) => {
+                          const count = (subjectsList || []).filter(s => s.subject_group === g.name).length;
+                          return (
+                            <tr key={g.id} className="hover:bg-gray-55/30 transition-colors">
+                              <td className="p-4 font-mono text-[10px] text-gray-400 font-semibold">{g.id}</td>
+                              <td className="p-4">
+                                <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-bold">
+                                  {g.name}
+                                </span>
+                              </td>
+                              <td className="p-4 text-gray-600 font-semibold">{g.description || "—"}</td>
+                              <td className="p-4 text-center font-bold text-gray-700">{count}</td>
+                              <td className="p-4 text-right">
+                                <div className="flex justify-end gap-1.5">
+                                  <button
+                                    onClick={() => handleOpenGroupModal(g)}
+                                    className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-205 text-slate-500 rounded-lg transition-colors cursor-pointer"
+                                    title="Edit Group"
+                                  >
+                                    <Edit className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteGroup(g.id)}
+                                    className="p-1.5 bg-slate-50 hover:bg-rose-55 border border-slate-205 text-slate-500 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                    title="Delete Group"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
             </div>
+          )}
 
-            {/* Sub Tabs Selector */}
-            <div className="flex border-b border-gray-150 gap-6">
-              <button
-                onClick={() => setSubjectsSubTab("catalog")}
-                className={`pb-2 px-1 text-xs font-black transition-all ${subjectsSubTab === "catalog" ? "border-b-2 border-indigo-650 text-indigo-650" : "text-gray-405 hover:text-gray-600"}`}
-              >
-                Subjects Catalog
-              </button>
-              <button
-                onClick={() => setSubjectsSubTab("groups")}
-                className={`pb-2 px-1 text-xs font-black transition-all ${subjectsSubTab === "groups" ? "border-b-2 border-indigo-650 text-indigo-650" : "text-gray-405 hover:text-gray-600"}`}
-              >
-                Mentor Groups
-              </button>
-            </div>
+          {/* ── Tab: Global Schedule Grid ── */}
+          {activeTab === "schedules" && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
+                <div className="flex items-center gap-2">
+                  <Grid className="h-5 w-5 text-indigo-655" />
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">Global Scheduled slots</h2>
+                    <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Filter and review timetables across the entire university network</p>
+                  </div>
+                </div>
 
-            {subjectsSubTab === "catalog" ? (
-              <>
-                {/* Filters Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-gray-150 rounded-2xl shadow-xs">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                {/* Filters */}
+                <div className="flex flex-wrap gap-2">
+                  <select
+                    value={collegeFilter}
+                    onChange={(e) => setCollegeFilter(e.target.value)}
+                    className="bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-705 font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">All Campuses</option>
+                    {colleges.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={dayFilter}
+                    onChange={(e) => setDayFilter(e.target.value)}
+                    className="bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-705 font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">All Days</option>
+                    {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={shiftFilter}
+                    onChange={(e) => setShiftFilter(e.target.value)}
+                    className="bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-705 font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">All Shifts</option>
+                    <option value="shift_1">Shift 1</option>
+                    <option value="shift_2">Shift 2</option>
+                    <option value="general">General Shift</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Search slot bar */}
+              <div className="relative max-w-md">
+                <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search name, ID, course..."
+                  placeholder="Search slot, mentor, room or course..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-gray-55 border border-gray-205 rounded-xl pl-9 pr-4 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 transition-all w-56 font-semibold text-gray-800"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-650"
                 />
               </div>
 
-              <div className="flex items-center gap-3">
-                {/* College filter */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Campus:</span>
-                  <select
-                    value={subjectCollegeFilter}
-                    onChange={(e) => setSubjectCollegeFilter(e.target.value)}
-                    className="bg-gray-55 border border-gray-205 rounded-xl px-3 py-1.5 font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 text-xs cursor-pointer"
-                  >
-                    <option value="all">All Campuses</option>
-                    {colleges.map((col) => (
-                      <option key={col.id} value={col.id}>{col.name}</option>
-                    ))}
-                  </select>
+              {filteredSlots.length === 0 ? (
+                <div className="text-center py-16 border border-gray-200 rounded-2xl bg-gray-55/50">
+                  <Grid className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-555 font-semibold">No slot schedules matched your filter query.</p>
                 </div>
-
-                {/* Semester filter */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Semester:</span>
-                  <select
-                    value={subjectSemesterFilter}
-                    onChange={(e) => setSubjectSemesterFilter(e.target.value)}
-                    className="bg-gray-55 border border-gray-205 rounded-xl px-3 py-1.5 font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 text-xs cursor-pointer"
-                  >
-                    <option value="all">All Semesters</option>
-                    {Array.from({ length: 8 }, (_, i) => `Semester ${i + 1}`).map((sem) => (
-                      <option key={sem} value={sem}>{sem}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Subjects Table */}
-            <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm bg-white">
-              <table className="w-full border-collapse text-left text-xs min-w-[700px]">
-                <thead>
-                  <tr className="bg-gray-55 border-b border-gray-200 text-gray-555 font-bold uppercase text-[9px] tracking-wider">
-                    <th className="p-4">ID</th>
-                    <th className="p-4">Subject Name</th>
-                    <th className="p-4">Campus</th>
-                    <th className="p-4">Department / Course</th>
-                    <th className="p-4">Subject Group</th>
-                    <th className="p-4">Year &amp; Semester</th>
-                    <th className="p-4">Type</th>
-                    <th className="p-4">Weekly Hours</th>
-                    <th className="p-4">Timetable Coverage</th>
-                    <th className="p-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-150 bg-white">
-                  {filteredSubjects.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className="p-8 text-center text-gray-450 italic bg-white">
-                        No subjects found matching the selected criteria.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredSubjects.map((sub) => {
-                      const campusName = colleges.find(c => c.id === sub.college_id)?.name || "Unknown Campus";
-                      const subSlots = slots.filter(
-                        slot => slot.course.toLowerCase() === sub.name.toLowerCase() && 
-                                (slot.department || getDeptFromClassGroup(slot.classGroup)) === sub.department
-                      );
-
-                      const targetHours = sub.weekly_hours || 4;
-                      const scheduledHours = subSlots.length;
-                      let statusBadge = null;
-
-                      if (scheduledHours === 0) {
-                        statusBadge = (
-                          <span className="px-2 py-0.5 rounded-full bg-slate-55 border border-slate-150 text-slate-400 text-[9.5px] font-bold">
-                            Unscheduled (0/{targetHours} hrs)
-                          </span>
-                        );
-                      } else if (scheduledHours === targetHours) {
-                        statusBadge = (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[9.5px] font-black inline-flex items-center gap-1 shadow-xs">
-                            <span className="h-1 w-1 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-                            Fully Scheduled ({scheduledHours}/{targetHours} hrs)
-                          </span>
-                        );
-                      } else if (scheduledHours < targetHours) {
-                        statusBadge = (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[9.5px] font-extrabold inline-flex items-center gap-1 shadow-xs">
-                            Under-scheduled ({scheduledHours}/{targetHours} hrs)
-                          </span>
-                        );
-                      } else {
-                        statusBadge = (
-                          <span className="px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-[9.5px] font-extrabold inline-flex items-center gap-1 shadow-xs">
-                            Over-scheduled ({scheduledHours}/{targetHours} hrs)
-                          </span>
-                        );
-                      }
-
-                      return (
-                        <tr key={sub.id} className="hover:bg-gray-55/30 transition-colors">
-                          <td className="p-4 font-mono text-[10px] text-gray-400 font-semibold">{sub.id}</td>
-                          <td className="p-4 font-bold text-gray-900">{sub.name}</td>
-                          <td className="p-4 text-gray-600 font-semibold">{campusName}</td>
-                          <td className="p-4 text-gray-600 font-semibold">{sub.department}</td>
-                          <td className="p-4">
-                            <span className="px-2 py-0.5 rounded-full bg-pink-50 border border-pink-100 text-pink-700 text-[10px] font-bold">
-                              {sub.subject_group || "General"}
-                            </span>
-                          </td>
-                          <td className="p-4">
-                            <span className="font-bold text-gray-855 block">{sub.year || "Year 1"}</span>
-                            <span className="text-[10px] text-indigo-650 font-extrabold">{sub.semester}</span>
-                          </td>
-                          <td className="p-4">
-                            {(() => {
-                              const t = (sub.type || "").toUpperCase();
-                              if (t === "SKILL" || t === "PRACTICAL") {
-                                return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-purple-50 text-purple-700 border border-purple-200">Skill</span>;
-                              }
-                              if (t === "ACADEMIC" || t === "THEORY") {
-                                return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">Theory</span>;
-                              }
-                              if (t === "LAB") {
-                                return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">Lab</span>;
-                              }
-                              return <span className="px-2 py-0.5 rounded-full text-[8.5px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">{sub.type || "General"}</span>;
-                            })()}
-                          </td>
-                          <td className="p-4 font-bold text-gray-800 text-[11px]">
-                            {targetHours} hr(s)
-                          </td>
-                          <td className="p-4">
-                            {statusBadge}
-                          </td>
-                          <td className="p-4 text-right whitespace-nowrap">
-                            <div className="flex justify-end gap-1.5">
-                              <button
-                                onClick={() => handleOpenSubjectModal(sub)}
-                                className="p-1.5 bg-gray-50 border border-gray-250 text-gray-655 hover:text-indigo-600 hover:bg-indigo-55 rounded-lg transition-all cursor-pointer"
-                                title="Edit Subject"
-                              >
-                                <Edit className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteSubject(sub.id)}
-                                className="p-1.5 bg-gray-50 border border-gray-250 text-gray-655 hover:text-rose-600 hover:bg-rose-55 rounded-lg transition-all cursor-pointer"
-                                title="Delete Subject"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-              </>
-            ) : (
-              <div className="space-y-6">
-                <div className="flex justify-between items-center bg-white p-4 border border-gray-150 rounded-2xl shadow-xs">
-                  <div>
-                    <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Configured Mentor Groups</h3>
-                    <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Create custom groups to cluster mentors and SMEs (e.g. Technical, Aptitude, Soft Skills) and allocate demo sessions.</p>
-                  </div>
-                  <button
-                    onClick={() => handleOpenGroupModal()}
-                    className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border-none"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Create Mentor Group
-                  </button>
-                </div>
-
-                <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm bg-white">
-                  <table className="w-full border-collapse text-left text-xs min-w-[600px]">
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                  <table className="w-full border-collapse text-left text-xs min-w-[850px]">
                     <thead>
-                      <tr className="bg-gray-55 border-b border-gray-200 text-gray-555 font-bold uppercase text-[9px] tracking-wider">
-                        <th className="p-4 w-[15%]">ID</th>
-                        <th className="p-4 w-[25%]">Group Name</th>
-                        <th className="p-4 w-[40%]">Description</th>
-                        <th className="p-4 w-[10%] text-center">Subjects Count</th>
-                        <th className="p-4 w-[10%] text-right">Actions</th>
+                      <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
+                        <th className="p-3">Campus</th>
+                        <th className="p-3">Mentor</th>
+                        <th className="p-3">Day</th>
+                        <th className="p-3">Time Slot</th>
+                        <th className="p-3">Shift</th>
+                        <th className="p-3">Course / Class Group</th>
+                        <th className="p-3">Room</th>
+                        <th className="p-3 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-150 bg-white">
-                      {(subjectGroups || []).map((g) => {
-                        const count = (subjectsList || []).filter(s => s.subject_group === g.name).length;
+                      {filteredSlots.map((slot) => {
+                        const mentorObj = mentors.find(m => m.id === slot.mentorId);
+                        const colObj = colleges.find(c => c.id === (mentorObj?.college_id || "college_1"));
+
                         return (
-                          <tr key={g.id} className="hover:bg-gray-55/30 transition-colors">
-                            <td className="p-4 font-mono text-[10px] text-gray-400 font-semibold">{g.id}</td>
-                            <td className="p-4">
-                              <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-bold">
-                                {g.name}
+                          <tr key={slot.id} className="hover:bg-gray-55/30 transition-colors">
+                            <td className="p-3 text-gray-805 font-bold">{colObj?.name || "FP City Campus"}</td>
+                            <td className="p-3 flex items-center gap-2">
+                              <div className="h-6 w-6 rounded-full btn-gradient flex items-center justify-center font-extrabold text-white text-[9px]">
+                                {mentorObj?.avatar || "M"}
+                              </div>
+                              <div>
+                                <div className="font-bold text-gray-900">{mentorObj?.name}</div>
+                                <div className="text-[9.5px] text-gray-400">{mentorObj?.department}</div>
+                              </div>
+                            </td>
+                            <td className="p-3 text-gray-800 font-semibold">{slot.day}</td>
+                            <td className="p-3 text-gray-500 whitespace-nowrap">{formatTimeLabel(slot.time)}</td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded text-[8.5px] font-bold uppercase ${slot.shift === "shift_1" ? "bg-amber-50 text-amber-600 border border-amber-100"
+                                  : slot.shift === "shift_2" ? "bg-teal-50 text-teal-600 border border-teal-100"
+                                    : "bg-indigo-50 text-indigo-600 border border-indigo-100"
+                                }`}>
+                                {slot.shift.replace("_", " ")}
                               </span>
                             </td>
-                            <td className="p-4 text-gray-600 font-semibold">{g.description || "—"}</td>
-                            <td className="p-4 text-center font-bold text-gray-700">{count}</td>
-                            <td className="p-4 text-right">
-                              <div className="flex justify-end gap-1.5">
-                                <button
-                                  onClick={() => handleOpenGroupModal(g)}
-                                  className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-205 text-slate-500 rounded-lg transition-colors cursor-pointer"
-                                  title="Edit Group"
-                                >
-                                  <Edit className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteGroup(g.id)}
-                                  className="p-1.5 bg-slate-50 hover:bg-rose-55 border border-slate-205 text-slate-500 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
-                                  title="Delete Group"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
+                            <td className="p-3">
+                              <div className="font-extrabold text-indigo-700">{slot.course}</div>
+                              <div className="text-[9.5px] text-gray-400 font-semibold uppercase">{slot.classGroup || "General Class"}</div>
+                            </td>
+                            <td className="p-3 text-gray-600">{slot.location}</td>
+                            <td className="p-3 text-right">
+                              <button
+                                onClick={() => {
+                                  if (colObj) {
+                                    setDrillDownCollegeId(colObj.id);
+                                  }
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-600 hover:text-white border border-indigo-200 transition-all font-bold text-[10.5px] text-indigo-650 cursor-pointer"
+                              >
+                                Manage Campus
+                              </button>
                             </td>
                           </tr>
                         );
@@ -3951,457 +4078,789 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </tbody>
                   </table>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
 
-        {/* ── Tab: Global Schedule Grid ── */}
-        {activeTab === "schedules" && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
-              <div className="flex items-center gap-2">
-                <Grid className="h-5 w-5 text-indigo-655" />
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">Global Scheduled slots</h2>
-                  <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Filter and review timetables across the entire university network</p>
+          {/* ── Tab: Reporting Hierarchy Tree ── */}
+          {activeTab === "hierarchy" && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center gap-2 border-b border-gray-150 pb-3">
+                <Network className="h-5 w-5 text-indigo-655" />
+                <h2 className="text-lg font-bold text-gray-900">Interactive Reporting Hierarchy</h2>
+              </div>
+              <p className="text-xs text-gray-550 font-medium mb-4">
+                Explore the chain of command of the university system, from Super Admin down to Faculty Mentors. Click on caret icons to expand or collapse nodes.
+              </p>
+
+              {/* Tree Start */}
+              <div className="bg-gray-50 border border-gray-150 rounded-2xl p-6 shadow-inner space-y-4 text-xs select-none">
+                {/* Level 0: Super Admin */}
+                <div className="space-y-2">
+                  <div
+                    onClick={() => toggleNode("admin")}
+                    className="flex items-center gap-2 p-3 bg-white border border-indigo-200 rounded-xl max-w-md shadow-sm cursor-pointer hover:border-indigo-400 transition-all"
+                  >
+                    {expandedNodes["admin"] ? <ChevronDown className="h-4 w-4 text-indigo-550" /> : <ChevronRight className="h-4 w-4 text-indigo-550" />}
+                    <div className="h-7 w-7 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black">SU</div>
+                    <div>
+                      <div className="font-extrabold text-gray-900 text-sm">Super Admin</div>
+                      <div className="text-[10px] text-gray-400">{currentAdmin?.name || "System Admin"} ({currentAdmin?.email || "admin@university.edu"})</div>
+                    </div>
+                  </div>
+
+                  {/* Level 1: KAMs */}
+                  {expandedNodes["admin"] && (
+                    <div className="pl-8 border-l border-dashed border-gray-300 ml-5 space-y-3 pt-2">
+                      {kamList.map(kam => {
+                        const kamNodeId = `kam-${kam.id}`;
+                        const kamColleges = colleges.filter(c => c.kam_id === kam.id);
+
+                        return (
+                          <div key={kam.id} className="space-y-2">
+                            <div
+                              onClick={() => toggleNode(kamNodeId)}
+                              className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 rounded-xl max-w-sm shadow-sm cursor-pointer hover:border-indigo-300 transition-all"
+                            >
+                              {expandedNodes[kamNodeId] ? <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-500" />}
+                              <div className="h-6 w-6 rounded-full bg-amber-500 text-white flex items-center justify-center font-black">KAM</div>
+                              <div>
+                                <div className="font-bold text-gray-905">{kam.name}</div>
+                                <div className="text-[9px] text-gray-400">{kam.title} • {kamColleges.length} Campus(es)</div>
+                              </div>
+                            </div>
+
+                            {/* Level 2: Campuses & CAMs */}
+                            {expandedNodes[kamNodeId] && (
+                              <div className="pl-6 border-l border-dashed border-gray-300 ml-4 space-y-3 pt-1">
+                                {kamColleges.map(col => {
+                                  const colNodeId = `col-${col.id}`;
+                                  const cam = camList.find(cm => cm.college_id === col.id);
+                                  const colMentors = mentors.filter(m => m.college_id === col.id);
+
+                                  return (
+                                    <div key={col.id} className="space-y-2">
+                                      <div
+                                        onClick={() => toggleNode(colNodeId)}
+                                        className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 rounded-xl max-w-xs shadow-sm cursor-pointer hover:border-indigo-300 transition-all"
+                                      >
+                                        {expandedNodes[colNodeId] ? <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-500" />}
+                                        <div className="h-6 w-6 rounded-full bg-teal-500 text-white flex items-center justify-center font-black">CAM</div>
+                                        <div>
+                                          <div className="font-extrabold text-gray-855 leading-tight">{col.name}</div>
+                                          <div className="text-[9px] text-gray-400 font-medium">CAM: {cam ? cam.name : "Unassigned"} ({colMentors.length} Faculty)</div>
+                                        </div>
+                                      </div>
+
+                                      {/* Level 3: Mentors */}
+                                      {expandedNodes[colNodeId] && (
+                                        <div className="pl-6 border-l border-dashed border-gray-300 ml-4 space-y-2 pt-1">
+                                          {colMentors.map(mentor => (
+                                            <div
+                                              key={mentor.id}
+                                              className="flex items-center gap-1.5 p-1.5 bg-white border border-gray-150 rounded-xl max-w-[240px] shadow-sm animate-fadeIn"
+                                            >
+                                              <div className="h-6 w-6 rounded-full btn-gradient text-white flex items-center justify-center font-extrabold text-[9px] shrink-0">
+                                                {mentor.avatar}
+                                              </div>
+                                              <div className="min-w-0">
+                                                <div className="font-extrabold text-gray-805 truncate text-[10px] leading-tight">{mentor.name}</div>
+                                                <div className="text-[8px] text-gray-450 font-bold uppercase tracking-wider mt-0.5 truncate">{mentor.department}</div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                          {colMentors.length === 0 && (
+                                            <span className="text-[9px] text-gray-400 italic pl-1">No faculty mentors configured</span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Tab: Global Audit Logs ── */}
+          {activeTab === "logs" && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
+                <div className="flex items-center gap-2">
+                  <History className="h-5 w-5 text-indigo-655" />
+                  <h2 className="text-lg font-bold text-gray-900">Global System Audit Logs</h2>
                 </div>
               </div>
 
-              {/* Filters */}
-              <div className="flex flex-wrap gap-2">
-                <select
-                  value={collegeFilter}
-                  onChange={(e) => setCollegeFilter(e.target.value)}
-                  className="bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-705 font-bold focus:outline-none cursor-pointer"
-                >
-                  <option value="all">All Campuses</option>
-                  {colleges.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={dayFilter}
-                  onChange={(e) => setDayFilter(e.target.value)}
-                  className="bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-705 font-bold focus:outline-none cursor-pointer"
-                >
-                  <option value="all">All Days</option>
-                  {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={shiftFilter}
-                  onChange={(e) => setShiftFilter(e.target.value)}
-                  className="bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-705 font-bold focus:outline-none cursor-pointer"
-                >
-                  <option value="all">All Shifts</option>
-                  <option value="shift_1">Shift 1</option>
-                  <option value="shift_2">Shift 2</option>
-                  <option value="general">General Shift</option>
-                </select>
+              {/* Search Audit Logs */}
+              <div className="relative max-w-md mb-4">
+                <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Filter logs by actor, action description, role..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                />
               </div>
-            </div>
 
-            {/* Search slot bar */}
-            <div className="relative max-w-md">
-              <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search slot, mentor, room or course..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-650"
-              />
-            </div>
+              {filteredLogs.length === 0 ? (
+                <div className="text-center py-16 border border-gray-200 rounded-2xl bg-gray-55/50">
+                  <ShieldAlert className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-555 font-semibold">No audit logs found matching your query.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                  <table className="w-full border-collapse text-left text-xs min-w-[700px]">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
+                        <th className="p-3 w-1/4">Actor</th>
+                        <th className="p-3 w-7/12">Action Detail</th>
+                        <th className="p-3 w-1/6 text-right">Timestamp</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-150 bg-white">
+                      {filteredLogs.map((log) => {
+                        // Determine badge color for logs
+                        const isHandover = log.type.includes("handover");
+                        const isCsv = log.type.includes("csv");
 
-            {filteredSlots.length === 0 ? (
-              <div className="text-center py-16 border border-gray-200 rounded-2xl bg-gray-55/50">
-                <Grid className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-555 font-semibold">No slot schedules matched your filter query.</p>
+                        return (
+                          <tr key={log.id} className="hover:bg-gray-55/30 transition-colors">
+                            <td className="p-3">
+                              <div className="font-bold text-gray-900">{log.actorName}</div>
+                              <div className="text-[9px] font-black uppercase text-indigo-600 mt-0.5">{log.actorRole}</div>
+                            </td>
+                            <td className="p-3">
+                              <div className="text-gray-700 font-medium leading-snug">{log.description}</div>
+                              <div className="mt-1 flex items-center gap-1.5">
+                                <span className={`px-1.5 py-0.2 rounded text-[7.5px] font-black uppercase ${isHandover ? "bg-amber-50 text-amber-700 border border-amber-150"
+                                    : isCsv ? "bg-teal-50 text-teal-700 border border-teal-150"
+                                      : "bg-indigo-50 text-indigo-700 border border-indigo-150"
+                                  }`}>
+                                  {log.type.replace("_", " ")}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-right text-gray-400 font-semibold whitespace-nowrap">
+                              {formatDate(log.timestamp)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Tab: Announcements ── */}
+          {activeTab === "announcements" && (
+            <div className="space-y-6 animate-fadeIn font-sans text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
+                <div className="flex items-center gap-2">
+                  <Megaphone className="h-5 w-5 text-indigo-650" />
+                  <h2 className="text-lg font-bold text-gray-900">Campus Announcements Panel</h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setModalError(null);
+                    setAnnForm({ title: "", description: "", target_role: "All", college_id: "" });
+                    setShowAnnModal(true);
+                  }}
+                  className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  Compose Announcement
+                </button>
               </div>
-            ) : (
-              <div className="overflow-x-auto rounded-2xl border border-gray-200">
-                <table className="w-full border-collapse text-left text-xs min-w-[850px]">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
-                      <th className="p-3">Campus</th>
-                      <th className="p-3">Mentor</th>
-                      <th className="p-3">Day</th>
-                      <th className="p-3">Time Slot</th>
-                      <th className="p-3">Shift</th>
-                      <th className="p-3">Course / Class Group</th>
-                      <th className="p-3">Room</th>
-                      <th className="p-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-150 bg-white">
-                    {filteredSlots.map((slot) => {
-                      const mentorObj = mentors.find(m => m.id === slot.mentorId);
-                      const colObj = colleges.find(c => c.id === (mentorObj?.college_id || "college_1"));
-                      
-                      return (
-                        <tr key={slot.id} className="hover:bg-gray-55/30 transition-colors">
-                          <td className="p-3 text-gray-805 font-bold">{colObj?.name || "FP City Campus"}</td>
-                          <td className="p-3 flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-full btn-gradient flex items-center justify-center font-extrabold text-white text-[9px]">
-                              {mentorObj?.avatar || "M"}
-                            </div>
-                            <div>
-                              <div className="font-bold text-gray-900">{mentorObj?.name}</div>
-                              <div className="text-[9.5px] text-gray-400">{mentorObj?.department}</div>
-                            </div>
-                          </td>
-                          <td className="p-3 text-gray-800 font-semibold">{slot.day}</td>
-                          <td className="p-3 text-gray-500 whitespace-nowrap">{formatTimeLabel(slot.time)}</td>
-                          <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded text-[8.5px] font-bold uppercase ${
-                              slot.shift === "shift_1" ? "bg-amber-50 text-amber-600 border border-amber-100"
-                              : slot.shift === "shift_2" ? "bg-teal-50 text-teal-600 border border-teal-100"
-                              : "bg-indigo-50 text-indigo-600 border border-indigo-100"
-                            }`}>
-                              {slot.shift.replace("_", " ")}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <div className="font-extrabold text-indigo-700">{slot.course}</div>
-                            <div className="text-[9.5px] text-gray-400 font-semibold uppercase">{slot.classGroup || "General Class"}</div>
-                          </td>
-                          <td className="p-3 text-gray-600">{slot.location}</td>
-                          <td className="p-3 text-right">
+
+              {announcements.length === 0 ? (
+                <div className="text-center py-16 border border-gray-205 rounded-2xl bg-gray-55/50">
+                  <Megaphone className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-555 font-semibold">No announcements published yet.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {announcements.map((ann) => {
+                    const targetCampus = colleges.find(c => c.id === ann.college_id)?.name || "All Campuses";
+                    return (
+                      <div key={ann.id} className="p-6 bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition-all relative flex flex-col justify-between">
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-start gap-4">
+                            <h3 className="text-sm font-bold text-gray-900 leading-snug">{ann.title}</h3>
                             <button
-                              onClick={() => {
-                                if (colObj) {
-                                  setDrillDownCollegeId(colObj.id);
-                                }
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-600 hover:text-white border border-indigo-200 transition-all font-bold text-[10.5px] text-indigo-650 cursor-pointer"
+                              onClick={() => handleDeleteAnnouncement(ann.id)}
+                              disabled={loadingActions[`announcement_${ann.id}`]}
+                              className="p-1 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Delete Announcement"
                             >
-                              Manage Campus
+                              {loadingActions[`announcement_${ann.id}`] ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
                             </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
+                          </div>
+                          <p className="text-xs text-gray-600 font-semibold leading-relaxed whitespace-pre-line">{ann.description}</p>
+                        </div>
 
-        {/* ── Tab: Reporting Hierarchy Tree ── */}
-        {activeTab === "hierarchy" && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="flex items-center gap-2 border-b border-gray-150 pb-3">
-              <Network className="h-5 w-5 text-indigo-655" />
-              <h2 className="text-lg font-bold text-gray-900">Interactive Reporting Hierarchy</h2>
+                        <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap justify-between items-center text-[10px] text-gray-450 gap-2">
+                          <div className="flex flex-wrap gap-1.5">
+                            <span className="px-2 py-0.5 rounded bg-pink-50 border border-pink-100 text-pink-700 font-bold">
+                              Role: {ann.target_role}
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold">
+                              Campus: {targetCampus}
+                            </span>
+                          </div>
+                          <span className="font-semibold">{formatDate(ann.created_at)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <p className="text-xs text-gray-550 font-medium mb-4">
-              Explore the chain of command of the university system, from Super Admin down to Faculty Mentors. Click on caret icons to expand or collapse nodes.
-            </p>
+          )}
 
-            {/* Tree Start */}
-            <div className="bg-gray-50 border border-gray-150 rounded-2xl p-6 shadow-inner space-y-4 text-xs select-none">
-              {/* Level 0: Super Admin */}
-              <div className="space-y-2">
-                <div 
-                  onClick={() => toggleNode("admin")}
-                  className="flex items-center gap-2 p-3 bg-white border border-indigo-200 rounded-xl max-w-md shadow-sm cursor-pointer hover:border-indigo-400 transition-all"
+          {/* ── Tab: Holidays ── */}
+          {activeTab === "holidays" && (
+            <div className="space-y-6 animate-fadeIn font-sans text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-indigo-650" />
+                  <h2 className="text-lg font-bold text-gray-900">Campus Holidays Scheduler</h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setModalError(null);
+                    setHolForm({ title: "", date: "", type: "National Holiday", college_id: "" });
+                    setShowHolModal(true);
+                  }}
+                  className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 composition-btn cursor-pointer"
                 >
-                  {expandedNodes["admin"] ? <ChevronDown className="h-4 w-4 text-indigo-550" /> : <ChevronRight className="h-4 w-4 text-indigo-550" />}
-                  <div className="h-7 w-7 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black">SU</div>
-                  <div>
-                    <div className="font-extrabold text-gray-900 text-sm">Super Admin</div>
-                    <div className="text-[10px] text-gray-400">{currentAdmin?.name || "System Admin"} ({currentAdmin?.email || "admin@university.edu"})</div>
+                  <Plus className="h-4 w-4" />
+                  Schedule Holiday
+                </button>
+              </div>
+
+              {holidays.length === 0 ? (
+                <div className="text-center py-16 border border-gray-205 rounded-2xl bg-gray-55/50">
+                  <Calendar className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-555 font-semibold">No holidays scheduled.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                  <table className="w-full border-collapse text-left text-xs">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
+                        <th className="p-4">Holiday Title</th>
+                        <th className="p-4">Date</th>
+                        <th className="p-4">Type</th>
+                        <th className="p-4">Applicable Campus</th>
+                        <th className="p-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-150 bg-white font-medium text-gray-700">
+                      {holidays.map((hol) => {
+                        const targetCampus = colleges.find(c => c.id === hol.college_id)?.name || "All Campuses";
+                        return (
+                          <tr key={hol.id} className="hover:bg-gray-55/50 transition-colors">
+                            <td className="p-4 font-bold text-gray-900">{hol.title}</td>
+                            <td className="p-4 font-semibold text-indigo-650">{hol.date}</td>
+                            <td className="p-4">
+                              <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-150 text-[10px] font-bold text-indigo-700">
+                                {hol.type}
+                              </span>
+                            </td>
+                            <td className="p-4 text-gray-500 font-bold">{targetCampus}</td>
+                            <td className="p-4 text-right">
+                              <button
+                                onClick={() => handleDeleteHoliday(hol.id)}
+                                disabled={loadingActions[`holiday_${hol.id}`]}
+                                className="p-1.5 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Delete Holiday"
+                              >
+                                {loadingActions[`holiday_${hol.id}`] ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Tab: Centralized Users ── */}
+          {activeTab === "users" && (() => {
+            const pendingSignupsCount = signupRequests.filter(r => r.status === 'pending').length;
+            return (
+              <div className="space-y-6 animate-fadeIn font-sans text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="h-5 w-5 text-indigo-650" />
+                    <h2 className="text-lg font-bold text-gray-900">Centralized User Credentials Directory</h2>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setUserSubTab("directory")}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${userSubTab === "directory"
+                          ? "bg-indigo-600 text-white shadow-sm"
+                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                        }`}
+                    >
+                      Active Users
+                    </button>
+                    <button
+                      onClick={() => setUserSubTab("signups")}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${userSubTab === "signups"
+                          ? "bg-indigo-600 text-white shadow-sm"
+                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                        }`}
+                    >
+                      Pending Signups
+                      {pendingSignupsCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-rose-550 text-[10px] font-black text-white leading-none">
+                          {pendingSignupsCount}
+                        </span>
+                      )}
+                    </button>
                   </div>
                 </div>
 
-                {/* Level 1: KAMs */}
-                {expandedNodes["admin"] && (
-                  <div className="pl-8 border-l border-dashed border-gray-300 ml-5 space-y-3 pt-2">
-                    {kamList.map(kam => {
-                      const kamNodeId = `kam-${kam.id}`;
-                      const kamColleges = colleges.filter(c => c.kam_id === kam.id);
-                      
-                      return (
-                        <div key={kam.id} className="space-y-2">
-                          <div 
-                            onClick={() => toggleNode(kamNodeId)}
-                            className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 rounded-xl max-w-sm shadow-sm cursor-pointer hover:border-indigo-300 transition-all"
-                          >
-                            {expandedNodes[kamNodeId] ? <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-500" />}
-                            <div className="h-6 w-6 rounded-full bg-amber-500 text-white flex items-center justify-center font-black">KAM</div>
-                            <div>
-                              <div className="font-bold text-gray-905">{kam.name}</div>
-                              <div className="text-[9px] text-gray-400">{kam.title} • {kamColleges.length} Campus(es)</div>
-                            </div>
-                          </div>
-
-                          {/* Level 2: Campuses & CAMs */}
-                          {expandedNodes[kamNodeId] && (
-                            <div className="pl-6 border-l border-dashed border-gray-300 ml-4 space-y-3 pt-1">
-                              {kamColleges.map(col => {
-                                const colNodeId = `col-${col.id}`;
-                                const cam = camList.find(cm => cm.college_id === col.id);
-                                const colMentors = mentors.filter(m => m.college_id === col.id);
-                                
-                                return (
-                                  <div key={col.id} className="space-y-2">
-                                    <div 
-                                      onClick={() => toggleNode(colNodeId)}
-                                      className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 rounded-xl max-w-xs shadow-sm cursor-pointer hover:border-indigo-300 transition-all"
+                {userSubTab === "directory" ? (
+                  <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                    <table className="w-full border-collapse text-left text-xs">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
+                          <th className="p-4">Email</th>
+                          <th className="p-4">Reference ID / Username</th>
+                          <th className="p-4">Role</th>
+                          <th className="p-4">Status</th>
+                          <th className="p-4">Last Login</th>
+                          <th className="p-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-150 bg-white font-medium text-gray-700">
+                        {usersList.map((user) => (
+                          <tr key={user.id} className="hover:bg-gray-55/50 transition-colors">
+                            <td className="p-4 font-bold text-gray-900 font-mono">{user.email}</td>
+                            <td className="p-4 font-mono font-semibold text-gray-500">{user.reference_id || user.id}</td>
+                            <td className="p-4">
+                              <span className="px-2.5 py-0.5 rounded bg-teal-50 border border-teal-150 text-[10px] font-bold text-teal-700 uppercase">
+                                {user.role}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <button
+                                onClick={() => handleToggleUserStatus(user.id)}
+                                className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase cursor-pointer border ${user.status === "Active"
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                                    : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                                  }`}
+                                title="Toggle Status (Active / Inactive)"
+                              >
+                                {user.status || "Active"}
+                              </button>
+                            </td>
+                            <td className="p-4 text-gray-450 font-semibold">
+                              {user.last_login ? formatDate(user.last_login) : "Never logged in"}
+                            </td>
+                            <td className="p-4 text-right">
+                              <button
+                                onClick={() => handleResetUserPassword(user.id)}
+                                className="px-3 py-1.5 bg-gray-50 border border-gray-250 text-gray-700 hover:text-indigo-650 hover:bg-indigo-50 rounded-xl transition-all cursor-pointer font-bold text-[10px]"
+                                title="Reset password to password123"
+                              >
+                                Reset Password
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                    <table className="w-full border-collapse text-left text-xs">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
+                          <th className="p-4">Name</th>
+                          <th className="p-4">Email</th>
+                          <th className="p-4">Requested Role</th>
+                          <th className="p-4">Campus / College</th>
+                          <th className="p-4">Status</th>
+                          <th className="p-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-150 bg-white font-medium text-gray-700">
+                        {signupRequests.map((req) => {
+                          const targetCol = colleges.find(c => c.id === req.college_id);
+                          return (
+                            <tr key={req.id} className="hover:bg-gray-55/50 transition-colors">
+                              <td className="p-4 font-bold text-gray-900">{req.name}</td>
+                              <td className="p-4 font-mono font-semibold text-gray-650">{req.email}</td>
+                              <td className="p-4">
+                                <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-150 text-[10px] font-bold text-indigo-700 uppercase">
+                                  {req.requested_role === "pending" ? "Pending Assignment" : req.requested_role}
+                                </span>
+                              </td>
+                              <td className="p-4 text-gray-500 font-bold">{targetCol ? targetCol.name : "Unassigned"}</td>
+                              <td className="p-4">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${req.status === "pending"
+                                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                                    : req.status === "approved"
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      : "bg-rose-50 text-rose-700 border-rose-200"
+                                  }`}>
+                                  {req.status}
+                                </span>
+                              </td>
+                              <td className="p-4 text-right space-x-2">
+                                {req.status === "pending" && (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        setApprovingSignup(req);
+                                        setApprovingRole(req.requested_role || "student");
+                                        setMappingCollegeId(req.college_id || "");
+                                        setMappingType("create_new");
+                                        setShowApprovalModal(true);
+                                      }}
+                                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-all cursor-pointer font-bold text-[10px]"
                                     >
-                                      {expandedNodes[colNodeId] ? <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-500" />}
-                                      <div className="h-6 w-6 rounded-full bg-teal-500 text-white flex items-center justify-center font-black">CAM</div>
-                                      <div>
-                                        <div className="font-extrabold text-gray-855 leading-tight">{col.name}</div>
-                                        <div className="text-[9px] text-gray-400 font-medium">CAM: {cam ? cam.name : "Unassigned"} ({colMentors.length} Faculty)</div>
-                                      </div>
-                                    </div>
+                                      Approve & Map
+                                    </button>
+                                    <button
+                                      onClick={() => handleRejectSignup(req.id)}
+                                      disabled={loadingActions[`reject_signup_${req.id}`]}
+                                      className="px-2.5 py-1.5 bg-rose-50 border border-rose-250 text-rose-700 hover:bg-rose-100 rounded-xl transition-all cursor-pointer font-bold text-[10px] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                    >
+                                      {loadingActions[`reject_signup_${req.id}`] ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        "Reject"
+                                      )}
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  onClick={() => handleDeleteSignupRequest(req.id)}
+                                  disabled={loadingActions[`delete_signup_${req.id}`]}
+                                  className="p-1.5 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer inline-flex items-center align-middle disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Delete Log"
+                                >
+                                  {loadingActions[`delete_signup_${req.id}`] ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {signupRequests.length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="p-6 text-center text-gray-500 italic">
+                              No signup requests submitted yet.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
-                                    {/* Level 3: Mentors */}
-                                    {expandedNodes[colNodeId] && (
-                                      <div className="pl-6 border-l border-dashed border-gray-300 ml-4 space-y-2 pt-1">
-                                        {colMentors.map(mentor => (
-                                          <div 
-                                            key={mentor.id}
-                                            className="flex items-center gap-1.5 p-1.5 bg-white border border-gray-150 rounded-xl max-w-[240px] shadow-sm animate-fadeIn"
-                                          >
-                                            <div className="h-6 w-6 rounded-full btn-gradient text-white flex items-center justify-center font-extrabold text-[9px] shrink-0">
-                                              {mentor.avatar}
-                                            </div>
-                                            <div className="min-w-0">
-                                              <div className="font-extrabold text-gray-805 truncate text-[10px] leading-tight">{mentor.name}</div>
-                                              <div className="text-[8px] text-gray-450 font-bold uppercase tracking-wider mt-0.5 truncate">{mentor.department}</div>
-                                            </div>
-                                          </div>
-                                        ))}
-                                        {colMentors.length === 0 && (
-                                          <span className="text-[9px] text-gray-400 italic pl-1">No faculty mentors configured</span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
+                {/* Approval Mapping Modal */}
+                {showApprovalModal && approvingSignup && (
+                  <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-gray-150 overflow-hidden animate-scaleIn font-sans">
+                      <div className="p-6 border-b border-gray-150 flex justify-between items-center bg-gray-50">
+                        <div>
+                          <h3 className="text-base font-black text-gray-900">Approve & Map User Request</h3>
+                          <p className="text-[10px] text-gray-500 font-semibold mt-0.5">Map credentials for {approvingSignup.email}</p>
                         </div>
-                      );
-                    })}
+                        <button
+                          onClick={() => {
+                            setShowApprovalModal(false);
+                            setApprovingSignup(null);
+                          }}
+                          className="text-gray-400 hover:text-gray-600 font-bold text-lg cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleApproveSignupSubmit} className="p-6 space-y-4 text-xs font-semibold">
+                        {/* User Details */}
+                        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200/50 space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Name:</span>
+                            <span className="text-gray-900 font-bold">{approvingSignup.name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Access Requested:</span>
+                            <span className="text-indigo-650 font-bold uppercase">Pending Decision</span>
+                          </div>
+                        </div>
+
+                        {/* Role selection - Admin Decides! */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Assign Target Role</label>
+                          <select
+                            required
+                            value={approvingRole}
+                            onChange={(e) => {
+                              setApprovingRole(e.target.value);
+                              setSelectedReferenceId("");
+                              setMappingCollegeId("");
+                              setMappingDept("");
+                              setMappingClassGroup("");
+                            }}
+                            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                          >
+                            <option value="student">Student</option>
+                            <option value="mentor">Mentor / Faculty</option>
+                            <option value="cam">Campus Manager (HOD)</option>
+                            <option value="sme">Subject Matter Expert (SME)</option>
+                          </select>
+                        </div>
+
+                        {/* Mapping Type Selection */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Mapping Action</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setMappingType("create_new")}
+                              className={`py-2 px-3 rounded-xl border font-bold text-center cursor-pointer transition-all ${mappingType === "create_new"
+                                  ? "bg-indigo-50 border-indigo-600 text-indigo-600 animate-fadeIn"
+                                  : "bg-white border-gray-250 text-gray-605 hover:bg-gray-50"
+                                }`}
+                            >
+                              Create New Profile
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMappingType("link_existing")}
+                              className={`py-2 px-3 rounded-xl border font-bold text-center cursor-pointer transition-all ${mappingType === "link_existing"
+                                  ? "bg-indigo-50 border-indigo-600 text-indigo-600 animate-fadeIn"
+                                  : "bg-white border-gray-250 text-gray-605 hover:bg-gray-50"
+                                }`}
+                            >
+                              Link to Existing
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Conditional Fields based on selection */}
+                        {mappingType === "link_existing" ? (
+                          // Link Existing Dropdown
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Select Profile to Link</label>
+                            <select
+                              required
+                              value={selectedReferenceId}
+                              onChange={(e) => setSelectedReferenceId(e.target.value)}
+                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                            >
+                              <option value="">-- Choose Profile --</option>
+                              {approvingRole === "mentor" &&
+                                mentors
+                                  .filter((m: any) => !usersList.some((u: any) => u.reference_id === m.id))
+                                  .map((m: any) => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.name} ({m.email}) - {m.id}
+                                    </option>
+                                  ))}
+                              {approvingRole === "student" &&
+                                students
+                                  .filter((s: any) => !usersList.some((u: any) => u.reference_id === s.id))
+                                  .map((s: any) => (
+                                    <option key={s.id} value={s.id}>
+                                      {s.name} ({s.email}) - {s.id}
+                                    </option>
+                                  ))}
+                              {approvingRole === "cam" &&
+                                camList
+                                  .filter((c: any) => !usersList.some((u: any) => u.reference_id === c.id))
+                                  .map((c: any) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.name} ({c.email}) - {c.id}
+                                    </option>
+                                  ))}
+                              {approvingRole === "sme" &&
+                                smes
+                                  .filter((s: any) => !usersList.some((u: any) => u.reference_id === s.id))
+                                  .map((s: any) => (
+                                    <option key={s.id} value={s.id}>
+                                      {s.name} ({s.email}) - {s.id}
+                                    </option>
+                                  ))}
+                            </select>
+                          </div>
+                        ) : (
+                          // Create New Profile Fields
+                          <div className="space-y-3">
+                            {/* College selection (except for SME) */}
+                            {approvingRole !== "sme" && (
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Assign College / Campus</label>
+                                <select
+                                  required
+                                  value={mappingCollegeId}
+                                  onChange={(e) => setMappingCollegeId(e.target.value)}
+                                  className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                                >
+                                  <option value="">-- Choose Campus --</option>
+                                  {colleges.map((col) => (
+                                    <option key={col.id} value={col.id}>
+                                      {col.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+
+                            {/* Group selection (for mentor/student) */}
+                            {(approvingRole === "mentor" || approvingRole === "student") && (
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Group</label>
+                                <select
+                                  required
+                                  value={mappingDept}
+                                  onChange={(e) => setMappingDept(e.target.value)}
+                                  className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                                >
+                                  <option value="">-- Choose Group --</option>
+                                  {subjectGroups.map((sg) => (
+                                    <option key={sg.id} value={sg.name}>
+                                      {sg.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+
+                            {/* Class Group selection (for student) */}
+                            {approvingRole === "student" && (
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Class Cohort / Group</label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. CS-A, BCOM-B"
+                                  value={mappingClassGroup}
+                                  onChange={(e) => setMappingClassGroup(e.target.value)}
+                                  className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Footer Buttons */}
+                        <div className="flex gap-3 pt-3 border-t border-gray-150">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowApprovalModal(false);
+                              setApprovingSignup(null);
+                            }}
+                            className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-center cursor-pointer transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <LoadingButton
+                            type="submit"
+                            isLoading={loadingActions['approve_signup']}
+                            loadingText="Approving..."
+                            variant="primary"
+                            className="flex-1 py-2 text-center"
+                          >
+                            Approve & Save
+                          </LoadingButton>
+                        </div>
+                      </form>
+                    </div>
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-        )}
+            );
+          })()}
 
-        {/* ── Tab: Global Audit Logs ── */}
-        {activeTab === "logs" && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
-              <div className="flex items-center gap-2">
-                <History className="h-5 w-5 text-indigo-655" />
-                <h2 className="text-lg font-bold text-gray-900">Global System Audit Logs</h2>
+          {/* ── Tab: Subject Matter Experts (SMEs) ── */}
+          {activeTab === "smes" && (
+            <div className="space-y-6 animate-fadeIn font-sans text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="h-5 w-5 text-indigo-650" />
+                  <h2 className="text-lg font-bold text-gray-900">Subject Matter Experts (SMEs) Directory</h2>
+                </div>
+                <button
+                  onClick={() => handleOpenSmeModal()}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add SME
+                </button>
               </div>
-            </div>
 
-            {/* Search Audit Logs */}
-            <div className="relative max-w-md mb-4">
-              <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Filter logs by actor, action description, role..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-650"
-              />
-            </div>
-
-            {filteredLogs.length === 0 ? (
-              <div className="text-center py-16 border border-gray-200 rounded-2xl bg-gray-55/50">
-                <ShieldAlert className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-555 font-semibold">No audit logs found matching your query.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-2xl border border-gray-200">
-                <table className="w-full border-collapse text-left text-xs min-w-[700px]">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
-                      <th className="p-3 w-1/4">Actor</th>
-                      <th className="p-3 w-7/12">Action Detail</th>
-                      <th className="p-3 w-1/6 text-right">Timestamp</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-150 bg-white">
-                    {filteredLogs.map((log) => {
-                      // Determine badge color for logs
-                      const isHandover = log.type.includes("handover");
-                      const isCsv = log.type.includes("csv");
-                      
-                      return (
-                        <tr key={log.id} className="hover:bg-gray-55/30 transition-colors">
-                          <td className="p-3">
-                            <div className="font-bold text-gray-900">{log.actorName}</div>
-                            <div className="text-[9px] font-black uppercase text-indigo-600 mt-0.5">{log.actorRole}</div>
-                          </td>
-                          <td className="p-3">
-                            <div className="text-gray-700 font-medium leading-snug">{log.description}</div>
-                            <div className="mt-1 flex items-center gap-1.5">
-                              <span className={`px-1.5 py-0.2 rounded text-[7.5px] font-black uppercase ${
-                                isHandover ? "bg-amber-50 text-amber-700 border border-amber-150"
-                                : isCsv ? "bg-teal-50 text-teal-700 border border-teal-150"
-                                : "bg-indigo-50 text-indigo-700 border border-indigo-150"
-                              }`}>
-                                {log.type.replace("_", " ")}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="p-3 text-right text-gray-400 font-semibold whitespace-nowrap">
-                            {formatDate(log.timestamp)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Tab: Announcements ── */}
-        {activeTab === "announcements" && (
-          <div className="space-y-6 animate-fadeIn font-sans text-xs">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
-              <div className="flex items-center gap-2">
-                <Megaphone className="h-5 w-5 text-indigo-650" />
-                <h2 className="text-lg font-bold text-gray-900">Campus Announcements Panel</h2>
-              </div>
-              <button
-                onClick={() => {
-                  setModalError(null);
-                  setAnnForm({ title: "", description: "", target_role: "All", college_id: "" });
-                  setShowAnnModal(true);
-                }}
-                className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                Compose Announcement
-              </button>
-            </div>
-
-            {announcements.length === 0 ? (
-              <div className="text-center py-16 border border-gray-205 rounded-2xl bg-gray-55/50">
-                <Megaphone className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-555 font-semibold">No announcements published yet.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {announcements.map((ann) => {
-                  const targetCampus = colleges.find(c => c.id === ann.college_id)?.name || "All Campuses";
-                  return (
-                    <div key={ann.id} className="p-6 bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition-all relative flex flex-col justify-between">
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-start gap-4">
-                          <h3 className="text-sm font-bold text-gray-900 leading-snug">{ann.title}</h3>
-                          <button
-                            onClick={() => handleDeleteAnnouncement(ann.id)}
-                            disabled={loadingActions[`announcement_${ann.id}`]}
-                            className="p-1 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Delete Announcement"
-                          >
-                            {loadingActions[`announcement_${ann.id}`] ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-3.5 w-3.5" />
-                            )}
-                          </button>
-                        </div>
-                        <p className="text-xs text-gray-600 font-semibold leading-relaxed whitespace-pre-line">{ann.description}</p>
-                      </div>
-
-                      <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap justify-between items-center text-[10px] text-gray-450 gap-2">
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className="px-2 py-0.5 rounded bg-pink-50 border border-pink-100 text-pink-700 font-bold">
-                            Role: {ann.target_role}
-                          </span>
-                          <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold">
-                            Campus: {targetCampus}
-                          </span>
-                        </div>
-                        <span className="font-semibold">{formatDate(ann.created_at)}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Tab: Holidays ── */}
-        {activeTab === "holidays" && (
-          <div className="space-y-6 animate-fadeIn font-sans text-xs">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-indigo-650" />
-                <h2 className="text-lg font-bold text-gray-900">Campus Holidays Scheduler</h2>
-              </div>
-              <button
-                onClick={() => {
-                  setModalError(null);
-                  setHolForm({ title: "", date: "", type: "National Holiday", college_id: "" });
-                  setShowHolModal(true);
-                }}
-                className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 composition-btn cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                Schedule Holiday
-              </button>
-            </div>
-
-            {holidays.length === 0 ? (
-              <div className="text-center py-16 border border-gray-205 rounded-2xl bg-gray-55/50">
-                <Calendar className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-555 font-semibold">No holidays scheduled.</p>
-              </div>
-            ) : (
               <div className="overflow-x-auto rounded-2xl border border-gray-200">
                 <table className="w-full border-collapse text-left text-xs">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
-                      <th className="p-4">Holiday Title</th>
-                      <th className="p-4">Date</th>
-                      <th className="p-4">Type</th>
-                      <th className="p-4">Applicable Campus</th>
+                      <th className="p-4">ID</th>
+                      <th className="p-4">Name</th>
+                      <th className="p-4">Email</th>
+                      <th className="p-4">Subject Specialization / Group</th>
                       <th className="p-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-150 bg-white font-medium text-gray-700">
-                    {holidays.map((hol) => {
-                      const targetCampus = colleges.find(c => c.id === hol.college_id)?.name || "All Campuses";
-                      return (
-                        <tr key={hol.id} className="hover:bg-gray-55/50 transition-colors">
-                          <td className="p-4 font-bold text-gray-900">{hol.title}</td>
-                          <td className="p-4 font-semibold text-indigo-650">{hol.date}</td>
+                    {smes && smes.length > 0 ? (
+                      smes.map((sme) => (
+                        <tr key={sme.id} className="hover:bg-gray-55/50 transition-colors">
+                          <td className="p-4 font-mono font-semibold text-gray-500">{sme.id}</td>
+                          <td className="p-4 font-bold text-gray-900">{sme.name}</td>
+                          <td className="p-4 font-mono font-semibold text-gray-600">{sme.email}</td>
                           <td className="p-4">
-                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-150 text-[10px] font-bold text-indigo-700">
-                              {hol.type}
+                            <span className="px-2.5 py-0.5 rounded bg-violet-50 border border-violet-150 text-[10px] font-bold text-violet-700 uppercase">
+                              {sme.subject || "Unassigned"}
                             </span>
                           </td>
-                          <td className="p-4 text-gray-500 font-bold">{targetCampus}</td>
-                          <td className="p-4 text-right">
+                          <td className="p-4 text-right space-x-2">
                             <button
-                              onClick={() => handleDeleteHoliday(hol.id)}
-                              disabled={loadingActions[`holiday_${hol.id}`]}
-                              className="p-1.5 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Delete Holiday"
+                              onClick={() => handleOpenSmeModal(sme)}
+                              className="p-1.5 hover:bg-indigo-50 hover:text-indigo-650 rounded-lg text-gray-400 transition-colors cursor-pointer inline-flex"
+                              title="Edit SME"
                             >
-                              {loadingActions[`holiday_${hol.id}`] ? (
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSme(sme.id)}
+                              disabled={loadingActions[`sme_${sme.id}`]}
+                              className="p-1.5 hover:bg-rose-50 hover:text-rose-650 rounded-lg text-gray-400 transition-colors cursor-pointer inline-flex disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Delete SME"
+                            >
+                              {loadingActions[`sme_${sme.id}`] ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
                                 <Trash2 className="h-4 w-4" />
@@ -4409,2416 +4868,1715 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </button>
                           </td>
                         </tr>
-                      );
-                    })}
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-gray-450 italic bg-slate-50/50">
+                          No Subject Matter Experts registered in the database yet. Click "Add SME" to get started.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
 
-        {/* ── Tab: Centralized Users ── */}
-        {activeTab === "users" && (() => {
-          const pendingSignupsCount = signupRequests.filter(r => r.status === 'pending').length;
-          return (
+          {/* ── Tab: Sessions History ── */}
+          {activeTab === "sessions" && (
             <div className="space-y-6 animate-fadeIn font-sans text-xs">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
                 <div className="flex items-center gap-2">
-                  <UserCheck className="h-5 w-5 text-indigo-650" />
-                  <h2 className="text-lg font-bold text-gray-900">Centralized User Credentials Directory</h2>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setUserSubTab("directory")}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      userSubTab === "directory"
-                        ? "bg-indigo-600 text-white shadow-sm"
-                        : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                    }`}
-                  >
-                    Active Users
-                  </button>
-                  <button
-                    onClick={() => setUserSubTab("signups")}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
-                      userSubTab === "signups"
-                        ? "bg-indigo-600 text-white shadow-sm"
-                        : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                    }`}
-                  >
-                    Pending Signups
-                    {pendingSignupsCount > 0 && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-rose-550 text-[10px] font-black text-white leading-none">
-                        {pendingSignupsCount}
-                      </span>
-                    )}
-                  </button>
+                  <History className="h-5 w-5 text-indigo-650" />
+                  <h2 className="text-lg font-bold text-gray-900">Centralized User Login Sessions Audit</h2>
                 </div>
               </div>
 
-              {userSubTab === "directory" ? (
-                <div className="overflow-x-auto rounded-2xl border border-gray-200">
-                  <table className="w-full border-collapse text-left text-xs">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
-                        <th className="p-4">Email</th>
-                        <th className="p-4">Reference ID / Username</th>
-                        <th className="p-4">Role</th>
-                        <th className="p-4">Status</th>
-                        <th className="p-4">Last Login</th>
-                        <th className="p-4 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-150 bg-white font-medium text-gray-700">
-                      {usersList.map((user) => (
-                        <tr key={user.id} className="hover:bg-gray-55/50 transition-colors">
-                          <td className="p-4 font-bold text-gray-900 font-mono">{user.email}</td>
-                          <td className="p-4 font-mono font-semibold text-gray-500">{user.reference_id || user.id}</td>
-                          <td className="p-4">
-                            <span className="px-2.5 py-0.5 rounded bg-teal-50 border border-teal-150 text-[10px] font-bold text-teal-700 uppercase">
-                              {user.role}
-                            </span>
-                          </td>
-                          <td className="p-4">
-                            <button
-                              onClick={() => handleToggleUserStatus(user.id)}
-                              className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase cursor-pointer border ${
-                                user.status === "Active"
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                                  : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
-                              }`}
-                              title="Toggle Status (Active / Inactive)"
-                            >
-                              {user.status || "Active"}
-                            </button>
-                          </td>
-                          <td className="p-4 text-gray-450 font-semibold">
-                            {user.last_login ? formatDate(user.last_login) : "Never logged in"}
-                          </td>
-                          <td className="p-4 text-right">
-                            <button
-                              onClick={() => handleResetUserPassword(user.id)}
-                              className="px-3 py-1.5 bg-gray-50 border border-gray-250 text-gray-700 hover:text-indigo-650 hover:bg-indigo-50 rounded-xl transition-all cursor-pointer font-bold text-[10px]"
-                              title="Reset password to password123"
-                            >
-                              Reset Password
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {loginHistory.length === 0 ? (
+                <div className="text-center py-16 border border-gray-205 rounded-2xl bg-gray-55/50">
+                  <History className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-555 font-semibold">No login sessions recorded.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-2xl border border-gray-200">
                   <table className="w-full border-collapse text-left text-xs">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
-                        <th className="p-4">Name</th>
-                        <th className="p-4">Email</th>
-                        <th className="p-4">Requested Role</th>
-                        <th className="p-4">Campus / College</th>
-                        <th className="p-4">Status</th>
-                        <th className="p-4 text-right">Actions</th>
+                        <th className="p-4">User ID / Email</th>
+                        <th className="p-4">Login Time</th>
+                        <th className="p-4">IP Address</th>
+                        <th className="p-4">Device / Client</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-150 bg-white font-medium text-gray-700">
-                      {signupRequests.map((req) => {
-                        const targetCol = colleges.find(c => c.id === req.college_id);
+                      {loginHistory.map((hist) => {
+                        const matchedUser = usersList.find(u => u.id === hist.user_id);
                         return (
-                          <tr key={req.id} className="hover:bg-gray-55/50 transition-colors">
-                            <td className="p-4 font-bold text-gray-900">{req.name}</td>
-                            <td className="p-4 font-mono font-semibold text-gray-650">{req.email}</td>
+                          <tr key={hist.id} className="hover:bg-gray-55/50 transition-colors">
                             <td className="p-4">
-                              <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-150 text-[10px] font-bold text-indigo-700 uppercase">
-                                {req.requested_role === "pending" ? "Pending Assignment" : req.requested_role}
-                              </span>
-                            </td>
-                            <td className="p-4 text-gray-500 font-bold">{targetCol ? targetCol.name : "Unassigned"}</td>
-                            <td className="p-4">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                req.status === "pending"
-                                  ? "bg-amber-50 text-amber-700 border-amber-200"
-                                  : req.status === "approved"
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                  : "bg-rose-50 text-rose-700 border-rose-200"
-                              }`}>
-                                {req.status}
-                              </span>
-                            </td>
-                            <td className="p-4 text-right space-x-2">
-                              {req.status === "pending" && (
-                                <>
-                                  <button
-                                    onClick={() => {
-                                      setApprovingSignup(req);
-                                      setApprovingRole(req.requested_role || "student");
-                                      setMappingCollegeId(req.college_id || "");
-                                      setMappingType("create_new");
-                                      setShowApprovalModal(true);
-                                    }}
-                                    className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-all cursor-pointer font-bold text-[10px]"
-                                  >
-                                    Approve & Map
-                                  </button>
-                                  <button
-                                     onClick={() => handleRejectSignup(req.id)}
-                                     disabled={loadingActions[`reject_signup_${req.id}`]}
-                                     className="px-2.5 py-1.5 bg-rose-50 border border-rose-250 text-rose-700 hover:bg-rose-100 rounded-xl transition-all cursor-pointer font-bold text-[10px] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                                   >
-                                     {loadingActions[`reject_signup_${req.id}`] ? (
-                                       <Loader2 className="h-3 w-3 animate-spin" />
-                                     ) : (
-                                       "Reject"
-                                     )}
-                                   </button>
-                                </>
+                              <div className="font-bold text-gray-900 font-mono">{matchedUser ? matchedUser.email : hist.user_id}</div>
+                              {matchedUser && (
+                                <span className="text-[9px] font-black uppercase text-indigo-600 mt-0.5 block">
+                                  {matchedUser.role}
+                                </span>
                               )}
-                              <button
-                                 onClick={() => handleDeleteSignupRequest(req.id)}
-                                 disabled={loadingActions[`delete_signup_${req.id}`]}
-                                 className="p-1.5 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer inline-flex items-center align-middle disabled:opacity-50 disabled:cursor-not-allowed"
-                                 title="Delete Log"
-                               >
-                                 {loadingActions[`delete_signup_${req.id}`] ? (
-                                   <Loader2 className="h-4 w-4 animate-spin" />
-                                 ) : (
-                                   <Trash2 className="h-4 w-4" />
-                                 )}
-                               </button>
                             </td>
+                            <td className="p-4 font-semibold text-indigo-650">{formatDate(hist.login_time)}</td>
+                            <td className="p-4 font-mono text-gray-500">{hist.ip || "127.0.0.1"}</td>
+                            <td className="p-4 text-gray-500">{hist.device || "Browser"}</td>
                           </tr>
                         );
                       })}
-                      {signupRequests.length === 0 && (
-                        <tr>
-                          <td colSpan={7} className="p-6 text-center text-gray-500 italic">
-                            No signup requests submitted yet.
-                          </td>
-                        </tr>
-                      )}
                     </tbody>
                   </table>
                 </div>
               )}
-
-              {/* Approval Mapping Modal */}
-              {showApprovalModal && approvingSignup && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                  <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-gray-150 overflow-hidden animate-scaleIn font-sans">
-                    <div className="p-6 border-b border-gray-150 flex justify-between items-center bg-gray-50">
-                      <div>
-                        <h3 className="text-base font-black text-gray-900">Approve & Map User Request</h3>
-                        <p className="text-[10px] text-gray-500 font-semibold mt-0.5">Map credentials for {approvingSignup.email}</p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setShowApprovalModal(false);
-                          setApprovingSignup(null);
-                        }}
-                        className="text-gray-400 hover:text-gray-600 font-bold text-lg cursor-pointer"
-                      >
-                        ✕
-                      </button>
-                    </div>
-
-                    <form onSubmit={handleApproveSignupSubmit} className="p-6 space-y-4 text-xs font-semibold">
-                      {/* User Details */}
-                      <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200/50 space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Name:</span>
-                          <span className="text-gray-900 font-bold">{approvingSignup.name}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Access Requested:</span>
-                          <span className="text-indigo-650 font-bold uppercase">Pending Decision</span>
-                        </div>
-                      </div>
-
-                      {/* Role selection - Admin Decides! */}
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Assign Target Role</label>
-                        <select
-                          required
-                          value={approvingRole}
-                          onChange={(e) => {
-                            setApprovingRole(e.target.value);
-                            setSelectedReferenceId("");
-                            setMappingCollegeId("");
-                            setMappingDept("");
-                            setMappingClassGroup("");
-                          }}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                        >
-                          <option value="student">Student</option>
-                          <option value="mentor">Mentor / Faculty</option>
-                          <option value="cam">Campus Manager (HOD)</option>
-                          <option value="sme">Subject Matter Expert (SME)</option>
-                        </select>
-                      </div>
-
-                      {/* Mapping Type Selection */}
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Mapping Action</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setMappingType("create_new")}
-                            className={`py-2 px-3 rounded-xl border font-bold text-center cursor-pointer transition-all ${
-                              mappingType === "create_new"
-                                ? "bg-indigo-50 border-indigo-600 text-indigo-600 animate-fadeIn"
-                                : "bg-white border-gray-250 text-gray-605 hover:bg-gray-50"
-                            }`}
-                          >
-                            Create New Profile
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setMappingType("link_existing")}
-                            className={`py-2 px-3 rounded-xl border font-bold text-center cursor-pointer transition-all ${
-                              mappingType === "link_existing"
-                                ? "bg-indigo-50 border-indigo-600 text-indigo-600 animate-fadeIn"
-                                : "bg-white border-gray-250 text-gray-605 hover:bg-gray-50"
-                            }`}
-                          >
-                            Link to Existing
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Conditional Fields based on selection */}
-                      {mappingType === "link_existing" ? (
-                        // Link Existing Dropdown
-                        <div className="space-y-1">
-                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Select Profile to Link</label>
-                          <select
-                            required
-                            value={selectedReferenceId}
-                            onChange={(e) => setSelectedReferenceId(e.target.value)}
-                            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                          >
-                            <option value="">-- Choose Profile --</option>
-                            {approvingRole === "mentor" &&
-                              mentors
-                                .filter((m: any) => !usersList.some((u: any) => u.reference_id === m.id))
-                                .map((m: any) => (
-                                  <option key={m.id} value={m.id}>
-                                    {m.name} ({m.email}) - {m.id}
-                                  </option>
-                                ))}
-                            {approvingRole === "student" &&
-                              students
-                                .filter((s: any) => !usersList.some((u: any) => u.reference_id === s.id))
-                                .map((s: any) => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.name} ({s.email}) - {s.id}
-                                  </option>
-                                ))}
-                            {approvingRole === "cam" &&
-                              camList
-                                .filter((c: any) => !usersList.some((u: any) => u.reference_id === c.id))
-                                .map((c: any) => (
-                                  <option key={c.id} value={c.id}>
-                                    {c.name} ({c.email}) - {c.id}
-                                  </option>
-                                ))}
-                            {approvingRole === "sme" &&
-                              smes
-                                .filter((s: any) => !usersList.some((u: any) => u.reference_id === s.id))
-                                .map((s: any) => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.name} ({s.email}) - {s.id}
-                                  </option>
-                                ))}
-                          </select>
-                        </div>
-                      ) : (
-                        // Create New Profile Fields
-                        <div className="space-y-3">
-                          {/* College selection (except for SME) */}
-                          {approvingRole !== "sme" && (
-                            <div className="space-y-1">
-                              <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Assign College / Campus</label>
-                              <select
-                                required
-                                value={mappingCollegeId}
-                                onChange={(e) => setMappingCollegeId(e.target.value)}
-                                className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                              >
-                                <option value="">-- Choose Campus --</option>
-                                {colleges.map((col) => (
-                                  <option key={col.id} value={col.id}>
-                                    {col.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-
-                          {/* Group selection (for mentor/student) */}
-                          {(approvingRole === "mentor" || approvingRole === "student") && (
-                            <div className="space-y-1">
-                              <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Group</label>
-                              <select
-                                required
-                                value={mappingDept}
-                                onChange={(e) => setMappingDept(e.target.value)}
-                                className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                              >
-                                <option value="">-- Choose Group --</option>
-                                {subjectGroups.map((sg) => (
-                                  <option key={sg.id} value={sg.name}>
-                                    {sg.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-
-                          {/* Class Group selection (for student) */}
-                          {approvingRole === "student" && (
-                            <div className="space-y-1">
-                              <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Class Cohort / Group</label>
-                              <input
-                                type="text"
-                                required
-                                placeholder="e.g. CS-A, BCOM-B"
-                                value={mappingClassGroup}
-                                onChange={(e) => setMappingClassGroup(e.target.value)}
-                                className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Footer Buttons */}
-                      <div className="flex gap-3 pt-3 border-t border-gray-150">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowApprovalModal(false);
-                            setApprovingSignup(null);
-                          }}
-                          className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-center cursor-pointer transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <LoadingButton
-                          type="submit"
-                          isLoading={loadingActions['approve_signup']}
-                          loadingText="Approving..."
-                          variant="primary"
-                          className="flex-1 py-2 text-center"
-                        >
-                          Approve & Save
-                        </LoadingButton>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              )}
             </div>
-          );
-        })()}
-
-        {/* ── Tab: Subject Matter Experts (SMEs) ── */}
-        {activeTab === "smes" && (
-          <div className="space-y-6 animate-fadeIn font-sans text-xs">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-5 w-5 text-indigo-650" />
-                <h2 className="text-lg font-bold text-gray-900">Subject Matter Experts (SMEs) Directory</h2>
-              </div>
-              <button
-                onClick={() => handleOpenSmeModal()}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                Add SME
-              </button>
-            </div>
-
-            <div className="overflow-x-auto rounded-2xl border border-gray-200">
-              <table className="w-full border-collapse text-left text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
-                    <th className="p-4">ID</th>
-                    <th className="p-4">Name</th>
-                    <th className="p-4">Email</th>
-                    <th className="p-4">Subject Specialization / Group</th>
-                    <th className="p-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-150 bg-white font-medium text-gray-700">
-                  {smes && smes.length > 0 ? (
-                    smes.map((sme) => (
-                      <tr key={sme.id} className="hover:bg-gray-55/50 transition-colors">
-                        <td className="p-4 font-mono font-semibold text-gray-500">{sme.id}</td>
-                        <td className="p-4 font-bold text-gray-900">{sme.name}</td>
-                        <td className="p-4 font-mono font-semibold text-gray-600">{sme.email}</td>
-                        <td className="p-4">
-                          <span className="px-2.5 py-0.5 rounded bg-violet-50 border border-violet-150 text-[10px] font-bold text-violet-700 uppercase">
-                            {sme.subject || "Unassigned"}
-                          </span>
-                        </td>
-                        <td className="p-4 text-right space-x-2">
-                          <button
-                            onClick={() => handleOpenSmeModal(sme)}
-                            className="p-1.5 hover:bg-indigo-50 hover:text-indigo-650 rounded-lg text-gray-400 transition-colors cursor-pointer inline-flex"
-                            title="Edit SME"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteSme(sme.id)}
-                            disabled={loadingActions[`sme_${sme.id}`]}
-                            className="p-1.5 hover:bg-rose-50 hover:text-rose-650 rounded-lg text-gray-400 transition-colors cursor-pointer inline-flex disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Delete SME"
-                          >
-                            {loadingActions[`sme_${sme.id}`] ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-4 w-4" />
-                            )}
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={5} className="p-8 text-center text-gray-450 italic bg-slate-50/50">
-                        No Subject Matter Experts registered in the database yet. Click "Add SME" to get started.
-                      </td>
-                    </tr>
+          )}
+        </div>
+        {/* ── Campus Modal ── */}
+        {showCampusModal && (
+          <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <div className={`bg-white rounded-3xl border border-gray-150 shadow-xl w-full overflow-hidden animate-slideUp flex flex-col my-auto max-h-[90vh] transition-all duration-300 ${campusWizardStep === 3 ? "max-w-5xl" : "max-w-2xl"}`}>
+              {/* Modal Header */}
+              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
+                <div className="flex items-center gap-3">
+                  <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
+                    <Building2 className="h-5 w-5 text-indigo-655" />
+                    {editingCampus ? "Edit Campus" : campusSuccessCreatedId ? "Campus Created!" : "Add New Campus"}
+                  </h3>
+                  {draftLastSaved && !editingCampus && !campusSuccessCreatedId && (
+                    <span className="text-[10px] font-black text-pink-700 bg-gradient-to-r from-pink-50 to-amber-50 border border-pink-200/80 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs animate-fadeIn">
+                      <span className="h-1.5 w-1.5 rounded-full bg-pink-500 animate-pulse" />
+                      Draft Auto-Saved ({draftLastSaved})
+                    </span>
                   )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ── Tab: Sessions History ── */}
-        {activeTab === "sessions" && (
-          <div className="space-y-6 animate-fadeIn font-sans text-xs">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
-              <div className="flex items-center gap-2">
-                <History className="h-5 w-5 text-indigo-650" />
-                <h2 className="text-lg font-bold text-gray-900">Centralized User Login Sessions Audit</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  {hasRestoredDraft && !editingCampus && !campusSuccessCreatedId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof window !== "undefined") localStorage.removeItem("campus_wizard_draft");
+                        setDraftLastSaved(null);
+                        setHasRestoredDraft(false);
+                        setCampusWizardStep(1);
+                        setWizardCourses([]);
+                        setCampusForm({
+                          id: "",
+                          name: "",
+                          address: "",
+                          kam_id: "",
+                          has_shifts: 1,
+                          shift_configs: "",
+                          rooms: "",
+                          code: "",
+                          academic_year: "2026-2027",
+                          manager: "",
+                          working_days: 5
+                        });
+                      }}
+                      className="text-[9.5px] font-extrabold text-slate-500 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-2.5 py-1 rounded-xl border border-slate-200 cursor-pointer transition-colors"
+                    >
+                      Clear Draft
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setShowCampusModal(false); setCampusSuccessCreatedId(null); }}
+                    className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {loginHistory.length === 0 ? (
-              <div className="text-center py-16 border border-gray-205 rounded-2xl bg-gray-55/50">
-                <History className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-555 font-semibold">No login sessions recorded.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-2xl border border-gray-200">
-                <table className="w-full border-collapse text-left text-xs">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
-                      <th className="p-4">User ID / Email</th>
-                      <th className="p-4">Login Time</th>
-                      <th className="p-4">IP Address</th>
-                      <th className="p-4">Device / Client</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-150 bg-white font-medium text-gray-700">
-                    {loginHistory.map((hist) => {
-                      const matchedUser = usersList.find(u => u.id === hist.user_id);
+              {/* ── SUCCESS SCREEN ── */}
+              {campusSuccessCreatedId ? (
+                <div className="p-8 space-y-6 animate-fadeIn">
+                  <div className="text-center space-y-2">
+                    <div className="h-16 w-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
+                      <span className="text-3xl"></span>
+                    </div>
+                    <h4 className="font-black text-gray-900 text-base">Campus Created Successfully!</h4>
+                    <p className="text-xs text-gray-500 font-semibold">What would you like to do next?</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCampusModal(false);
+                        setCampusSuccessCreatedId(null);
+                        setActiveTab("campuses");
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-4 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 rounded-2xl transition-all cursor-pointer group"
+                    >
+                      <Building2 className="h-5 w-5 text-indigo-650 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-extrabold text-indigo-700">Open Campus</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCampusModal(false);
+                        setCampusSuccessCreatedId(null);
+                        setShowCamModal(true);
+                        setCamForm({ id: "", name: "", email: "", college_id: campusSuccessCreatedId, kam_id: "" });
+                        setEditingCam(false);
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-4 bg-violet-50 hover:bg-violet-100 border border-violet-150 rounded-2xl transition-all cursor-pointer group"
+                    >
+                      <Users className="h-5 w-5 text-violet-650 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-extrabold text-violet-700">Add Campus Manager</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCampusModal(false);
+                        setCampusSuccessCreatedId(null);
+                        setShowSubjectModal(true);
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-4 bg-amber-50 hover:bg-amber-100 border border-amber-150 rounded-2xl transition-all cursor-pointer group"
+                    >
+                      <BookOpen className="h-5 w-5 text-amber-650 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-extrabold text-amber-700">Add Subjects</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCampusModal(false);
+                        setCampusSuccessCreatedId(null);
+                        setActiveTab("schedules");
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-4 bg-emerald-50 hover:bg-emerald-100 border border-emerald-150 rounded-2xl transition-all cursor-pointer group"
+                    >
+                      <CalendarDays className="h-5 w-5 text-emerald-650 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs font-extrabold text-emerald-700">Generate Timetable</span>
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setShowCampusModal(false); setCampusSuccessCreatedId(null); }}
+                    className="w-full py-2.5 text-gray-500 hover:text-gray-800 font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleCampusSubmit} className="flex flex-col flex-1 min-h-0 text-xs font-semibold">
+                  {/* Stepper */}
+                  <div className="flex items-center px-6 py-4 bg-gray-50 border-b border-gray-150 shrink-0 gap-0">
+                    {[
+                      { step: 1, label: "Campus Info" },
+                      { step: 2, label: "Courses" },
+                      { step: 3, label: "Shift Config" },
+                      { step: 4, label: "Review" }
+                    ].map((s, idx) => {
+                      const isActive = campusWizardStep === s.step;
+                      const isDone = campusWizardStep > s.step;
                       return (
-                        <tr key={hist.id} className="hover:bg-gray-55/50 transition-colors">
-                          <td className="p-4">
-                            <div className="font-bold text-gray-900 font-mono">{matchedUser ? matchedUser.email : hist.user_id}</div>
-                            {matchedUser && (
-                              <span className="text-[9px] font-black uppercase text-indigo-600 mt-0.5 block">
-                                {matchedUser.role}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-4 font-semibold text-indigo-650">{formatDate(hist.login_time)}</td>
-                          <td className="p-4 font-mono text-gray-500">{hist.ip || "127.0.0.1"}</td>
-                          <td className="p-4 text-gray-500">{hist.device || "Browser"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      {/* ── Campus Modal ── */}
-      {showCampusModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className={`bg-white rounded-3xl border border-gray-150 shadow-xl w-full overflow-hidden animate-slideUp flex flex-col my-auto max-h-[90vh] transition-all duration-300 ${campusWizardStep === 3 ? "max-w-5xl" : "max-w-2xl"}`}>
-            {/* Modal Header */}
-            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
-              <div className="flex items-center gap-3">
-                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                  <Building2 className="h-5 w-5 text-indigo-655" />
-                  {editingCampus ? "Edit Campus" : campusSuccessCreatedId ? "Campus Created!" : "Add New Campus"}
-                </h3>
-                {draftLastSaved && !editingCampus && !campusSuccessCreatedId && (
-                  <span className="text-[10px] font-black text-pink-700 bg-gradient-to-r from-pink-50 to-amber-50 border border-pink-200/80 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs animate-fadeIn">
-                    <span className="h-1.5 w-1.5 rounded-full bg-pink-500 animate-pulse" />
-                    Draft Auto-Saved ({draftLastSaved})
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {hasRestoredDraft && !editingCampus && !campusSuccessCreatedId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (typeof window !== "undefined") localStorage.removeItem("campus_wizard_draft");
-                      setDraftLastSaved(null);
-                      setHasRestoredDraft(false);
-                      setCampusWizardStep(1);
-                      setWizardCourses([]);
-                      setCampusForm({
-                        id: "",
-                        name: "",
-                        address: "",
-                        kam_id: "",
-                        has_shifts: 1,
-                        shift_configs: "",
-                        rooms: "",
-                        code: "",
-                        academic_year: "2026-2027",
-                        manager: "",
-                        working_days: 5
-                      });
-                    }}
-                    className="text-[9.5px] font-extrabold text-slate-500 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-2.5 py-1 rounded-xl border border-slate-200 cursor-pointer transition-colors"
-                  >
-                    Clear Draft
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => { setShowCampusModal(false); setCampusSuccessCreatedId(null); }}
-                  className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* ── SUCCESS SCREEN ── */}
-            {campusSuccessCreatedId ? (
-              <div className="p-8 space-y-6 animate-fadeIn">
-                <div className="text-center space-y-2">
-                  <div className="h-16 w-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
-                    <span className="text-3xl"></span>
-                  </div>
-                  <h4 className="font-black text-gray-900 text-base">Campus Created Successfully!</h4>
-                  <p className="text-xs text-gray-500 font-semibold">What would you like to do next?</p>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowCampusModal(false);
-                      setCampusSuccessCreatedId(null);
-                      setActiveTab("campuses");
-                    }}
-                    className="flex flex-col items-center gap-1.5 p-4 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 rounded-2xl transition-all cursor-pointer group"
-                  >
-                    <Building2 className="h-5 w-5 text-indigo-650 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-extrabold text-indigo-700">Open Campus</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowCampusModal(false);
-                      setCampusSuccessCreatedId(null);
-                      setShowCamModal(true);
-                      setCamForm({ id: "", name: "", email: "", college_id: campusSuccessCreatedId, kam_id: "" });
-                      setEditingCam(false);
-                    }}
-                    className="flex flex-col items-center gap-1.5 p-4 bg-violet-50 hover:bg-violet-100 border border-violet-150 rounded-2xl transition-all cursor-pointer group"
-                  >
-                    <Users className="h-5 w-5 text-violet-650 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-extrabold text-violet-700">Add Campus Manager</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowCampusModal(false);
-                      setCampusSuccessCreatedId(null);
-                      setShowSubjectModal(true);
-                    }}
-                    className="flex flex-col items-center gap-1.5 p-4 bg-amber-50 hover:bg-amber-100 border border-amber-150 rounded-2xl transition-all cursor-pointer group"
-                  >
-                    <BookOpen className="h-5 w-5 text-amber-650 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-extrabold text-amber-700">Add Subjects</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowCampusModal(false);
-                      setCampusSuccessCreatedId(null);
-                      setActiveTab("schedules");
-                    }}
-                    className="flex flex-col items-center gap-1.5 p-4 bg-emerald-50 hover:bg-emerald-100 border border-emerald-150 rounded-2xl transition-all cursor-pointer group"
-                  >
-                    <CalendarDays className="h-5 w-5 text-emerald-650 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-extrabold text-emerald-700">Generate Timetable</span>
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setShowCampusModal(false); setCampusSuccessCreatedId(null); }}
-                  className="w-full py-2.5 text-gray-500 hover:text-gray-800 font-bold text-xs transition-colors cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleCampusSubmit} className="flex flex-col flex-1 min-h-0 text-xs font-semibold">
-                {/* Stepper */}
-                <div className="flex items-center px-6 py-4 bg-gray-50 border-b border-gray-150 shrink-0 gap-0">
-                  {[
-                    { step: 1, label: "Campus Info" },
-                    { step: 2, label: "Courses" },
-                    { step: 3, label: "Shift Config" },
-                    { step: 4, label: "Review" }
-                  ].map((s, idx) => {
-                     const isActive = campusWizardStep === s.step;
-                     const isDone = campusWizardStep > s.step;
-                     return (
-                     <React.Fragment key={s.step}>
-                       <div className="flex items-center gap-1.5 shrink-0">
-                         <div
-                           className={`h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-black transition-all ${isDone ? 'text-white' : isActive ? 'text-white' : 'text-gray-400'}`}
-                           style={{
-                             background: isDone ? '#10b981' : isActive ? 'linear-gradient(135deg,#6366f1,#4f46e5)' : '#e5e7eb',
-                             boxShadow: isActive ? '0 0 0 4px rgba(99,102,241,0.18), 0 2px 8px rgba(99,102,241,0.35)' : 'none'
-                           }}
-                         >
-                           {isDone ? "Yes" : s.step}
-                         </div>
-                         <span
-                           className={`text-[9.5px] uppercase tracking-wider font-extrabold whitespace-nowrap transition-colors ${isActive ? '' : isDone ? 'text-emerald-600' : 'text-gray-400'}`}
-                           style={isActive ? { color: '#4f46e5' } : {}}
-                         >
-                           {s.label}
-                         </span>
-                       </div>
-                       {idx < 3 && (
-                         <div
-                           className="flex-1 h-[3px] mx-2 rounded-full transition-all"
-                           style={{
-                             background: isDone
-                               ? 'linear-gradient(to right,#10b981,#34d399)'
-                               : isActive
-                               ? 'linear-gradient(to right,#6366f1 30%,#e5e7eb)'
-                               : '#e5e7eb'
-                           }}
-                         />
-                       )}
-                     </React.Fragment>
-                   )})}
-                </div>
-
-                <div className="p-6 overflow-y-auto space-y-4 flex-1">
-                  {modalError && (
-                    <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
-                      <ShieldAlert className="h-4 w-4 shrink-0" />
-                      {modalError}
-                    </div>
-                  )}
-
-                  {/* ────────────────── STEP 1: CAMPUS INFO ────────────────── */}
-                  {campusWizardStep === 1 && (
-                    <div className="space-y-4 animate-fadeIn">
-                      <div className="pb-1 border-b border-gray-100">
-                        <h4 className="text-xs font-black text-gray-800 uppercase tracking-wider">Campus Information</h4>
-                        <p className="text-[9.5px] text-gray-400 font-semibold mt-0.5">Only campus-level details here. Courses and timings come next.</p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1 col-span-2">
-                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Campus Name *</label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="e.g. FP South Campus"
-                            value={campusForm.name}
-                            onChange={(e) => {
-                              const name = e.target.value;
-                              const code = name
-                                .toLowerCase()
-                                .replace(/[^a-z0-9\s]/g, "")
-                                .trim()
-                                .split(/\s+/)
-                                .map((w, i) => i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1))
-                                .join("")
-                                .substring(0, 12);
-                              setCampusForm({ ...campusForm, name, code: campusForm.code || code });
-                            }}
-                            className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
-                            Campus Code
-                            <span className="ml-1 text-indigo-500 font-bold normal-case">(Auto-generated)</span>
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="Auto-generated from name"
-                            disabled={editingCampus}
-                            value={campusForm.code}
-                            onChange={(e) => setCampusForm({ ...campusForm, code: e.target.value })}
-                            className="w-full bg-gray-100 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-500 disabled:text-gray-400"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Academic Year *</label>
-                          <select
-                            required
-                            value={campusForm.academic_year}
-                            onChange={(e) => setCampusForm({ ...campusForm, academic_year: e.target.value })}
-                            className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                          >
-                            {["2024-2025", "2025-2026", "2026-2027", "2027-2028", "2028-2029"].map(yr => (
-                              <option key={yr} value={yr}>{yr}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="space-y-1 col-span-2">
-                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Address / Location *</label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="e.g. 78, West Tambaram, Chennai"
-                            value={campusForm.address}
-                            onChange={(e) => setCampusForm({ ...campusForm, address: e.target.value })}
-                            className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">KAM (Key Account Manager) *</label>
-                          <select
-                            required
-                            value={campusForm.kam_id}
-                            onChange={(e) => setCampusForm({ ...campusForm, kam_id: e.target.value })}
-                            className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                          >
-                            <option value="">Select KAM</option>
-                            {kamList.map(kam => (
-                              <option key={kam.id} value={kam.id}>{kam.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Campus Manager <span className="text-gray-400 font-semibold normal-case">(Optional)</span></label>
-                          <select
-                            value={campusForm.manager}
-                            onChange={(e) => setCampusForm({ ...campusForm, manager: e.target.value })}
-                            className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                          >
-                            <option value="">Select CAM (Optional)</option>
-                            {camList.map(cam => (
-                              <option key={cam.id} value={cam.id}>{cam.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Shift Mode Toggle */}
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Mode *</label>
-                        <div className="flex gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setCampusForm({ ...campusForm, has_shifts: 0 })}
-                            className={`flex-1 flex items-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer ${
-                              campusForm.has_shifts === 0
-                                ? "border-indigo-500 bg-indigo-50 text-indigo-800"
-                                : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
-                            }`}
-                          >
-                            <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${campusForm.has_shifts === 0 ? "border-indigo-500" : "border-gray-300"}`}>
-                              {campusForm.has_shifts === 0 && <div className="h-2 w-2 rounded-full bg-indigo-500" />}
+                        <React.Fragment key={s.step}>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <div
+                              className={`h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-black transition-all ${isDone ? 'text-white' : isActive ? 'text-white' : 'text-gray-400'}`}
+                              style={{
+                                background: isDone ? '#10b981' : isActive ? 'linear-gradient(135deg,#6366f1,#4f46e5)' : '#e5e7eb',
+                                boxShadow: isActive ? '0 0 0 4px rgba(99,102,241,0.18), 0 2px 8px rgba(99,102,241,0.35)' : 'none'
+                              }}
+                            >
+                              {isDone ? "Yes" : s.step}
                             </div>
-                            <div className="text-left">
-                              <div className="font-extrabold text-[11px]">General Shift</div>
-                              <div className="text-[9px] font-semibold opacity-70">Single shift for all students</div>
-                            </div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setCampusForm({ ...campusForm, has_shifts: 1 })}
-                            className={`flex-1 flex items-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer ${
-                              campusForm.has_shifts === 1
-                                ? "border-indigo-500 bg-indigo-50 text-indigo-800"
-                                : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
-                            }`}
-                          >
-                            <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${campusForm.has_shifts === 1 ? "border-indigo-500" : "border-gray-300"}`}>
-                              {campusForm.has_shifts === 1 && <div className="h-2 w-2 rounded-full bg-indigo-500" />}
-                            </div>
-                            <div className="text-left">
-                              <div className="font-extrabold text-[11px]">Multiple Shifts</div>
-                              <div className="text-[9px] font-semibold opacity-70">Shift 1 &amp; Shift 2 separately</div>
-                            </div>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Working Days Config */}
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Working Days *</label>
-                        <div className="flex gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setCampusForm({ ...campusForm, working_days: 5 })}
-                            className={`flex-1 flex items-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer ${
-                              (campusForm.working_days ?? 5) === 5
-                                ? "border-indigo-500 bg-indigo-50 text-indigo-800"
-                                : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
-                            }`}
-                          >
-                            <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${(campusForm.working_days ?? 5) === 5 ? "border-indigo-500" : "border-gray-300"}`}>
-                              {(campusForm.working_days ?? 5) === 5 && <div className="h-2 w-2 rounded-full bg-indigo-500" />}
-                            </div>
-                            <div className="text-left">
-                              <div className="font-extrabold text-[11px]">5 Working Days</div>
-                              <div className="text-[9px] font-semibold opacity-70">Monday to Friday schedule</div>
-                            </div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setCampusForm({ ...campusForm, working_days: 6 })}
-                            className={`flex-1 flex items-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer ${
-                              (campusForm.working_days ?? 5) === 6
-                                ? "border-indigo-500 bg-indigo-50 text-indigo-800"
-                                : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
-                            }`}
-                          >
-                            <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${(campusForm.working_days ?? 5) === 6 ? "border-indigo-500" : "border-gray-300"}`}>
-                              {(campusForm.working_days ?? 5) === 6 && <div className="h-2 w-2 rounded-full bg-indigo-500" />}
-                            </div>
-                            <div className="text-left">
-                              <div className="font-extrabold text-[11px]">6 Working Days</div>
-                              <div className="text-[9px] font-semibold opacity-70">Monday to Saturday schedule</div>
-                            </div>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ────────────────── STEP 2: COURSES ────────────────── */}
-                  {campusWizardStep === 2 && (
-                    <div className="space-y-4 animate-fadeIn">
-                      <div className="pb-1 border-b border-gray-100 flex items-center justify-between">
-                        <div>
-                          <h4 className="text-xs font-black text-gray-800 uppercase tracking-wider">Courses</h4>
-                          <p className="text-[9.5px] text-gray-400 font-semibold mt-0.5">Add courses and assign rooms for each year &amp; section.</p>
-                        </div>
-                        <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-150 px-2 py-0.5 rounded-full">
-                          {wizardCourses.length} Course{wizardCourses.length !== 1 ? "s" : ""}
-                        </span>
-                      </div>
-
-                      {/* Existing / Added Courses List */}
-                      {wizardCourses.length > 0 && (
-                        <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
-                          {wizardCourses.map((c, idx) => (
-                            <div key={idx} className="bg-indigo-50/40 border border-indigo-100 p-3 rounded-2xl space-y-2">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="space-y-1 flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="font-extrabold text-xs text-gray-800">{c.name}</span>
-                                    <span className="px-1.5 rounded bg-indigo-50 border border-indigo-150 text-indigo-700 text-[8px] font-extrabold uppercase shrink-0">
-                                      {c.years} Yrs · {c.years * 2} Sem
-                                    </span>
-                                    {c.isExisting && (
-                                      <span className="px-1.5 rounded bg-emerald-50 border border-emerald-150 text-emerald-700 text-[8px] font-extrabold uppercase shrink-0">Saved</span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleStartEditRooms(c, idx)}
-                                    className="text-[10px] text-indigo-600 font-extrabold hover:text-indigo-800 bg-white border border-indigo-200 hover:bg-indigo-50 px-2 py-1 rounded-xl transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-                                  >
-                                    <Edit className="h-3 w-3" /> Edit Rooms
-                                  </button>
-                                  {!c.isExisting && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setWizardCourses(prev => prev.filter((_, i) => i !== idx))}
-                                      className="text-[10px] text-red-500 font-extrabold hover:text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-xl transition-colors cursor-pointer"
-                                    >
-                                      Remove
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Room Display or Inline Room Editor */}
-                              {editingWizardCourseIndex === idx ? (
-                                <div className="mt-2.5 pt-2.5 border-t border-indigo-150 space-y-2 bg-white p-3 rounded-xl shadow-2xs animate-fadeIn">
-                                  <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider block">Edit Classroom Allocations</span>
-                                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                                    {Object.keys(editingRooms).length === 0 ? (
-                                      <div className="text-[10px] text-slate-400 italic">No room entries found.</div>
-                                    ) : (
-                                      Object.keys(editingRooms).map((roomKey) => (
-                                        <div key={roomKey} className="flex items-center gap-2">
-                                          <span className="text-[9.5px] font-bold text-slate-600 w-32 shrink-0">{roomKey}:</span>
-                                          <input
-                                            type="text"
-                                            value={editingRooms[roomKey] || ""}
-                                            onChange={(e) => setEditingRooms({ ...editingRooms, [roomKey]: e.target.value })}
-                                            placeholder="Room Name"
-                                            className="flex-1 p-1.5 border border-slate-200 rounded-lg text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
-                                          />
-                                        </div>
-                                      ))
-                                    )}
-                                  </div>
-                                  <div className="flex justify-end gap-2 pt-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingWizardCourseIndex(null)}
-                                      className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-bold cursor-pointer"
-                                    >
-                                      Cancel
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSaveEditedRooms(idx)}
-                                      className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold cursor-pointer shadow-2xs"
-                                    >
-                                      Save Rooms
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                c.sectionRooms && Object.keys(c.sectionRooms).length > 0 && (
-                                  <div className="text-[9px] text-gray-455 font-bold flex flex-wrap gap-1.5 pt-0.5">
-                                    {Object.entries(c.sectionRooms as Record<string, string>).map(([key, room]) => (
-                                      <span key={key} className="bg-white border border-gray-150 px-1.5 py-0.5 rounded-lg flex items-center gap-1">
-                                        {key}: <span className="text-gray-800 font-extrabold">{room}</span>
-                                      </span>
-                                    ))}
-                                  </div>
-                                )
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Add Course Sub-Form */}
-                      <div className="bg-slate-50/60 p-4 rounded-2xl border border-gray-205 space-y-3.5">
-                        <div className="text-[10px] font-black text-gray-550 uppercase tracking-wider">+ Add Course</div>
-
-                        {/* Course Name */}
-                        <div className="space-y-1">
-                          <label className={`text-[9.5px] uppercase font-bold block transition-colors ${courseFieldErrors.name ? 'text-red-500' : 'text-gray-400'}`}>Course Name *</label>
-                          <input
-                            type="text"
-                            value={wizardCourseForm.name}
-                            onChange={(e) => {
-                              setWizardCourseForm({ ...wizardCourseForm, name: e.target.value });
-                              if (e.target.value.trim()) setCourseFieldErrors(prev => ({ ...prev, name: false }));
-                            }}
-                            placeholder="e.g. B. Sc Computer Science"
-                            className={`w-full rounded-xl px-3 py-2 font-bold text-xs focus:outline-none focus:ring-2 transition-all ${
-                              courseFieldErrors.name 
-                                ? 'border-2 border-red-400 bg-red-50 focus:ring-red-200' 
-                                : 'bg-white border border-gray-200 focus:ring-indigo-100 focus:border-indigo-400'
-                            }`}
-                          />
-                          {courseFieldErrors.name && <p className="text-[9px] text-red-500 font-bold mt-0.5"> Course name is required</p>}
-                        </div>
-
-                        {/* Duration Buttons */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[9.5px] text-gray-400 uppercase font-bold block">Duration *</label>
-                            <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
-                              {wizardCourseForm.years * 2} Semesters (Auto)
+                            <span
+                              className={`text-[9.5px] uppercase tracking-wider font-extrabold whitespace-nowrap transition-colors ${isActive ? '' : isDone ? 'text-emerald-600' : 'text-gray-400'}`}
+                              style={isActive ? { color: '#4f46e5' } : {}}
+                            >
+                              {s.label}
                             </span>
                           </div>
-                          <div className="flex gap-2">
-                            {[2, 3, 4, 5].map(y => (
-                              <button
-                                key={y}
-                                type="button"
-                                onClick={() => {
-                                  const newSections: Record<number, number> = {};
-                                  for (let i = 1; i <= y; i++) {
-                                    newSections[i] = wizardCourseForm.sections[i] || 1;
-                                  }
-                                  setWizardCourseForm(prev => ({ ...prev, years: y, sections: newSections, sectionRooms: {} }));
-                                }}
-                                className={`flex-1 py-2 rounded-xl font-extrabold text-xs transition-all cursor-pointer border-2 ${
-                                  wizardCourseForm.years === y
-                                    ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
-                                    : "bg-white border-gray-200 text-gray-600 hover:border-indigo-300"
-                                }`}
-                              >
-                                {y} Yrs
-                              </button>
-                            ))}
-                          </div>
-                        </div>
+                          {idx < 3 && (
+                            <div
+                              className="flex-1 h-[3px] mx-2 rounded-full transition-all"
+                              style={{
+                                background: isDone
+                                  ? 'linear-gradient(to right,#10b981,#34d399)'
+                                  : isActive
+                                    ? 'linear-gradient(to right,#6366f1 30%,#e5e7eb)'
+                                    : '#e5e7eb'
+                              }}
+                            />
+                          )}
+                        </React.Fragment>
+                      )
+                    })}
+                  </div>
 
-                        {/* Number of Sections per Year */}
-                        <div className="space-y-2">
-                          <label className="text-[9.5px] text-gray-400 uppercase font-bold block">Sections per Year *</label>
-                          <div className="grid grid-cols-2 gap-2">
-                            {Array.from({ length: wizardCourseForm.years }, (_, i) => i + 1).map(yr => (
-                              <div key={yr} className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2">
-                                <span className="text-[9.5px] font-extrabold text-gray-700 w-12 shrink-0">Year {yr}</span>
-                                <div className="flex items-center gap-1 ml-auto">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const cur = wizardCourseForm.sections[yr] || 1;
-                                      if (cur > 1) {
-                                        setWizardCourseForm(prev => ({
-                                          ...prev,
-                                          sections: { ...prev.sections, [yr]: cur - 1 },
-                                          sectionRooms: {}
-                                        }));
-                                      }
-                                    }}
-                                    className="h-5 w-5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 font-black flex items-center justify-center cursor-pointer transition-colors text-sm"
-                                  >−</button>
-                                  <span className="w-5 text-center font-extrabold text-xs text-gray-800">
-                                    {wizardCourseForm.sections[yr] || 1}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const cur = wizardCourseForm.sections[yr] || 1;
-                                      setWizardCourseForm(prev => ({
-                                        ...prev,
-                                        sections: { ...prev.sections, [yr]: cur + 1 },
-                                        sectionRooms: {}
-                                      }));
-                                    }}
-                                    className="h-5 w-5 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-black flex items-center justify-center cursor-pointer transition-colors text-sm"
-                                  >+</button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Section-wise Room Allocation */}
-                        <div className="space-y-2">
-                          <label className={`text-[9.5px] uppercase font-bold block transition-colors ${
-                            Object.keys(courseFieldErrors).some(k => k.startsWith("Year")) ? 'text-red-500' : 'text-gray-400'
-                          }`}>Room Allocation (per Section) *</label>
-                          <div className="space-y-1.5">
-                            {Array.from({ length: wizardCourseForm.years }, (_, yi) => yi + 1).map(yr => {
-                              const secCount = wizardCourseForm.sections[yr] || 1;
-                              return Array.from({ length: secCount }, (_, si) => {
-                                const sectionLetter = String.fromCharCode(65 + si);
-                                const key = `Year ${yr} Section ${sectionLetter}`;
-                                const isErr = !!courseFieldErrors[key];
-                                return (
-                                  <div key={key} className="flex items-center gap-2">
-                                    <span className={`text-[9.5px] font-extrabold w-32 shrink-0 border rounded-lg px-2 py-1.5 transition-colors ${
-                                      isErr 
-                                        ? 'text-red-700 bg-red-50 border-red-200' 
-                                        : 'text-gray-600 bg-gray-50 border-gray-150'
-                                    }`}>
-                                      Yr {yr} – Sec {sectionLetter}
-                                    </span>
-                                    <input
-                                      type="text"
-                                      required
-                                      placeholder={`Room for Year ${yr} Section ${sectionLetter}`}
-                                      value={wizardCourseForm.sectionRooms[key] || ""}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        setWizardCourseForm(prev => ({
-                                          ...prev,
-                                          sectionRooms: { ...prev.sectionRooms, [key]: val }
-                                        }));
-                                        if (val.trim()) setCourseFieldErrors(prev => ({ ...prev, [key]: false }));
-                                      }}
-                                      className={`flex-1 rounded-xl px-3 py-1.5 font-bold text-xs focus:outline-none focus:ring-2 transition-all ${
-                                        isErr
-                                          ? 'border-2 border-red-400 bg-red-50 focus:ring-red-200'
-                                          : 'bg-white border border-gray-200 focus:ring-indigo-100 focus:border-indigo-400'
-                                      }`}
-                                    />
-                                  </div>
-                                );
-                              });
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Default Shift */}
-                        <div className="space-y-1">
-                          <label className="text-[9.5px] text-gray-400 uppercase font-bold block">Default Shift</label>
-                          <select
-                            value={wizardCourseForm.default_shift}
-                            onChange={(e) => setWizardCourseForm({ ...wizardCourseForm, default_shift: e.target.value })}
-                            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold text-xs cursor-pointer focus:ring-1 focus:ring-indigo-500 outline-none text-gray-800"
-                          >
-                            <option value="general">General Shift</option>
-                            {campusForm.has_shifts === 1 && (
-                              <>
-                                <option value="shift_1">Shift 1</option>
-                                <option value="shift_2">Shift 2</option>
-                              </>
-                            )}
-                          </select>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setModalError(null);
-                            const errs: Record<string, boolean> = {};
-                            if (!wizardCourseForm.name.trim()) {
-                              errs.name = true;
-                            }
-                            
-                            const missingRooms: string[] = [];
-                            for (let yr = 1; yr <= wizardCourseForm.years; yr++) {
-                              const secCount = wizardCourseForm.sections[yr] || 1;
-                              for (let si = 0; si < secCount; si++) {
-                                const sectionLetter = String.fromCharCode(65 + si);
-                                const key = `Year ${yr} Section ${sectionLetter}`;
-                                if (!wizardCourseForm.sectionRooms[key]?.trim()) {
-                                  missingRooms.push(key);
-                                  errs[key] = true;
-                                }
-                              }
-                            }
-
-                            if (Object.keys(errs).length > 0) {
-                              setCourseFieldErrors(errs);
-                              if (errs.name && missingRooms.length > 0) {
-                                setModalError("Please specify Course Name and assign rooms for all sections.");
-                              } else if (errs.name) {
-                                setModalError("Course name is required.");
-                              } else {
-                                setModalError(`Please assign rooms for: ${missingRooms.join(", ")}`);
-                              }
-                              return;
-                            }
-
-                            setCourseFieldErrors({});
-                            setModalError(null);
-                            const newC = {
-                              ...wizardCourseForm,
-                              default_room: JSON.stringify(wizardCourseForm.sectionRooms),
-                              isExisting: false
-                            };
-                            setWizardCourses([...wizardCourses, newC]);
-                            setWizardCourseForm({
-                              name: "",
-                              years: 3,
-                              sections: { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1 },
-                              sectionRooms: {},
-                              default_shift: "general",
-                              start_date: "",
-                              end_date: "",
-                              start_year: "",
-                              end_year: "",
-                              description: ""
-                            });
-                          }}
-                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold py-2.5 rounded-xl shadow-sm hover:scale-[1.01] transition-all cursor-pointer"
-                        >
-                          + Add Course to Campus List
-                        </button>
+                  <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                    {modalError && (
+                      <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                        <ShieldAlert className="h-4 w-4 shrink-0" />
+                        {modalError}
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* ────────────────── STEP 3: SHIFT CONFIG ────────────────── */}
-                  {campusWizardStep === 3 && (
-                    <div className="space-y-4 animate-fadeIn">
-                      <div className="pb-1 border-b border-gray-100 flex items-center justify-between">
-                        <div>
-                          <h4 className="text-xs font-black text-gray-800 uppercase tracking-wider">Shift Configuration</h4>
-                          <p className="text-[9.5px] text-gray-400 font-semibold mt-0.5">Configure start time with clock widget, period durations, and breaks with live floating side-by-side preview.</p>
+                    {/* ────────────────── STEP 1: CAMPUS INFO ────────────────── */}
+                    {campusWizardStep === 1 && (
+                      <div className="space-y-4 animate-fadeIn">
+                        <div className="pb-1 border-b border-gray-100">
+                          <h4 className="text-xs font-black text-gray-800 uppercase tracking-wider">Campus Information</h4>
+                          <p className="text-[9.5px] text-gray-400 font-semibold mt-0.5">Only campus-level details here. Courses and timings come next.</p>
                         </div>
-                        {campusForm.has_shifts === 1 && (
-                          <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
-                            {(["shift_1", "shift_2", "general"] as const).map(sh => (
-                              <button
-                                key={sh}
-                                type="button"
-                                onClick={() => {
-                                  setActiveConfigShift(sh);
-                                  setNewBreakName("");
-                                }}
-                                className={`px-3 py-1 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${
-                                  activeConfigShift === sh
-                                    ? "bg-white text-indigo-655 shadow-sm"
-                                    : "text-gray-500 hover:text-gray-800"
-                                }`}
-                              >
-                                {shiftConfigsParams[sh].label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
 
-                      {/* Side-by-Side 2-Column Grid */}
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-                        {/* Left Column (Form) */}
-                        <div className="lg:col-span-7 space-y-4">
-                          <div className="flex items-center gap-2 bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-100/50">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Configure Semester:</span>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1 col-span-2">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Campus Name *</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. FP South Campus"
+                              value={campusForm.name}
+                              onChange={(e) => {
+                                const name = e.target.value;
+                                const code = name
+                                  .toLowerCase()
+                                  .replace(/[^a-z0-9\s]/g, "")
+                                  .trim()
+                                  .split(/\s+/)
+                                  .map((w, i) => i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1))
+                                  .join("")
+                                  .substring(0, 12);
+                                setCampusForm({ ...campusForm, name, code: campusForm.code || code });
+                              }}
+                              className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
+                              Campus Code
+                              <span className="ml-1 text-indigo-500 font-bold normal-case">(Auto-generated)</span>
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Auto-generated from name"
+                              disabled={editingCampus}
+                              value={campusForm.code}
+                              onChange={(e) => setCampusForm({ ...campusForm, code: e.target.value })}
+                              className="w-full bg-gray-100 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-500 disabled:text-gray-400"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Academic Year *</label>
                             <select
-                              value={activeConfigSemester}
-                              onChange={(e) => handleSemesterChange(e.target.value)}
-                              className="flex-1 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                              required
+                              value={campusForm.academic_year}
+                              onChange={(e) => setCampusForm({ ...campusForm, academic_year: e.target.value })}
+                              className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
                             >
-                              <option value="All Semesters">All Semesters (Default Fallback)</option>
-                              {["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"].map(sem => (
-                                <option key={sem} value={sem}>{sem}</option>
+                              {["2024-2025", "2025-2026", "2026-2027", "2027-2028", "2028-2029"].map(yr => (
+                                <option key={yr} value={yr}>{yr}</option>
                               ))}
                             </select>
                           </div>
 
-                          <div className="bg-slate-50/50 p-4 border border-gray-205 rounded-2xl space-y-3.5">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div className="space-y-1">
-                                <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Name / Label</label>
-                                <input
-                                  type="text"
-                                  required
-                                  value={shiftConfigsParams[activeConfigShift].label}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setShiftConfigsParams(prev => ({
-                                      ...prev,
-                                      [activeConfigShift]: { ...prev[activeConfigShift], label: val }
-                                    }));
-                                  }}
-                                  placeholder="e.g. Regular Shift"
-                                  className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
-                                />
-                              </div>
+                          <div className="space-y-1 col-span-2">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Address / Location *</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. 78, West Tambaram, Chennai"
+                              value={campusForm.address}
+                              onChange={(e) => setCampusForm({ ...campusForm, address: e.target.value })}
+                              className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                            />
+                          </div>
 
-                              {/* Start Time with Clock Widget */}
-                              <div className="space-y-1 relative">
-                                <div className="flex items-center justify-between">
-                                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Start Time (Clock Widget)</label>
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowClockPresets(!showClockPresets)}
-                                    className="text-[9px] text-indigo-650 font-extrabold hover:underline flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <Clock className="h-3 w-3 text-indigo-600" /> Presets
-                                  </button>
-                                </div>
-                                <div className="relative flex items-center">
-                                  <input
-                                    type="text"
-                                    required
-                                    value={shiftConfigsParams[activeConfigShift].startTime}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setShiftConfigsParams(prev => ({
-                                        ...prev,
-                                        [activeConfigShift]: { ...prev[activeConfigShift], startTime: val }
-                                      }));
-                                    }}
-                                    placeholder="e.g. 08:30 AM"
-                                    className="w-full bg-white border border-gray-200 rounded-xl pl-3 pr-10 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
-                                  />
-                                  <div className="absolute right-2 flex items-center gap-1">
-                                    <input
-                                      type="time"
-                                      onChange={(e) => {
-                                        const timeVal = e.target.value;
-                                        if (timeVal) {
-                                          const [hStr, mStr] = timeVal.split(":");
-                                          let h = parseInt(hStr, 10);
-                                          const m = parseInt(mStr, 10);
-                                          const ampm = h >= 12 ? "PM" : "AM";
-                                          h = h % 12;
-                                          if (h === 0) h = 12;
-                                          const formattedH = h < 10 ? `0${h}` : `${h}`;
-                                          const formattedM = m < 10 ? `0${m}` : `${m}`;
-                                          const formatted = `${formattedH}:${formattedM} ${ampm}`;
-                                          setShiftConfigsParams(prev => ({
-                                            ...prev,
-                                            [activeConfigShift]: { ...prev[activeConfigShift], startTime: formatted }
-                                          }));
-                                        }
-                                      }}
-                                      className="w-6 h-6 opacity-0 absolute right-0 cursor-pointer"
-                                      title="Open Time Picker Widget"
-                                    />
-                                    <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-650 pointer-events-none">
-                                      <Clock className="h-3.5 w-3.5" />
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">KAM (Key Account Manager) *</label>
+                            <select
+                              required
+                              value={campusForm.kam_id}
+                              onChange={(e) => setCampusForm({ ...campusForm, kam_id: e.target.value })}
+                              className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                            >
+                              <option value="">Select KAM</option>
+                              {kamList.map(kam => (
+                                <option key={kam.id} value={kam.id}>{kam.name}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Campus Manager <span className="text-gray-400 font-semibold normal-case">(Optional)</span></label>
+                            <select
+                              value={campusForm.manager}
+                              onChange={(e) => setCampusForm({ ...campusForm, manager: e.target.value })}
+                              className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                            >
+                              <option value="">Select CAM (Optional)</option>
+                              {camList.map(cam => (
+                                <option key={cam.id} value={cam.id}>{cam.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Shift Mode Toggle */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Mode *</label>
+                          <div className="flex gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setCampusForm({ ...campusForm, has_shifts: 0 })}
+                              className={`flex-1 flex items-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer ${campusForm.has_shifts === 0
+                                  ? "border-indigo-500 bg-indigo-50 text-indigo-800"
+                                  : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                                }`}
+                            >
+                              <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${campusForm.has_shifts === 0 ? "border-indigo-500" : "border-gray-300"}`}>
+                                {campusForm.has_shifts === 0 && <div className="h-2 w-2 rounded-full bg-indigo-500" />}
+                              </div>
+                              <div className="text-left">
+                                <div className="font-extrabold text-[11px]">General Shift</div>
+                                <div className="text-[9px] font-semibold opacity-70">Single shift for all students</div>
+                              </div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCampusForm({ ...campusForm, has_shifts: 1 })}
+                              className={`flex-1 flex items-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer ${campusForm.has_shifts === 1
+                                  ? "border-indigo-500 bg-indigo-50 text-indigo-800"
+                                  : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                                }`}
+                            >
+                              <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${campusForm.has_shifts === 1 ? "border-indigo-500" : "border-gray-300"}`}>
+                                {campusForm.has_shifts === 1 && <div className="h-2 w-2 rounded-full bg-indigo-500" />}
+                              </div>
+                              <div className="text-left">
+                                <div className="font-extrabold text-[11px]">Multiple Shifts</div>
+                                <div className="text-[9px] font-semibold opacity-70">Shift 1 &amp; Shift 2 separately</div>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Working Days Config */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Working Days *</label>
+                          <div className="flex gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setCampusForm({ ...campusForm, working_days: 5 })}
+                              className={`flex-1 flex items-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer ${(campusForm.working_days ?? 5) === 5
+                                  ? "border-indigo-500 bg-indigo-50 text-indigo-800"
+                                  : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                                }`}
+                            >
+                              <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${(campusForm.working_days ?? 5) === 5 ? "border-indigo-500" : "border-gray-300"}`}>
+                                {(campusForm.working_days ?? 5) === 5 && <div className="h-2 w-2 rounded-full bg-indigo-500" />}
+                              </div>
+                              <div className="text-left">
+                                <div className="font-extrabold text-[11px]">5 Working Days</div>
+                                <div className="text-[9px] font-semibold opacity-70">Monday to Friday schedule</div>
+                              </div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCampusForm({ ...campusForm, working_days: 6 })}
+                              className={`flex-1 flex items-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer ${(campusForm.working_days ?? 5) === 6
+                                  ? "border-indigo-500 bg-indigo-50 text-indigo-800"
+                                  : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                                }`}
+                            >
+                              <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${(campusForm.working_days ?? 5) === 6 ? "border-indigo-500" : "border-gray-300"}`}>
+                                {(campusForm.working_days ?? 5) === 6 && <div className="h-2 w-2 rounded-full bg-indigo-500" />}
+                              </div>
+                              <div className="text-left">
+                                <div className="font-extrabold text-[11px]">6 Working Days</div>
+                                <div className="text-[9px] font-semibold opacity-70">Monday to Saturday schedule</div>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ────────────────── STEP 2: COURSES ────────────────── */}
+                    {campusWizardStep === 2 && (
+                      <div className="space-y-4 animate-fadeIn">
+                        <div className="pb-1 border-b border-gray-100 flex items-center justify-between">
+                          <div>
+                            <h4 className="text-xs font-black text-gray-800 uppercase tracking-wider">Courses</h4>
+                            <p className="text-[9.5px] text-gray-400 font-semibold mt-0.5">Add courses and assign rooms for each year &amp; section.</p>
+                          </div>
+                          <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-150 px-2 py-0.5 rounded-full">
+                            {wizardCourses.length} Course{wizardCourses.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+
+                        {/* Existing / Added Courses List */}
+                        {wizardCourses.length > 0 && (
+                          <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+                            {wizardCourses.map((c, idx) => (
+                              <div key={idx} className="bg-indigo-50/40 border border-indigo-100 p-3 rounded-2xl space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="space-y-1 flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-extrabold text-xs text-gray-800">{c.name}</span>
+                                      <span className="px-1.5 rounded bg-indigo-50 border border-indigo-150 text-indigo-700 text-[8px] font-extrabold uppercase shrink-0">
+                                        {c.years} Yrs · {c.years * 2} Sem
+                                      </span>
+                                      {c.isExisting && (
+                                        <span className="px-1.5 rounded bg-emerald-50 border border-emerald-150 text-emerald-700 text-[8px] font-extrabold uppercase shrink-0">Saved</span>
+                                      )}
                                     </div>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEditRooms(c, idx)}
+                                      className="text-[10px] text-indigo-600 font-extrabold hover:text-indigo-800 bg-white border border-indigo-200 hover:bg-indigo-50 px-2 py-1 rounded-xl transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                                    >
+                                      <Edit className="h-3 w-3" /> Edit Rooms
+                                    </button>
+                                    {!c.isExisting && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setWizardCourses(prev => prev.filter((_, i) => i !== idx))}
+                                        className="text-[10px] text-red-500 font-extrabold hover:text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-xl transition-colors cursor-pointer"
+                                      >
+                                        Remove
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
 
-                                {/* Clock Presets Dropdown */}
-                                {showClockPresets && (
-                                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-indigo-150 rounded-2xl p-2.5 shadow-lg z-30 space-y-1.5 animate-fadeIn">
-                                    <div className="text-[9px] font-black text-gray-400 uppercase tracking-wider px-1">Quick Clock Presets</div>
-                                    <div className="grid grid-cols-4 gap-1">
-                                      {["08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM", "10:00 AM", "01:00 PM", "01:30 PM", "02:00 PM"].map(timePreset => (
-                                        <button
-                                          key={timePreset}
-                                          type="button"
-                                          onClick={() => {
-                                            setShiftConfigsParams(prev => ({
-                                              ...prev,
-                                              [activeConfigShift]: { ...prev[activeConfigShift], startTime: timePreset }
-                                            }));
-                                            setShowClockPresets(false);
-                                          }}
-                                          className={`py-1.5 rounded-lg text-[10px] font-extrabold transition-all border cursor-pointer ${
-                                            shiftConfigsParams[activeConfigShift].startTime === timePreset
-                                              ? "bg-indigo-600 border-indigo-600 text-white shadow-2xs"
-                                              : "bg-gray-50 border-gray-150 text-gray-700 hover:bg-indigo-50 hover:border-indigo-200"
-                                          }`}
-                                        >
-                                          {timePreset}
-                                        </button>
+                                {/* Room Display or Inline Room Editor */}
+                                {editingWizardCourseIndex === idx ? (
+                                  <div className="mt-2.5 pt-2.5 border-t border-indigo-150 space-y-2 bg-white p-3 rounded-xl shadow-2xs animate-fadeIn">
+                                    <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider block">Edit Classroom Allocations</span>
+                                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                                      {Object.keys(editingRooms).length === 0 ? (
+                                        <div className="text-[10px] text-slate-400 italic">No room entries found.</div>
+                                      ) : (
+                                        Object.keys(editingRooms).map((roomKey) => (
+                                          <div key={roomKey} className="flex items-center gap-2">
+                                            <span className="text-[9.5px] font-bold text-slate-600 w-32 shrink-0">{roomKey}:</span>
+                                            <input
+                                              type="text"
+                                              value={editingRooms[roomKey] || ""}
+                                              onChange={(e) => setEditingRooms({ ...editingRooms, [roomKey]: e.target.value })}
+                                              placeholder="Room Name"
+                                              className="flex-1 p-1.5 border border-slate-200 rounded-lg text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
+                                            />
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                    <div className="flex justify-end gap-2 pt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingWizardCourseIndex(null)}
+                                        className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-bold cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveEditedRooms(idx)}
+                                        className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold cursor-pointer shadow-2xs"
+                                      >
+                                        Save Rooms
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  c.sectionRooms && Object.keys(c.sectionRooms).length > 0 && (
+                                    <div className="text-[9px] text-gray-455 font-bold flex flex-wrap gap-1.5 pt-0.5">
+                                      {Object.entries(c.sectionRooms as Record<string, string>).map(([key, room]) => (
+                                        <span key={key} className="bg-white border border-gray-150 px-1.5 py-0.5 rounded-lg flex items-center gap-1">
+                                          {key}: <span className="text-gray-800 font-extrabold">{room}</span>
+                                        </span>
                                       ))}
                                     </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div className="space-y-1">
-                                <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Period Duration (minutes)</label>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  required
-                                  value={shiftConfigsParams[activeConfigShift].periodDuration}
-                                  onChange={(e) => {
-                                    const val = parseInt(e.target.value, 10) || 0;
-                                    setShiftConfigsParams(prev => ({
-                                      ...prev,
-                                      [activeConfigShift]: { ...prev[activeConfigShift], periodDuration: val }
-                                    }));
-                                  }}
-                                  className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
-                                />
-                              </div>
-
-                              <div className="space-y-1">
-                                <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Calculation Mode</label>
-                                <select
-                                  value={shiftConfigsParams[activeConfigShift].mode}
-                                  onChange={(e) => {
-                                    const mode = e.target.value as "duration" | "fixed";
-                                    setShiftConfigsParams(prev => ({
-                                      ...prev,
-                                      [activeConfigShift]: {
-                                        ...prev[activeConfigShift],
-                                        mode,
-                                        endTime: mode === "fixed" ? "04:30 PM" : undefined
-                                      }
-                                    }));
-                                  }}
-                                  className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs cursor-pointer"
-                                >
-                                  <option value="duration">Specify Number of Periods</option>
-                                  <option value="fixed">Specify Shift End Time</option>
-                                </select>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {shiftConfigsParams[activeConfigShift].mode === "duration" ? (
-                                <div className="space-y-1">
-                                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Number of Periods</label>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    required
-                                    value={shiftConfigsParams[activeConfigShift].periodsCount}
-                                    onChange={(e) => {
-                                      const val = parseInt(e.target.value, 10) || 0;
-                                      setShiftConfigsParams(prev => ({
-                                        ...prev,
-                                        [activeConfigShift]: { ...prev[activeConfigShift], periodsCount: val }
-                                      }));
-                                    }}
-                                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
-                                  />
-                                </div>
-                              ) : (
-                                <div className="space-y-1">
-                                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift End Time</label>
-                                  <input
-                                    type="text"
-                                    required
-                                    value={shiftConfigsParams[activeConfigShift].endTime || ""}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setShiftConfigsParams(prev => ({
-                                        ...prev,
-                                        [activeConfigShift]: { ...prev[activeConfigShift], endTime: val }
-                                      }));
-                                    }}
-                                    placeholder="e.g. 04:30 PM"
-                                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Configured Breaks List */}
-                          <div className="space-y-3 bg-white p-4 border border-gray-205 rounded-2xl">
-                            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-                              <span className="text-[10px] uppercase font-bold text-gray-455 tracking-wider">Configured Breaks</span>
-                              <span className="text-[9px] text-indigo-500 font-bold bg-indigo-50 px-2 py-0.5 rounded-full">
-                                {shiftConfigsParams[activeConfigShift].breaks.length} Breaks
-                              </span>
-                            </div>
-
-                            {shiftConfigsParams[activeConfigShift].breaks.length === 0 ? (
-                              <p className="text-[10px] text-gray-400 font-semibold text-center py-2">No breaks configured for this shift.</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {shiftConfigsParams[activeConfigShift].breaks.map((brk) => (
-                                  <div key={brk.id} className="flex items-center justify-between bg-slate-50/50 p-2.5 rounded-xl border border-gray-150">
-                                    <div>
-                                      <div className="font-extrabold text-xs text-gray-800">{brk.name}</div>
-                                      <div className="text-[9.5px] font-bold text-gray-455 mt-0.5">
-                                        {brk.duration} min • Occurs after Period {brk.afterPeriod}
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      <button
-                                        type="button"
-                                        disabled={brk.afterPeriod <= 1}
-                                        onClick={() => {
-                                          const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
-                                            b.id === brk.id ? { ...b, afterPeriod: b.afterPeriod - 1 } : b
-                                          );
-                                          setShiftConfigsParams(prev => ({
-                                            ...prev,
-                                            [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
-                                          }));
-                                        }}
-                                        className="p-1 text-gray-400 hover:text-indigo-650 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors disabled:opacity-30 disabled:pointer-events-none"
-                                      >▲</button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
-                                            b.id === brk.id ? { ...b, afterPeriod: b.afterPeriod + 1 } : b
-                                          );
-                                          setShiftConfigsParams(prev => ({
-                                            ...prev,
-                                            [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
-                                          }));
-                                        }}
-                                        className="p-1 text-gray-400 hover:text-indigo-650 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
-                                      >▼</button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.filter(b => b.id !== brk.id);
-                                          setShiftConfigsParams(prev => ({
-                                            ...prev,
-                                            [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
-                                          }));
-                                        }}
-                                        className="text-[10px] text-red-500 font-extrabold hover:text-red-750 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-lg transition-colors cursor-pointer"
-                                      >Remove</button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            <div className="bg-slate-50/50 p-3 rounded-xl border border-gray-150 border-dashed space-y-3 mt-3">
-                              <div className="text-[10px] font-bold text-gray-555 uppercase tracking-wider">Add Custom Break</div>
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                <div className="space-y-1">
-                                  <label className="text-[9px] text-gray-400 uppercase font-bold block">Break Name</label>
-                                  <input
-                                    type="text"
-                                    value={newBreakName}
-                                    onChange={(e) => setNewBreakName(e.target.value)}
-                                    placeholder="e.g. Lunch"
-                                    className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <label className="text-[9px] text-gray-400 uppercase font-bold block">Duration (min)</label>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    value={newBreakDuration}
-                                    onChange={(e) => setNewBreakDuration(parseInt(e.target.value, 10) || 0)}
-                                    className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <label className="text-[9px] text-gray-400 uppercase font-bold block">After Period #</label>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    value={newBreakAfterPeriod}
-                                    onChange={(e) => setNewBreakAfterPeriod(parseInt(e.target.value, 10) || 1)}
-                                    className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
-                                  />
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (!newBreakName.trim()) return;
-                                  const brk: ShiftBreak = {
-                                    id: `b_${Date.now()}`,
-                                    name: newBreakName.trim(),
-                                    duration: newBreakDuration,
-                                    afterPeriod: newBreakAfterPeriod
-                                  };
-                                  setShiftConfigsParams(prev => ({
-                                    ...prev,
-                                    [activeConfigShift]: {
-                                      ...prev[activeConfigShift],
-                                      breaks: [...prev[activeConfigShift].breaks, brk]
-                                    }
-                                  }));
-                                  setNewBreakName("");
-                                }}
-                                className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-extrabold py-2 rounded-xl border border-indigo-150 transition-colors cursor-pointer"
-                              >
-                                + Add Break to Shift
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Right Column (Floating Drag & Drop Live Timetable Preview Panel) */}
-                        <div className="lg:col-span-5 sticky top-2">
-                          {(() => {
-                            const schedule = calculateShiftSchedule(shiftConfigsParams[activeConfigShift]);
-                            return (
-                              <div className="bg-slate-900 text-white p-4.5 rounded-3xl space-y-3.5 shadow-xl border border-slate-800 animate-fadeIn">
-                                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                                  <div>
-                                    <div className="text-[11px] uppercase font-black tracking-wider text-indigo-300 flex items-center gap-1.5">
-                                      <Sparkles className="h-3.5 w-3.5 text-indigo-400" /> Live Timetable Preview
-                                    </div>
-                                    <p className="text-[9px] text-slate-400 font-semibold mt-0.5">Drag & drop breaks onto periods to reorder</p>
-                                  </div>
-                                  {schedule.overallEndTime && (
-                                    <div className="text-[9.5px] font-bold text-emerald-300 bg-emerald-950/80 border border-emerald-800/60 px-2.5 py-1 rounded-full shrink-0">
-                                      Ends: {schedule.overallEndTime} ({schedule.totalPeriods} Periods)
-                                    </div>
-                                  )}
-                                </div>
-
-                                {schedule.error ? (
-                                  <div className="text-[10.5px] font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-2xl p-3">
-                                    {schedule.error}
-                                  </div>
-                                ) : (shiftConfigsParams[activeConfigShift].breaks.length === 0) ? (
-                                  <div className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-2xl p-3 flex items-center gap-2">
-                                    <span>⚠️</span>
-                                    <span>At least one break must be configured for this shift.</span>
-                                  </div>
-                                ) : schedule.items.length === 0 ? (
-                                  <p className="text-[10px] text-slate-500 font-semibold py-4 text-center">No periods calculated yet.</p>
-                                ) : (
-                                  <div className="relative border-l-2 border-indigo-500/40 ml-3 pl-4 py-1 space-y-2 text-[11px]">
-                                    {schedule.items.map((item, index) => {
-                                      const isBreak = item.type === "break";
-                                      const matchedBreak = isBreak
-                                        ? shiftConfigsParams[activeConfigShift].breaks.find(b => b.name === item.name)
-                                        : null;
-
-                                      return (
-                                        <div
-                                          key={index}
-                                          draggable={isBreak}
-                                          onDragStart={(e) => {
-                                            if (matchedBreak) {
-                                              e.dataTransfer.setData("text/plain", matchedBreak.id);
-                                              setDraggedBreakId(matchedBreak.id);
-                                            }
-                                          }}
-                                          onDragOver={(e) => e.preventDefault()}
-                                          onDrop={() => {
-                                            if (draggedBreakId) {
-                                              let targetP = item.type === "period" ? (item.index || 1) : 1;
-                                              if (item.type === "break" && index > 0) {
-                                                const prevItem = schedule.items[index - 1];
-                                                if (prevItem && prevItem.type === "period") targetP = prevItem.index || 1;
-                                              }
-                                              const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
-                                                b.id === draggedBreakId ? { ...b, afterPeriod: targetP } : b
-                                              );
-                                              setShiftConfigsParams(prev => ({
-                                                ...prev,
-                                                [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
-                                              }));
-                                              setDraggedBreakId(null);
-                                            }
-                                          }}
-                                          className={`relative flex flex-col gap-1.5 p-2.5 rounded-2xl transition-all border ${
-                                            isBreak
-                                              ? "bg-amber-950/40 border-amber-500/30 hover:bg-amber-900/50 cursor-grab active:cursor-grabbing"
-                                              : "bg-slate-800/70 border-slate-700/60 hover:bg-slate-800"
-                                          } ${draggedBreakId && matchedBreak?.id === draggedBreakId ? "opacity-40 scale-[0.98]" : ""}`}
-                                        >
-                                          <div className={`absolute -left-[21px] top-3 w-2.5 h-2.5 rounded-full border-2 ${
-                                            isBreak ? "bg-amber-400 border-amber-300 shadow-amber-500/50 shadow-sm" : "bg-indigo-400 border-indigo-300 shadow-indigo-500/50 shadow-sm"
-                                          }`} />
-
-                                          <div className="flex items-center justify-between gap-2">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                              {isBreak && <GripVertical className="h-3.5 w-3.5 text-amber-400/80 shrink-0" />}
-                                              <span className={`font-black text-xs truncate ${isBreak ? "text-amber-300" : "text-slate-100"}`}>
-                                                {item.name}
-                                              </span>
-                                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-900/90 text-indigo-300 border border-slate-700/80 shrink-0">
-                                                {item.durationMinutes || 0}m
-                                              </span>
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  if (item.type === "period" && item.index) {
-                                                    setEditingPeriodNum(editingPeriodNum === item.index ? null : item.index);
-                                                  } else if (matchedBreak) {
-                                                    setEditingPeriodNum(editingPeriodNum === index + 100 ? null : index + 100);
-                                                  }
-                                                }}
-                                                title="Edit duration for this specific period/break"
-                                                className="p-1 rounded-md text-slate-400 hover:text-indigo-300 hover:bg-slate-700 transition-colors cursor-pointer"
-                                              >
-                                                <Edit className="h-3 w-3" />
-                                              </button>
-                                            </div>
-
-                                            <span className="font-mono font-bold text-[10px] text-slate-300 shrink-0 bg-slate-950/80 px-2 py-0.5 rounded-md border border-slate-800">
-                                              {item.startTimeStr} - {item.endTimeStr}
-                                            </span>
-                                          </div>
-
-                                          {/* Inline Duration Adjustment Controls (Pencil Edit) */}
-                                          {item.type === "period" && item.index && editingPeriodNum === item.index && (
-                                            <div className="mt-1 pt-1.5 border-t border-slate-700/60 flex items-center justify-between gap-2 text-[10px] animate-fadeIn bg-slate-900/90 p-2 rounded-xl">
-                                              <div>
-                                                <span className="text-slate-200 font-extrabold block">Adjust Period {item.index} Duration:</span>
-                                                <span className="text-[8.5px] text-indigo-300/80 font-medium block">Only updates Period {item.index} & subsequent times</span>
-                                              </div>
-                                              <div className="flex items-center gap-1.5 shrink-0">
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    const cur = item.durationMinutes || shiftConfigsParams[activeConfigShift].periodDuration;
-                                                    const updated = Math.max(5, cur - 5);
-                                                    setShiftConfigsParams(prev => ({
-                                                      ...prev,
-                                                      [activeConfigShift]: {
-                                                        ...prev[activeConfigShift],
-                                                        customPeriodDurations: {
-                                                          ...prev[activeConfigShift].customPeriodDurations,
-                                                          [item.index!]: updated
-                                                        }
-                                                      }
-                                                    }));
-                                                  }}
-                                                  className="h-5 w-5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-black rounded-md flex items-center justify-center cursor-pointer"
-                                                >−</button>
-                                                <span className="font-mono font-extrabold text-indigo-300 w-8 text-center">
-                                                  {item.durationMinutes || shiftConfigsParams[activeConfigShift].periodDuration}m
-                                                </span>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    const cur = item.durationMinutes || shiftConfigsParams[activeConfigShift].periodDuration;
-                                                    const updated = cur + 5;
-                                                    setShiftConfigsParams(prev => ({
-                                                      ...prev,
-                                                      [activeConfigShift]: {
-                                                        ...prev[activeConfigShift],
-                                                        customPeriodDurations: {
-                                                          ...prev[activeConfigShift].customPeriodDurations,
-                                                          [item.index!]: updated
-                                                        }
-                                                      }
-                                                    }));
-                                                  }}
-                                                  className="h-5 w-5 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-md flex items-center justify-center cursor-pointer"
-                                                >+</button>
-                                                {shiftConfigsParams[activeConfigShift].customPeriodDurations?.[item.index] && (
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                      const copy = { ...shiftConfigsParams[activeConfigShift].customPeriodDurations };
-                                                      delete copy[item.index!];
-                                                      setShiftConfigsParams(prev => ({
-                                                        ...prev,
-                                                        [activeConfigShift]: {
-                                                          ...prev[activeConfigShift],
-                                                          customPeriodDurations: copy
-                                                        }
-                                                      }));
-                                                    }}
-                                                    className="text-[9px] text-amber-400 hover:underline font-bold ml-1 cursor-pointer"
-                                                  >
-                                                    Reset
-                                                  </button>
-                                                )}
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {/* Inline Break Duration Adjustment */}
-                                          {isBreak && matchedBreak && editingPeriodNum === index + 100 && (
-                                            <div className="mt-1 pt-1.5 border-t border-amber-900/60 flex items-center justify-between gap-2 text-[10px] animate-fadeIn bg-amber-950/80 p-2 rounded-xl">
-                                              <div>
-                                                <span className="text-amber-200 font-extrabold block">Adjust {matchedBreak.name} Duration:</span>
-                                                <span className="text-[8.5px] text-amber-300/80 font-medium block">Only updates break & subsequent times</span>
-                                              </div>
-                                              <div className="flex items-center gap-1.5 shrink-0">
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
-                                                      b.id === matchedBreak.id ? { ...b, duration: Math.max(5, b.duration - 5) } : b
-                                                    );
-                                                    setShiftConfigsParams(prev => ({
-                                                      ...prev,
-                                                      [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
-                                                    }));
-                                                  }}
-                                                  className="h-5 w-5 bg-slate-800 hover:bg-slate-700 text-amber-200 font-black rounded-md flex items-center justify-center cursor-pointer"
-                                                >−</button>
-                                                <span className="font-mono font-extrabold text-amber-300 w-8 text-center">
-                                                  {matchedBreak.duration}m
-                                                </span>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
-                                                      b.id === matchedBreak.id ? { ...b, duration: b.duration + 5 } : b
-                                                    );
-                                                    setShiftConfigsParams(prev => ({
-                                                      ...prev,
-                                                      [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
-                                                    }));
-                                                  }}
-                                                  className="h-5 w-5 bg-amber-600 hover:bg-amber-500 text-white font-black rounded-md flex items-center justify-center cursor-pointer"
-                                                >+</button>
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ────────────────── STEP 4: REVIEW ────────────────── */}
-                  {campusWizardStep === 4 && (
-                    <div className="space-y-4 animate-fadeIn">
-                      <div className="pb-1 border-b border-gray-100">
-                        <h4 className="text-xs font-black text-gray-800 uppercase tracking-wider">Review & Create</h4>
-                        <p className="text-[9.5px] text-gray-400 font-semibold mt-0.5">Confirm all details before creating the campus.</p>
-                      </div>
-
-                      {/* Campus Info Summary */}
-                      <div className="bg-indigo-50/40 border border-indigo-100 rounded-2xl p-4 space-y-2">
-                        <div className="text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-2">Campus Info</div>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                          <div>
-                            <div className="text-[9px] text-gray-400 uppercase font-bold">Campus Name</div>
-                            <div className="text-xs font-extrabold text-gray-800">{campusForm.name || "—"}</div>
-                          </div>
-                          <div>
-                            <div className="text-[9px] text-gray-400 uppercase font-bold">Code</div>
-                            <div className="text-xs font-extrabold text-gray-800">{campusForm.code || "—"}</div>
-                          </div>
-                          <div>
-                            <div className="text-[9px] text-gray-400 uppercase font-bold">Academic Year</div>
-                            <div className="text-xs font-extrabold text-gray-800">{campusForm.academic_year || "—"}</div>
-                          </div>
-                          <div>
-                            <div className="text-[9px] text-gray-400 uppercase font-bold">Shift Mode</div>
-                            <div className="text-xs font-extrabold text-gray-800">{campusForm.has_shifts === 1 ? "Multiple Shifts" : "General Shift"}</div>
-                          </div>
-                          <div className="col-span-2">
-                            <div className="text-[9px] text-gray-400 uppercase font-bold">Address</div>
-                            <div className="text-xs font-extrabold text-gray-800">{campusForm.address || "—"}</div>
-                          </div>
-                          <div>
-                            <div className="text-[9px] text-gray-400 uppercase font-bold">KAM</div>
-                            <div className="text-xs font-extrabold text-gray-800">
-                              {kamList.find(k => k.id === campusForm.kam_id)?.name || "—"}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-[9px] text-gray-400 uppercase font-bold">Campus Manager</div>
-                            <div className="text-xs font-extrabold text-gray-800">
-                              {camList.find(c => c.id === campusForm.manager)?.name || "Not assigned"}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Courses Summary */}
-                      <div className="bg-slate-50 border border-gray-200 rounded-2xl p-4 space-y-2">
-                        <div className="text-[10px] font-black text-gray-700 uppercase tracking-wider mb-2">
-                          Courses ({wizardCourses.length})
-                        </div>
-                        {wizardCourses.length === 0 ? (
-                          <p className="text-[10px] text-gray-400 font-semibold">No courses added.</p>
-                        ) : (
-                          <div className="space-y-2">
-                            {wizardCourses.map((c, idx) => (
-                              <div key={idx} className="bg-white border border-gray-150 rounded-xl p-3 space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-extrabold text-xs text-gray-800">{c.name}</span>
-                                  <span className="text-[8px] font-extrabold bg-indigo-50 border border-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded uppercase">
-                                    {c.years}Y · {c.years * 2} Sem
-                                  </span>
-                                </div>
-                                {c.sectionRooms && Object.keys(c.sectionRooms).length > 0 && (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {Object.entries(c.sectionRooms as Record<string, string>).map(([key, room]) => (
-                                      <span key={key} className="text-[8.5px] font-bold text-gray-600 bg-gray-50 border border-gray-150 px-1.5 py-0.5 rounded-lg">
-                                        {key}: <span className="text-gray-800">{room}</span>
-                                      </span>
-                                    ))}
-                                  </div>
+                                  )
                                 )}
                               </div>
                             ))}
                           </div>
                         )}
-                      </div>
 
-                      {/* Shift Summary */}
-                      <div className="bg-slate-50 border border-gray-200 rounded-2xl p-4 space-y-2">
-                        <div className="text-[10px] font-black text-gray-700 uppercase tracking-wider mb-2">Shift Schedule</div>
-                        {(campusForm.has_shifts === 1 ? (["shift_1", "shift_2", "general"] as const) : (["general"] as const)).map(sh => {
-                          const p = shiftConfigsParams[sh];
-                          const schedule = calculateShiftSchedule(p);
-                          return (
-                            <div key={sh} className="space-y-1">
-                              <div className="text-[10px] font-extrabold text-indigo-700">{p.label}</div>
-                              <div className="text-[9.5px] text-gray-600 font-bold">
-                                Start: {p.startTime} · {p.periodsCount} Periods · {p.periodDuration} min/period
-                                {schedule.overallEndTime && ` · Ends: ${schedule.overallEndTime}`}
-                              </div>
-                              {p.breaks.length > 0 && (
-                                <div className="flex flex-wrap gap-1">
-                                  {p.breaks.map(b => (
-                                    <span key={b.id} className="text-[8.5px] font-bold bg-amber-50 border border-amber-100 text-amber-700 px-1.5 py-0.5 rounded-lg">
-                                      {b.name} ({b.duration}min after P{b.afterPeriod})
+                        {/* Add Course Sub-Form */}
+                        <div className="bg-slate-50/60 p-4 rounded-2xl border border-gray-205 space-y-3.5">
+                          <div className="text-[10px] font-black text-gray-550 uppercase tracking-wider">+ Add Course</div>
+
+                          {/* Course Name */}
+                          <div className="space-y-1">
+                            <label className={`text-[9.5px] uppercase font-bold block transition-colors ${courseFieldErrors.name ? 'text-red-500' : 'text-gray-400'}`}>Course Name *</label>
+                            <input
+                              type="text"
+                              value={wizardCourseForm.name}
+                              onChange={(e) => {
+                                setWizardCourseForm({ ...wizardCourseForm, name: e.target.value });
+                                if (e.target.value.trim()) setCourseFieldErrors(prev => ({ ...prev, name: false }));
+                              }}
+                              placeholder="e.g. B. Sc Computer Science"
+                              className={`w-full rounded-xl px-3 py-2 font-bold text-xs focus:outline-none focus:ring-2 transition-all ${courseFieldErrors.name
+                                  ? 'border-2 border-red-400 bg-red-50 focus:ring-red-200'
+                                  : 'bg-white border border-gray-200 focus:ring-indigo-100 focus:border-indigo-400'
+                                }`}
+                            />
+                            {courseFieldErrors.name && <p className="text-[9px] text-red-500 font-bold mt-0.5"> Course name is required</p>}
+                          </div>
+
+                          {/* Duration Buttons */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[9.5px] text-gray-400 uppercase font-bold block">Duration *</label>
+                              <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
+                                {wizardCourseForm.years * 2} Semesters (Auto)
+                              </span>
+                            </div>
+                            <div className="flex gap-2">
+                              {[2, 3, 4, 5].map(y => (
+                                <button
+                                  key={y}
+                                  type="button"
+                                  onClick={() => {
+                                    const newSections: Record<number, number> = {};
+                                    for (let i = 1; i <= y; i++) {
+                                      newSections[i] = wizardCourseForm.sections[i] || 1;
+                                    }
+                                    setWizardCourseForm(prev => ({ ...prev, years: y, sections: newSections, sectionRooms: {} }));
+                                  }}
+                                  className={`flex-1 py-2 rounded-xl font-extrabold text-xs transition-all cursor-pointer border-2 ${wizardCourseForm.years === y
+                                      ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
+                                      : "bg-white border-gray-200 text-gray-600 hover:border-indigo-300"
+                                    }`}
+                                >
+                                  {y} Yrs
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Number of Sections per Year */}
+                          <div className="space-y-2">
+                            <label className="text-[9.5px] text-gray-400 uppercase font-bold block">Sections per Year *</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {Array.from({ length: wizardCourseForm.years }, (_, i) => i + 1).map(yr => (
+                                <div key={yr} className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2">
+                                  <span className="text-[9.5px] font-extrabold text-gray-700 w-12 shrink-0">Year {yr}</span>
+                                  <div className="flex items-center gap-1 ml-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const cur = wizardCourseForm.sections[yr] || 1;
+                                        if (cur > 1) {
+                                          setWizardCourseForm(prev => ({
+                                            ...prev,
+                                            sections: { ...prev.sections, [yr]: cur - 1 },
+                                            sectionRooms: {}
+                                          }));
+                                        }
+                                      }}
+                                      className="h-5 w-5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 font-black flex items-center justify-center cursor-pointer transition-colors text-sm"
+                                    >−</button>
+                                    <span className="w-5 text-center font-extrabold text-xs text-gray-800">
+                                      {wizardCourseForm.sections[yr] || 1}
                                     </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const cur = wizardCourseForm.sections[yr] || 1;
+                                        setWizardCourseForm(prev => ({
+                                          ...prev,
+                                          sections: { ...prev.sections, [yr]: cur + 1 },
+                                          sectionRooms: {}
+                                        }));
+                                      }}
+                                      className="h-5 w-5 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-black flex items-center justify-center cursor-pointer transition-colors text-sm"
+                                    >+</button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Section-wise Room Allocation */}
+                          <div className="space-y-2">
+                            <label className={`text-[9.5px] uppercase font-bold block transition-colors ${Object.keys(courseFieldErrors).some(k => k.startsWith("Year")) ? 'text-red-500' : 'text-gray-400'
+                              }`}>Room Allocation (per Section) *</label>
+                            <div className="space-y-1.5">
+                              {Array.from({ length: wizardCourseForm.years }, (_, yi) => yi + 1).map(yr => {
+                                const secCount = wizardCourseForm.sections[yr] || 1;
+                                return Array.from({ length: secCount }, (_, si) => {
+                                  const sectionLetter = String.fromCharCode(65 + si);
+                                  const key = `Year ${yr} Section ${sectionLetter}`;
+                                  const isErr = !!courseFieldErrors[key];
+                                  return (
+                                    <div key={key} className="flex items-center gap-2">
+                                      <span className={`text-[9.5px] font-extrabold w-32 shrink-0 border rounded-lg px-2 py-1.5 transition-colors ${isErr
+                                          ? 'text-red-700 bg-red-50 border-red-200'
+                                          : 'text-gray-600 bg-gray-50 border-gray-150'
+                                        }`}>
+                                        Yr {yr} – Sec {sectionLetter}
+                                      </span>
+                                      <input
+                                        type="text"
+                                        required
+                                        placeholder={`Room for Year ${yr} Section ${sectionLetter}`}
+                                        value={wizardCourseForm.sectionRooms[key] || ""}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setWizardCourseForm(prev => ({
+                                            ...prev,
+                                            sectionRooms: { ...prev.sectionRooms, [key]: val }
+                                          }));
+                                          if (val.trim()) setCourseFieldErrors(prev => ({ ...prev, [key]: false }));
+                                        }}
+                                        className={`flex-1 rounded-xl px-3 py-1.5 font-bold text-xs focus:outline-none focus:ring-2 transition-all ${isErr
+                                            ? 'border-2 border-red-400 bg-red-50 focus:ring-red-200'
+                                            : 'bg-white border border-gray-200 focus:ring-indigo-100 focus:border-indigo-400'
+                                          }`}
+                                      />
+                                    </div>
+                                  );
+                                });
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Default Shift */}
+                          <div className="space-y-1">
+                            <label className="text-[9.5px] text-gray-400 uppercase font-bold block">Default Shift</label>
+                            <select
+                              value={wizardCourseForm.default_shift}
+                              onChange={(e) => setWizardCourseForm({ ...wizardCourseForm, default_shift: e.target.value })}
+                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold text-xs cursor-pointer focus:ring-1 focus:ring-indigo-500 outline-none text-gray-800"
+                            >
+                              <option value="general">General Shift</option>
+                              {campusForm.has_shifts === 1 && (
+                                <>
+                                  <option value="shift_1">Shift 1</option>
+                                  <option value="shift_2">Shift 2</option>
+                                </>
+                              )}
+                            </select>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setModalError(null);
+                              const errs: Record<string, boolean> = {};
+                              if (!wizardCourseForm.name.trim()) {
+                                errs.name = true;
+                              }
+
+                              const missingRooms: string[] = [];
+                              for (let yr = 1; yr <= wizardCourseForm.years; yr++) {
+                                const secCount = wizardCourseForm.sections[yr] || 1;
+                                for (let si = 0; si < secCount; si++) {
+                                  const sectionLetter = String.fromCharCode(65 + si);
+                                  const key = `Year ${yr} Section ${sectionLetter}`;
+                                  if (!wizardCourseForm.sectionRooms[key]?.trim()) {
+                                    missingRooms.push(key);
+                                    errs[key] = true;
+                                  }
+                                }
+                              }
+
+                              if (Object.keys(errs).length > 0) {
+                                setCourseFieldErrors(errs);
+                                if (errs.name && missingRooms.length > 0) {
+                                  setModalError("Please specify Course Name and assign rooms for all sections.");
+                                } else if (errs.name) {
+                                  setModalError("Course name is required.");
+                                } else {
+                                  setModalError(`Please assign rooms for: ${missingRooms.join(", ")}`);
+                                }
+                                return;
+                              }
+
+                              setCourseFieldErrors({});
+                              setModalError(null);
+                              const newC = {
+                                ...wizardCourseForm,
+                                default_room: JSON.stringify(wizardCourseForm.sectionRooms),
+                                isExisting: false
+                              };
+                              setWizardCourses([...wizardCourses, newC]);
+                              setWizardCourseForm({
+                                name: "",
+                                years: 3,
+                                sections: { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1 },
+                                sectionRooms: {},
+                                default_shift: "general",
+                                start_date: "",
+                                end_date: "",
+                                start_year: "",
+                                end_year: "",
+                                description: ""
+                              });
+                            }}
+                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold py-2.5 rounded-xl shadow-sm hover:scale-[1.01] transition-all cursor-pointer"
+                          >
+                            + Add Course to Campus List
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ────────────────── STEP 3: SHIFT CONFIG ────────────────── */}
+                    {campusWizardStep === 3 && (
+                      <div className="space-y-4 animate-fadeIn">
+                        <div className="pb-1 border-b border-gray-100 flex items-center justify-between">
+                          <div>
+                            <h4 className="text-xs font-black text-gray-800 uppercase tracking-wider">Shift Configuration</h4>
+                            <p className="text-[9.5px] text-gray-400 font-semibold mt-0.5">Configure start time with clock widget, period durations, and breaks with live floating side-by-side preview.</p>
+                          </div>
+                          {campusForm.has_shifts === 1 && (
+                            <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
+                              {(["shift_1", "shift_2", "general"] as const).map(sh => (
+                                <button
+                                  key={sh}
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveConfigShift(sh);
+                                    setNewBreakName("");
+                                  }}
+                                  className={`px-3 py-1 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${activeConfigShift === sh
+                                      ? "bg-white text-indigo-655 shadow-sm"
+                                      : "text-gray-500 hover:text-gray-800"
+                                    }`}
+                                >
+                                  {shiftConfigsParams[sh].label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Side-by-Side 2-Column Grid */}
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                          {/* Left Column (Form) */}
+                          <div className="lg:col-span-7 space-y-4">
+                            <div className="flex items-center gap-2 bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-100/50">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Configure Semester:</span>
+                              <select
+                                value={activeConfigSemester}
+                                onChange={(e) => handleSemesterChange(e.target.value)}
+                                className="flex-1 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                              >
+                                <option value="All Semesters">All Semesters (Default Fallback)</option>
+                                {["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"].map(sem => (
+                                  <option key={sem} value={sem}>{sem}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="bg-slate-50/50 p-4 border border-gray-205 rounded-2xl space-y-3.5">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Name / Label</label>
+                                  <input
+                                    type="text"
+                                    required
+                                    value={shiftConfigsParams[activeConfigShift].label}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setShiftConfigsParams(prev => ({
+                                        ...prev,
+                                        [activeConfigShift]: { ...prev[activeConfigShift], label: val }
+                                      }));
+                                    }}
+                                    placeholder="e.g. Regular Shift"
+                                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
+                                  />
+                                </div>
+
+                                {/* Start Time with Clock Widget */}
+                                <div className="space-y-1 relative">
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Start Time (Clock Widget)</label>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowClockPresets(!showClockPresets)}
+                                      className="text-[9px] text-indigo-650 font-extrabold hover:underline flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Clock className="h-3 w-3 text-indigo-600" /> Presets
+                                    </button>
+                                  </div>
+                                  <div className="relative flex items-center">
+                                    <input
+                                      type="text"
+                                      required
+                                      value={shiftConfigsParams[activeConfigShift].startTime}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setShiftConfigsParams(prev => ({
+                                          ...prev,
+                                          [activeConfigShift]: { ...prev[activeConfigShift], startTime: val }
+                                        }));
+                                      }}
+                                      placeholder="e.g. 08:30 AM"
+                                      className="w-full bg-white border border-gray-200 rounded-xl pl-3 pr-10 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
+                                    />
+                                    <div className="absolute right-2 flex items-center gap-1">
+                                      <input
+                                        type="time"
+                                        onChange={(e) => {
+                                          const timeVal = e.target.value;
+                                          if (timeVal) {
+                                            const [hStr, mStr] = timeVal.split(":");
+                                            let h = parseInt(hStr, 10);
+                                            const m = parseInt(mStr, 10);
+                                            const ampm = h >= 12 ? "PM" : "AM";
+                                            h = h % 12;
+                                            if (h === 0) h = 12;
+                                            const formattedH = h < 10 ? `0${h}` : `${h}`;
+                                            const formattedM = m < 10 ? `0${m}` : `${m}`;
+                                            const formatted = `${formattedH}:${formattedM} ${ampm}`;
+                                            setShiftConfigsParams(prev => ({
+                                              ...prev,
+                                              [activeConfigShift]: { ...prev[activeConfigShift], startTime: formatted }
+                                            }));
+                                          }
+                                        }}
+                                        className="w-6 h-6 opacity-0 absolute right-0 cursor-pointer"
+                                        title="Open Time Picker Widget"
+                                      />
+                                      <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-650 pointer-events-none">
+                                        <Clock className="h-3.5 w-3.5" />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Clock Presets Dropdown */}
+                                  {showClockPresets && (
+                                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-indigo-150 rounded-2xl p-2.5 shadow-lg z-30 space-y-1.5 animate-fadeIn">
+                                      <div className="text-[9px] font-black text-gray-400 uppercase tracking-wider px-1">Quick Clock Presets</div>
+                                      <div className="grid grid-cols-4 gap-1">
+                                        {["08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM", "10:00 AM", "01:00 PM", "01:30 PM", "02:00 PM"].map(timePreset => (
+                                          <button
+                                            key={timePreset}
+                                            type="button"
+                                            onClick={() => {
+                                              setShiftConfigsParams(prev => ({
+                                                ...prev,
+                                                [activeConfigShift]: { ...prev[activeConfigShift], startTime: timePreset }
+                                              }));
+                                              setShowClockPresets(false);
+                                            }}
+                                            className={`py-1.5 rounded-lg text-[10px] font-extrabold transition-all border cursor-pointer ${shiftConfigsParams[activeConfigShift].startTime === timePreset
+                                                ? "bg-indigo-600 border-indigo-600 text-white shadow-2xs"
+                                                : "bg-gray-50 border-gray-150 text-gray-700 hover:bg-indigo-50 hover:border-indigo-200"
+                                              }`}
+                                          >
+                                            {timePreset}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Period Duration (minutes)</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    required
+                                    value={shiftConfigsParams[activeConfigShift].periodDuration}
+                                    onChange={(e) => {
+                                      const val = parseInt(e.target.value, 10) || 0;
+                                      setShiftConfigsParams(prev => ({
+                                        ...prev,
+                                        [activeConfigShift]: { ...prev[activeConfigShift], periodDuration: val }
+                                      }));
+                                    }}
+                                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
+                                  />
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Calculation Mode</label>
+                                  <select
+                                    value={shiftConfigsParams[activeConfigShift].mode}
+                                    onChange={(e) => {
+                                      const mode = e.target.value as "duration" | "fixed";
+                                      setShiftConfigsParams(prev => ({
+                                        ...prev,
+                                        [activeConfigShift]: {
+                                          ...prev[activeConfigShift],
+                                          mode,
+                                          endTime: mode === "fixed" ? "04:30 PM" : undefined
+                                        }
+                                      }));
+                                    }}
+                                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs cursor-pointer"
+                                  >
+                                    <option value="duration">Specify Number of Periods</option>
+                                    <option value="fixed">Specify Shift End Time</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {shiftConfigsParams[activeConfigShift].mode === "duration" ? (
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Number of Periods</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      required
+                                      value={shiftConfigsParams[activeConfigShift].periodsCount}
+                                      onChange={(e) => {
+                                        const val = parseInt(e.target.value, 10) || 0;
+                                        setShiftConfigsParams(prev => ({
+                                          ...prev,
+                                          [activeConfigShift]: { ...prev[activeConfigShift], periodsCount: val }
+                                        }));
+                                      }}
+                                      className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift End Time</label>
+                                    <input
+                                      type="text"
+                                      required
+                                      value={shiftConfigsParams[activeConfigShift].endTime || ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setShiftConfigsParams(prev => ({
+                                          ...prev,
+                                          [activeConfigShift]: { ...prev[activeConfigShift], endTime: val }
+                                        }));
+                                      }}
+                                      placeholder="e.g. 04:30 PM"
+                                      className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-xs"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Configured Breaks List */}
+                            <div className="space-y-3 bg-white p-4 border border-gray-205 rounded-2xl">
+                              <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                                <span className="text-[10px] uppercase font-bold text-gray-455 tracking-wider">Configured Breaks</span>
+                                <span className="text-[9px] text-indigo-500 font-bold bg-indigo-50 px-2 py-0.5 rounded-full">
+                                  {shiftConfigsParams[activeConfigShift].breaks.length} Breaks
+                                </span>
+                              </div>
+
+                              {shiftConfigsParams[activeConfigShift].breaks.length === 0 ? (
+                                <p className="text-[10px] text-gray-400 font-semibold text-center py-2">No breaks configured for this shift.</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {shiftConfigsParams[activeConfigShift].breaks.map((brk) => (
+                                    <div key={brk.id} className="flex items-center justify-between bg-slate-50/50 p-2.5 rounded-xl border border-gray-150">
+                                      <div>
+                                        <div className="font-extrabold text-xs text-gray-800">{brk.name}</div>
+                                        <div className="text-[9.5px] font-bold text-gray-455 mt-0.5">
+                                          {brk.duration} min • Occurs after Period {brk.afterPeriod}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          disabled={brk.afterPeriod <= 1}
+                                          onClick={() => {
+                                            const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
+                                              b.id === brk.id ? { ...b, afterPeriod: b.afterPeriod - 1 } : b
+                                            );
+                                            setShiftConfigsParams(prev => ({
+                                              ...prev,
+                                              [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                            }));
+                                          }}
+                                          className="p-1 text-gray-400 hover:text-indigo-650 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                                        >▲</button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
+                                              b.id === brk.id ? { ...b, afterPeriod: b.afterPeriod + 1 } : b
+                                            );
+                                            setShiftConfigsParams(prev => ({
+                                              ...prev,
+                                              [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                            }));
+                                          }}
+                                          className="p-1 text-gray-400 hover:text-indigo-650 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
+                                        >▼</button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.filter(b => b.id !== brk.id);
+                                            setShiftConfigsParams(prev => ({
+                                              ...prev,
+                                              [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                            }));
+                                          }}
+                                          className="text-[10px] text-red-500 font-extrabold hover:text-red-750 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                                        >Remove</button>
+                                      </div>
+                                    </div>
                                   ))}
                                 </div>
                               )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
 
-                {/* Footer Navigation */}
-                <div className="flex justify-between gap-2 px-6 py-4 border-t border-gray-100 bg-gray-50/50 rounded-b-3xl shrink-0">
-                  <div>
-                    {campusWizardStep > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => { setCampusWizardStep(campusWizardStep - 1); setModalError(null); }}
-                        className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
-                      >
-                        ← Back
-                      </button>
+                              <div className="bg-slate-50/50 p-3 rounded-xl border border-gray-150 border-dashed space-y-3 mt-3">
+                                <div className="text-[10px] font-bold text-gray-555 uppercase tracking-wider">Add Custom Break</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] text-gray-400 uppercase font-bold block">Break Name</label>
+                                    <input
+                                      type="text"
+                                      value={newBreakName}
+                                      onChange={(e) => setNewBreakName(e.target.value)}
+                                      placeholder="e.g. Lunch"
+                                      className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] text-gray-400 uppercase font-bold block">Duration (min)</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={newBreakDuration}
+                                      onChange={(e) => setNewBreakDuration(parseInt(e.target.value, 10) || 0)}
+                                      className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] text-gray-400 uppercase font-bold block">After Period #</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={newBreakAfterPeriod}
+                                      onChange={(e) => setNewBreakAfterPeriod(parseInt(e.target.value, 10) || 1)}
+                                      className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 font-bold text-xs"
+                                    />
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!newBreakName.trim()) return;
+                                    const brk: ShiftBreak = {
+                                      id: `b_${Date.now()}`,
+                                      name: newBreakName.trim(),
+                                      duration: newBreakDuration,
+                                      afterPeriod: newBreakAfterPeriod
+                                    };
+                                    setShiftConfigsParams(prev => ({
+                                      ...prev,
+                                      [activeConfigShift]: {
+                                        ...prev[activeConfigShift],
+                                        breaks: [...prev[activeConfigShift].breaks, brk]
+                                      }
+                                    }));
+                                    setNewBreakName("");
+                                  }}
+                                  className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-extrabold py-2 rounded-xl border border-indigo-150 transition-colors cursor-pointer"
+                                >
+                                  + Add Break to Shift
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right Column (Floating Drag & Drop Live Timetable Preview Panel) */}
+                          <div className="lg:col-span-5 sticky top-2">
+                            {(() => {
+                              const schedule = calculateShiftSchedule(shiftConfigsParams[activeConfigShift]);
+                              return (
+                                <div className="bg-slate-900 text-white p-4.5 rounded-3xl space-y-3.5 shadow-xl border border-slate-800 animate-fadeIn">
+                                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                                    <div>
+                                      <div className="text-[11px] uppercase font-black tracking-wider text-indigo-300 flex items-center gap-1.5">
+                                        <Sparkles className="h-3.5 w-3.5 text-indigo-400" /> Live Timetable Preview
+                                      </div>
+                                      <p className="text-[9px] text-slate-400 font-semibold mt-0.5">Drag & drop breaks onto periods to reorder</p>
+                                    </div>
+                                    {schedule.overallEndTime && (
+                                      <div className="text-[9.5px] font-bold text-emerald-300 bg-emerald-950/80 border border-emerald-800/60 px-2.5 py-1 rounded-full shrink-0">
+                                        Ends: {schedule.overallEndTime} ({schedule.totalPeriods} Periods)
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {schedule.error ? (
+                                    <div className="text-[10.5px] font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-2xl p-3">
+                                      {schedule.error}
+                                    </div>
+                                  ) : (shiftConfigsParams[activeConfigShift].breaks.length === 0) ? (
+                                    <div className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-2xl p-3 flex items-center gap-2">
+                                      <span>⚠️</span>
+                                      <span>At least one break must be configured for this shift.</span>
+                                    </div>
+                                  ) : schedule.items.length === 0 ? (
+                                    <p className="text-[10px] text-slate-500 font-semibold py-4 text-center">No periods calculated yet.</p>
+                                  ) : (
+                                    <div className="relative border-l-2 border-indigo-500/40 ml-3 pl-4 py-1 space-y-2 text-[11px]">
+                                      {schedule.items.map((item, index) => {
+                                        const isBreak = item.type === "break";
+                                        const matchedBreak = isBreak
+                                          ? shiftConfigsParams[activeConfigShift].breaks.find(b => b.name === item.name)
+                                          : null;
+
+                                        return (
+                                          <div
+                                            key={index}
+                                            draggable={isBreak}
+                                            onDragStart={(e) => {
+                                              if (matchedBreak) {
+                                                e.dataTransfer.setData("text/plain", matchedBreak.id);
+                                                setDraggedBreakId(matchedBreak.id);
+                                              }
+                                            }}
+                                            onDragOver={(e) => e.preventDefault()}
+                                            onDrop={() => {
+                                              if (draggedBreakId) {
+                                                let targetP = item.type === "period" ? (item.index || 1) : 1;
+                                                if (item.type === "break" && index > 0) {
+                                                  const prevItem = schedule.items[index - 1];
+                                                  if (prevItem && prevItem.type === "period") targetP = prevItem.index || 1;
+                                                }
+                                                const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
+                                                  b.id === draggedBreakId ? { ...b, afterPeriod: targetP } : b
+                                                );
+                                                setShiftConfigsParams(prev => ({
+                                                  ...prev,
+                                                  [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                                }));
+                                                setDraggedBreakId(null);
+                                              }
+                                            }}
+                                            className={`relative flex flex-col gap-1.5 p-2.5 rounded-2xl transition-all border ${isBreak
+                                                ? "bg-amber-950/40 border-amber-500/30 hover:bg-amber-900/50 cursor-grab active:cursor-grabbing"
+                                                : "bg-slate-800/70 border-slate-700/60 hover:bg-slate-800"
+                                              } ${draggedBreakId && matchedBreak?.id === draggedBreakId ? "opacity-40 scale-[0.98]" : ""}`}
+                                          >
+                                            <div className={`absolute -left-[21px] top-3 w-2.5 h-2.5 rounded-full border-2 ${isBreak ? "bg-amber-400 border-amber-300 shadow-amber-500/50 shadow-sm" : "bg-indigo-400 border-indigo-300 shadow-indigo-500/50 shadow-sm"
+                                              }`} />
+
+                                            <div className="flex items-center justify-between gap-2">
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                {isBreak && <GripVertical className="h-3.5 w-3.5 text-amber-400/80 shrink-0" />}
+                                                <span className={`font-black text-xs truncate ${isBreak ? "text-amber-300" : "text-slate-100"}`}>
+                                                  {item.name}
+                                                </span>
+                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-900/90 text-indigo-300 border border-slate-700/80 shrink-0">
+                                                  {item.durationMinutes || 0}m
+                                                </span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    if (item.type === "period" && item.index) {
+                                                      setEditingPeriodNum(editingPeriodNum === item.index ? null : item.index);
+                                                    } else if (matchedBreak) {
+                                                      setEditingPeriodNum(editingPeriodNum === index + 100 ? null : index + 100);
+                                                    }
+                                                  }}
+                                                  title="Edit duration for this specific period/break"
+                                                  className="p-1 rounded-md text-slate-400 hover:text-indigo-300 hover:bg-slate-700 transition-colors cursor-pointer"
+                                                >
+                                                  <Edit className="h-3 w-3" />
+                                                </button>
+                                              </div>
+
+                                              <span className="font-mono font-bold text-[10px] text-slate-300 shrink-0 bg-slate-950/80 px-2 py-0.5 rounded-md border border-slate-800">
+                                                {item.startTimeStr} - {item.endTimeStr}
+                                              </span>
+                                            </div>
+
+                                            {/* Inline Duration Adjustment Controls (Pencil Edit) */}
+                                            {item.type === "period" && item.index && editingPeriodNum === item.index && (
+                                              <div className="mt-1 pt-1.5 border-t border-slate-700/60 flex items-center justify-between gap-2 text-[10px] animate-fadeIn bg-slate-900/90 p-2 rounded-xl">
+                                                <div>
+                                                  <span className="text-slate-200 font-extrabold block">Adjust Period {item.index} Duration:</span>
+                                                  <span className="text-[8.5px] text-indigo-300/80 font-medium block">Only updates Period {item.index} & subsequent times</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      const cur = item.durationMinutes || shiftConfigsParams[activeConfigShift].periodDuration;
+                                                      const updated = Math.max(5, cur - 5);
+                                                      setShiftConfigsParams(prev => ({
+                                                        ...prev,
+                                                        [activeConfigShift]: {
+                                                          ...prev[activeConfigShift],
+                                                          customPeriodDurations: {
+                                                            ...prev[activeConfigShift].customPeriodDurations,
+                                                            [item.index!]: updated
+                                                          }
+                                                        }
+                                                      }));
+                                                    }}
+                                                    className="h-5 w-5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-black rounded-md flex items-center justify-center cursor-pointer"
+                                                  >−</button>
+                                                  <span className="font-mono font-extrabold text-indigo-300 w-8 text-center">
+                                                    {item.durationMinutes || shiftConfigsParams[activeConfigShift].periodDuration}m
+                                                  </span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      const cur = item.durationMinutes || shiftConfigsParams[activeConfigShift].periodDuration;
+                                                      const updated = cur + 5;
+                                                      setShiftConfigsParams(prev => ({
+                                                        ...prev,
+                                                        [activeConfigShift]: {
+                                                          ...prev[activeConfigShift],
+                                                          customPeriodDurations: {
+                                                            ...prev[activeConfigShift].customPeriodDurations,
+                                                            [item.index!]: updated
+                                                          }
+                                                        }
+                                                      }));
+                                                    }}
+                                                    className="h-5 w-5 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-md flex items-center justify-center cursor-pointer"
+                                                  >+</button>
+                                                  {shiftConfigsParams[activeConfigShift].customPeriodDurations?.[item.index] && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => {
+                                                        const copy = { ...shiftConfigsParams[activeConfigShift].customPeriodDurations };
+                                                        delete copy[item.index!];
+                                                        setShiftConfigsParams(prev => ({
+                                                          ...prev,
+                                                          [activeConfigShift]: {
+                                                            ...prev[activeConfigShift],
+                                                            customPeriodDurations: copy
+                                                          }
+                                                        }));
+                                                      }}
+                                                      className="text-[9px] text-amber-400 hover:underline font-bold ml-1 cursor-pointer"
+                                                    >
+                                                      Reset
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            )}
+
+                                            {/* Inline Break Duration Adjustment */}
+                                            {isBreak && matchedBreak && editingPeriodNum === index + 100 && (
+                                              <div className="mt-1 pt-1.5 border-t border-amber-900/60 flex items-center justify-between gap-2 text-[10px] animate-fadeIn bg-amber-950/80 p-2 rounded-xl">
+                                                <div>
+                                                  <span className="text-amber-200 font-extrabold block">Adjust {matchedBreak.name} Duration:</span>
+                                                  <span className="text-[8.5px] text-amber-300/80 font-medium block">Only updates break & subsequent times</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
+                                                        b.id === matchedBreak.id ? { ...b, duration: Math.max(5, b.duration - 5) } : b
+                                                      );
+                                                      setShiftConfigsParams(prev => ({
+                                                        ...prev,
+                                                        [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                                      }));
+                                                    }}
+                                                    className="h-5 w-5 bg-slate-800 hover:bg-slate-700 text-amber-200 font-black rounded-md flex items-center justify-center cursor-pointer"
+                                                  >−</button>
+                                                  <span className="font-mono font-extrabold text-amber-300 w-8 text-center">
+                                                    {matchedBreak.duration}m
+                                                  </span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      const updatedBreaks = shiftConfigsParams[activeConfigShift].breaks.map(b =>
+                                                        b.id === matchedBreak.id ? { ...b, duration: b.duration + 5 } : b
+                                                      );
+                                                      setShiftConfigsParams(prev => ({
+                                                        ...prev,
+                                                        [activeConfigShift]: { ...prev[activeConfigShift], breaks: updatedBreaks }
+                                                      }));
+                                                    }}
+                                                    className="h-5 w-5 bg-amber-600 hover:bg-amber-500 text-white font-black rounded-md flex items-center justify-center cursor-pointer"
+                                                  >+</button>
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ────────────────── STEP 4: REVIEW ────────────────── */}
+                    {campusWizardStep === 4 && (
+                      <div className="space-y-4 animate-fadeIn">
+                        <div className="pb-1 border-b border-gray-100">
+                          <h4 className="text-xs font-black text-gray-800 uppercase tracking-wider">Review & Create</h4>
+                          <p className="text-[9.5px] text-gray-400 font-semibold mt-0.5">Confirm all details before creating the campus.</p>
+                        </div>
+
+                        {/* Campus Info Summary */}
+                        <div className="bg-indigo-50/40 border border-indigo-100 rounded-2xl p-4 space-y-2">
+                          <div className="text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-2">Campus Info</div>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                            <div>
+                              <div className="text-[9px] text-gray-400 uppercase font-bold">Campus Name</div>
+                              <div className="text-xs font-extrabold text-gray-800">{campusForm.name || "—"}</div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] text-gray-400 uppercase font-bold">Code</div>
+                              <div className="text-xs font-extrabold text-gray-800">{campusForm.code || "—"}</div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] text-gray-400 uppercase font-bold">Academic Year</div>
+                              <div className="text-xs font-extrabold text-gray-800">{campusForm.academic_year || "—"}</div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] text-gray-400 uppercase font-bold">Shift Mode</div>
+                              <div className="text-xs font-extrabold text-gray-800">{campusForm.has_shifts === 1 ? "Multiple Shifts" : "General Shift"}</div>
+                            </div>
+                            <div className="col-span-2">
+                              <div className="text-[9px] text-gray-400 uppercase font-bold">Address</div>
+                              <div className="text-xs font-extrabold text-gray-800">{campusForm.address || "—"}</div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] text-gray-400 uppercase font-bold">KAM</div>
+                              <div className="text-xs font-extrabold text-gray-800">
+                                {kamList.find(k => k.id === campusForm.kam_id)?.name || "—"}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] text-gray-400 uppercase font-bold">Campus Manager</div>
+                              <div className="text-xs font-extrabold text-gray-800">
+                                {camList.find(c => c.id === campusForm.manager)?.name || "Not assigned"}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Courses Summary */}
+                        <div className="bg-slate-50 border border-gray-200 rounded-2xl p-4 space-y-2">
+                          <div className="text-[10px] font-black text-gray-700 uppercase tracking-wider mb-2">
+                            Courses ({wizardCourses.length})
+                          </div>
+                          {wizardCourses.length === 0 ? (
+                            <p className="text-[10px] text-gray-400 font-semibold">No courses added.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {wizardCourses.map((c, idx) => (
+                                <div key={idx} className="bg-white border border-gray-150 rounded-xl p-3 space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-extrabold text-xs text-gray-800">{c.name}</span>
+                                    <span className="text-[8px] font-extrabold bg-indigo-50 border border-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded uppercase">
+                                      {c.years}Y · {c.years * 2} Sem
+                                    </span>
+                                  </div>
+                                  {c.sectionRooms && Object.keys(c.sectionRooms).length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {Object.entries(c.sectionRooms as Record<string, string>).map(([key, room]) => (
+                                        <span key={key} className="text-[8.5px] font-bold text-gray-600 bg-gray-50 border border-gray-150 px-1.5 py-0.5 rounded-lg">
+                                          {key}: <span className="text-gray-800">{room}</span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Shift Summary */}
+                        <div className="bg-slate-50 border border-gray-200 rounded-2xl p-4 space-y-2">
+                          <div className="text-[10px] font-black text-gray-700 uppercase tracking-wider mb-2">Shift Schedule</div>
+                          {(campusForm.has_shifts === 1 ? (["shift_1", "shift_2", "general"] as const) : (["general"] as const)).map(sh => {
+                            const p = shiftConfigsParams[sh];
+                            const schedule = calculateShiftSchedule(p);
+                            return (
+                              <div key={sh} className="space-y-1">
+                                <div className="text-[10px] font-extrabold text-indigo-700">{p.label}</div>
+                                <div className="text-[9.5px] text-gray-600 font-bold">
+                                  Start: {p.startTime} · {p.periodsCount} Periods · {p.periodDuration} min/period
+                                  {schedule.overallEndTime && ` · Ends: ${schedule.overallEndTime}`}
+                                </div>
+                                {p.breaks.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {p.breaks.map(b => (
+                                      <span key={b.id} className="text-[8.5px] font-bold bg-amber-50 border border-amber-100 text-amber-700 px-1.5 py-0.5 rounded-lg">
+                                        {b.name} ({b.duration}min after P{b.afterPeriod})
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => { setShowCampusModal(false); setCampusSuccessCreatedId(null); }}
-                      className="px-4 py-2 hover:bg-gray-100 text-gray-500 rounded-xl transition-all font-bold cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    {campusWizardStep < 4 ? (
+
+                  {/* Footer Navigation */}
+                  <div className="flex justify-between gap-2 px-6 py-4 border-t border-gray-100 bg-gray-50/50 rounded-b-3xl shrink-0">
+                    <div>
+                      {campusWizardStep > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => { setCampusWizardStep(campusWizardStep - 1); setModalError(null); }}
+                          className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
+                        >
+                          ← Back
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          setModalError(null);
-                          setCampusFieldErrors({});
-                          if (campusWizardStep === 1) {
-                            const errs: Record<string, boolean> = {};
-                            if (!campusForm.name.trim()) errs.name = true;
-                            if (!campusForm.address.trim()) errs.address = true;
-                            if (!campusForm.kam_id) errs.kam_id = true;
-                            if (Object.keys(errs).length > 0) {
-                              setCampusFieldErrors(errs);
-                              setModalError("Please fill in all required fields highlighted in red.");
+                        onClick={() => { setShowCampusModal(false); setCampusSuccessCreatedId(null); }}
+                        className="px-4 py-2 hover:bg-gray-100 text-gray-500 rounded-xl transition-all font-bold cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      {campusWizardStep < 4 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalError(null);
+                            setCampusFieldErrors({});
+                            if (campusWizardStep === 1) {
+                              const errs: Record<string, boolean> = {};
+                              if (!campusForm.name.trim()) errs.name = true;
+                              if (!campusForm.address.trim()) errs.address = true;
+                              if (!campusForm.kam_id) errs.kam_id = true;
+                              if (Object.keys(errs).length > 0) {
+                                setCampusFieldErrors(errs);
+                                setModalError("Please fill in all required fields highlighted in red.");
+                                return;
+                              }
+                            }
+                            if (campusWizardStep === 2 && wizardCourses.length === 0) {
+                              setModalError("Please add at least one course before continuing.");
                               return;
                             }
-                          }
-                          if (campusWizardStep === 2 && wizardCourses.length === 0) {
-                            setModalError("Please add at least one course before continuing.");
-                            return;
-                          }
-                          if (campusWizardStep === 3) {
-                            if (campusForm.has_shifts === 1) {
-                              if (!shiftConfigsParams.shift_1.breaks || shiftConfigsParams.shift_1.breaks.length === 0) {
-                                setShiftConfigsParams(prev => ({
-                                  ...prev,
-                                  shift_1: { ...prev.shift_1, breaks: [{ id: "b1", name: "Tea Break", afterPeriod: 2, duration: 15 }] }
-                                }));
-                              }
-                              if (!shiftConfigsParams.shift_2.breaks || shiftConfigsParams.shift_2.breaks.length === 0) {
-                                setShiftConfigsParams(prev => ({
-                                  ...prev,
-                                  shift_2: { ...prev.shift_2, breaks: [{ id: "b1", name: "Tea Break", afterPeriod: 2, duration: 15 }] }
-                                }));
-                              }
-                            } else {
-                              if (!shiftConfigsParams.general.breaks || shiftConfigsParams.general.breaks.length === 0) {
-                                setShiftConfigsParams(prev => ({
-                                  ...prev,
-                                  general: { ...prev.general, breaks: [{ id: "b1", name: "Break", afterPeriod: 2, duration: 15 }] }
-                                }));
+                            if (campusWizardStep === 3) {
+                              if (campusForm.has_shifts === 1) {
+                                if (!shiftConfigsParams.shift_1.breaks || shiftConfigsParams.shift_1.breaks.length === 0) {
+                                  setShiftConfigsParams(prev => ({
+                                    ...prev,
+                                    shift_1: { ...prev.shift_1, breaks: [{ id: "b1", name: "Tea Break", afterPeriod: 2, duration: 15 }] }
+                                  }));
+                                }
+                                if (!shiftConfigsParams.shift_2.breaks || shiftConfigsParams.shift_2.breaks.length === 0) {
+                                  setShiftConfigsParams(prev => ({
+                                    ...prev,
+                                    shift_2: { ...prev.shift_2, breaks: [{ id: "b1", name: "Tea Break", afterPeriod: 2, duration: 15 }] }
+                                  }));
+                                }
+                              } else {
+                                if (!shiftConfigsParams.general.breaks || shiftConfigsParams.general.breaks.length === 0) {
+                                  setShiftConfigsParams(prev => ({
+                                    ...prev,
+                                    general: { ...prev.general, breaks: [{ id: "b1", name: "Break", afterPeriod: 2, duration: 15 }] }
+                                  }));
+                                }
                               }
                             }
-                          }
-                          setCampusWizardStep(campusWizardStep + 1);
-                        }}
-                        className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
-                      >
-                        Next Step →
-                      </button>
-                    ) : (
-                      <LoadingButton
-                        type="submit"
-                        isLoading={loadingActions['submit_campus']}
-                        loadingText={editingCampus ? "Saving..." : "Creating..."}
-                        variant="gradient"
-                        className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
-                      >
-                        {editingCampus ? "Save Changes" : "Yes Create Campus"}
-                      </LoadingButton>
-                    )}
+                            setCampusWizardStep(campusWizardStep + 1);
+                          }}
+                          className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                        >
+                          Next Step →
+                        </button>
+                      ) : (
+                        <LoadingButton
+                          type="submit"
+                          isLoading={loadingActions['submit_campus']}
+                          loadingText={editingCampus ? "Saving..." : "Creating..."}
+                          variant="gradient"
+                          className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                        >
+                          {editingCampus ? "Save Changes" : "Yes Create Campus"}
+                        </LoadingButton>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
-
-      {showKamModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
-            <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
-              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                <Briefcase className="h-5 w-5 text-indigo-655" />
-                {editingKam ? "Edit Key Account Manager" : "Add Key Account Manager"}
-              </h3>
-              <button onClick={() => setShowKamModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            
-            <form onSubmit={handleKamSubmit} className="p-6 space-y-4 text-xs font-semibold">
-              {modalError && (
-                <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
-                  <ShieldAlert className="h-4 w-4 shrink-0" />
-                  {modalError}
-                </div>
+                </form>
               )}
-              
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">KAM ID</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. kam_3"
-                  disabled={editingKam}
-                  value={kamForm.id}
-                  onChange={(e) => setKamForm({ ...kamForm, id: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 disabled:bg-gray-100 disabled:text-gray-400"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Ramesh Dev"
-                  value={kamForm.name}
-                  onChange={(e) => setKamForm({ ...kamForm, name: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. ramesh.kam@university.edu"
-                  value={kamForm.email}
-                  onChange={(e) => setKamForm({ ...kamForm, email: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Title / Position</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Key Account Manager"
-                  value={kamForm.title}
-                  onChange={(e) => setKamForm({ ...kamForm, title: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setShowKamModal(false)}
-                  className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <LoadingButton
-                  type="submit"
-                  isLoading={loadingActions['submit_kam']}
-                  loadingText={editingKam ? "Saving..." : "Creating..."}
-                  variant="gradient"
-                  className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
-                >
-                  {editingKam ? "Save Changes" : "Create KAM"}
-                </LoadingButton>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── CAM Modal ── */}
-      {showCamModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
-            <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
-              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                <Users className="h-5 w-5 text-indigo-655" />
-                {editingCam ? "Edit Campus Manager" : "Add Campus Manager"}
-              </h3>
-              <button onClick={() => setShowCamModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            
-            <form onSubmit={handleCamSubmit} className="p-6 space-y-4 text-xs font-semibold">
-              {modalError && (
-                <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
-                  <ShieldAlert className="h-4 w-4 shrink-0" />
-                  {modalError}
-                </div>
-              )}
-              
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">CAM ID</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. cam_3"
-                  disabled={editingCam}
-                  value={camForm.id}
-                  onChange={(e) => setCamForm({ ...camForm, id: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 disabled:bg-gray-100 disabled:text-gray-400"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Priya Venkatesh"
-                  value={camForm.name}
-                  onChange={(e) => setCamForm({ ...camForm, name: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. priya.cam@university.edu"
-                  value={camForm.email}
-                  onChange={(e) => setCamForm({ ...camForm, email: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Assigned Campus</label>
-                <select
-                  required
-                  value={camForm.college_id}
-                  onChange={(e) => setCamForm({ ...camForm, college_id: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                >
-                  <option value="">Select Campus</option>
-                  {colleges.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Reporting KAM Manager</label>
-                <select
-                  required
-                  value={camForm.kam_id}
-                  onChange={(e) => setCamForm({ ...camForm, kam_id: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
-                >
-                  <option value="">Select Reporting KAM</option>
-                  {kamList.map(kam => (
-                    <option key={kam.id} value={kam.id}>{kam.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setShowCamModal(false)}
-                  className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <LoadingButton
-                  type="submit"
-                  isLoading={loadingActions['submit_cam']}
-                  loadingText={editingCam ? "Saving..." : "Creating..."}
-                  variant="gradient"
-                  className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
-                >
-                  {editingCam ? "Save Changes" : "Create Campus Manager"}
-                </LoadingButton>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── SME Modal ── */}
-      {showSmeModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
-            <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
-              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5 font-sans">
-                <BookOpen className="h-5 w-5 text-indigo-650" />
-                {isEditingSme ? "Edit Subject Matter Expert" : "Add Subject Matter Expert"}
-              </h3>
-              <button onClick={() => setShowSmeModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-4 text-xs font-semibold font-sans">
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">SME ID</label>
-                <input
-                  type="text"
-                  disabled={isEditingSme}
-                  value={smeForm.id}
-                  onChange={(e) => setSmeForm({ ...smeForm, id: e.target.value })}
-                  placeholder="e.g. sme_4"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-gray-700 bg-white outline-none focus:ring-1 focus:ring-indigo-650 disabled:bg-gray-100 disabled:text-gray-400 font-mono"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Full Name</label>
-                <input
-                  type="text"
-                  value={smeForm.name}
-                  onChange={(e) => setSmeForm({ ...smeForm, name: e.target.value })}
-                  placeholder="e.g. Dr. Ramesh Kumar"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-gray-700 bg-white outline-none focus:ring-1 focus:ring-indigo-650"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Email Address</label>
-                <input
-                  type="email"
-                  value={smeForm.email}
-                  onChange={(e) => setSmeForm({ ...smeForm, email: e.target.value })}
-                  placeholder="e.g. ramesh.sme@zentra.edu"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-gray-700 bg-white outline-none focus:ring-1 focus:ring-indigo-650"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Group Specialization</label>
-                <select
-                  value={smeForm.subject}
-                  onChange={(e) => setSmeForm({ ...smeForm, subject: e.target.value })}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-gray-700 bg-white outline-none focus:ring-1 focus:ring-indigo-650"
-                >
-                  <option value="">-- Unassigned --</option>
-                  {subjectGroups && subjectGroups.map(sg => (
-                    <option key={sg.id} value={sg.name}>{sg.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setShowSmeModal(false)}
-                  className="px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <LoadingButton
-                  type="button"
-                  isLoading={loadingActions['submit_sme']}
-                  loadingText="Saving..."
-                  variant="secondary"
-                  onClick={handleSaveSme}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-md cursor-pointer"
-                >
-                  Save SME
-                </LoadingButton>
-              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Mentor Modal ── */}
-      {showMentorModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-lg w-full overflow-hidden animate-slideUp">
-            <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
-              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                <Users className="h-5 w-5 text-indigo-650" />
-                {editingMentor ? "Edit Faculty Mentor" : "Add Faculty Mentor"}
-              </h3>
-              <button onClick={() => setShowMentorModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            
-            <form onSubmit={handleMentorSubmit} className="p-6 space-y-3.5 text-xs font-semibold max-h-[80vh] overflow-y-auto">
-              {modalError && (
-                <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
-                  <ShieldAlert className="h-4 w-4 shrink-0" />
-                  {modalError}
-                </div>
-              )}
+        {showKamModal && (
+          <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+              <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
+                  <Briefcase className="h-5 w-5 text-indigo-655" />
+                  {editingKam ? "Edit Key Account Manager" : "Add Key Account Manager"}
+                </h3>
+                <button onClick={() => setShowKamModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <form onSubmit={handleKamSubmit} className="p-6 space-y-4 text-xs font-semibold">
+                {modalError && (
+                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    {modalError}
+                  </div>
+                )}
+
                 <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Mentor ID</label>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">KAM ID</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. m35"
-                    disabled={editingMentor}
-                    value={mentorForm.id}
-                    onChange={(e) => setMentorForm({ ...mentorForm, id: e.target.value })}
+                    placeholder="e.g. kam_3"
+                    disabled={editingKam}
+                    value={kamForm.id}
+                    onChange={(e) => setKamForm({ ...kamForm, id: e.target.value })}
                     className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 disabled:bg-gray-100 disabled:text-gray-400"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Initials / Avatar</label>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Full Name</label>
                   <input
                     type="text"
-                    placeholder="e.g. MS (Leave blank to auto-generate)"
-                    value={mentorForm.avatar}
-                    onChange={(e) => setMentorForm({ ...mentorForm, avatar: e.target.value })}
+                    required
+                    placeholder="e.g. Ramesh Dev"
+                    value={kamForm.name}
+                    onChange={(e) => setKamForm({ ...kamForm, name: e.target.value })}
                     className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
                   />
                 </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. ramesh.kam@university.edu"
+                    value={kamForm.email}
+                    onChange={(e) => setKamForm({ ...kamForm, email: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Title / Position</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Key Account Manager"
+                    value={kamForm.title}
+                    onChange={(e) => setKamForm({ ...kamForm, title: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowKamModal(false)}
+                    className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <LoadingButton
+                    type="submit"
+                    isLoading={loadingActions['submit_kam']}
+                    loadingText={editingKam ? "Saving..." : "Creating..."}
+                    variant="gradient"
+                    className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  >
+                    {editingKam ? "Save Changes" : "Create KAM"}
+                  </LoadingButton>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ── CAM Modal ── */}
+        {showCamModal && (
+          <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+              <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
+                  <Users className="h-5 w-5 text-indigo-655" />
+                  {editingCam ? "Edit Campus Manager" : "Add Campus Manager"}
+                </h3>
+                <button onClick={() => setShowCamModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Dr. Alice Smith"
-                  value={mentorForm.name}
-                  onChange={(e) => setMentorForm({ ...mentorForm, name: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                />
-              </div>
+              <form onSubmit={handleCamSubmit} className="p-6 space-y-4 text-xs font-semibold">
+                {modalError && (
+                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    {modalError}
+                  </div>
+                )}
 
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. alice.smith@university.edu"
-                  value={mentorForm.email}
-                  onChange={(e) => setMentorForm({ ...mentorForm, email: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                />
-              </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">CAM ID</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. cam_3"
+                    disabled={editingCam}
+                    value={camForm.id}
+                    onChange={(e) => setCamForm({ ...camForm, id: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 disabled:bg-gray-100 disabled:text-gray-400"
+                  />
+                </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Priya Venkatesh"
+                    value={camForm.name}
+                    onChange={(e) => setCamForm({ ...camForm, name: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. priya.cam@university.edu"
+                    value={camForm.email}
+                    onChange={(e) => setCamForm({ ...camForm, email: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                  />
+                </div>
+
                 <div className="space-y-1">
                   <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Assigned Campus</label>
                   <select
                     required
-                    value={mentorForm.college_id}
-                    onChange={(e) => setMentorForm({ ...mentorForm, college_id: e.target.value })}
+                    value={camForm.college_id}
+                    onChange={(e) => setCamForm({ ...camForm, college_id: e.target.value })}
                     className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
                   >
                     <option value="">Select Campus</option>
@@ -6828,560 +6586,314 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </select>
                 </div>
 
-                {isCampusShiftBased && (
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Shift Assignment</label>
-                    <p className="text-[10px] text-slate-500 italic py-2">Shifts are assigned per slot, not per faculty member.</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Group</label>
-                <select
-                  required
-                  value={mentorForm.department}
-                  onChange={(e) => setMentorForm({ ...mentorForm, department: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                >
-                  <option value="">— Select Group —</option>
-                  {subjectGroups.map(sg => (
-                    <option key={sg.id} value={sg.name}>{sg.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Group / Category</label>
-                <select
-                  required
-                  value={mentorForm.subject_group}
-                  onChange={(e) => setMentorForm({ ...mentorForm, subject_group: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                >
-                  {subjectGroups.map(sg => (
-                    <option key={sg.id} value={sg.name}>{sg.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Subject Mapping Checklist */}
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Map Subjects to Mentor</label>
-                <div className="relative mb-1.5">
-                  <Search className="absolute left-2.5 top-1.5 h-3.5 w-3.5 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search subject catalog..."
-                    value={mentorSubjectSearch}
-                    onChange={(e) => setMentorSubjectSearch(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-650 font-bold"
-                  />
-                </div>
-                
-                <div className="border border-gray-150 rounded-xl bg-gray-55 p-3.5 max-h-36 overflow-y-auto space-y-1.5 text-[11px] font-bold">
-                  {(() => {
-                    const searched = (subjectsList || []).filter(s => {
-                      const matchesSearch = s.name.toLowerCase().includes(mentorSubjectSearch.toLowerCase()) ||
-                                            s.department.toLowerCase().includes(mentorSubjectSearch.toLowerCase());
-                      if (!mentorSubjectSearch && mentorForm.department) {
-                        return s.department.toLowerCase() === mentorForm.department.toLowerCase();
-                      }
-                      return matchesSearch;
-                    });
-
-                    const currentCheckedList = mentorForm.subjects.split("\n").map(s => s.trim()).filter(Boolean);
-
-                    return (
-                      <>
-                        {searched.map(s => {
-                          const isChecked = currentCheckedList.includes(s.name);
-                          return (
-                            <label key={s.id} className="flex items-start gap-2 py-1 px-1.5 hover:bg-white rounded cursor-pointer transition-colors text-gray-700">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={(e) => {
-                                  let newList;
-                                  if (e.target.checked) {
-                                    newList = [...currentCheckedList, s.name];
-                                  } else {
-                                    newList = currentCheckedList.filter(item => item !== s.name);
-                                  }
-                                  setMentorForm({ ...mentorForm, subjects: newList.join("\n") });
-                                }}
-                                className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer mt-0.5"
-                              />
-                              <div className="leading-tight">
-                                <span className="font-bold text-gray-800">{s.name}</span>
-                                <span className="text-[9px] text-gray-400 block font-semibold">{s.department} • {s.semester}</span>
-                              </div>
-                            </label>
-                          );
-                        })}
-                        {searched.length === 0 && (
-                          <div className="text-center text-gray-450 italic py-2">
-                            No subjects found. Select/input a department to filter or search catalog.
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setShowMentorModal(false)}
-                  className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <LoadingButton
-                  type="submit"
-                  isLoading={loadingActions['submit_mentor']}
-                  loadingText={editingMentor ? "Saving..." : "Creating..."}
-                  variant="gradient"
-                  className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
-                >
-                  {editingMentor ? "Save Changes" : "Create Mentor"}
-                </LoadingButton>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showSubjectModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className={`bg-white rounded-3xl border border-gray-150 shadow-xl w-full overflow-hidden animate-slideUp transition-all ${editingSubject ? "max-w-md" : "max-w-3xl"}`}>
-            <div className="flex justify-between items-center p-5 border-b border-gray-100 bg-gray-50">
-              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                <GraduationCap className="h-5 w-5 text-indigo-655" />
-                {editingSubject ? "Edit Subject Details" : "Add Subject to Catalog"}
-              </h3>
-              <button onClick={() => setShowSubjectModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            
-            <form onSubmit={handleSubjectSubmit} className="p-5 space-y-4 text-xs font-semibold">
-              {modalError && (
-                <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
-                  <ShieldAlert className="h-4 w-4 shrink-0" />
-                  {modalError}
-                </div>
-              )}
-
-              <div className={editingSubject ? "space-y-3" : "grid grid-cols-1 md:grid-cols-2 gap-6"}>
-                <div className="space-y-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Name</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Modern Natural Language Processing"
-                      value={subjectForm.name}
-                      onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Course Name</label>
-                      <select
-                        required
-                        disabled={lockDeptAndYear}
-                        value={subjectForm.department}
-                        onChange={(e) => setSubjectForm({ ...subjectForm, department: e.target.value })}
-                        className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
-                      >
-                        <option value="">— Select Course —</option>
-                        {coursesList.map(dept => (
-                          <option key={dept.id} value={dept.name}>{dept.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Assigned Campus</label>
-                      <select
-                        required
-                        value={subjectForm.college_id}
-                        onChange={(e) => setSubjectForm({ ...subjectForm, college_id: e.target.value })}
-                        className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-805"
-                      >
-                        <option value="">— Campus —</option>
-                        {colleges.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Academic Year</label>
-                      <select
-                        required
-                        disabled={lockDeptAndYear}
-                        value={subjectForm.year}
-                        onChange={(e) => {
-                          const newYear = e.target.value;
-                          let newSem = "Semester 1";
-                          if (newYear === "Year 2") newSem = "Semester 3";
-                          else if (newYear === "Year 3") newSem = "Semester 5";
-                          else if (newYear === "Year 4") newSem = "Semester 7";
-                          setSubjectForm({ ...subjectForm, year: newYear, semester: newSem });
-                        }}
-                        className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
-                      >
-                        <option value="Year 1">Year 1</option>
-                        <option value="Year 2">Year 2</option>
-                        <option value="Year 3">Year 3</option>
-                        <option value="Year 4">Year 4</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Semester</label>
-                      <select
-                        required
-                        value={subjectForm.semester}
-                        onChange={(e) => setSubjectForm({ ...subjectForm, semester: e.target.value })}
-                        className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                      >
-                        {subjectForm.year === "Year 1" && (
-                          <>
-                            <option value="Semester 1">Semester 1</option>
-                            <option value="Semester 2">Semester 2</option>
-                          </>
-                        )}
-                        {subjectForm.year === "Year 2" && (
-                          <>
-                            <option value="Semester 3">Semester 3</option>
-                            <option value="Semester 4">Semester 4</option>
-                          </>
-                        )}
-                        {subjectForm.year === "Year 3" && (
-                          <>
-                            <option value="Semester 5">Semester 5</option>
-                            <option value="Semester 6">Semester 6</option>
-                          </>
-                        )}
-                        {subjectForm.year === "Year 4" && (
-                          <>
-                            <option value="Semester 7">Semester 7</option>
-                            <option value="Semester 8">Semester 8</option>
-                          </>
-                        )}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Subject Type / Domain</label>
-                      <select
-                        required
-                        value={normalizeSubjectType(subjectForm.type)}
-                        onChange={(e) => setSubjectForm({ ...subjectForm, type: e.target.value })}
-                        className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                      >
-                        <option value="SKILL">SKILL (Practical Training)</option>
-                        <option value="ACADEMIC">ACADEMIC (Core Theory)</option>
-                        <option value="LAB">LAB (Practical Laboratory)</option>
-                        <option value="GENERAL">GENERAL (Elective / Foundational)</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Weekly Hours</label>
-                      <input
-                        type="number"
-                        required
-                        min={1}
-                        max={20}
-                        placeholder="e.g. 4"
-                        value={subjectForm.weekly_hours}
-                        onChange={(e) => setSubjectForm({ ...subjectForm, weekly_hours: parseInt(e.target.value) || 4 })}
-                        className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-[#D528A2] text-gray-805"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Group / Category</label>
-                    <select
-                      required
-                      value={subjectForm.subject_group}
-                      onChange={(e) => setSubjectForm({ ...subjectForm, subject_group: e.target.value })}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                    >
-                      {subjectGroups.map(sg => (
-                        <option key={sg.id} value={sg.name}>{sg.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {!editingSubject && (() => {
-                  const campusMentors = mentors.filter(m => m.college_id === subjectForm.college_id);
-                  if (campusMentors.length === 0) {
-                    return (
-                      <div className="flex flex-col items-center justify-center p-8 bg-gray-55 border border-dashed border-gray-200 rounded-2xl h-full text-center">
-                        <Users className="h-8 w-8 text-gray-300 mb-2" />
-                        <span className="text-[11px] text-gray-400 font-bold">No Staff on Selected Campus</span>
-                        <span className="text-[9px] text-gray-400 mt-0.5">You can link staff to this subject later.</span>
-                      </div>
-                    );
-                  }
-                  const filteredMentors = campusMentors.filter(m =>
-                    !subjectStaffSearch ||
-                    (m.name || "").toLowerCase().includes(subjectStaffSearch.toLowerCase()) ||
-                    (m.department || "").toLowerCase().includes(subjectStaffSearch.toLowerCase())
-                  );
-                  return (
-                    <div className="flex flex-col h-full space-y-2">
-                      <div className="flex justify-between items-center">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
-                          Assign Staff <span className="text-gray-300 font-normal normal-case">(optional)</span>
-                        </label>
-                        <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-                          {subjectForm.mentorIds.length} Selected
-                        </span>
-                      </div>
-
-                      {/* Staff Search Bar */}
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                        <input
-                          type="text"
-                          placeholder="Search staff by name or dept..."
-                          value={subjectStaffSearch}
-                          onChange={(e) => setSubjectStaffSearch(e.target.value)}
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-gray-800"
-                        />
-                      </div>
-
-                      <div className="flex-1 max-h-56 overflow-y-auto rounded-2xl border border-gray-200 divide-y divide-gray-100 bg-gray-55">
-                        {filteredMentors.length === 0 ? (
-                          <div className="p-4 text-center text-gray-400 text-[11px] italic">
-                            No staff match "{subjectStaffSearch}"
-                          </div>
-                        ) : (
-                          filteredMentors.map(m => {
-                            const checked = subjectForm.mentorIds.includes(m.id);
-                            return (
-                              <label
-                                key={m.id}
-                                className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-indigo-50/40 transition-colors"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => {
-                                    const next = checked
-                                      ? subjectForm.mentorIds.filter(id => id !== m.id)
-                                      : [...subjectForm.mentorIds, m.id];
-                                    setSubjectForm({ ...subjectForm, mentorIds: next });
-                                  }}
-                                  className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 cursor-pointer"
-                                />
-                                <div className="min-w-0 flex-1">
-                                  <div className="font-bold text-gray-800 truncate text-xs">{m.name}</div>
-                                  {m.department && <div className="text-[9px] text-gray-400 truncate">{m.department}</div>}
-                                </div>
-                                {checked && (
-                                  <span className="text-[9px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                                    Assigned
-                                  </span>
-                                )}
-                              </label>
-                            );
-                          })
-                        )}
-                      </div>
-                      {subjectForm.mentorIds.length > 0 && (
-                        <p className="text-[10px] text-indigo-600 font-semibold leading-none pt-1">
-                          {subjectForm.mentorIds.length} mentor{subjectForm.mentorIds.length > 1 ? "s" : ""} will be linked.
-                        </p>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setShowSubjectModal(false)}
-                  className="px-4 py-2 hover:bg-gray-100 text-gray-555 rounded-xl transition-all font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
-                >
-                  {editingSubject ? "Save Changes" : "Create Subject"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── Course Modal ── */}
-      {showDeptModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-          <div className="bg-white rounded-3xl border border-gray-150 shadow-2xl max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden animate-slideUp">
-            {/* Header (Fixed) */}
-            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/80 shrink-0">
-              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
-                <div className="h-8 w-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-                  <Layers className="h-4 w-4 text-indigo-650" />
-                </div>
-                {editingDept ? "Edit Course Details" : "Add Course"}
-              </h3>
-              <button onClick={() => setShowDeptModal(false)} className="p-1.5 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            
-            {/* Scrollable Form Body */}
-            <form onSubmit={handleDeptSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-semibold">
-              {modalError && (
-                <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
-                  <ShieldAlert className="h-4 w-4 shrink-0" />
-                  {modalError}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Course Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Computer Science with Artificial Intelligence"
-                    value={deptForm.name}
-                    onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
-                  />
-                </div>
-
                 <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Course Duration</label>
-                  <select
-                    value={deptForm.years || 4}
-                    onChange={(e) => handleCourseYearsChange(Number(e.target.value))}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                  >
-                    <option value={1}>1 Year (2 Semesters)</option>
-                    <option value={2}>2 Years (4 Semesters)</option>
-                    <option value={3}>3 Years (6 Semesters)</option>
-                    <option value={4}>4 Years (8 Semesters)</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Status</label>
-                  <select
-                    value={deptForm.status || "Active"}
-                    onChange={(e) => setDeptForm({ ...deptForm, status: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Assigned Campus</label>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Reporting KAM Manager</label>
                   <select
                     required
-                    value={deptForm.college_id || ""}
-                    onChange={(e) => setDeptForm({ ...deptForm, college_id: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                    value={camForm.kam_id}
+                    onChange={(e) => setCamForm({ ...camForm, kam_id: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
                   >
-                    <option value="">— Select Campus —</option>
-                    {colleges.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
+                    <option value="">Select Reporting KAM</option>
+                    {kamList.map(kam => (
+                      <option key={kam.id} value={kam.id}>{kam.name}</option>
                     ))}
                   </select>
                 </div>
 
-                <div className="space-y-3 sm:col-span-2 border-t border-gray-150 pt-4 mt-2">
-                  <h4 className="text-[10px] font-black text-indigo-650 uppercase tracking-wider">
-                    Classroom Allocations (Year-wise)
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {(() => {
-                      const campus = colleges.find(c => c.id === deptForm.college_id);
-                      const campusRooms = campus && campus.rooms ? campus.rooms.split(",").map(r => r.trim()).filter(Boolean) : [];
-                      
-                      const suggestions = new Set<string>(campusRooms);
-                      coursesList
-                        .filter(d => d.college_id === deptForm.college_id && d.id !== deptForm.id)
-                        .forEach(d => {
-                          if (d.default_room) {
-                            if (d.default_room.startsWith("{")) {
-                              try {
-                                const parsed = JSON.parse(d.default_room);
-                                Object.values(parsed).forEach((r: any) => {
-                                  if (r && typeof r === 'string' && r.trim()) {
-                                    suggestions.add(r.trim());
-                                  }
-                                });
-                              } catch (_) {}
-                            } else {
-                              suggestions.add(d.default_room.trim());
-                            }
-                          }
-                        });
+                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowCamModal(false)}
+                    className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <LoadingButton
+                    type="submit"
+                    isLoading={loadingActions['submit_cam']}
+                    loadingText={editingCam ? "Saving..." : "Creating..."}
+                    variant="gradient"
+                    className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  >
+                    {editingCam ? "Save Changes" : "Create Campus Manager"}
+                  </LoadingButton>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
-                      const suggestionArray = Array.from(suggestions);
+        {/* ── SME Modal ── */}
+        {showSmeModal && (
+          <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+              <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5 font-sans">
+                  <BookOpen className="h-5 w-5 text-indigo-650" />
+                  {isEditingSme ? "Edit Subject Matter Expert" : "Add Subject Matter Expert"}
+                </h3>
+                <button onClick={() => setShowSmeModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4 text-xs font-semibold font-sans">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">SME ID</label>
+                  <input
+                    type="text"
+                    disabled={isEditingSme}
+                    value={smeForm.id}
+                    onChange={(e) => setSmeForm({ ...smeForm, id: e.target.value })}
+                    placeholder="e.g. sme_4"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-gray-700 bg-white outline-none focus:ring-1 focus:ring-indigo-650 disabled:bg-gray-100 disabled:text-gray-400 font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Full Name</label>
+                  <input
+                    type="text"
+                    value={smeForm.name}
+                    onChange={(e) => setSmeForm({ ...smeForm, name: e.target.value })}
+                    placeholder="e.g. Dr. Ramesh Kumar"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-gray-700 bg-white outline-none focus:ring-1 focus:ring-indigo-650"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Email Address</label>
+                  <input
+                    type="email"
+                    value={smeForm.email}
+                    onChange={(e) => setSmeForm({ ...smeForm, email: e.target.value })}
+                    placeholder="e.g. ramesh.sme@zentra.edu"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-gray-700 bg-white outline-none focus:ring-1 focus:ring-indigo-650"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Group Specialization</label>
+                  <select
+                    value={smeForm.subject}
+                    onChange={(e) => setSmeForm({ ...smeForm, subject: e.target.value })}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-gray-700 bg-white outline-none focus:ring-1 focus:ring-indigo-650"
+                  >
+                    <option value="">-- Unassigned --</option>
+                    {subjectGroups && subjectGroups.map(sg => (
+                      <option key={sg.id} value={sg.name}>{sg.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowSmeModal(false)}
+                    className="px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <LoadingButton
+                    type="button"
+                    isLoading={loadingActions['submit_sme']}
+                    loadingText="Saving..."
+                    variant="secondary"
+                    onClick={handleSaveSme}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-md cursor-pointer"
+                  >
+                    Save SME
+                  </LoadingButton>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Mentor Modal ── */}
+        {showMentorModal && (
+          <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-lg w-full overflow-hidden animate-slideUp">
+              <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
+                  <Users className="h-5 w-5 text-indigo-650" />
+                  {editingMentor ? "Edit Faculty Mentor" : "Add Faculty Mentor"}
+                </h3>
+                <button onClick={() => setShowMentorModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleMentorSubmit} className="p-6 space-y-3.5 text-xs font-semibold max-h-[80vh] overflow-y-auto">
+                {modalError && (
+                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    {modalError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Mentor ID</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. m35"
+                      disabled={editingMentor}
+                      value={mentorForm.id}
+                      onChange={(e) => setMentorForm({ ...mentorForm, id: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 disabled:bg-gray-100 disabled:text-gray-400"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Initials / Avatar</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. MS (Leave blank to auto-generate)"
+                      value={mentorForm.avatar}
+                      onChange={(e) => setMentorForm({ ...mentorForm, avatar: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Dr. Alice Smith"
+                    value={mentorForm.name}
+                    onChange={(e) => setMentorForm({ ...mentorForm, name: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. alice.smith@university.edu"
+                    value={mentorForm.email}
+                    onChange={(e) => setMentorForm({ ...mentorForm, email: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Assigned Campus</label>
+                    <select
+                      required
+                      value={mentorForm.college_id}
+                      onChange={(e) => setMentorForm({ ...mentorForm, college_id: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
+                    >
+                      <option value="">Select Campus</option>
+                      {colleges.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {isCampusShiftBased && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Shift Assignment</label>
+                      <p className="text-[10px] text-slate-500 italic py-2">Shifts are assigned per slot, not per faculty member.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Group</label>
+                  <select
+                    required
+                    value={mentorForm.department}
+                    onChange={(e) => setMentorForm({ ...mentorForm, department: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                  >
+                    <option value="">— Select Group —</option>
+                    {subjectGroups.map(sg => (
+                      <option key={sg.id} value={sg.name}>{sg.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Group / Category</label>
+                  <select
+                    required
+                    value={mentorForm.subject_group}
+                    onChange={(e) => setMentorForm({ ...mentorForm, subject_group: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                  >
+                    {subjectGroups.map(sg => (
+                      <option key={sg.id} value={sg.name}>{sg.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Subject Mapping Checklist */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Map Subjects to Mentor</label>
+                  <div className="relative mb-1.5">
+                    <Search className="absolute left-2.5 top-1.5 h-3.5 w-3.5 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search subject catalog..."
+                      value={mentorSubjectSearch}
+                      onChange={(e) => setMentorSubjectSearch(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-650 font-bold"
+                    />
+                  </div>
+
+                  <div className="border border-gray-150 rounded-xl bg-gray-55 p-3.5 max-h-36 overflow-y-auto space-y-1.5 text-[11px] font-bold">
+                    {(() => {
+                      const searched = (subjectsList || []).filter(s => {
+                        const matchesSearch = s.name.toLowerCase().includes(mentorSubjectSearch.toLowerCase()) ||
+                          s.department.toLowerCase().includes(mentorSubjectSearch.toLowerCase());
+                        if (!mentorSubjectSearch && mentorForm.department) {
+                          return s.department.toLowerCase() === mentorForm.department.toLowerCase();
+                        }
+                        return matchesSearch;
+                      });
+
+                      const currentCheckedList = mentorForm.subjects.split("\n").map(s => s.trim()).filter(Boolean);
 
                       return (
                         <>
-                          {Array.from({ length: Number(deptForm.years || 3) }, (_, idx) => {
-                            const yearNum = idx + 1;
-                            let currentRoom = "";
-                            try {
-                              if (deptForm.default_room && deptForm.default_room.startsWith("{")) {
-                                const parsed = JSON.parse(deptForm.default_room);
-                                currentRoom = parsed[yearNum] || "";
-                              } else if (deptForm.default_room && yearNum === 1) {
-                                currentRoom = deptForm.default_room;
-                              }
-                            } catch (_) {}
-
+                          {searched.map(s => {
+                            const isChecked = currentCheckedList.includes(s.name);
                             return (
-                              <div key={yearNum} className="space-y-1">
-                                <label className="text-[9.5px] text-gray-400 font-bold block uppercase tracking-wider">
-                                  Year {yearNum} Room
-                                </label>
+                              <label key={s.id} className="flex items-start gap-2 py-1 px-1.5 hover:bg-white rounded cursor-pointer transition-colors text-gray-700">
                                 <input
-                                  type="text"
-                                  list={`rooms-suggest-modal-${deptForm.college_id || 'none'}`}
-                                  placeholder={`e.g. Room for Year ${yearNum}`}
-                                  value={currentRoom}
-                                  onChange={(e) => handleYearRoomChange(yearNum, e.target.value)}
-                                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-805 text-xs font-semibold"
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    let newList;
+                                    if (e.target.checked) {
+                                      newList = [...currentCheckedList, s.name];
+                                    } else {
+                                      newList = currentCheckedList.filter(item => item !== s.name);
+                                    }
+                                    setMentorForm({ ...mentorForm, subjects: newList.join("\n") });
+                                  }}
+                                  className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer mt-0.5"
                                 />
-                              </div>
+                                <div className="leading-tight">
+                                  <span className="font-bold text-gray-800">{s.name}</span>
+                                  <span className="text-[9px] text-gray-400 block font-semibold">{s.department} • {s.semester}</span>
+                                </div>
+                              </label>
                             );
                           })}
-                          
-                          {suggestionArray.length > 0 && (
-                            <datalist id={`rooms-suggest-modal-${deptForm.college_id || 'none'}`}>
-                              {suggestionArray.map(r => (
-                                <option key={r} value={r} />
-                              ))}
-                            </datalist>
+                          {searched.length === 0 && (
+                            <div className="text-center text-gray-450 italic py-2">
+                              No subjects found. Select/input a department to filter or search catalog.
+                            </div>
                           )}
                         </>
                       );
@@ -7389,383 +6901,840 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Offering</label>
-                  <select
-                    value={deptForm.default_shift || "shift_1"}
-                    onChange={(e) => setDeptForm({ ...deptForm, default_shift: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowMentorModal(false)}
+                    className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
                   >
-                    <option value="shift_1">Shift 1 (Day)</option>
-                    <option value="shift_2">Shift 2 (Evening)</option>
-                    <option value="both">Both Shifts (Shift 1 & 2)</option>
-                    <option value="general">General Shift</option>
-                    <option value="all">Both Shifts + General (Shift 1, 2 & General)</option>
-                  </select>
+                    Cancel
+                  </button>
+                  <LoadingButton
+                    type="submit"
+                    isLoading={loadingActions['submit_mentor']}
+                    loadingText={editingMentor ? "Saving..." : "Creating..."}
+                    variant="gradient"
+                    className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  >
+                    {editingMentor ? "Save Changes" : "Create Mentor"}
+                  </LoadingButton>
                 </div>
-
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Description</label>
-                  <textarea
-                    placeholder="Enter course summary or notes..."
-                    value={deptForm.description || ""}
-                    onChange={(e) => setDeptForm({ ...deptForm, description: e.target.value })}
-                    rows={2}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800 resize-none font-semibold"
-                  />
-                </div>
-              </div>
-
-              {/* Sticky Footer */}
-              <div className="flex justify-end gap-2.5 pt-4 mt-4 border-t border-gray-100 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowDeptModal(false)}
-                  className="px-4 py-2 hover:bg-gray-100 text-gray-555 rounded-xl transition-all font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isDeptSubmitting}
-                  className={`btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer flex items-center justify-center gap-2 ${
-                    isDeptSubmitting ? "opacity-75 cursor-not-allowed" : "hover:opacity-95 active:scale-95"
-                  }`}
-                >
-                  {isDeptSubmitting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin text-white shrink-0" />
-                      <span>{editingDept ? "Saving Changes..." : "Creating Course..."}</span>
-                    </>
-                  ) : (
-                    <span>{editingDept ? "Save Changes" : "Create Course"}</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── Subject Group Modal ── */}
-      {showGroupModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
-            <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
-              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5 font-sans">
-                <Layers className="h-5 w-5 text-indigo-650" />
-                {editingGroup ? "Edit Subject Group" : "Create Subject Group"}
-              </h3>
-              <button onClick={() => setShowGroupModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                <X className="h-4 w-4" />
-              </button>
+              </form>
             </div>
+          </div>
+        )}
 
-            <form onSubmit={handleGroupSubmit} className="p-6 space-y-4 text-xs font-semibold">
-              {modalError && (
-                <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
-                  <ShieldAlert className="h-4 w-4 shrink-0" />
-                  {modalError}
-                </div>
-              )}
+        {showSubjectModal && (
+          <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className={`bg-white rounded-3xl border border-gray-150 shadow-xl w-full overflow-hidden animate-slideUp transition-all ${editingSubject ? "max-w-md" : "max-w-3xl"}`}>
+              <div className="flex justify-between items-center p-5 border-b border-gray-100 bg-gray-50">
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
+                  <GraduationCap className="h-5 w-5 text-indigo-655" />
+                  {editingSubject ? "Edit Subject Details" : "Add Subject to Catalog"}
+                </h3>
+                <button onClick={() => setShowSubjectModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Group Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. English, Aptitude, Soft Skills, Technical"
-                  value={groupForm.name}
-                  onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655"
-                  disabled={editingGroup && editingGroup.name === "General"}
-                />
-                {editingGroup && editingGroup.name === "General" && (
-                  <p className="text-[9px] text-amber-605 mt-1 font-bold">The default "General" group name cannot be modified.</p>
+              <form onSubmit={handleSubjectSubmit} className="p-5 space-y-4 text-xs font-semibold">
+                {modalError && (
+                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    {modalError}
+                  </div>
                 )}
-              </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Description</label>
-                <textarea
-                  placeholder="Provide a brief description for this subject group..."
-                  value={groupForm.description}
-                  onChange={(e) => setGroupForm({ ...groupForm, description: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 h-20 resize-none"
-                />
-              </div>
+                <div className={editingSubject ? "space-y-3" : "grid grid-cols-1 md:grid-cols-2 gap-6"}>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Name</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Modern Natural Language Processing"
+                        value={subjectForm.name}
+                        onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
+                        className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
+                      />
+                    </div>
 
-              {/* Map Subjects checklist */}
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Map Subjects to Group</label>
-                <div className="relative mb-1.5">
-                  <Search className="absolute left-2.5 top-1.5 h-3.5 w-3.5 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search subject catalog..."
-                    value={groupSubjectSearch}
-                    onChange={(e) => setGroupSubjectSearch(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-650 font-bold"
-                  />
-                </div>
-                
-                <div className="border border-gray-150 rounded-xl bg-gray-55 p-3.5 max-h-44 overflow-y-auto space-y-1.5 text-[11px] font-bold">
-                  {(() => {
-                    const searched = (subjectsList || []).filter(s => 
-                      s.name.toLowerCase().includes(groupSubjectSearch.toLowerCase()) ||
-                      s.department.toLowerCase().includes(groupSubjectSearch.toLowerCase())
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Course Name</label>
+                        <select
+                          required
+                          disabled={lockDeptAndYear}
+                          value={subjectForm.department}
+                          onChange={(e) => setSubjectForm({ ...subjectForm, department: e.target.value })}
+                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          <option value="">— Select Course —</option>
+                          {coursesList.map(dept => (
+                            <option key={dept.id} value={dept.name}>{dept.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Assigned Campus</label>
+                        <select
+                          required
+                          value={subjectForm.college_id}
+                          onChange={(e) => setSubjectForm({ ...subjectForm, college_id: e.target.value })}
+                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-805"
+                        >
+                          <option value="">— Campus —</option>
+                          {colleges.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Academic Year</label>
+                        <select
+                          required
+                          disabled={lockDeptAndYear}
+                          value={subjectForm.year}
+                          onChange={(e) => {
+                            const newYear = e.target.value;
+                            let newSem = "Semester 1";
+                            if (newYear === "Year 2") newSem = "Semester 3";
+                            else if (newYear === "Year 3") newSem = "Semester 5";
+                            else if (newYear === "Year 4") newSem = "Semester 7";
+                            setSubjectForm({ ...subjectForm, year: newYear, semester: newSem });
+                          }}
+                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          <option value="Year 1">Year 1</option>
+                          <option value="Year 2">Year 2</option>
+                          <option value="Year 3">Year 3</option>
+                          <option value="Year 4">Year 4</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Semester</label>
+                        <select
+                          required
+                          value={subjectForm.semester}
+                          onChange={(e) => setSubjectForm({ ...subjectForm, semester: e.target.value })}
+                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                        >
+                          {subjectForm.year === "Year 1" && (
+                            <>
+                              <option value="Semester 1">Semester 1</option>
+                              <option value="Semester 2">Semester 2</option>
+                            </>
+                          )}
+                          {subjectForm.year === "Year 2" && (
+                            <>
+                              <option value="Semester 3">Semester 3</option>
+                              <option value="Semester 4">Semester 4</option>
+                            </>
+                          )}
+                          {subjectForm.year === "Year 3" && (
+                            <>
+                              <option value="Semester 5">Semester 5</option>
+                              <option value="Semester 6">Semester 6</option>
+                            </>
+                          )}
+                          {subjectForm.year === "Year 4" && (
+                            <>
+                              <option value="Semester 7">Semester 7</option>
+                              <option value="Semester 8">Semester 8</option>
+                            </>
+                          )}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Subject Type / Domain</label>
+                        <select
+                          required
+                          value={normalizeSubjectType(subjectForm.type)}
+                          onChange={(e) => setSubjectForm({ ...subjectForm, type: e.target.value })}
+                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                        >
+                          <option value="SKILL">SKILL (Practical Training)</option>
+                          <option value="ACADEMIC">ACADEMIC (Core Theory)</option>
+                          <option value="LAB">LAB (Practical Laboratory)</option>
+                          <option value="GENERAL">GENERAL (Elective / Foundational)</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Weekly Hours</label>
+                        <input
+                          type="number"
+                          required
+                          min={1}
+                          max={20}
+                          placeholder="e.g. 4"
+                          value={subjectForm.weekly_hours}
+                          onChange={(e) => setSubjectForm({ ...subjectForm, weekly_hours: parseInt(e.target.value) || 4 })}
+                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-[#D528A2] text-gray-805"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Group / Category</label>
+                      <select
+                        required
+                        value={subjectForm.subject_group}
+                        onChange={(e) => setSubjectForm({ ...subjectForm, subject_group: e.target.value })}
+                        className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                      >
+                        {subjectGroups.map(sg => (
+                          <option key={sg.id} value={sg.name}>{sg.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {!editingSubject && (() => {
+                    const campusMentors = mentors.filter(m => m.college_id === subjectForm.college_id);
+                    if (campusMentors.length === 0) {
+                      return (
+                        <div className="flex flex-col items-center justify-center p-8 bg-gray-55 border border-dashed border-gray-200 rounded-2xl h-full text-center">
+                          <Users className="h-8 w-8 text-gray-300 mb-2" />
+                          <span className="text-[11px] text-gray-400 font-bold">No Staff on Selected Campus</span>
+                          <span className="text-[9px] text-gray-400 mt-0.5">You can link staff to this subject later.</span>
+                        </div>
+                      );
+                    }
+                    const filteredMentors = campusMentors.filter(m =>
+                      !subjectStaffSearch ||
+                      (m.name || "").toLowerCase().includes(subjectStaffSearch.toLowerCase()) ||
+                      (m.department || "").toLowerCase().includes(subjectStaffSearch.toLowerCase())
                     );
-
                     return (
-                      <>
-                        {searched.map(s => {
-                          const isChecked = groupForm.subjectIds.includes(s.id);
-                          return (
-                            <label key={s.id} className="flex items-start gap-2 py-1 px-1.5 hover:bg-white rounded cursor-pointer transition-colors text-gray-700">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={(e) => {
-                                  let next;
-                                  if (e.target.checked) {
-                                    next = [...groupForm.subjectIds, s.id];
-                                  } else {
-                                    next = groupForm.subjectIds.filter(id => id !== s.id);
-                                  }
-                                  setGroupForm({ ...groupForm, subjectIds: next });
-                                }}
-                                className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer mt-0.5"
-                              />
-                              <div className="leading-tight flex-1">
-                                <span className="font-bold text-gray-800">{s.name}</span>
-                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                  <span className="text-[9px] text-gray-400 font-semibold">{s.department} • {s.semester}</span>
-                                  {s.subject_group && s.subject_group !== "General" && (
-                                    <span className={`text-[8.5px] px-1 py-0.2 rounded font-black ${
-                                      s.subject_group === (editingGroup?.name)
-                                        ? "bg-indigo-55 text-indigo-700 border border-indigo-100"
-                                        : "bg-amber-50 text-amber-700 border border-amber-100"
-                                    }`}>
-                                      Group: {s.subject_group}
+                      <div className="flex flex-col h-full space-y-2">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
+                            Assign Staff <span className="text-gray-300 font-normal normal-case">(optional)</span>
+                          </label>
+                          <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                            {subjectForm.mentorIds.length} Selected
+                          </span>
+                        </div>
+
+                        {/* Staff Search Bar */}
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Search staff by name or dept..."
+                            value={subjectStaffSearch}
+                            onChange={(e) => setSubjectStaffSearch(e.target.value)}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-gray-800"
+                          />
+                        </div>
+
+                        <div className="flex-1 max-h-56 overflow-y-auto rounded-2xl border border-gray-200 divide-y divide-gray-100 bg-gray-55">
+                          {filteredMentors.length === 0 ? (
+                            <div className="p-4 text-center text-gray-400 text-[11px] italic">
+                              No staff match "{subjectStaffSearch}"
+                            </div>
+                          ) : (
+                            filteredMentors.map(m => {
+                              const checked = subjectForm.mentorIds.includes(m.id);
+                              return (
+                                <label
+                                  key={m.id}
+                                  className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-indigo-50/40 transition-colors"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const next = checked
+                                        ? subjectForm.mentorIds.filter(id => id !== m.id)
+                                        : [...subjectForm.mentorIds, m.id];
+                                      setSubjectForm({ ...subjectForm, mentorIds: next });
+                                    }}
+                                    className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 cursor-pointer"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="font-bold text-gray-800 truncate text-xs">{m.name}</div>
+                                    {m.department && <div className="text-[9px] text-gray-400 truncate">{m.department}</div>}
+                                  </div>
+                                  {checked && (
+                                    <span className="text-[9px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                      Assigned
                                     </span>
                                   )}
-                                </div>
-                              </div>
-                            </label>
-                          );
-                        })}
-                        {searched.length === 0 && (
-                          <div className="text-center text-gray-400 italic py-2 text-[10px]">
-                            No subjects found.
-                          </div>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                        {subjectForm.mentorIds.length > 0 && (
+                          <p className="text-[10px] text-indigo-600 font-semibold leading-none pt-1">
+                            {subjectForm.mentorIds.length} mentor{subjectForm.mentorIds.length > 1 ? "s" : ""} will be linked.
+                          </p>
                         )}
-                      </>
+                      </div>
                     );
                   })()}
                 </div>
-              </div>
 
-              <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setShowGroupModal(false)}
-                  className="px-4 py-2 hover:bg-gray-100 text-gray-555 rounded-xl transition-all font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
-                >
-                  {editingGroup ? "Save Changes" : "Create Group"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── Compose Announcement Modal ── */}
-      {showAnnModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
-            <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-55">
-              <h3 className="font-extrabold text-gray-905 text-sm flex items-center gap-1.5">
-                <Megaphone className="h-5 w-5 text-indigo-650" />
-                Compose Campus Announcement
-              </h3>
-              <button onClick={() => setShowAnnModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                <X className="h-4 w-4" />
-              </button>
+                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowSubjectModal(false)}
+                    className="px-4 py-2 hover:bg-gray-100 text-gray-555 rounded-xl transition-all font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  >
+                    {editingSubject ? "Save Changes" : "Create Subject"}
+                  </button>
+                </div>
+              </form>
             </div>
-            
-            <form onSubmit={handleComposeAnnouncement} className="p-6 space-y-4 text-xs font-semibold">
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Title</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. End Semester Examinations Schedule"
-                  value={annForm.title}
-                  onChange={(e) => setAnnForm({ ...annForm, title: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Description</label>
-                <textarea
-                  required
-                  placeholder="Compose notice content here..."
-                  value={annForm.description}
-                  onChange={(e) => setAnnForm({ ...annForm, description: e.target.value })}
-                  rows={4}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-805 resize-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Target Role</label>
-                  <select
-                    required
-                    value={annForm.target_role}
-                    onChange={(e) => setAnnForm({ ...annForm, target_role: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
-                  >
-                    <option value="All">All Roles</option>
-                    <option value="student">Students</option>
-                    <option value="mentor">Mentors</option>
-                    <option value="cam">Campus Managers</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Target Campus</label>
-                  <select
-                    value={annForm.college_id}
-                    onChange={(e) => setAnnForm({ ...annForm, college_id: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
-                  >
-                    <option value="">All Campuses</option>
-                    {colleges.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setShowAnnModal(false)}
-                  className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
-                >
-                  Publish Notice
-                </button>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Schedule Holiday Modal ── */}
-      {showHolModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
-            <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-55">
-              <h3 className="font-extrabold text-gray-905 text-sm flex items-center gap-1.5">
-                <Calendar className="h-5 w-5 text-indigo-650" />
-                Schedule Campus Holiday
-              </h3>
-              <button onClick={() => setShowHolModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                <X className="h-4 w-4" />
-              </button>
+        {/* ── Course Modal ── */}
+        {showDeptModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+            <div className="bg-white rounded-3xl border border-gray-150 shadow-2xl max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden animate-slideUp">
+              {/* Header (Fixed) */}
+              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/80 shrink-0">
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                    <Layers className="h-4 w-4 text-indigo-650" />
+                  </div>
+                  {editingDept ? "Edit Course Details" : "Add Course"}
+                </h3>
+                <button onClick={() => setShowDeptModal(false)} className="p-1.5 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Scrollable Form Body */}
+              <form onSubmit={handleDeptSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-semibold">
+                {modalError && (
+                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    {modalError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Course Name</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Computer Science with Artificial Intelligence"
+                      value={deptForm.name}
+                      onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Course Duration</label>
+                    <select
+                      value={deptForm.years || 4}
+                      onChange={(e) => handleCourseYearsChange(Number(e.target.value))}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                    >
+                      <option value={1}>1 Year (2 Semesters)</option>
+                      <option value={2}>2 Years (4 Semesters)</option>
+                      <option value={3}>3 Years (6 Semesters)</option>
+                      <option value={4}>4 Years (8 Semesters)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Status</label>
+                    <select
+                      value={deptForm.status || "Active"}
+                      onChange={(e) => setDeptForm({ ...deptForm, status: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Assigned Campus</label>
+                    <select
+                      required
+                      value={deptForm.college_id || ""}
+                      onChange={(e) => setDeptForm({ ...deptForm, college_id: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                    >
+                      <option value="">— Select Campus —</option>
+                      {colleges.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-3 sm:col-span-2 border-t border-gray-150 pt-4 mt-2">
+                    <h4 className="text-[10px] font-black text-indigo-650 uppercase tracking-wider">
+                      Classroom Allocations (Year-wise)
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {(() => {
+                        const campus = colleges.find(c => c.id === deptForm.college_id);
+                        const campusRooms = campus && campus.rooms ? campus.rooms.split(",").map(r => r.trim()).filter(Boolean) : [];
+
+                        const suggestions = new Set<string>(campusRooms);
+                        coursesList
+                          .filter(d => d.college_id === deptForm.college_id && d.id !== deptForm.id)
+                          .forEach(d => {
+                            if (d.default_room) {
+                              if (d.default_room.startsWith("{")) {
+                                try {
+                                  const parsed = JSON.parse(d.default_room);
+                                  Object.values(parsed).forEach((r: any) => {
+                                    if (r && typeof r === 'string' && r.trim()) {
+                                      suggestions.add(r.trim());
+                                    }
+                                  });
+                                } catch (_) { }
+                              } else {
+                                suggestions.add(d.default_room.trim());
+                              }
+                            }
+                          });
+
+                        const suggestionArray = Array.from(suggestions);
+
+                        return (
+                          <>
+                            {Array.from({ length: Number(deptForm.years || 3) }, (_, idx) => {
+                              const yearNum = idx + 1;
+                              let currentRoom = "";
+                              try {
+                                if (deptForm.default_room && deptForm.default_room.startsWith("{")) {
+                                  const parsed = JSON.parse(deptForm.default_room);
+                                  currentRoom = parsed[yearNum] || "";
+                                } else if (deptForm.default_room && yearNum === 1) {
+                                  currentRoom = deptForm.default_room;
+                                }
+                              } catch (_) { }
+
+                              return (
+                                <div key={yearNum} className="space-y-1">
+                                  <label className="text-[9.5px] text-gray-400 font-bold block uppercase tracking-wider">
+                                    Year {yearNum} Room
+                                  </label>
+                                  <input
+                                    type="text"
+                                    list={`rooms-suggest-modal-${deptForm.college_id || 'none'}`}
+                                    placeholder={`e.g. Room for Year ${yearNum}`}
+                                    value={currentRoom}
+                                    onChange={(e) => handleYearRoomChange(yearNum, e.target.value)}
+                                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-805 text-xs font-semibold"
+                                  />
+                                </div>
+                              );
+                            })}
+
+                            {suggestionArray.length > 0 && (
+                              <datalist id={`rooms-suggest-modal-${deptForm.college_id || 'none'}`}>
+                                {suggestionArray.map(r => (
+                                  <option key={r} value={r} />
+                                ))}
+                              </datalist>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Offering</label>
+                    <select
+                      value={deptForm.default_shift || "shift_1"}
+                      onChange={(e) => setDeptForm({ ...deptForm, default_shift: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                    >
+                      <option value="shift_1">Shift 1 (Day)</option>
+                      <option value="shift_2">Shift 2 (Evening)</option>
+                      <option value="both">Both Shifts (Shift 1 & 2)</option>
+                      <option value="general">General Shift</option>
+                      <option value="all">Both Shifts + General (Shift 1, 2 & General)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Description</label>
+                    <textarea
+                      placeholder="Enter course summary or notes..."
+                      value={deptForm.description || ""}
+                      onChange={(e) => setDeptForm({ ...deptForm, description: e.target.value })}
+                      rows={2}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800 resize-none font-semibold"
+                    />
+                  </div>
+                </div>
+
+                {/* Sticky Footer */}
+                <div className="flex justify-end gap-2.5 pt-4 mt-4 border-t border-gray-100 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowDeptModal(false)}
+                    className="px-4 py-2 hover:bg-gray-100 text-gray-555 rounded-xl transition-all font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDeptSubmitting}
+                    className={`btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer flex items-center justify-center gap-2 ${isDeptSubmitting ? "opacity-75 cursor-not-allowed" : "hover:opacity-95 active:scale-95"
+                      }`}
+                  >
+                    {isDeptSubmitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin text-white shrink-0" />
+                        <span>{editingDept ? "Saving Changes..." : "Creating Course..."}</span>
+                      </>
+                    ) : (
+                      <span>{editingDept ? "Save Changes" : "Create Course"}</span>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
-            
-            <form onSubmit={handleAddHoliday} className="p-6 space-y-4 text-xs font-semibold">
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Holiday Title</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Independence Day"
-                  value={holForm.title}
-                  onChange={(e) => setHolForm({ ...holForm, title: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Date</label>
-                <input
-                  type="date"
-                  required
-                  value={holForm.date}
-                  onChange={(e) => setHolForm({ ...holForm, date: e.target.value })}
-                  className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Holiday Type</label>
-                  <select
-                    required
-                    value={holForm.type}
-                    onChange={(e) => setHolForm({ ...holForm, type: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
-                  >
-                    <option value="National Holiday">National Holiday</option>
-                    <option value="Regional Holiday">Regional Holiday</option>
-                    <option value="College Holiday">College Holiday</option>
-                    <option value="Declared Holiday">Declared Holiday</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Campus scope</label>
-                  <select
-                    value={holForm.college_id}
-                    onChange={(e) => setHolForm({ ...holForm, college_id: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
-                  >
-                    <option value="">All Campuses</option>
-                    {colleges.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setShowHolModal(false)}
-                  className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <LoadingButton
-                  type="submit"
-                  isLoading={loadingActions['submit_holiday']}
-                  loadingText="Saving..."
-                  variant="gradient"
-                  className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
-                >
-                  Save Holiday
-                </LoadingButton>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* ── Subject Group Modal ── */}
+        {showGroupModal && (
+          <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+              <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5 font-sans">
+                  <Layers className="h-5 w-5 text-indigo-650" />
+                  {editingGroup ? "Edit Subject Group" : "Create Subject Group"}
+                </h3>
+                <button onClick={() => setShowGroupModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleGroupSubmit} className="p-6 space-y-4 text-xs font-semibold">
+                {modalError && (
+                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    {modalError}
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Group Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. English, Aptitude, Soft Skills, Technical"
+                    value={groupForm.name}
+                    onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655"
+                    disabled={editingGroup && editingGroup.name === "General"}
+                  />
+                  {editingGroup && editingGroup.name === "General" && (
+                    <p className="text-[9px] text-amber-605 mt-1 font-bold">The default "General" group name cannot be modified.</p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Description</label>
+                  <textarea
+                    placeholder="Provide a brief description for this subject group..."
+                    value={groupForm.description}
+                    onChange={(e) => setGroupForm({ ...groupForm, description: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 h-20 resize-none"
+                  />
+                </div>
+
+                {/* Map Subjects checklist */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Map Subjects to Group</label>
+                  <div className="relative mb-1.5">
+                    <Search className="absolute left-2.5 top-1.5 h-3.5 w-3.5 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search subject catalog..."
+                      value={groupSubjectSearch}
+                      onChange={(e) => setGroupSubjectSearch(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-650 font-bold"
+                    />
+                  </div>
+
+                  <div className="border border-gray-150 rounded-xl bg-gray-55 p-3.5 max-h-44 overflow-y-auto space-y-1.5 text-[11px] font-bold">
+                    {(() => {
+                      const searched = (subjectsList || []).filter(s =>
+                        s.name.toLowerCase().includes(groupSubjectSearch.toLowerCase()) ||
+                        s.department.toLowerCase().includes(groupSubjectSearch.toLowerCase())
+                      );
+
+                      return (
+                        <>
+                          {searched.map(s => {
+                            const isChecked = groupForm.subjectIds.includes(s.id);
+                            return (
+                              <label key={s.id} className="flex items-start gap-2 py-1 px-1.5 hover:bg-white rounded cursor-pointer transition-colors text-gray-700">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    let next;
+                                    if (e.target.checked) {
+                                      next = [...groupForm.subjectIds, s.id];
+                                    } else {
+                                      next = groupForm.subjectIds.filter(id => id !== s.id);
+                                    }
+                                    setGroupForm({ ...groupForm, subjectIds: next });
+                                  }}
+                                  className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer mt-0.5"
+                                />
+                                <div className="leading-tight flex-1">
+                                  <span className="font-bold text-gray-800">{s.name}</span>
+                                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                    <span className="text-[9px] text-gray-400 font-semibold">{s.department} • {s.semester}</span>
+                                    {s.subject_group && s.subject_group !== "General" && (
+                                      <span className={`text-[8.5px] px-1 py-0.2 rounded font-black ${s.subject_group === (editingGroup?.name)
+                                          ? "bg-indigo-55 text-indigo-700 border border-indigo-100"
+                                          : "bg-amber-50 text-amber-700 border border-amber-100"
+                                        }`}>
+                                        Group: {s.subject_group}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </label>
+                            );
+                          })}
+                          {searched.length === 0 && (
+                            <div className="text-center text-gray-400 italic py-2 text-[10px]">
+                              No subjects found.
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowGroupModal(false)}
+                    className="px-4 py-2 hover:bg-gray-100 text-gray-555 rounded-xl transition-all font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  >
+                    {editingGroup ? "Save Changes" : "Create Group"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ── Compose Announcement Modal ── */}
+        {showAnnModal && (
+          <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+              <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-55">
+                <h3 className="font-extrabold text-gray-905 text-sm flex items-center gap-1.5">
+                  <Megaphone className="h-5 w-5 text-indigo-650" />
+                  Compose Campus Announcement
+                </h3>
+                <button onClick={() => setShowAnnModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleComposeAnnouncement} className="p-6 space-y-4 text-xs font-semibold">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Title</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. End Semester Examinations Schedule"
+                    value={annForm.title}
+                    onChange={(e) => setAnnForm({ ...annForm, title: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Description</label>
+                  <textarea
+                    required
+                    placeholder="Compose notice content here..."
+                    value={annForm.description}
+                    onChange={(e) => setAnnForm({ ...annForm, description: e.target.value })}
+                    rows={4}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-805 resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Target Role</label>
+                    <select
+                      required
+                      value={annForm.target_role}
+                      onChange={(e) => setAnnForm({ ...annForm, target_role: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
+                    >
+                      <option value="All">All Roles</option>
+                      <option value="student">Students</option>
+                      <option value="mentor">Mentors</option>
+                      <option value="cam">Campus Managers</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Target Campus</label>
+                    <select
+                      value={annForm.college_id}
+                      onChange={(e) => setAnnForm({ ...annForm, college_id: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
+                    >
+                      <option value="">All Campuses</option>
+                      {colleges.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowAnnModal(false)}
+                    className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  >
+                    Publish Notice
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ── Schedule Holiday Modal ── */}
+        {showHolModal && (
+          <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+              <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-55">
+                <h3 className="font-extrabold text-gray-905 text-sm flex items-center gap-1.5">
+                  <Calendar className="h-5 w-5 text-indigo-650" />
+                  Schedule Campus Holiday
+                </h3>
+                <button onClick={() => setShowHolModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddHoliday} className="p-6 space-y-4 text-xs font-semibold">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Holiday Title</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Independence Day"
+                    value={holForm.title}
+                    onChange={(e) => setHolForm({ ...holForm, title: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={holForm.date}
+                    onChange={(e) => setHolForm({ ...holForm, date: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Holiday Type</label>
+                    <select
+                      required
+                      value={holForm.type}
+                      onChange={(e) => setHolForm({ ...holForm, type: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
+                    >
+                      <option value="National Holiday">National Holiday</option>
+                      <option value="Regional Holiday">Regional Holiday</option>
+                      <option value="College Holiday">College Holiday</option>
+                      <option value="Declared Holiday">Declared Holiday</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Campus scope</label>
+                    <select
+                      value={holForm.college_id}
+                      onChange={(e) => setHolForm({ ...holForm, college_id: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
+                    >
+                      <option value="">All Campuses</option>
+                      {colleges.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowHolModal(false)}
+                    className="px-4 py-2 hover:bg-gray-100 text-gray-550 rounded-xl transition-all font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <LoadingButton
+                    type="submit"
+                    isLoading={loadingActions['submit_holiday']}
+                    loadingText="Saving..."
+                    variant="gradient"
+                    className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                  >
+                    Save Holiday
+                  </LoadingButton>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
       </main>
 
@@ -7779,129 +7748,129 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }}
         />
       )}
-        {/* ── FACULTY BULK IMPORT PREVIEW MODAL ── */}
-        {showFacultyImportModal && facultyImportPreview && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl border border-gray-100 max-h-[90vh] flex flex-col">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100">
-                    <FileSpreadsheet className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-extrabold text-gray-900">Faculty Bulk Import Preview</h3>
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
-                        {colleges.find(c => c.id === templateCollegeId)?.name || "Target Campus"}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 font-medium mt-0.5">
-                      Parsed {facultyImportPreview.parsed.length} faculty record(s) from spreadsheet
-                    </p>
-                  </div>
+      {/* ── FACULTY BULK IMPORT PREVIEW MODAL ── */}
+      {showFacultyImportModal && facultyImportPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl border border-gray-100 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100">
+                  <FileSpreadsheet className="h-6 w-6" />
                 </div>
-                <button
-                  onClick={() => setShowFacultyImportModal(false)}
-                  className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-extrabold text-gray-900">Faculty Bulk Import Preview</h3>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      {colleges.find(c => c.id === templateCollegeId)?.name || "Target Campus"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 font-medium mt-0.5">
+                    Parsed {facultyImportPreview.parsed.length} faculty record(s) from spreadsheet
+                  </p>
+                </div>
               </div>
+              <button
+                onClick={() => setShowFacultyImportModal(false)}
+                className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-              {facultyImportPreview.warnings.length > 0 && (
-                <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold space-y-1">
-                  <div className="font-extrabold flex items-center gap-1.5">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    Validation Warnings ({facultyImportPreview.warnings.length}):
-                  </div>
-                  <ul className="list-disc list-inside text-[11px] space-y-0.5 max-h-24 overflow-y-auto">
-                    {facultyImportPreview.warnings.map((w, idx) => (
-                      <li key={idx}>{w}</li>
-                    ))}
-                  </ul>
+            {facultyImportPreview.warnings.length > 0 && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold space-y-1">
+                <div className="font-extrabold flex items-center gap-1.5">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  Validation Warnings ({facultyImportPreview.warnings.length}):
                 </div>
-              )}
+                <ul className="list-disc list-inside text-[11px] space-y-0.5 max-h-24 overflow-y-auto">
+                  {facultyImportPreview.warnings.map((w, idx) => (
+                    <li key={idx}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-              <div className="flex-1 overflow-y-auto border border-gray-200 rounded-2xl">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-extrabold uppercase text-[10px] tracking-wider">
-                      <th className="p-3">#</th>
-                      <th className="p-3">Faculty Name</th>
-                      <th className="p-3">Email Address</th>
-                      <th className="p-3">Department</th>
-                      {isCampusShiftBased && <th className="p-3">Shift</th>}
-                      <th className="p-3">Timetable Subjects</th>
-                      <th className="p-3">Assigned Classes</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 bg-white font-medium text-gray-800">
-                    {facultyImportPreview.parsed.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-indigo-50/20">
-                        <td className="p-3 text-gray-400 font-mono text-[10px]">{idx + 1}</td>
-                        <td className="p-3 font-bold text-gray-900">{item.name || <span className="text-rose-500 italic">Missing</span>}</td>
-                        <td className="p-3 font-mono text-[11px] text-gray-600">{item.email || <span className="text-rose-500 italic">Missing</span>}</td>
-                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] font-bold">{item.department}</span></td>
-                        {isCampusShiftBased && (
-                          <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-50 text-slate-500 text-[10px] font-bold">—</span></td>
+            <div className="flex-1 overflow-y-auto border border-gray-200 rounded-2xl">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-extrabold uppercase text-[10px] tracking-wider">
+                    <th className="p-3">#</th>
+                    <th className="p-3">Faculty Name</th>
+                    <th className="p-3">Email Address</th>
+                    <th className="p-3">Department</th>
+                    {isCampusShiftBased && <th className="p-3">Shift</th>}
+                    <th className="p-3">Timetable Subjects</th>
+                    <th className="p-3">Assigned Classes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white font-medium text-gray-800">
+                  {facultyImportPreview.parsed.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-indigo-50/20">
+                      <td className="p-3 text-gray-400 font-mono text-[10px]">{idx + 1}</td>
+                      <td className="p-3 font-bold text-gray-900">{item.name || <span className="text-rose-500 italic">Missing</span>}</td>
+                      <td className="p-3 font-mono text-[11px] text-gray-600">{item.email || <span className="text-rose-500 italic">Missing</span>}</td>
+                      <td className="p-3"><span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] font-bold">{item.department}</span></td>
+                      {isCampusShiftBased && (
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-50 text-slate-500 text-[10px] font-bold">—</span></td>
+                      )}
+                      <td className="p-3">
+                        {item.subjects ? (
+                          <div className="flex flex-wrap gap-1 max-w-[200px]">
+                            {item.subjects.split(",").map((sub: string, sIdx: number) => (
+                              <span key={sIdx} className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9.5px] font-bold">
+                                {sub.trim()}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-[10px] italic">No subjects</span>
                         )}
-                        <td className="p-3">
-                          {item.subjects ? (
-                            <div className="flex flex-wrap gap-1 max-w-[200px]">
-                              {item.subjects.split(",").map((sub: string, sIdx: number) => (
-                                <span key={sIdx} className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9.5px] font-bold">
-                                  {sub.trim()}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 text-[10px] italic">No subjects</span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          {item.classes ? (
-                            <div className="flex flex-wrap gap-1 max-w-[180px]">
-                              {item.classes.split(",").map((cls: string, cIdx: number) => (
-                                <span key={cIdx} className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[9.5px] font-bold">
-                                  {cls.trim()}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 text-[10px] italic">No classes</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                      </td>
+                      <td className="p-3">
+                        {item.classes ? (
+                          <div className="flex flex-wrap gap-1 max-w-[180px]">
+                            {item.classes.split(",").map((cls: string, cIdx: number) => (
+                              <span key={cIdx} className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[9.5px] font-bold">
+                                {cls.trim()}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-[10px] italic">No classes</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                <p className="text-xs text-gray-500 font-medium">
-                  Initial default password for all imported faculty will be set to <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono font-bold">password123</code>
-                </p>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowFacultyImportModal(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isImportingFaculty}
-                    onClick={handleConfirmFacultyImport}
-                    className="px-5 py-2 rounded-xl text-xs font-extrabold btn-gradient text-white shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                  >
-                    {isImportingFaculty ? "Importing..." : `Confirm & Import (${facultyImportPreview.parsed.length}) →`}
-                  </button>
-                </div>
+            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+              <p className="text-xs text-gray-500 font-medium">
+                Initial default password for all imported faculty will be set to <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono font-bold">password123</code>
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowFacultyImportModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isImportingFaculty}
+                  onClick={handleConfirmFacultyImport}
+                  className="px-5 py-2 rounded-xl text-xs font-extrabold btn-gradient text-white shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isImportingFaculty ? "Importing..." : `Confirm & Import (${facultyImportPreview.parsed.length}) →`}
+                </button>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
     </div>
   );
 };
