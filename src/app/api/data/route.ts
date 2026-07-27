@@ -136,7 +136,7 @@ export async function GET(request: Request) {
         last_login: m.last_login,
         created_at: m.created_at,
         updated_at: m.updated_at,
-        mentor_group: m.mentor_group || m.subject_group || m.department || "General"
+        mentor_group: m.mentor_group || m.subject_group || m.department || null
       })),
       slots: filteredSlots,
       requests: filteredRequests,

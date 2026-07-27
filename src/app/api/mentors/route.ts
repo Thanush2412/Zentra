@@ -7,10 +7,9 @@ export async function POST(request: Request) {
     const db = await getDb();
     const body = await request.json();
     const { id, name, email, department, avatar, subjects, classes, college_id, subject_group, mentor_group } = body;
-    // Unified group: mentor_group is the authoritative single field; department mirrors it
-    const unifiedGroup = (mentor_group || subject_group || department || "General").trim();
+    const unifiedGroup = (mentor_group || subject_group || department || "").trim() || null;
 
-    if (!id || !name || !email || !unifiedGroup || !avatar) {
+    if (!id || !name || !email || !avatar) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
@@ -47,9 +46,9 @@ export async function PUT(request: Request) {
     const db = await getDb();
     const body = await request.json();
     const { id, name, email, department, avatar, subjects, classes, college_id, subject_group, mentor_group } = body;
-    const unifiedGroup = (mentor_group || subject_group || department || "General").trim();
+    const unifiedGroup = (mentor_group || subject_group || department || "").trim() || null;
 
-    if (!id || !name || !email || !unifiedGroup || !avatar) {
+    if (!id || !name || !email || !avatar) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
