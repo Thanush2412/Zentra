@@ -10,8 +10,9 @@ import {
   ArrowRightLeft, TrendingUp, Clock, XCircle, ChevronRight,
   GraduationCap, BookOpen, Eye, CheckCircle, Calendar,
   ChevronDown, ChevronUp, Search, Activity, Layers,
-  IndianRupee, BarChart2, BookMarked, AlertCircle, UserCheck, Loader2
+  IndianRupee, BarChart2, BookMarked, AlertCircle, UserCheck, Loader2, Award
 } from "lucide-react";
+import { InterviewModule } from "./InterviewModule";
 import { LoadingButton } from "./ui/LoadingButton";
 import { Button } from "./Button";
 import { Card } from "./Card";
@@ -22,9 +23,23 @@ import { Select } from "./Select";
 // Persistent global flag to prevent sidebar animating on every re-mount
 let isFirstSidebarAnimationDone = false;
 
+// Static color map for Tailwind classes (prevents purging in production)
+const colorMap: Record<string, string> = {
+  indigo: "bg-indigo-50 border-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:border-indigo-500/20 dark:text-indigo-300",
+  emerald: "bg-emerald-50 border-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-300",
+  rose: "bg-rose-50 border-rose-100 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-300",
+  amber: "bg-amber-50 border-amber-100 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-300",
+  purple: "bg-purple-50 border-purple-100 text-purple-700 dark:bg-purple-500/10 dark:border-purple-500/20 dark:text-purple-300",
+  teal: "bg-teal-50 border-teal-100 text-teal-700 dark:bg-teal-500/10 dark:border-teal-500/20 dark:text-teal-300",
+  slate: "bg-slate-100 border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400",
+  blue: "bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-500/10 dark:border-blue-500/20 dark:text-blue-300",
+  cyan: "bg-cyan-50 border-cyan-100 text-cyan-700 dark:bg-cyan-500/10 dark:border-cyan-500/20 dark:text-cyan-300",
+  fuchsia: "bg-fuchsia-50 border-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/10 dark:border-fuchsia-500/20 dark:text-fuchsia-300",
+};
+
 export interface KAMDashboardProps {
-  activeTab?: "overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "profile";
-  onTabChange?: (tab: "overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "profile") => void;
+  activeTab?: "overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "interviews" | "profile";
+  onTabChange?: (tab: "overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "interviews" | "profile") => void;
 }
 
 // ── CAM Detail Card: shows one CAM's full college data ──────────────────────
@@ -392,6 +407,44 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                             {r.status === "pending_cam" ? "⚡ Emergency" : r.status}
                           </span>
                         </div>
+
+                        {/* Approve / Reject Actions for KAM */}
+                        {isPending && (
+                          <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-amber-200/60 dark:border-amber-500/20 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await fetch("/api/requests/review", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ requestId: r.id, status: "approved", reviewerRole: "Key Account Manager", reviewNotes: "Approved by KAM" })
+                                  });
+                                  window.location.reload();
+                                } catch (_) {}
+                              }}
+                              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all flex items-center gap-1 shadow-xs"
+                            >
+                              <CheckCircle className="h-3 w-3" /> Approve Request
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await fetch("/api/requests/review", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ requestId: r.id, status: "rejected", reviewerRole: "Key Account Manager", reviewNotes: "Rejected by KAM" })
+                                  });
+                                  window.location.reload();
+                                } catch (_) {}
+                              }}
+                              className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all flex items-center gap-1 shadow-xs"
+                            >
+                              <XCircle className="h-3 w-3" /> Reject Request
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })
@@ -448,8 +501,8 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                     { label: "Absent", value: collegeAttendance.filter((a: any) => a.status === "absent").length, color: "rose" },
                     { label: "OD", value: collegeAttendance.filter((a: any) => a.status === "od").length, color: "amber" },
                   ].map(s => (
-                    <div key={s.label} className={`p-3 rounded-2xl bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 text-center`}>
-                      <div className={`text-xl font-black text-${s.color}-600 dark:text-${s.color}-400`}>{s.value}</div>
+                    <div key={s.label} className={`p-3 rounded-2xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
+                      <div className={`text-xl font-black ${s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" : s.color === "rose" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}`}>{s.value}</div>
                       <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
                     </div>
                   ))}
@@ -524,8 +577,13 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                     { label: "Mapped Depts", value: mappedDepts, color: mappedDepts === collegeDepts && collegeDepts > 0 ? "emerald" : "amber" },
                     { label: "Subjects", value: subjectCount, color: "purple" },
                   ].map(s => (
-                    <div key={s.label} className={`p-3 rounded-2xl bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 text-center`}>
-                      <div className={`text-xl font-black text-${s.color}-600 dark:text-${s.color}-400`}>{s.value}</div>
+                    <div key={s.label} className={`p-3 rounded-2xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
+                      <div className={`text-xl font-black ${
+                        s.color === "indigo" ? "text-indigo-600 dark:text-indigo-400" :
+                        s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
+                        s.color === "amber" ? "text-amber-600 dark:text-amber-400" :
+                        "text-purple-600 dark:text-purple-400"
+                      }`}>{s.value}</div>
                       <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
                     </div>
                   ))}
@@ -584,13 +642,18 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                   <>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {[
-                        { label: "Total Fees", value: `₹${(feeStats.totalFees / 100).toLocaleString()}`, color: "indigo" },
-                        { label: "Collected", value: `₹${(feeStats.totalPaid / 100).toLocaleString()}`, color: "emerald" },
-                        { label: "Outstanding", value: `₹${((feeStats.totalFees - feeStats.totalPaid) / 100).toLocaleString()}`, color: feeStats.totalFees - feeStats.totalPaid > 0 ? "rose" : "emerald" },
+                        { label: "Total Fees", value: `₹${(feeStats.totalFees).toLocaleString()}`, color: "indigo" },
+                        { label: "Collected", value: `₹${(feeStats.totalPaid).toLocaleString()}`, color: "emerald" },
+                        { label: "Outstanding", value: `₹${(Math.max(0, feeStats.totalFees - feeStats.totalPaid)).toLocaleString()}`, color: feeStats.totalFees - feeStats.totalPaid > 0 ? "rose" : "emerald" },
                         { label: "Collection Rate", value: `${feeStats.collectionRate}%`, color: feeStats.collectionRate >= 80 ? "emerald" : "amber" },
                       ].map(s => (
-                        <div key={s.label} className={`p-3 rounded-2xl bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 text-center`}>
-                          <div className={`text-sm font-black text-${s.color}-600 dark:text-${s.color}-400`}>{s.value}</div>
+                        <div key={s.label} className={`p-3 rounded-2xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
+                          <div className={`text-sm font-black ${
+                            s.color === "indigo" ? "text-indigo-600 dark:text-indigo-400" :
+                            s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
+                            s.color === "rose" ? "text-rose-600 dark:text-rose-400" :
+                            "text-amber-600 dark:text-amber-400"
+                          }`}>{s.value}</div>
                           <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
                         </div>
                       ))}
@@ -613,8 +676,12 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                         { label: "Partial", value: feeStats.partialCount, color: "amber" },
                         { label: "Unpaid", value: feeStats.unpaidCount, color: "rose" },
                       ].map(s => (
-                        <div key={s.label} className={`p-3 rounded-2xl bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 text-center`}>
-                          <div className={`text-xl font-black text-${s.color}-600 dark:text-${s.color}-400`}>{s.value}</div>
+                        <div key={s.label} className={`p-3 rounded-2xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
+                          <div className={`text-xl font-black ${
+                            s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
+                            s.color === "amber" ? "text-amber-600 dark:text-amber-400" :
+                            "text-rose-600 dark:text-rose-400"
+                          }`}>{s.value}</div>
                           <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
                         </div>
                       ))}
@@ -708,6 +775,111 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
 
   // Sidebar hover state for flyout popover (matches CAM pattern)
   const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
+
+  // Day Order & Daily Config state
+  const [dailyConfigsMap, setDailyConfigsMap] = useState<Record<string, any>>({});
+  const [selectedDayConfigCollege, setSelectedDayConfigCollege] = useState<any>(null);
+  const [dayStartDate, setDayStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [dayEndDate, setDayEndDate] = useState(new Date().toISOString().slice(0, 10));
+  const [dayOrderType, setDayOrderType] = useState("regular");
+  const [dayOrderVal, setDayOrderVal] = useState("Day 1");
+  const [daySessionMode, setDaySessionMode] = useState("Offline");
+  const [dayNotes, setDayNotes] = useState("");
+  const [savingDayConfig, setSavingDayConfig] = useState(false);
+
+  // Announcement state
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
+  const [annTitle, setAnnTitle] = useState("");
+  const [annDesc, setAnnDesc] = useState("");
+  const [annCollegeId, setAnnCollegeId] = useState("");
+  const [annTargetRole, setAnnTargetRole] = useState("all");
+  const [postingAnn, setPostingAnn] = useState(false);
+
+  // Fetch daily configs for all colleges in portfolio
+  useEffect(() => {
+    if (activeColleges.length === 0) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    Promise.all(
+      activeColleges.map(c =>
+        fetch(`/api/daily-configs?college_id=${encodeURIComponent(c.id)}&dateStr=${todayStr}`)
+          .then(r => r.json())
+          .catch(() => null)
+      )
+    ).then(results => {
+      const map: Record<string, any> = {};
+      results.forEach((res, idx) => {
+        if (res?.success && res.config) {
+          map[activeColleges[idx].id] = res.config;
+        }
+      });
+      setDailyConfigsMap(map);
+    });
+  }, [activeColleges]);
+
+  const handleSaveDayConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDayConfigCollege) return;
+    setSavingDayConfig(true);
+    try {
+      const res = await fetch("/api/daily-configs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          college_id: selectedDayConfigCollege.id,
+          startDate: dayStartDate,
+          endDate: dayEndDate,
+          day_type: dayOrderType,
+          day_order: dayOrderVal,
+          session_mode: daySessionMode,
+          notes: dayNotes,
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast("Day Order & Status configured successfully.", "success");
+        setSelectedDayConfigCollege(null);
+        refreshData();
+      } else {
+        toast(data.message || "Failed to set Day Order", "error");
+      }
+    } catch (_) {
+      toast("An error occurred", "error");
+    } finally {
+      setSavingDayConfig(false);
+    }
+  };
+
+  const handlePostAnnouncement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!annTitle.trim()) return;
+    setPostingAnn(true);
+    try {
+      const res = await fetch("/api/announcements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: annTitle,
+          description: annDesc,
+          created_by: currentKAM?.name || "Key Account Manager",
+          target_role: annTargetRole,
+          college_id: annCollegeId || null,
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast("Announcement broadcasted successfully.", "success");
+        setShowAnnouncementModal(false);
+        setAnnTitle("");
+        setAnnDesc("");
+      } else {
+        toast(data.message || "Failed to post announcement", "error");
+      }
+    } catch (_) {
+      toast("An error occurred", "error");
+    } finally {
+      setPostingAnn(false);
+    }
+  };
 
   // Bug 1 fix: fetch real CAM data per college using /api/cam, not /api/kam
   // Also fetch fee stats per college via /api/fees?role=cam&camId=
@@ -829,6 +1001,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
       icon: ClipboardList,
       items: [
         { id: "tasks", label: "Assign Task", icon: ClipboardList },
+        { id: "interviews", label: "Interview Module", icon: Award },
         { id: "escalations", label: "Escalated Issues", icon: ShieldAlert },
       ]
     },
@@ -996,6 +1169,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
             { id: "colleges", label: "Campuses", icon: Building2 },
             { id: "swap_tracker", label: "Swaps", icon: ArrowRightLeft },
             { id: "tasks", label: "Tasks", icon: ClipboardList },
+            { id: "interviews", label: "Interviews", icon: Award },
             { id: "escalations", label: "Issues", icon: ShieldAlert },
             { id: "profile", label: "Profile", icon: User },
           ].map(t => {
@@ -1006,7 +1180,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
               <button key={t.id} onClick={() => setActiveTab(t.id as any)}
                 className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 min-w-[44px] py-1.5 rounded-xl transition-all cursor-pointer ${isActive ? "text-indigo-600" : "text-slate-400"}`}>
                 <div className="relative">
-                  <Icon className={`h-4.5 w-4.5 transition-transform ${isActive ? "scale-110" : ""}`} />
+                  <Icon className={`h-4 w-4 transition-transform ${isActive ? "scale-110" : ""}`} />
                   {count > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 h-3.5 w-3.5 bg-rose-500 text-white text-[7px] font-bold rounded-full flex items-center justify-center">
                       {count}
@@ -1032,7 +1206,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
           <div data-kam-panel className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-3xl p-5 md:p-8 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/20 text-indigo-650 dark:text-indigo-300 text-[10px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-500/30">
+                <span className="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-[10px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-500/30">
                   Key Account Manager Dashboard
                 </span>
               </div>
@@ -1043,15 +1217,155 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 Managing {activeColleges.length} campus{activeColleges.length !== 1 ? "es" : ""} · {totalMentors} faculty · {totalStudents} students
               </p>
             </div>
-            <Button variant="primary" size="md" icon={<RefreshCw className="h-4 w-4 hover-spin-icon" />}
-              onClick={() => { refreshData(); toast("Data synced.", "info"); }} className="shrink-0 self-start sm:self-center">
-              Refresh Data
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap shrink-0 self-start sm:self-center">
+              <Button variant="secondary" size="md" icon={<BookMarked className="h-4 w-4" />}
+                onClick={() => setShowAnnouncementModal(true)}>
+                Announce
+              </Button>
+              <Button variant="primary" size="md" icon={<RefreshCw className="h-4 w-4 hover-spin-icon" />}
+                onClick={() => { refreshData(); toast("Data synced.", "info"); }}>
+                Refresh Data
+              </Button>
+            </div>
           </div>
 
           {/* ══ TAB: OVERVIEW ══ */}
           {activeTab === "overview" && (
             <div className="space-y-6">
+              {/* ⚡ Urgent Emergency Approvals Banner */}
+              {(() => {
+                const emergencyReqs = requests.filter(r => r.status === "pending_cam" && portfolioMentorIds.has(r.requestorId));
+                if (emergencyReqs.length === 0) return null;
+                return (
+                  <div className="bg-gradient-to-r from-rose-500 to-amber-500 p-0.5 rounded-3xl shadow-md">
+                    <div className="bg-white dark:bg-slate-900 rounded-[23px] p-4 sm:p-5 space-y-3">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span className="h-3 w-3 rounded-full bg-rose-500 animate-ping inline-block" />
+                          <h3 className="text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <ShieldAlert className="h-4 w-4" /> ⚡ Urgent Emergency Approvals Required ({emergencyReqs.length})
+                          </h3>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-bold">Action required by Key Account Manager</span>
+                      </div>
+                      <div className="space-y-2">
+                        {emergencyReqs.map(r => (
+                          <div key={r.id} className="p-3 rounded-xl bg-rose-50/50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 flex items-center justify-between gap-3 flex-wrap">
+                            <div className="space-y-0.5">
+                              <p className="text-xs font-black text-slate-800 dark:text-white">
+                                {r.requestorName} → <span className="text-indigo-600 dark:text-indigo-400">{r.targetStaffName}</span>
+                              </p>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                <span className="font-bold">{r.course}</span> · {r.dateFormatted || r.dateStr} · "{r.reason}"
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await fetch("/api/requests/review", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ requestId: r.id, status: "approved", reviewerRole: "Key Account Manager", reviewNotes: "Approved by KAM" })
+                                  });
+                                  refreshData();
+                                  toast("Emergency handover approved.", "success");
+                                }}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all flex items-center gap-1 shadow-xs"
+                              >
+                                <CheckCircle className="h-3.5 w-3.5" /> Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await fetch("/api/requests/review", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ requestId: r.id, status: "rejected", reviewerRole: "Key Account Manager", reviewNotes: "Rejected by KAM" })
+                                  });
+                                  refreshData();
+                                  toast("Emergency handover rejected.", "info");
+                                }}
+                                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all flex items-center gap-1 shadow-xs"
+                              >
+                                <XCircle className="h-3.5 w-3.5" /> Reject
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 📅 Today's Operations Panel */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 md:p-6 shadow-sm space-y-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-indigo-500" /> Today's Operations & Day Order Status
+                    </h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5 font-semibold">
+                      {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-300">
+                    Portfolio Active Status
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {activeColleges.map(college => {
+                    const config = dailyConfigsMap[college.id];
+                    const collegeMentors = mentors.filter(m => m.college_id === college.id);
+                    const collegeMentorIds = new Set(collegeMentors.map(m => m.id));
+                    const todayDayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+                    const scheduledToday = slots.filter(s => collegeMentorIds.has(s.mentorId) && s.day === todayDayName).length;
+
+                    const dayOrder = config?.day_order || "Day 1";
+                    const dayType = config?.day_type || "regular";
+                    const sessionMode = config?.session_mode || "Offline";
+
+                    return (
+                      <div key={college.id} className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/60 flex flex-col justify-between gap-3">
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="text-xs font-black text-slate-800 dark:text-white truncate">{college.name}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase border ${
+                              dayType === "holiday" ? "bg-slate-100 border-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300" :
+                              dayType === "exam_day" ? "bg-amber-100 border-amber-300 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300" :
+                              "bg-emerald-100 border-emerald-300 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
+                            }`}>
+                              {dayType === "holiday" ? "Holiday" : `${dayOrder} (${dayType})`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
+                            <span>Mode: <strong className="text-slate-700 dark:text-slate-200">{sessionMode}</strong></span>
+                            <span>·</span>
+                            <span>Classes: <strong className="text-slate-700 dark:text-slate-200">{scheduledToday}</strong> scheduled</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedDayConfigCollege(college);
+                            if (config) {
+                              setDayOrderType(config.day_type || "regular");
+                              setDayOrderVal(config.day_order || "Day 1");
+                              setDaySessionMode(config.session_mode || "Offline");
+                              setDayNotes(config.notes || "");
+                            }
+                          }}
+                          className="w-full py-1.5 px-3 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 font-bold text-[10px] rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer border border-indigo-100 dark:border-indigo-500/20"
+                        >
+                          <Compass className="h-3 w-3" /> Set Day Order & Status
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               {/* KPI Row */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                 {[
@@ -1338,13 +1652,13 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                         </div>
                         <div className="grid grid-cols-4 gap-2 text-center">
                           {[
-                            { label: "Faculty", value: collegeMentors.length, color: "indigo" },
-                            { label: "Students", value: collegeStudents.length, color: "emerald" },
-                            { label: "Slots", value: collegeSlots.length, color: "amber" },
-                            { label: "Tasks", value: collegeTasks.length, color: collegeTasks.length > 0 ? "rose" : "slate" },
+                            { label: "Faculty", value: collegeMentors.length, text: "text-indigo-600 dark:text-indigo-400" },
+                            { label: "Students", value: collegeStudents.length, text: "text-emerald-600 dark:text-emerald-400" },
+                            { label: "Slots", value: collegeSlots.length, text: "text-amber-600 dark:text-amber-400" },
+                            { label: "Tasks", value: collegeTasks.length, text: collegeTasks.length > 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-600 dark:text-slate-400" },
                           ].map(stat => (
                             <div key={stat.label} className="bg-white dark:bg-slate-950 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850">
-                              <div className={`text-sm font-black text-${stat.color}-600 dark:text-${stat.color}-400`}>{stat.value}</div>
+                              <div className={`text-sm font-black ${stat.text}`}>{stat.value}</div>
                               <div className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">{stat.label}</div>
                             </div>
                           ))}
@@ -1505,17 +1819,17 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
               {/* KPI strip */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {[
-                  { label: "Colleges", value: activeColleges.length, icon: Building2, color: "indigo" },
-                  { label: "Open Issues", value: totalOpenIssues, icon: ShieldAlert, color: totalOpenIssues > 0 ? "rose" : "emerald" },
-                  { label: "Tasks Pending", value: totalPendingTasks, icon: ClipboardList, color: totalPendingTasks > 0 ? "amber" : "emerald" },
-                  { label: "Portfolio Faculty", value: totalMentors, icon: Users, color: "purple" },
+                  { label: "Colleges", value: activeColleges.length, icon: Building2, bg: "bg-indigo-50 dark:bg-indigo-500/10", border: "border-indigo-100 dark:border-indigo-500/20", text: "text-indigo-600 dark:text-indigo-400" },
+                  { label: "Open Issues", value: totalOpenIssues, icon: ShieldAlert, bg: totalOpenIssues > 0 ? "bg-rose-50 dark:bg-rose-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalOpenIssues > 0 ? "border-rose-100 dark:border-rose-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalOpenIssues > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400" },
+                  { label: "Tasks Pending", value: totalPendingTasks, icon: ClipboardList, bg: totalPendingTasks > 0 ? "bg-amber-50 dark:bg-amber-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalPendingTasks > 0 ? "border-amber-100 dark:border-amber-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalPendingTasks > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400" },
+                  { label: "Portfolio Faculty", value: totalMentors, icon: Users, bg: "bg-purple-50 dark:bg-purple-500/10", border: "border-purple-100 dark:border-purple-500/20", text: "text-purple-600 dark:text-purple-400" },
                 ].map(kpi => {
                   const Icon = kpi.icon;
                   return (
-                    <div key={kpi.label} className={`bg-${kpi.color}-50 dark:bg-${kpi.color}-500/10 border border-${kpi.color}-100 dark:border-${kpi.color}-500/20 rounded-2xl p-4 flex items-center gap-3`}>
-                      <Icon className={`h-5 w-5 text-${kpi.color}-600 dark:text-${kpi.color}-400 shrink-0`} />
+                    <div key={kpi.label} className={`${kpi.bg} border ${kpi.border} rounded-2xl p-4 flex items-center gap-3`}>
+                      <Icon className={`h-5 w-5 ${kpi.text} shrink-0`} />
                       <div>
-                        <div className={`text-xl font-black text-${kpi.color}-700 dark:text-${kpi.color}-300`}>{kpi.value}</div>
+                        <div className={`text-xl font-black ${kpi.text}`}>{kpi.value}</div>
                         <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{kpi.label}</div>
                       </div>
                     </div>
@@ -1580,7 +1894,11 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                           { label: "Slots", value: cSlots.length, color: "amber" },
                         ].map(s => (
                           <div key={s.label} className="bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
-                            <span className={`text-sm font-black text-${s.color}-600 dark:text-${s.color}-400 block`}>{s.value}</span>
+                            <span className={`text-sm font-black block ${
+                              s.color === "indigo" ? "text-indigo-600 dark:text-indigo-400" :
+                              s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
+                              "text-amber-600 dark:text-amber-400"
+                            }`}>{s.value}</span>
                             <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5 block">{s.label}</span>
                           </div>
                         ))}
@@ -1690,7 +2008,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                             <div key={t.id} className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 transition-all ${
                               isOverdue ? "border-rose-200 dark:border-rose-500/30 bg-rose-50/40 dark:bg-rose-500/5"
                               : isDone ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-500/5"
-                              : "border-slate-105 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60"
+                              : "border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60"
                             }`}>
                               <div className="space-y-1 text-[11px] font-semibold min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap text-[9px] uppercase font-black">
@@ -1713,18 +2031,47 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                                   </strong>
                                 </p>
                               </div>
-                              <button
-                                onClick={() => handleDeleteTask(t.id)}
-                                disabled={loadingActions[`delete_task_${t.id}`]}
-                                className="shrink-0 p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="Delete task"
-                              >
-                                {loadingActions[`delete_task_${t.id}`] ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-4 w-4" />
+                              <div className="flex items-center gap-1 shrink-0">
+                                {!isDone && (
+                                  <button
+                                    onClick={async () => {
+                                      setActionLoading(`complete_task_${t.id}`, true);
+                                      try {
+                                        await fetch("/api/tasks", {
+                                          method: "PUT",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ id: t.id, status: "completed" })
+                                        });
+                                        await refreshData();
+                                        toast("Task marked as completed.", "success");
+                                      } finally {
+                                        setActionLoading(`complete_task_${t.id}`, false);
+                                      }
+                                    }}
+                                    disabled={loadingActions[`complete_task_${t.id}`]}
+                                    className="p-1.5 text-emerald-600 hover:bg-emerald-500/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                                    title="Mark Complete"
+                                  >
+                                    {loadingActions[`complete_task_${t.id}`] ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <CheckCircle2 className="h-4 w-4" />
+                                    )}
+                                  </button>
                                 )}
-                              </button>
+                                <button
+                                  onClick={() => handleDeleteTask(t.id)}
+                                  disabled={loadingActions[`delete_task_${t.id}`]}
+                                  className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Delete task"
+                                >
+                                  {loadingActions[`delete_task_${t.id}`] ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </button>
+                              </div>
                             </div>
                           );
                         })}
@@ -1744,11 +2091,11 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 <Panel title="Escalated Campus Issues" subtitle="Review and resolve items forwarded by CMs">
                   <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
                     {portfolioEscalations.map(esc => (
-                      <div key={esc.id} className="p-3.5 rounded-xl border border-slate-105 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 flex flex-col gap-3 hover:border-indigo-500/20 transition-all">
+                      <div key={esc.id} className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 flex flex-col gap-3 hover:border-indigo-500/20 transition-all">
                         <div className="space-y-1">
                           <div className="flex justify-between items-center text-[9px] uppercase font-black">
-                            <span className="text-indigo-650 dark:text-indigo-455 font-bold">{esc.collegeName}</span>
-                            <span className="text-slate-500 dark:text-slate-450 font-semibold">{esc.escalatedAt || esc.created_at?.slice(0, 10) || "Today"}</span>
+                            <span className="text-indigo-600 dark:text-indigo-400 font-bold">{esc.collegeName}</span>
+                            <span className="text-slate-500 dark:text-slate-400 font-semibold">{esc.escalatedAt || esc.created_at?.slice(0, 10) || "Today"}</span>
                           </div>
                           <h4 className="text-xs font-black text-slate-800 dark:text-white">{esc.title}</h4>
                           {esc.desc && <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed italic">"{esc.desc}"</p>}
@@ -1773,7 +2120,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                             Mark Resolved
                           </LoadingButton>
                         ) : (
-                          <span className="w-full py-1.5 bg-emerald-500/10 text-emerald-650 dark:text-emerald-450 font-black border border-emerald-500/20 text-[10px] rounded text-center block">✓ Resolved</span>
+                          <span className="w-full py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-black border border-emerald-500/20 text-[10px] rounded text-center block">✓ Resolved</span>
                         )}
                       </div>
                     ))}
@@ -1818,16 +2165,16 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
               <div className="space-y-6">
                 <Panel title="Cross-Campus Swap & Compensation Ledger" subtitle="Portfolio-wide view of faculty hour debts and swap resolution progress">
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-2">
-                    <Card label="Total Swap Requests" value={allSwapRequests.length} icon={<ArrowRightLeft className="h-4.5 w-4.5 text-indigo-650" />} className="bg-pastel-blue" />
-                    <Card label="Pending Resolution" value={pendingSwaps.length} icon={<Clock className="h-4.5 w-4.5 text-amber-600" />} success={pendingSwaps.length === 0} className="bg-pastel-cream" />
-                    <Card label="Debts Settled" value={settledSwaps.length} icon={<CheckCircle2 className="h-4.5 w-4.5 text-emerald-600" />} success={true} className="bg-pastel-green" />
-                    <Card label="Declined Offers" value={declinedSwaps.length} icon={<XCircle className="h-4.5 w-4.5 text-rose-600" />} success={true} className="bg-pastel-purple" />
+                    <Card label="Total Swap Requests" value={allSwapRequests.length} icon={<ArrowRightLeft className="h-4 w-4 text-indigo-600" />} className="bg-pastel-blue" />
+                    <Card label="Pending Resolution" value={pendingSwaps.length} icon={<Clock className="h-4 w-4 text-amber-600" />} success={pendingSwaps.length === 0} className="bg-pastel-cream" />
+                    <Card label="Debts Settled" value={settledSwaps.length} icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />} success={true} className="bg-pastel-green" />
+                    <Card label="Declined Offers" value={declinedSwaps.length} icon={<XCircle className="h-4 w-4 text-rose-600" />} success={true} className="bg-pastel-purple" />
                   </div>
                 </Panel>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   {campusBreakdown.map(cb => (
-                    <div key={cb.college.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-855 p-4 rounded-2xl shadow-sm flex flex-col gap-3">
+                    <div key={cb.college.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-4 rounded-2xl shadow-sm flex flex-col gap-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-slate-800 dark:text-white">{cb.college.name}</span>
                         <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase border ${cb.pending > 0 ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" : "bg-teal-50 border-teal-200 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300"}`}>
@@ -2000,17 +2347,17 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 <h3 className="text-xs font-black text-indigo-600 dark:text-indigo-300 uppercase tracking-widest">Regional Network Metrics</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
                   {[
-                    { label: "Colleges", value: activeColleges.length, sub: "in portfolio", color: "indigo" },
-                    { label: "Faculty", value: totalMentors, sub: "managed mentors", color: "purple" },
-                    { label: "Students", value: totalStudents, sub: "across campuses", color: "emerald" },
-                    { label: "Total Slots", value: totalSlots, sub: "timetable entries", color: "amber" },
-                    { label: "Escalations", value: totalOpenIssues, sub: "open issues", color: totalOpenIssues > 0 ? "rose" : "emerald" },
-                    { label: "Pending Tasks", value: totalPendingTasks, sub: "awaiting CMs", color: totalPendingTasks > 0 ? "amber" : "emerald" },
-                    { label: "Pending Requests", value: totalPendingRequests, sub: "handover queue", color: totalPendingRequests > 0 ? "amber" : "emerald" },
-                    { label: "Subjects Mapped", value: subjectsList.filter(s => activeColleges.some(c => c.id === s.college_id)).length, sub: "curriculum entries", color: "teal" },
+                    { label: "Colleges", value: activeColleges.length, sub: "in portfolio", bg: "bg-indigo-50 dark:bg-indigo-500/10", border: "border-indigo-100 dark:border-indigo-500/20", text: "text-indigo-600 dark:text-indigo-400" },
+                    { label: "Faculty", value: totalMentors, sub: "managed mentors", bg: "bg-purple-50 dark:bg-purple-500/10", border: "border-purple-100 dark:border-purple-500/20", text: "text-purple-600 dark:text-purple-400" },
+                    { label: "Students", value: totalStudents, sub: "across campuses", bg: "bg-emerald-50 dark:bg-emerald-500/10", border: "border-emerald-100 dark:border-emerald-500/20", text: "text-emerald-600 dark:text-emerald-400" },
+                    { label: "Total Slots", value: totalSlots, sub: "timetable entries", bg: "bg-amber-50 dark:bg-amber-500/10", border: "border-amber-100 dark:border-amber-500/20", text: "text-amber-600 dark:text-amber-400" },
+                    { label: "Escalations", value: totalOpenIssues, sub: "open issues", bg: totalOpenIssues > 0 ? "bg-rose-50 dark:bg-rose-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalOpenIssues > 0 ? "border-rose-100 dark:border-rose-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalOpenIssues > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400" },
+                    { label: "Pending Tasks", value: totalPendingTasks, sub: "awaiting CMs", bg: totalPendingTasks > 0 ? "bg-amber-50 dark:bg-amber-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalPendingTasks > 0 ? "border-amber-100 dark:border-amber-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalPendingTasks > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400" },
+                    { label: "Pending Requests", value: totalPendingRequests, sub: "handover queue", bg: totalPendingRequests > 0 ? "bg-amber-50 dark:bg-amber-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalPendingRequests > 0 ? "border-amber-100 dark:border-amber-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalPendingRequests > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400" },
+                    { label: "Subjects Mapped", value: subjectsList.filter(s => activeColleges.some(c => c.id === s.college_id)).length, sub: "curriculum entries", bg: "bg-teal-50 dark:bg-teal-500/10", border: "border-teal-100 dark:border-teal-500/20", text: "text-teal-600 dark:text-teal-400" },
                   ].map(m => (
-                    <div key={m.label} className={`p-4 bg-${m.color}-50 dark:bg-${m.color}-500/10 rounded-2xl border border-${m.color}-100 dark:border-${m.color}-500/20`}>
-                      <span className={`text-2xl font-extrabold text-${m.color}-600 dark:text-${m.color}-400 block`}>{m.value}</span>
+                    <div key={m.label} className={`p-4 ${m.bg} rounded-2xl border ${m.border}`}>
+                      <span className={`text-2xl font-extrabold ${m.text} block`}>{m.value}</span>
                       <span className="text-[9px] text-slate-500 dark:text-slate-400 font-extrabold uppercase tracking-wider block mt-0.5">{m.label}</span>
                       <span className="text-[8px] text-slate-400 block">{m.sub}</span>
                     </div>
@@ -2019,8 +2366,149 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
               </div>
             </div>
           ))}
+
+          {/* ══ TAB: INTERVIEW MODULE ══ */}
+          {activeTab === "interviews" && (
+            <div className="space-y-6 animate-fadeIn">
+              <InterviewModule currentUserRole="kam" currentUserName={currentKAM?.name || "Key Account Manager"} />
+            </div>
+          )}
         </div>
       </main>
+
+      {/* ── Set Day Order Modal ── */}
+      {selectedDayConfigCollege && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-800 dark:text-white">Set Day Order & Status</h3>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">{selectedDayConfigCollege.name}</p>
+              </div>
+              <button onClick={() => setSelectedDayConfigCollege(null)} className="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveDayConfig} className="space-y-4 text-xs font-semibold">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">From Date</label>
+                  <input type="date" value={dayStartDate} onChange={e => {
+                    setDayStartDate(e.target.value);
+                    if (e.target.value > dayEndDate) setDayEndDate(e.target.value);
+                  }} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold" required />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">To Date</label>
+                  <input type="date" value={dayEndDate} min={dayStartDate} onChange={e => setDayEndDate(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold" required />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Day Type</label>
+                  <select value={dayOrderType} onChange={e => {
+                    setDayOrderType(e.target.value);
+                    if (e.target.value === "holiday") setDayOrderVal("None");
+                    else if (dayOrderVal === "None") setDayOrderVal("Day 1");
+                  }} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold">
+                    <option value="regular">Working Day</option>
+                    <option value="holiday">Holiday</option>
+                    <option value="event">Event</option>
+                    <option value="exam_day">Exam Day</option>
+                    <option value="special">Special Day</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Day Order</label>
+                  <select value={dayOrderVal} onChange={e => setDayOrderVal(e.target.value)} disabled={dayOrderType === "holiday"} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold disabled:opacity-50">
+                    <option value="Day 1">Day 1</option>
+                    <option value="Day 2">Day 2</option>
+                    <option value="Day 3">Day 3</option>
+                    <option value="Day 4">Day 4</option>
+                    <option value="Day 5">Day 5</option>
+                    <option value="None">None</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Session Mode</label>
+                <select value={daySessionMode} onChange={e => setDaySessionMode(e.target.value)} disabled={dayOrderType === "holiday"} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold disabled:opacity-50">
+                  <option value="Offline">Offline</option>
+                  <option value="Online">Online</option>
+                  <option value="Hybrid">Hybrid</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Reason / Operational Notes</label>
+                <textarea value={dayNotes} onChange={e => setDayNotes(e.target.value)} placeholder="Optional context for faculty and students..." className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-semibold h-20" />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setSelectedDayConfigCollege(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer">Cancel</button>
+                <button type="submit" disabled={savingDayConfig} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow-md cursor-pointer">
+                  {savingDayConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Configuration"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Broadcast Announcement Modal ── */}
+      {showAnnouncementModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-800 dark:text-white">Broadcast Announcement</h3>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">Publish to faculty or students across your portfolio</p>
+              </div>
+              <button onClick={() => setShowAnnouncementModal(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handlePostAnnouncement} className="space-y-4 text-xs font-semibold">
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Announcement Title</label>
+                <input type="text" value={annTitle} onChange={e => setAnnTitle(e.target.value)} placeholder="e.g. Schedule Revision for Upcoming Midterms" className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold" required />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Target Role</label>
+                  <select value={annTargetRole} onChange={e => setAnnTargetRole(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold">
+                    <option value="all">All Roles (Faculty & Students)</option>
+                    <option value="mentor">Faculty / Mentors Only</option>
+                    <option value="student">Students Only</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Target Campus</label>
+                  <select value={annCollegeId} onChange={e => setAnnCollegeId(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold">
+                    <option value="">All Campuses in Portfolio</option>
+                    {activeColleges.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Announcement Details</label>
+                <textarea value={annDesc} onChange={e => setAnnDesc(e.target.value)} placeholder="Provide complete details..." className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-semibold h-24" />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowAnnouncementModal(false)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer">Cancel</button>
+                <button type="submit" disabled={postingAnn} className="px-5 py-2 bg-gradient-to-r from-indigo-500 to-[#D528A2] text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow-md cursor-pointer">
+                  {postingAnn ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publish Announcement"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

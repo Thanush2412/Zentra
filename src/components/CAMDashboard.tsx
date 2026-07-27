@@ -14,6 +14,7 @@ import { Input } from "./Input";
 import { Select } from "./Select";
 import { LoadingButton } from "./ui/LoadingButton";
 import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList } from "../lib/utils";
+import { InterviewModule } from "./InterviewModule";
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,
@@ -806,6 +807,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   }, []);
 
   // CAM Student Tracker audit states
+  const [camTrackerSubView, setCamTrackerSubView] = useState<"tracker" | "interviews">("tracker");
   const [camTrackerDept, setCamTrackerDept] = useState("");
   const [camTrackerSemester, setCamTrackerSemester] = useState("");
   const [camTrackerSubject, setCamTrackerSubject] = useState("");
@@ -6815,13 +6817,42 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <GraduationCap className="h-5 w-5" />
                             </div>
                             <div>
-                              <h2 className="text-lg font-black text-slate-800 leading-tight">Student Performance &amp; Task Audit Console</h2>
+                              <h2 className="text-lg font-black text-slate-800 leading-tight">Student Tracker &amp; Interview Audit Console</h2>
                               <p className="text-xs text-slate-455 font-medium mt-0.5">
-                                Filter by department, semester and subject to audit weekly task submissions.
+                                Audit student task submissions or evaluate internal &amp; external interviews.
                               </p>
                             </div>
                           </div>
+
+                          {/* Sub-tab Dual Buttons */}
+                          <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shrink-0">
+                            <button
+                              onClick={() => setCamTrackerSubView("tracker")}
+                              className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                                camTrackerSubView === "tracker"
+                                  ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
+                                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                              }`}
+                            >
+                              Task Tracker Audit
+                            </button>
+                            <button
+                              onClick={() => setCamTrackerSubView("interviews")}
+                              className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                                camTrackerSubView === "interviews"
+                                  ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
+                                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                              }`}
+                            >
+                              Interview Module (Dual Mode)
+                            </button>
+                          </div>
                         </div>
+
+                        {camTrackerSubView === "interviews" ? (
+                          <InterviewModule currentUserRole="cm" currentUserName={currentCAM?.name || "Campus Manager"} />
+                        ) : (
+                          <React.Fragment>
 
                         {/* Cascading Filters — all values come from DB */}
                         <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
@@ -7257,9 +7288,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           );
                         })()}
                       </div>
-                    </div>
-                  );
-                })()}
+                    </React.Fragment>
+                  )}
+                </div>
+              );
+            })()}
 
                   {/* Tab: Student Directory & Bulk Import */}
                   {activeTab === "students_list" && (

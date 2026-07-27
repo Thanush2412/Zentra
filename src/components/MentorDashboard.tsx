@@ -42,6 +42,7 @@ import {
   Trash2,
   Loader2
 } from "lucide-react";
+import { InterviewModule } from "./InterviewModule";
 import * as XLSX from "xlsx";
 import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
@@ -317,6 +318,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   }, []);
 
   // Student Tracker filter and management states
+  const [trackerSubView, setTrackerSubView] = useState<"tracker" | "interviews">("tracker");
   const mentorClasses = useMemo(() => {
     let rawItems: string[] = [];
     if (currentMentor?.classes) {
@@ -4686,13 +4688,42 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 <GraduationCap className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-lg font-black text-slate-800 leading-tight">Weekly Student Task &amp; Submission Tracker</h2>
+                <h2 className="text-lg font-black text-slate-800 leading-tight">Student Tracker &amp; Interview Module</h2>
                 <p className="text-xs text-slate-455 font-medium mt-0.5">
-                  Assign weekly tasks, view student submissions, and enter marks up to 10.
+                  Track weekly task submissions or conduct internal &amp; external student interviews.
                 </p>
               </div>
             </div>
+
+            {/* Sub-tab Dual Buttons */}
+            <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shrink-0">
+              <button
+                onClick={() => setTrackerSubView("tracker")}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  trackerSubView === "tracker"
+                    ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                Task Tracker
+              </button>
+              <button
+                onClick={() => setTrackerSubView("interviews")}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  trackerSubView === "interviews"
+                    ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                Interview Module (Dual Mode)
+              </button>
+            </div>
           </div>
+
+          {trackerSubView === "interviews" ? (
+            <InterviewModule currentUserRole="mentor" currentUserName={currentMentor?.name || "Mentor"} />
+          ) : (
+            <div className="space-y-6">
 
           {/* Interactive 4-Dropdown Selector Bar: Department -> Semester -> Subject -> Week */}
           <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs font-sans">
@@ -5607,8 +5638,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             })()}
           </div>
         </div>
-      );
-    })()}
+      )}
+    </div>
+  );
+})()}
 
           {/* Tab: Demo Evaluations */}
           {((activeTab as string) === "demo_evaluations") && (() => {

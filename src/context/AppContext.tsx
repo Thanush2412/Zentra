@@ -156,6 +156,25 @@ export interface StudentTrackerEntry {
   updated_at?: string;
 }
 
+export interface StudentInterview {
+  id: string;
+  student_id: string;
+  student_name?: string;
+  class_group: string;
+  subject: string;
+  type: "internal" | "external";
+  marks: number;
+  total_marks?: number;
+  technical_marks?: number;
+  communication_marks?: number;
+  status: "Cleared" | "Pending" | "Needs Improvement" | "Failed" | string;
+  evaluator_name: string;
+  evaluator_role: string;
+  notes?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface Slot {
   id: string;
   mentorId: string;
@@ -397,6 +416,9 @@ interface AppContextProps {
   bulkDeleteStudents: (ids: string[]) => Promise<{ success: boolean; message: string; count?: number }>;
   weeklyTasks: WeeklyTask[];
   studentTracker: StudentTrackerEntry[];
+  interviews: StudentInterview[];
+  addInterview: (interviewData: Partial<StudentInterview>) => Promise<{ success: boolean; interview?: StudentInterview; message?: string }>;
+  deleteInterview: (id: string) => Promise<{ success: boolean; message?: string }>;
   assignWeeklyTask: (taskData: { classGroup: string; subject: string; weekNumber: number; taskName: string; taskPdfUrl?: string; mentorId: string }) => Promise<{ success: boolean; task?: WeeklyTask; message?: string }>;
   gradeStudentTask: (entryData: { studentId: string; classGroup: string; subject: string; weekNumber: number; submissionUrl?: string; vivaAssessment?: string; marks?: number; gradedBy?: string }) => Promise<{ success: boolean; entry?: StudentTrackerEntry; message?: string }>;
   deleteWeeklyTask: (classGroup: string, subject: string, weekNumber: number) => Promise<{ success: boolean; message?: string }>;
@@ -519,6 +541,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [weeklyTasks, setWeeklyTasks] = useState<WeeklyTask[]>([]);
   const [studentTracker, setStudentTracker] = useState<StudentTrackerEntry[]>([]);
+  const [interviews, setInterviews] = useState<StudentInterview[]>([]);
   const [smes, setSmes] = useState<any[]>([]);
   const [demoSessions, setDemoSessions] = useState<any[]>([]);
   const [demoRules, setDemoRules] = useState<any[]>([]);
@@ -636,6 +659,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setHolidays(data.holidays || []);
         setWeeklyTasks(data.weeklyTasks || []);
         setStudentTracker(data.studentTracker || []);
+        setInterviews(data.interviews || []);
         setSmes(data.smes || []);
         setDemoSessions(data.demoSessions || []);
         setSubjectGroups(data.subjectGroups || []);
@@ -2441,6 +2465,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const addInterview = async (interviewData: Partial<StudentInterview>) => {
+    try {
+      const res = await fetch("/api/interviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(interviewData),
+      });
+      const data = await res.json();
+      if (data.success && data.interview) {
+        setInterviews(prev => [data.interview, ...prev.filter(i => i.id !== data.interview.id)]);
+        return { success: true, interview: data.interview };
+      }
+      return { success: false, message: data.message || "Failed to save interview record." };
+    } catch (e: any) {
+      console.error("addInterview error:", e);
+      return { success: false, message: e.message };
+    }
+  };
+
+  const deleteInterview = async (id: string) => {
+    try {
+      const res = await fetch(`/api/interviews?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setInterviews(prev => prev.filter(i => i.id !== id));
+        return { success: true, message: data.message };
+      }
+      return { success: false, message: data.message || "Failed to delete interview." };
+    } catch (e: any) {
+      console.error("deleteInterview error:", e);
+      return { success: false, message: e.message };
+    }
+  };
+
   const saveKamTask = async (task: any) => {
     try {
       const res = await fetch("/api/tasks", {
@@ -2767,6 +2825,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleLeaveRequest,
         weeklyTasks,
         studentTracker,
+        interviews,
+        addInterview,
+        deleteInterview,
         assignWeeklyTask,
         gradeStudentTask,
         deleteWeeklyTask,

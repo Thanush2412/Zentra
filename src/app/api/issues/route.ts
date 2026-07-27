@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { id, title, type, priority, desc, status, collegeId, collegeName, escalated, escalatedAt } = body;
+    const { id, title, type, priority, desc, status, collegeId, collegeName, escalated, escalatedAt, notes } = body;
 
     if (!title || !type || !priority || !collegeId) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
@@ -24,8 +24,8 @@ export async function POST(request: Request) {
     const issueId = id || "i_" + Date.now();
     await db.run(
       `INSERT OR REPLACE INTO campus_issues 
-       (id, title, type, priority, desc, status, collegeId, collegeName, escalated, escalatedAt, resolvedAt) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, title, type, priority, desc, status, collegeId, collegeName, escalated, escalatedAt, resolvedAt, notes) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         issueId,
         title,
@@ -37,7 +37,8 @@ export async function POST(request: Request) {
         collegeName || null,
         escalated === undefined ? 0 : (escalated ? 1 : 0),
         escalatedAt || null,
-        body.resolvedAt || null
+        body.resolvedAt || null,
+        notes || null
       ]
     );
 
@@ -51,7 +52,7 @@ export async function PATCH(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { id, status, resolvedAt, escalated, escalatedAt } = body;
+    const { id, status, resolvedAt, escalated, escalatedAt, notes } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, message: "Missing id" }, { status: 400 });
@@ -68,6 +69,13 @@ export async function PATCH(request: Request) {
       await db.run(
         "UPDATE campus_issues SET escalated = ?, escalatedAt = ? WHERE id = ?",
         [escalated ? 1 : 0, escalatedAt || null, id]
+      );
+    }
+
+    if (notes !== undefined) {
+      await db.run(
+        "UPDATE campus_issues SET notes = ? WHERE id = ?",
+        [notes, id]
       );
     }
 

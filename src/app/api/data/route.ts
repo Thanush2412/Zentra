@@ -37,7 +37,8 @@ export async function GET(request: Request) {
       courses, students, studentAttendance, leaveRequests, colleges,
       notifications, announcements, holidays, loginHistory, users,
       weeklyTasks, studentTracker, smes, demoSessions, subjectGroups, demoRules,
-      signupRequests, demoSwapRequests, kamTasks, campusIssues, academicYears, academicEvents
+      signupRequests, demoSwapRequests, kamTasks, campusIssues, academicYears, academicEvents,
+      studentInterviews
     ] = await Promise.all([
       db.all("SELECT * FROM mentors"),
       db.all("SELECT * FROM slots"),
@@ -66,7 +67,8 @@ export async function GET(request: Request) {
       db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC").catch(() => []),
       db.all("SELECT * FROM campus_issues ORDER BY created_at DESC").catch(() => []),
       db.all("SELECT * FROM academic_years").catch(() => []),
-      db.all("SELECT * FROM academic_events ORDER BY date ASC").catch(() => [])
+      db.all("SELECT * FROM academic_events ORDER BY date ASC").catch(() => []),
+      db.all("SELECT * FROM student_interviews ORDER BY created_at DESC").catch(() => [])
     ]);
 
     let filteredColleges = colleges;
@@ -164,7 +166,8 @@ export async function GET(request: Request) {
       kamTasks,
       campusIssues,
       academicYears: academicYears.map((ay: any) => typeof ay === "string" ? ay : ay.year || ay.year_name || ay.name || String(ay)),
-      academicEvents
+      academicEvents,
+      interviews: studentInterviews || []
     }, {
       headers: {
         "Cache-Control": "private, max-age=3, stale-while-revalidate=15"

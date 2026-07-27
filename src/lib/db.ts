@@ -403,6 +403,26 @@ export function getDb(): Promise<TursoDbAdapter> {
       FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS student_interviews (
+      id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL,
+      student_name TEXT,
+      class_group TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      type TEXT NOT NULL,
+      marks REAL NOT NULL DEFAULT 0,
+      total_marks REAL DEFAULT 100,
+      technical_marks REAL DEFAULT 0,
+      communication_marks REAL DEFAULT 0,
+      status TEXT DEFAULT 'Cleared',
+      evaluator_name TEXT NOT NULL,
+      evaluator_role TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS student_fees (
       id TEXT PRIMARY KEY,
       student_id TEXT NOT NULL,
@@ -592,6 +612,12 @@ export function getDb(): Promise<TursoDbAdapter> {
     await dbInstance.exec(`ALTER TABLE kam_tasks ADD COLUMN collegeId TEXT;`);
   } catch (_) {}
   try {
+    await dbInstance.exec(`ALTER TABLE kam_tasks ADD COLUMN assigned_cam_id TEXT;`);
+  } catch (_) {}
+  try {
+    await dbInstance.exec(`ALTER TABLE kam_tasks ADD COLUMN description TEXT;`);
+  } catch (_) {}
+  try {
     await dbInstance.exec(`ALTER TABLE kam_tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium';`);
   } catch (_) {}
   try {
@@ -619,6 +645,9 @@ export function getDb(): Promise<TursoDbAdapter> {
   } catch (_) {}
   try {
     await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN resolvedAt TEXT;`);
+  } catch (_) {}
+  try {
+    await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN notes TEXT;`);
   } catch (_) {}
   try {
     await dbInstance.exec(`ALTER TABLE campus_issues ADD COLUMN type TEXT;`);

@@ -38,7 +38,7 @@ import {
   Edit2,
   Loader2
 } from "lucide-react";
-import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup } from "@/lib/utils";
+import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch } from "@/lib/utils";
 
 // Mock Library Books database for OPAC
 interface BookItem {
@@ -349,10 +349,43 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   const studentGroupNorm = normalizeClassGroup(currentStudent.classGroup);
 
-  // 1. Get all slots for student's class group — using fuzzy match
-  const myClassSlots = slots.filter(
-    (s) => s.classGroup && normalizeClassGroup(s.classGroup) === studentGroupNorm
-  );
+  // 1. Get all slots for student's class group — using robust fuzzy + cohort matching
+  const myClassSlots = slots.filter((s) => {
+    if (!currentStudent) return false;
+
+    // Check college_id if set on slot and student
+    if (s.college_id && currentStudent.college_id && s.college_id !== currentStudent.college_id) {
+      return false;
+    }
+
+    // A. Direct or normalized classGroup match
+    if (s.classGroup) {
+      if (normalizeClassGroup(s.classGroup) === studentGroupNorm) return true;
+      if (isCohortMatching(s.classGroup, currentStudent.classGroup, coursesList, subjectsList)) return true;
+    }
+
+    // B. Department and semester fallback matching
+    const studentDept = currentStudent.department || "";
+    const studentSem = currentStudent.semester || (currentStudent.classGroup ? currentStudent.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "";
+
+    const slotDept = s.department || (s.classGroup ? getDeptFromClassGroup(s.classGroup) : "");
+    const slotSem = s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "";
+
+    if (studentDept && slotDept && studentSem && slotSem) {
+      const dMatch = studentDept.toLowerCase().trim() === slotDept.toLowerCase().trim() ||
+                     getDeptFromClassGroup(studentDept).toLowerCase() === getDeptFromClassGroup(slotDept).toLowerCase();
+      const sMatch = studentSem.toLowerCase().trim() === slotSem.toLowerCase().trim();
+      if (dMatch && sMatch) return true;
+    }
+
+    // C. Subject match fallback: slot course matches one of student's semester subjects
+    if (s.course && studentClassDetails?.sem) {
+      const isSubjMatch = studentSubjects.some(sub => isSubjectNameMatch(sub.name, s.course));
+      if (isSubjMatch) return true;
+    }
+
+    return false;
+  });
 
   // Synchronize the current active shift with the student's actual timetable slot shift
   useEffect(() => {
@@ -529,8 +562,33 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     if (queryDay === "holiday") {
       return null;
     }
-    // Find the slot for this class group at this time
-    const slot = myClassSlots.find((s) => s.day === queryDay && s.time === time);
+
+    const normalizeTimeStr = (t?: string) => {
+      if (!t) return "";
+      return t.toLowerCase()
+        .replace(/\./g, ":")
+        .replace(/\s+/g, "")
+        .replace(/^0/, "");
+    };
+
+    const normCellTime = normalizeTimeStr(time);
+
+    // Find the slot for this class group at this time using flexible time matching
+    const slot = myClassSlots.find((s) => {
+      if (s.day !== queryDay) return false;
+      if (s.time === time) return true;
+
+      const normSlotTime = normalizeTimeStr(s.time);
+      if (normSlotTime === normCellTime) return true;
+
+      // Compare start times e.g. "9:00 AM" vs "09:00 AM - 10:00 AM"
+      const cellStart = formatTimeLabel(time).toLowerCase().replace(/[^a-z0-9]/g, "");
+      const slotStart = formatTimeLabel(s.time).toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (cellStart && slotStart && cellStart === slotStart) return true;
+
+      return false;
+    });
+
     if (!slot) return null;
 
     // Check if there is an approved handover (substitution) for this slot on this date
