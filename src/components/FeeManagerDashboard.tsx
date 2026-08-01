@@ -179,27 +179,40 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   const [selectedTemplateSem, setSelectedTemplateSem] = useState("");
   const [selectedTemplateYear, setSelectedTemplateYear] = useState("");
 
-  // Dynamically extract unique departments STRICTLY from DB data (students + courses)
+  // Helper to find selected college object for template generation
+  const selectedCollegeObj = useMemo(() => {
+    if (!selectedTemplateCollege) return null;
+    const cleanName = selectedTemplateCollege.trim().toLowerCase();
+    const fromData = data?.colleges?.find(c => c.name.trim().toLowerCase() === cleanName);
+    if (fromData) return fromData;
+    const fromCtx = ctxColleges?.find(c => c.name.trim().toLowerCase() === cleanName);
+    if (fromCtx) return fromCtx;
+    return null;
+  }, [selectedTemplateCollege, data?.colleges, ctxColleges]);
+
+  // Dynamically extract unique departments STRICTLY for the selected college
   const availableDepartments = useMemo(() => {
     const list = new Set<string>();
-    
-    // 1. From database students
+    const targetCollegeId = selectedCollegeObj?.id;
+
+    // 1. From database students matching selected college
     if (data?.students) {
       data.students.forEach(s => {
+        if (targetCollegeId && s.college_id !== targetCollegeId) return;
         if (s.department) {
           const clean = s.department.trim();
           const lower = clean.toLowerCase();
-          // Filter out values representing years instead of departments
           if (!lower.includes("year") && !lower.includes("yr") && !/^\d+$/.test(lower)) {
             list.add(clean);
           }
         }
       });
     }
-    
+
     // 2. From database courses list
     if (ctxCourses) {
       ctxCourses.forEach(c => {
+        if ((c as any).college_id && targetCollegeId && (c as any).college_id !== targetCollegeId) return;
         if (c.name) {
           const clean = c.name.trim();
           const lower = clean.toLowerCase();
@@ -210,16 +223,61 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
       });
     }
 
-    return Array.from(list).filter(Boolean).sort();
-  }, [data?.students, ctxCourses]);
+    // 3. From slots matching college
+    if (ctxSlots) {
+      ctxSlots.forEach(s => {
+        if (s.college_id && targetCollegeId && s.college_id !== targetCollegeId) return;
+        if (s.department) {
+          const clean = s.department.trim();
+          const lower = clean.toLowerCase();
+          if (!lower.includes("year") && !lower.includes("yr")) {
+            list.add(clean);
+          }
+        }
+      });
+    }
 
-  // Dynamically extract unique semesters STRICTLY from DB data (students + fees + slots + subjects)
+    // 4. From subjects matching college
+    if (ctxSubjects) {
+      ctxSubjects.forEach(s => {
+        if (s.college_id && targetCollegeId && s.college_id !== targetCollegeId) return;
+        if (s.department) {
+          const clean = s.department.trim();
+          const lower = clean.toLowerCase();
+          if (!lower.includes("year") && !lower.includes("yr")) {
+            list.add(clean);
+          }
+        }
+      });
+    }
+
+    // Fallback if empty
+    if (list.size === 0 && data?.students) {
+      data.students.forEach(s => {
+        if (s.department) {
+          const clean = s.department.trim();
+          const lower = clean.toLowerCase();
+          if (!lower.includes("year") && !lower.includes("yr") && !/^\d+$/.test(lower)) {
+            list.add(clean);
+          }
+        }
+      });
+    }
+
+    return Array.from(list).filter(Boolean).sort();
+  }, [selectedCollegeObj, data?.students, ctxCourses, ctxSlots, ctxSubjects]);
+
+  // Dynamically extract unique semesters STRICTLY for selected college & department
   const availableSemesters = useMemo(() => {
     const list = new Set<string>();
-    
+    const targetCollegeId = selectedCollegeObj?.id;
+    const targetDeptLower = selectedTemplateDept?.trim().toLowerCase();
+
     // 1. From student records
     if (data?.students) {
       data.students.forEach(s => {
+        if (targetCollegeId && s.college_id !== targetCollegeId) return;
+        if (targetDeptLower && s.department && s.department.trim().toLowerCase() !== targetDeptLower) return;
         const sem = (s as any).semester;
         if (sem) list.add(sem.trim());
       });
@@ -228,6 +286,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     // 2. From student fee terms
     if (data?.fees) {
       data.fees.forEach(f => {
+        if (targetCollegeId && f.college_id !== targetCollegeId) return;
         const term = f.term_name || "";
         if (term.toLowerCase().includes("tuition")) {
           const sem = term.split(/tuition/i)[0].trim();
@@ -241,6 +300,8 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     // 3. From slots table
     if (ctxSlots) {
       ctxSlots.forEach(s => {
+        if (targetCollegeId && s.college_id && s.college_id !== targetCollegeId) return;
+        if (targetDeptLower && s.department && s.department.trim().toLowerCase() !== targetDeptLower) return;
         if (s.semester) list.add(s.semester.trim());
       });
     }
@@ -248,6 +309,8 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     // 4. From subjects table
     if (ctxSubjects) {
       ctxSubjects.forEach(s => {
+        if (targetCollegeId && s.college_id && s.college_id !== targetCollegeId) return;
+        if (targetDeptLower && s.department && s.department.trim().toLowerCase() !== targetDeptLower) return;
         if (s.semester) list.add(s.semester.trim());
       });
     }
@@ -263,33 +326,31 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
         if (lower.includes("iii")) return 3;
         if (lower.includes("ii")) return 2;
         if (lower.includes("i")) return 1;
-        // Parse digits: e.g. "Semester 3" -> 3
         const numMatch = val.match(/\d+/);
         if (numMatch) return Number(numMatch[0]);
         return 99;
       };
       return getOrder(a) - getOrder(b);
     });
-  }, [data?.students, data?.fees, ctxSlots, ctxSubjects]);
+  }, [selectedCollegeObj, selectedTemplateDept, data?.students, data?.fees, ctxSlots, ctxSubjects]);
 
-  // Dynamically extract unique years/batches STRICTLY from DB data (students + fees + slots + subjects)
+  // Dynamically extract unique years/batches STRICTLY for selected college & department
   const availableYears = useMemo(() => {
     const list = new Set<string>();
-    
+    const targetCollegeId = selectedCollegeObj?.id;
+    const targetDeptLower = selectedTemplateDept?.trim().toLowerCase();
+
     // 1. From database students classGroup/year
     if (data?.students) {
       data.students.forEach(s => {
+        if (targetCollegeId && s.college_id !== targetCollegeId) return;
+        if (targetDeptLower && s.department && s.department.trim().toLowerCase() !== targetDeptLower) return;
+
         if (s.classGroup) {
-          // Extract "2024-2025" etc.
           const batchMatch = s.classGroup.match(/\d{4}-\d{4}/);
-          if (batchMatch) {
-            list.add(batchMatch[0].trim());
-          }
-          // Extract single 4-digit year like "2024"
+          if (batchMatch) list.add(batchMatch[0].trim());
           const yearMatch = s.classGroup.match(/\b\d{4}\b/);
-          if (yearMatch) {
-            list.add(yearMatch[0].trim());
-          }
+          if (yearMatch) list.add(yearMatch[0].trim());
         }
         if ((s as any).batch_start_year && (s as any).batch_end_year) {
           list.add(`${(s as any).batch_start_year}-${(s as any).batch_end_year}`);
@@ -302,11 +363,11 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     // 2. From fee invoice terms
     if (data?.fees) {
       data.fees.forEach(f => {
+        if (targetCollegeId && f.college_id !== targetCollegeId) return;
         if (f.term_name) {
           const batchMatch = f.term_name.match(/\d{4}-\d{4}/);
-          if (batchMatch) {
-            list.add(batchMatch[0]);
-          } else {
+          if (batchMatch) list.add(batchMatch[0]);
+          else {
             const yearMatch = f.term_name.match(/\b\d{4}\b/);
             if (yearMatch) list.add(yearMatch[0]);
           }
@@ -317,11 +378,12 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     // 3. From database slots
     if (ctxSlots) {
       ctxSlots.forEach(s => {
+        if (targetCollegeId && s.college_id && s.college_id !== targetCollegeId) return;
+        if (targetDeptLower && s.department && s.department.trim().toLowerCase() !== targetDeptLower) return;
         if (s.year) {
           const batchMatch = s.year.match(/\d{4}-\d{4}/);
-          if (batchMatch) {
-            list.add(batchMatch[0].trim());
-          } else {
+          if (batchMatch) list.add(batchMatch[0].trim());
+          else {
             const yearMatch = s.year.match(/\b\d{4}\b/);
             if (yearMatch) list.add(yearMatch[0].trim());
           }
@@ -335,12 +397,13 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     // 4. From database subjects
     if (ctxSubjects) {
       ctxSubjects.forEach(s => {
+        if (targetCollegeId && s.college_id && s.college_id !== targetCollegeId) return;
+        if (targetDeptLower && s.department && s.department.trim().toLowerCase() !== targetDeptLower) return;
         if ((s as any).year) {
           const str = String((s as any).year).trim();
           const batchMatch = str.match(/\d{4}-\d{4}/);
-          if (batchMatch) {
-            list.add(batchMatch[0]);
-          } else {
+          if (batchMatch) list.add(batchMatch[0]);
+          else {
             const yearMatch = str.match(/\b\d{4}\b/);
             if (yearMatch) list.add(yearMatch[0]);
           }
@@ -348,7 +411,6 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
       });
     }
 
-    // If no years/batches are found in the database, add a fallback standard default batch
     if (list.size === 0) {
       list.add("2024-2025");
       list.add("2023-2024");
@@ -356,7 +418,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     }
 
     return Array.from(list).filter(Boolean).sort();
-  }, [data?.students, data?.fees, ctxSlots, ctxSubjects]);
+  }, [selectedCollegeObj, selectedTemplateDept, data?.students, data?.fees, ctxSlots, ctxSubjects]);
 
   const reportYears = useMemo(() => {
     const set = new Set(availableYears);
@@ -810,21 +872,41 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   }, [filterFromDate, filterToDate]);
 
   useEffect(() => {
-    if (data) {
-      if (data.colleges?.length > 0 && !selectedTemplateCollege) {
-        setSelectedTemplateCollege(data.colleges[0].name);
-      }
-      if (availableDepartments.length > 0 && !selectedTemplateDept) {
+    if (data?.colleges?.length && !selectedTemplateCollege) {
+      setSelectedTemplateCollege(data.colleges[0].name);
+    }
+  }, [data?.colleges, selectedTemplateCollege]);
+
+  // Keep modal dropdown selections synced whenever available lists update
+  useEffect(() => {
+    if (availableDepartments.length > 0) {
+      if (!selectedTemplateDept || !availableDepartments.includes(selectedTemplateDept)) {
         setSelectedTemplateDept(availableDepartments[0]);
       }
-      if (availableSemesters.length > 0 && !selectedTemplateSem) {
+    } else {
+      setSelectedTemplateDept("");
+    }
+  }, [availableDepartments, selectedTemplateDept]);
+
+  useEffect(() => {
+    if (availableSemesters.length > 0) {
+      if (!selectedTemplateSem || !availableSemesters.includes(selectedTemplateSem)) {
         setSelectedTemplateSem(availableSemesters[0]);
       }
-      if (availableYears.length > 0 && !selectedTemplateYear) {
+    } else {
+      setSelectedTemplateSem("");
+    }
+  }, [availableSemesters, selectedTemplateSem]);
+
+  useEffect(() => {
+    if (availableYears.length > 0) {
+      if (!selectedTemplateYear || !availableYears.includes(selectedTemplateYear)) {
         setSelectedTemplateYear(availableYears[0]);
       }
+    } else {
+      setSelectedTemplateYear("");
     }
-  }, [data, availableDepartments, availableSemesters, availableYears, selectedTemplateCollege, selectedTemplateDept, selectedTemplateSem, selectedTemplateYear]);
+  }, [availableYears, selectedTemplateYear]);
 
   // Compute per-college stats
   const collegeStats = useMemo(() => {
@@ -847,21 +929,25 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     });
   }, [data]);
 
-  // Extract unique departments from students
+  // Extract unique departments for current filter College
   const uniqueDepartments = useMemo(() => {
     if (!data?.students) return [];
     const depts = new Set<string>();
     data.students.forEach((s) => {
+      if (filterCollege !== "all" && s.college_id !== filterCollege) return;
       if (s.department) depts.add(s.department.trim());
     });
     return Array.from(depts).sort();
-  }, [data?.students]);
+  }, [data?.students, filterCollege]);
 
-  // Extract unique years from student classGroups or batch years
+  // Extract unique years for current filter College & Department
   const uniqueYears = useMemo(() => {
     if (!data?.students) return [];
     const yrs = new Set<string>();
     data.students.forEach((s: any) => {
+      if (filterCollege !== "all" && s.college_id !== filterCollege) return;
+      if (filterDept !== "all" && s.department && s.department.trim().toLowerCase() !== filterDept.trim().toLowerCase()) return;
+
       if (s.batch_start_year && s.batch_end_year) {
         yrs.add(`${s.batch_start_year}-${s.batch_end_year}`);
       } else if (s.classGroup) {
@@ -874,13 +960,19 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
       }
     });
     return Array.from(yrs).sort();
-  }, [data?.students]);
+  }, [data?.students, filterCollege, filterDept]);
 
-  // Extract unique semesters from student fee term names
+  // Extract unique semesters for current filter College & Department
   const uniqueSemesters = useMemo(() => {
     if (!data?.fees) return [];
     const sems = new Set<string>();
     data.fees.forEach((f) => {
+      if (filterCollege !== "all" && f.college_id !== filterCollege) return;
+      if (filterDept !== "all") {
+        const student = data.students.find(s => s.id === f.student_id);
+        if (student?.department && student.department.trim().toLowerCase() !== filterDept.trim().toLowerCase()) return;
+      }
+
       if (f.term_name) {
         const match = f.term_name.match(/Semester\s+(I|II|III|IV|V|VI|VII|VIII|1|2|3|4|5|6|7|8)/i);
         if (match) {
@@ -894,7 +986,26 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
       }
     });
     return Array.from(sems).sort();
-  }, [data?.fees]);
+  }, [data?.fees, data?.students, filterCollege, filterDept]);
+
+  // Reset directory sub-filters when parent filter changes and previous value is invalid
+  useEffect(() => {
+    if (filterDept !== "all" && !uniqueDepartments.includes(filterDept)) {
+      setFilterDept("all");
+    }
+  }, [uniqueDepartments, filterDept]);
+
+  useEffect(() => {
+    if (filterYear !== "all" && !uniqueYears.includes(filterYear)) {
+      setFilterYear("all");
+    }
+  }, [uniqueYears, filterYear]);
+
+  useEffect(() => {
+    if (filterSemester !== "all" && !uniqueSemesters.includes(filterSemester)) {
+      setFilterSemester("all");
+    }
+  }, [uniqueSemesters, filterSemester]);
 
   // Filtered students
   const filteredStudents = useMemo(() => {

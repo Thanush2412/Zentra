@@ -624,6 +624,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     admin: true
   });
 
+  // User Credentials Directory states
+  const [usersRoleFilter, setUsersRoleFilter] = useState("all");
+  const [usersSearchQuery, setUsersSearchQuery] = useState("");
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [userForm, setUserForm] = useState({
+    id: "",
+    email: "",
+    role: "mentor",
+    password: "",
+    reference_id: "",
+    status: "Active"
+  });
+  const [userModalError, setUserModalError] = useState<string | null>(null);
+  const [isSubmittingUser, setIsSubmittingUser] = useState(false);
+
   const toggleNode = (nodeId: string) => {
     setExpandedNodes(prev => ({
       ...prev,
@@ -658,7 +674,115 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUserModalError(null);
+    if (!userForm.email || !userForm.email.trim()) {
+      setUserModalError("Email is required.");
+      return;
+    }
+    setIsSubmittingUser(true);
+    try {
+      let res;
+      if (editingUser) {
+        res = await fetch("/api/users", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editingUser.id,
+            email: userForm.email.trim(),
+            role: userForm.role,
+            reference_id: userForm.reference_id.trim(),
+            status: userForm.status,
+            newPassword: userForm.password.trim() || undefined
+          })
+        });
+      } else {
+        res = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "create",
+            email: userForm.email.trim(),
+            role: userForm.role,
+            password: userForm.password.trim() || "password123",
+            reference_id: userForm.reference_id.trim(),
+            status: userForm.status
+          })
+        });
+      }
+      const data = await res.json();
+      if (data.success) {
+        toast(data.message || (editingUser ? "User credential updated." : "User credential created."), "success");
+        setShowUserModal(false);
+        fetchAdminDetails();
+      } else {
+        setUserModalError(data.message || "Failed to save user credential.");
+      }
+    } catch (err: any) {
+      setUserModalError(err.message || "An unexpected error occurred.");
+    } finally {
+      setIsSubmittingUser(false);
+    }
+  };
+
+  const handleResetUserPassword = async (userId: string, email: string) => {
+    if (!confirm(`Reset password for ${email} to default 'password123'?`)) return;
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset_password", userId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(data.message || "Password reset successfully.", "success");
+        fetchAdminDetails();
+      } else {
+        toast(data.message || "Failed to reset password.", "error");
+      }
+    } catch (err: any) {
+      toast(err.message || "Error resetting password.", "error");
+    }
+  };
+
+  const handleToggleUserStatus = async (userId: string) => {
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle_status", userId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(data.message, "success");
+        fetchAdminDetails();
+      } else {
+        toast(data.message || "Failed to toggle status.", "error");
+      }
+    } catch (err: any) {
+      toast(err.message || "Error toggling status.", "error");
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, email: string) => {
+    if (!confirm(`Are you sure you want to delete user credential for ${email}?`)) return;
+    try {
+      const res = await fetch(`/api/users?id=${encodeURIComponent(userId)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        toast("User credential deleted.", "success");
+        fetchAdminDetails();
+      } else {
+        toast(data.message || "Failed to delete user.", "error");
+      }
+    } catch (err: any) {
+      toast(err.message || "Error deleting user.", "error");
+    }
+  };
+
   const handleComposeAnnouncement = async (e: React.FormEvent) => {
+
     e.preventDefault();
     if (!annForm.title.trim()) return;
     try {
@@ -743,44 +867,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleToggleUserStatus = async (userId: string) => {
-    try {
-      const res = await fetch("/api/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, action: "toggle_status" })
-      });
-      const data = await res.json();
-      if (data.success) {
-        await fetchAdminDetails();
-      } else {
-        toast(data.message || "Failed to toggle status.", "error");
-      }
-    } catch (err) {
-      console.error("Toggle status error:", err);
-    }
-  };
 
-  const handleResetUserPassword = async (userId: string) => {
-    if (await showConfirm({ message: "Are you sure you want to reset this user's password to 'password123'?", confirmLabel: "Reset" })) {
-      try {
-        const res = await fetch("/api/users", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, action: "reset_password" })
-        });
-        const data = await res.json();
-        if (data.success) {
-          toast("Password reset successfully.", "success");
-          await fetchAdminDetails();
-        } else {
-          toast(data.message || "Failed to reset password.", "error");
-        }
-      } catch (err) {
-        console.error("Reset password error:", err);
-      }
-    }
-  };
 
   const handleApproveSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -4448,56 +4535,195 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 {userSubTab === "directory" ? (
-                  <div className="overflow-x-auto rounded-2xl border border-gray-200">
-                    <table className="w-full border-collapse text-left text-xs">
-                      <thead>
-                        <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
-                          <th className="p-4">Email</th>
-                          <th className="p-4">Reference ID / Username</th>
-                          <th className="p-4">Role</th>
-                          <th className="p-4">Status</th>
-                          <th className="p-4">Last Login</th>
-                          <th className="p-4 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-150 bg-white font-medium text-gray-700">
-                        {usersList.map((user) => (
-                          <tr key={user.id} className="hover:bg-gray-55/50 transition-colors">
-                            <td className="p-4 font-bold text-gray-900 font-mono">{user.email}</td>
-                            <td className="p-4 font-mono font-semibold text-gray-500">{user.reference_id || user.id}</td>
-                            <td className="p-4">
-                              <span className="px-2.5 py-0.5 rounded bg-teal-50 border border-teal-150 text-[10px] font-bold text-teal-700 uppercase">
-                                {user.role}
-                              </span>
-                            </td>
-                            <td className="p-4">
-                              <button
-                                onClick={() => handleToggleUserStatus(user.id)}
-                                className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase cursor-pointer border ${user.status === "Active"
-                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                                    : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
-                                  }`}
-                                title="Toggle Status (Active / Inactive)"
-                              >
-                                {user.status || "Active"}
-                              </button>
-                            </td>
-                            <td className="p-4 text-gray-450 font-semibold">
-                              {user.last_login ? formatDate(user.last_login) : "Never logged in"}
-                            </td>
-                            <td className="p-4 text-right">
-                              <button
-                                onClick={() => handleResetUserPassword(user.id)}
-                                className="px-3 py-1.5 bg-gray-50 border border-gray-250 text-gray-700 hover:text-indigo-650 hover:bg-indigo-50 rounded-xl transition-all cursor-pointer font-bold text-[10px]"
-                                title="Reset password to password123"
-                              >
-                                Reset Password
-                              </button>
-                            </td>
-                          </tr>
+                  <div className="space-y-4">
+                    {/* Role Filter & Control Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-gray-150 rounded-2xl shadow-xs">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {[
+                          { id: "all", label: "All Roles" },
+                          { id: "admin", label: "Admin" },
+                          { id: "cam", label: "CAM" },
+                          { id: "kam", label: "KAM" },
+                          { id: "mentor", label: "Mentor" },
+                          { id: "sme", label: "SME" },
+                          { id: "student", label: "Student" },
+                          { id: "fee_manager", label: "Fee Mgr" },
+                          { id: "allocator", label: "Allocator" },
+                          { id: "hr", label: "HR" }
+                        ].map(r => (
+                          <button
+                            key={r.id}
+                            onClick={() => setUsersRoleFilter(r.id)}
+                            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              usersRoleFilter === r.id
+                                ? "bg-indigo-600 text-white shadow-xs"
+                                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                            }`}
+                          >
+                            {r.label}
+                          </button>
                         ))}
-                      </tbody>
-                    </table>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Search email, ID, or reference..."
+                            value={usersSearchQuery}
+                            onChange={(e) => setUsersSearchQuery(e.target.value)}
+                            className="bg-gray-55 border border-gray-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-gray-800 w-56"
+                          />
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            setEditingUser(null);
+                            setUserForm({ id: "", email: "", role: "mentor", password: "", reference_id: "", status: "Active" });
+                            setUserModalError(null);
+                            setShowUserModal(true);
+                          }}
+                          className="btn-gradient shadow-sm text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border-none shrink-0"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add User Credential
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Directory Table */}
+                    {(() => {
+                      const filteredUsers = (usersList || []).filter(u => {
+                        const matchesRole = usersRoleFilter === "all" || (u.role || "").toLowerCase() === usersRoleFilter;
+                        const matchesSearch =
+                          !usersSearchQuery ||
+                          (u.email || "").toLowerCase().includes(usersSearchQuery.toLowerCase()) ||
+                          (u.reference_id || "").toLowerCase().includes(usersSearchQuery.toLowerCase()) ||
+                          (u.id || "").toLowerCase().includes(usersSearchQuery.toLowerCase());
+                        return matchesRole && matchesSearch;
+                      });
+
+                      if (filteredUsers.length === 0) {
+                        return (
+                          <div className="text-center py-16 border border-gray-200 rounded-2xl bg-gray-55/50">
+                            <Users className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                            <p className="text-sm text-gray-555 font-semibold">No user credentials found matching your filter query.</p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm bg-white">
+                          <table className="w-full border-collapse text-left text-xs min-w-[700px]">
+                            <thead>
+                              <tr className="bg-gray-55 border-b border-gray-200 text-gray-555 font-bold uppercase text-[9px] tracking-wider">
+                                <th className="p-3 w-[28%]">User Email & Credential ID</th>
+                                <th className="p-3 w-[15%]">System Role</th>
+                                <th className="p-3 w-[18%]">Reference ID</th>
+                                <th className="p-3 w-[12%] text-center">Status</th>
+                                <th className="p-3 w-[12%]">Last Login</th>
+                                <th className="p-3 w-[15%] text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-150 bg-white">
+                              {filteredUsers.map((user) => {
+                                const roleColor =
+                                  user.role === "admin"
+                                    ? "bg-purple-50 text-purple-700 border-purple-100"
+                                    : user.role === "cam"
+                                    ? "bg-amber-50 text-amber-700 border-amber-100"
+                                    : user.role === "kam"
+                                    ? "bg-orange-50 text-orange-700 border-orange-100"
+                                    : user.role === "mentor"
+                                    ? "bg-indigo-50 text-indigo-700 border-indigo-100"
+                                    : user.role === "sme"
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                                    : user.role === "student"
+                                    ? "bg-sky-50 text-sky-700 border-sky-100"
+                                    : user.role === "fee_manager"
+                                    ? "bg-teal-50 text-teal-700 border-teal-100"
+                                    : user.role === "allocator"
+                                    ? "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-100"
+                                    : user.role === "hr"
+                                    ? "bg-rose-50 text-rose-700 border-rose-100"
+                                    : "bg-gray-50 text-gray-600 border-gray-200";
+
+                                return (
+                                  <tr key={user.id} className="hover:bg-gray-55/40 transition-colors">
+                                    <td className="p-3">
+                                      <div className="font-bold text-gray-900 text-xs">{user.email}</div>
+                                      <div className="text-[9px] font-mono text-gray-400 mt-0.5">{user.id}</div>
+                                    </td>
+                                    <td className="p-3">
+                                      <span className={`px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider ${roleColor}`}>
+                                        {user.role}
+                                      </span>
+                                    </td>
+                                    <td className="p-3 font-mono text-[10.5px] text-gray-600 font-semibold">
+                                      {user.reference_id || user.id}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <button
+                                        onClick={() => handleToggleUserStatus(user.id)}
+                                        className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition-all cursor-pointer ${
+                                          user.status === "Active"
+                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                                            : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                                        }`}
+                                        title="Click to toggle Active / Inactive status"
+                                      >
+                                        {user.status || "Active"}
+                                      </button>
+                                    </td>
+                                    <td className="p-3 text-gray-450 font-semibold text-[10px]">
+                                      {user.last_login ? formatDate(user.last_login) : "Never logged in"}
+                                    </td>
+                                    <td className="p-3 text-right">
+                                      <div className="flex justify-end gap-1.5">
+                                        <button
+                                          onClick={() => handleResetUserPassword(user.id, user.email)}
+                                          className="px-2 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 text-[9.5px] font-bold rounded-lg transition-colors cursor-pointer"
+                                          title="Reset password to password123"
+                                        >
+                                          Reset Pass
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setEditingUser(user);
+                                            setUserForm({
+                                              id: user.id,
+                                              email: user.email,
+                                              role: user.role,
+                                              password: "",
+                                              reference_id: user.reference_id || "",
+                                              status: user.status || "Active"
+                                            });
+                                            setUserModalError(null);
+                                            setShowUserModal(true);
+                                          }}
+                                          className="p-1 bg-gray-50 hover:bg-indigo-50 border border-gray-200 text-gray-600 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
+                                          title="Edit User Credential"
+                                        >
+                                          <Edit className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteUser(user.id, user.email)}
+                                          className="p-1 bg-gray-50 hover:bg-rose-50 border border-gray-200 text-gray-600 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                          title="Delete User"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-2xl border border-gray-200">
@@ -7865,14 +8091,123 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onClick={handleConfirmFacultyImport}
                   className="px-5 py-2 rounded-xl text-xs font-extrabold btn-gradient text-white shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
-                  {isImportingFaculty ? "Importing..." : `Confirm & Import (${facultyImportPreview.parsed.length}) →`}
+                  {isImportingFaculty ? "Importing..." : `Confirm & Import (${facultyImportPreview?.parsed?.length || 0}) →`}
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
-    </div>
-  );
-};
+        {/* ── User Credentials CRUD Modal ── */}
+        {showUserModal && (
+          <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+              <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5 font-sans">
+                  <ShieldCheck className="h-5 w-5 text-indigo-650" />
+                  {editingUser ? "Edit User Credential" : "Create User Credential"}
+                </h3>
+                <button onClick={() => setShowUserModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleUserSubmit} className="p-6 space-y-4 text-xs font-semibold">
+                {userModalError && (
+                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    {userModalError}
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. user@faceprep.in"
+                    value={userForm.email}
+                    onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">System Role</label>
+                  <select
+                    value={userForm.role}
+                    onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
+                  >
+                    <option value="admin">Admin (System Administrator)</option>
+                    <option value="cam">CAM (Campus Academic Manager)</option>
+                    <option value="kam">KAM (Key Account Manager)</option>
+                    <option value="mentor">Mentor (Faculty Staff)</option>
+                    <option value="sme">SME (Subject Matter Expert)</option>
+                    <option value="student">Student (Learner)</option>
+                    <option value="fee_manager">Fee Manager (Fee Operations)</option>
+                    <option value="allocator">Allocator (Demo Scheduler)</option>
+                    <option value="hr">HR (Human Resources)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
+                    {editingUser ? "New Password (leave blank to keep current)" : "Initial Password"}
+                  </label>
+                  <input
+                    type="password"
+                    placeholder={editingUser ? "Leave blank to keep password" : "Default: password123"}
+                    value={userForm.password}
+                    onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Reference Entity ID (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. mentor_123 or student_456"
+                    value={userForm.reference_id}
+                    onChange={(e) => setUserForm({ ...userForm, reference_id: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 font-mono text-[11px]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Status</label>
+                  <select
+                    value={userForm.status}
+                    onChange={(e) => setUserForm({ ...userForm, status: e.target.value })}
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowUserModal(false)}
+                    className="px-4 py-2 hover:bg-gray-100 text-gray-555 rounded-xl transition-all font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingUser}
+                    className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer disabled:opacity-60"
+                  >
+                    {isSubmittingUser ? "Saving..." : editingUser ? "Save Credential" : "Create Credential"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
