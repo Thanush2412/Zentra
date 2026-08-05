@@ -11,7 +11,7 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   error?: string;
 }
 
-// Matches the project select style: bg-gray-55 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-600
+// Matches the project select style: bg-gray-55 border border-gray-200 rounded-lg focus:ring-1 focus:ring-indigo-600
 export const Select: React.FC<SelectProps> = ({
   label,
   options,
@@ -38,7 +38,7 @@ export const Select: React.FC<SelectProps> = ({
       <select
         id={selectId}
         {...rest}
-        className={`w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 text-sm
+        className={`w-full bg-gray-55 border border-gray-200 rounded-lg px-3 py-2 text-sm
           font-bold text-gray-800 cursor-pointer
           focus:outline-none focus:ring-2 focus:ring-[#D528A2]/15 focus:border-[#D528A2] focus:scale-[1.01] focus:shadow-md
           transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:focus:scale-100

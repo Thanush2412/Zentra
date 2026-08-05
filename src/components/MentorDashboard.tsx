@@ -47,9 +47,619 @@ import * as XLSX from "xlsx";
 import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 
+/* ─── Mentor Daily Attendance Punch Widget ─── */
+const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [punchStatus, setPunchStatus] = useState<string>("Not Punched");
+  const [punchTime, setPunchTime] = useState<string | null>(null);
+  const [punchReason, setPunchReason] = useState<string | null>(null);
+  const [showReasonInput, setShowReasonInput] = useState(false);
+  const [targetStatus, setTargetStatus] = useState<"Present" | "OD" | "Leave">("Present");
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
+
+  const fetchMyAttendance = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/mentor-attendance?mentorId=${encodeURIComponent(mentor.id)}`);
+      const json = await res.json();
+      if (json.success && json.records) {
+        const todayRec = json.records.find((r: any) => r.date_str === todayStr);
+        if (todayRec) {
+          setPunchStatus(todayRec.status);
+          setPunchTime(todayRec.punch_in_time);
+          setPunchReason(todayRec.reason);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMyAttendance();
+  }, [mentor.id, todayStr]);
+
+  const handlePunch = async (status: "Present" | "OD" | "Leave", reasonText?: string) => {
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/mentor-attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mentorId: mentor.id,
+          collegeId: mentor.college_id || "general",
+          dateStr: todayStr,
+          status,
+          reason: reasonText || null,
+          markedBy: "self",
+          markedById: mentor.id
+        })
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast(`Daily attendance marked as ${status}!`, "success");
+        setPunchStatus(status);
+        setPunchTime(new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" }));
+        setPunchReason(reasonText || null);
+        setShowReasonInput(false);
+      } else {
+        toast(json.message || "Failed to punch attendance", "error");
+      }
+    } catch (e: any) {
+      toast("Error: " + e.message, "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const triggerPunchClick = (status: "Present" | "OD" | "Leave") => {
+    if (status === "Present") {
+      handlePunch("Present");
+    } else {
+      setTargetStatus(status);
+      setShowReasonInput(true);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+            <UserCheck className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-extrabold text-slate-900">Today's Attendance Punch</h3>
+              <span className="text-[10px] font-bold text-slate-400 font-mono">({todayStr})</span>
+            </div>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              {punchStatus === "Not Punched" ? (
+                "Please record your presence or OD status for today."
+              ) : (
+                <>Punched as <span className="font-bold text-slate-800">{punchStatus}</span> at <span className="font-mono font-bold text-slate-700">{punchTime || "Today"}</span></>
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => triggerPunchClick("Present")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+              punchStatus === "Present"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+            }`}
+          >
+            Present
+          </button>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => triggerPunchClick("OD")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+              punchStatus === "OD"
+                ? "bg-indigo-600 text-white shadow-xs"
+                : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
+            }`}
+          >
+            OD (On Duty)
+          </button>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => triggerPunchClick("Leave")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+              punchStatus === "Leave"
+                ? "bg-amber-500 text-white shadow-xs"
+                : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+            }`}
+          >
+            On Leave
+          </button>
+        </div>
+      </div>
+
+      {showReasonInput && (
+        <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center gap-3">
+          <input
+            type="text"
+            placeholder={`Remarks for ${targetStatus} (e.g. Conducted Placement Workshop at Auditorium)`}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="flex-1 w-full text-xs font-medium px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500"
+          />
+          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => setShowReasonInput(false)}
+              className="flex-1 sm:flex-none px-3 py-2 rounded-xl text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => handlePunch(targetStatus, reason)}
+              className="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs cursor-pointer"
+            >
+              Submit Punch →
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ─── Faculty Leave & Permission Request Panel ─── */
+const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
+  const { toast } = useToast();
+  const [panelTab, setPanelTab] = useState<"leave_apps" | "punch_history">("leave_apps");
+
+  const [loading, setLoading] = useState(true);
+  const [requests, setRequests] = useState<any[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Past attendance history state
+  const [attLogs, setAttLogs] = useState<any[]>([]);
+  const [loadingAttLogs, setLoadingAttLogs] = useState(false);
+
+  // Request form state
+  const [requestType, setRequestType] = useState<"Leave" | "Permission" | "OD">("Leave");
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("11:00");
+  const [reason, setReason] = useState("");
+
+  const fetchRequests = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/requests/faculty-leave?mentorId=${encodeURIComponent(mentor.id)}`);
+      const json = await res.json();
+      if (json.success) {
+        setRequests(json.records || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAttendanceLogs = async () => {
+    setLoadingAttLogs(true);
+    try {
+      const res = await fetch(`/api/mentor-attendance?mentorId=${encodeURIComponent(mentor.id)}`);
+      const json = await res.json();
+      if (json.success) {
+        setAttLogs(json.records || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingAttLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRequests();
+    fetchAttendanceLogs();
+  }, [mentor.id]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!startDate) {
+      toast("Please select a valid date.", "error");
+      return;
+    }
+    if (!reason.trim()) {
+      toast("Please enter a mandatory reason for your application.", "error");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const payload: any = {
+        mentorId: mentor.id,
+        collegeId: mentor.college_id || "general",
+        requestType,
+        startDate,
+        reason: reason.trim()
+      };
+
+      if (requestType === "Permission") {
+        payload.endDate = startDate;
+        payload.startTime = startTime;
+        payload.endTime = endTime;
+      } else {
+        payload.endDate = endDate || startDate;
+      }
+
+      const res = await fetch("/api/requests/faculty-leave", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast("Application submitted successfully! Email notification sent to CM.", "success");
+        setShowModal(false);
+        setReason("");
+        await fetchRequests();
+      } else {
+        toast(json.message || "Failed to submit request", "error");
+      }
+    } catch (err: any) {
+      toast("Error: " + err.message, "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Top Banner & Sub-View Switcher matching CAM Dashboard soft slate background */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/70 border border-slate-200/80 rounded-xl p-5 shadow-xs">
+        <div className="flex items-center gap-3.5">
+          <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 border border-indigo-100">
+            <CalendarCheck2 className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900 leading-tight">Faculty Leave &amp; Attendance Portal</h2>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Submit advance leave/permissions and view your historical daily punch logs.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center p-1 bg-white/80 rounded-lg border border-slate-200 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setPanelTab("leave_apps")}
+              className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                panelTab === "leave_apps"
+                  ? "bg-slate-900 text-white shadow-xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              Leave Applications
+            </button>
+            <button
+              type="button"
+              onClick={() => setPanelTab("punch_history")}
+              className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                panelTab === "punch_history"
+                  ? "bg-slate-900 text-white shadow-xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              Daily Punch History
+            </button>
+          </div>
+
+          {panelTab === "leave_apps" && (
+            <button
+              type="button"
+              onClick={() => setShowModal(true)}
+              className="px-4 py-2 rounded-lg text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs flex items-center gap-2 cursor-pointer transition-all shrink-0 active:scale-95"
+            >
+              <Plus className="h-4 w-4" />
+              Apply Leave
+            </button>
+          )}
+        </div>
+      </div>
+
+      {panelTab === "punch_history" ? (
+        /* Historical Attendance Logs View */
+        <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-emerald-600" />
+              <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">My Historical Daily Punch Logs</h3>
+            </div>
+            <button onClick={fetchAttendanceLogs} className="p-1.5 rounded-md border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition-all cursor-pointer">
+              <RefreshCw className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="overflow-x-auto border border-slate-200/80 rounded-lg bg-white">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider">
+                  <th className="p-3">Date</th>
+                  <th className="p-3">Attendance Status</th>
+                  <th className="p-3">Punch-In Time</th>
+                  <th className="p-3">Marked By</th>
+                  <th className="p-3">Remarks / Reason</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white font-medium text-slate-800">
+                {loadingAttLogs ? (
+                  <tr><td colSpan={5} className="p-6 text-center text-slate-400">Loading attendance history...</td></tr>
+                ) : attLogs.length === 0 ? (
+                  <tr><td colSpan={5} className="p-6 text-center text-slate-400 italic">No attendance punch history logged yet.</td></tr>
+                ) : (
+                  attLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-3 font-mono font-bold text-slate-900">{log.date_str}</td>
+                      <td className="p-3">
+                        {log.status === "Present" && <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black uppercase">Present</span>}
+                        {log.status === "OD" && <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black uppercase">On Duty (OD)</span>}
+                        {log.status === "Leave" && <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black uppercase">On Leave</span>}
+                        {log.status === "Absent" && <span className="px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase">Absent</span>}
+                      </td>
+                      <td className="p-3 font-mono text-[11px] text-slate-700">{log.punch_in_time || "—"}</td>
+                      <td className="p-3 text-[11px] text-slate-600 font-semibold capitalize">{log.marked_by || "Self"}</td>
+                      <td className="p-3 text-[11px] italic text-slate-600 max-w-[280px] truncate" title={log.reason || ""}>
+                        {log.reason || "—"}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* Leave Applications Table View */
+        <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-indigo-600" />
+              <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">My Leave &amp; Permission Applications</h3>
+            </div>
+            <button onClick={fetchRequests} className="p-1.5 rounded-md border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition-all cursor-pointer">
+              <RefreshCw className="h-4 w-4" />
+            </button>
+          </div>
+
+        <div className="overflow-x-auto border border-slate-200/80 rounded-lg bg-white">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider">
+                <th className="p-3">Request Type</th>
+                <th className="p-3">Schedule / Dates</th>
+                <th className="p-3">Mandatory Reason</th>
+                <th className="p-3">CM Approval Status</th>
+                <th className="p-3 text-right">Submitted On</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white font-medium text-slate-800">
+              {loading ? (
+                <tr><td colSpan={5} className="p-6 text-center text-slate-400">Loading leave requests...</td></tr>
+              ) : requests.length === 0 ? (
+                <tr><td colSpan={5} className="p-6 text-center text-slate-400 italic">No leave or permission requests submitted yet.</td></tr>
+              ) : (
+                requests.map((r) => (
+                  <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="p-3 font-extrabold">
+                      {r.request_type === "Leave" && <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200/80 text-[10px] font-black uppercase">Leave</span>}
+                      {r.request_type === "Permission" && <span className="px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200/80 text-[10px] font-black uppercase">Permission</span>}
+                      {r.request_type === "OD" && <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-[10px] font-black uppercase">OD (On Duty)</span>}
+                    </td>
+                    <td className="p-3 font-mono text-[11px] text-slate-800 font-bold">
+                      {r.start_date} {r.end_date !== r.start_date ? `to ${r.end_date}` : ""}
+                    </td>
+                    <td className="p-3 text-[11px] italic text-slate-700 max-w-[260px] truncate" title={r.reason}>
+                      {r.reason}
+                    </td>
+                    <td className="p-3">
+                      {r.status === "pending" && <span className="px-2.5 py-0.5 rounded-full bg-amber-100/80 text-amber-800 text-[10px] font-black uppercase">Pending CM</span>}
+                      {r.status === "approved" && <span className="px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 text-[10px] font-black uppercase">Approved</span>}
+                      {r.status === "rejected" && <span className="px-2.5 py-0.5 rounded-full bg-rose-100/80 text-rose-800 text-[10px] font-black uppercase">Rejected</span>}
+                    </td>
+                    <td className="p-3 text-right font-mono text-[10px] text-slate-400">
+                      {new Date(r.created_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      )}
+
+      {/* Styled Popup Modal matching CAM Dashboard Palette */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <form onSubmit={handleSubmit} className="bg-white rounded-xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-200 animate-scaleUp space-y-0">
+            
+            {/* Modal Header matching CAM Dashboard slate style */}
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 border border-indigo-100">
+                  <CalendarCheck2 className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 leading-tight">Apply Leave / Permission / OD</h3>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">CM approval required with mandatory reason.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 p-1.5 rounded-md transition-all cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 bg-slate-50/40">
+              
+              {/* Request Type Select Dropdown */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Request Type <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={requestType}
+                  onChange={(e) => setRequestType(e.target.value as any)}
+                  className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                >
+                  <option value="Leave">Full / Multi-Day Leave</option>
+                  <option value="Permission">Short Permission (Hourly)</option>
+                  <option value="OD">On Duty (OD) Event / Duty</option>
+                </select>
+              </div>
+
+              {/* Dynamic Dates/Times based on Request Type */}
+              {requestType === "Permission" ? (
+                /* Permission View: Date + From Time + To Time */
+                <div className="space-y-3 bg-indigo-50/50 p-3.5 rounded-lg border border-indigo-100">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Permission Date <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">From Time <span className="text-rose-500">*</span></label>
+                      <input
+                        type="time"
+                        required
+                        value={startTime}
+                        onChange={(e) => setStartTime(e.target.value)}
+                        className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">To Time <span className="text-rose-500">*</span></label>
+                      <input
+                        type="time"
+                        required
+                        value={endTime}
+                        onChange={(e) => setEndTime(e.target.value)}
+                        className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Leave & OD View: From Date + To Date */
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      From Date <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={startDate}
+                      onChange={(e) => {
+                        setStartDate(e.target.value);
+                        if (e.target.value > endDate) setEndDate(e.target.value);
+                      }}
+                      className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      To Date <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      min={startDate}
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Mandatory Reason Field */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Mandatory Reason / Remarks <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder={
+                    requestType === "Permission"
+                      ? "Specify reason for short permission (e.g., Doctor appointment / Urgent personal errand)..."
+                      : requestType === "OD"
+                      ? "Specify OD details (e.g., Placement drive invigilation at Main Auditorium)..."
+                      : "Specify reason for leave application..."
+                  }
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="w-full text-xs font-medium p-3 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Modal Action Buttons Footer */}
+            <div className="bg-slate-50 p-4 px-5 border-t border-slate-200 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="px-4 py-1.5 rounded-md text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4.5 py-1.5 rounded-md text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+              >
+                {submitting ? "Submitting..." : "Submit Application →"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export interface MentorDashboardProps {
-  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu";
-  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu") => void;
+  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu" | "leave_requests";
+  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu" | "leave_requests") => void;
 }
 
 export const MentorDashboard: React.FC<MentorDashboardProps> = ({
@@ -1612,12 +2222,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <nav className={`py-2 space-y-1 ${isCollapsed ? "px-1" : "px-4"}`}>
                 {[
                   { id: "home", label: "Home", icon: Home },
-                  { id: "timetable", label: "Timetable Hub", icon: Calendar },
-                  { id: "demo_evaluations", label: "Demo Evaluations", icon: Sparkles },
-                  { id: "attendance", label: "Attendance Logs", icon: ClipboardList },
-                  { id: "tracker", label: "Student Tracker", icon: GraduationCap },
-                  { id: "handovers", label: "My Handovers", icon: Clock },
-                  { id: "profile", label: "My Profile", icon: User }
+                  { id: "timetable", label: "My Schedule", icon: Calendar },
+                  { id: "demo_evaluations", label: "My Demo", icon: Sparkles },
+                  { id: "attendance", label: "Student Attendance", icon: ClipboardList },
+                  { id: "tracker", label: "Skill Development Tracker", icon: GraduationCap },
+                  { id: "leave_requests", label: "Leave & Permissions", icon: CalendarCheck2 },
+                  { id: "handovers", label: "Handovers", icon: Clock },
+                  { id: "profile", label: "Profile", icon: User }
                 ].map(t => {
                   const Icon = t.icon;
                   const isActive = activeTab === t.id;
@@ -1626,7 +2237,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <button
                       key={t.id}
                       onClick={() => setActiveTab(t.id as any)}
-                      className={`w-full flex items-center rounded-2xl text-xs font-bold tracking-tight transition-all duration-200 cursor-pointer ${
+                      className={`w-full flex items-center rounded-md text-xs font-bold tracking-tight transition-all duration-200 cursor-pointer ${
                         isCollapsed ? "justify-center px-0 py-3" : "justify-start gap-3 px-4 py-3 text-left"
                       } ${
                         isActive
@@ -1677,9 +2288,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       {(() => {
         const tabs = [
           { id: "home", label: "Home", icon: Home },
-          { id: "timetable", label: "Timetable", icon: Calendar },
+          { id: "timetable", label: "My Schedule", icon: Calendar },
           { id: "attendance", label: "Attendance", icon: ClipboardList },
-          { id: "tracker", label: "Tracker", icon: GraduationCap },
+          { id: "tracker", label: "Skill Tracker", icon: GraduationCap },
           { id: "more_menu", label: "More", icon: Menu },
         ];
         return (
@@ -1730,13 +2341,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("handovers")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 group-hover:scale-105 transition-transform">
                   <Clock className="h-5 w-5" />
                 </div>
                 <div>
-                  <span className="block text-xs font-bold text-slate-800">Class Handovers</span>
+                  <span className="block text-xs font-bold text-slate-800">Handovers</span>
                   <span className="text-[10px] text-slate-400 font-medium">Manage swaps and handovers</span>
                 </div>
               </button>
@@ -1744,13 +2355,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("demo_evaluations")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-pink-50 flex items-center justify-center text-pink-500 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-pink-50 flex items-center justify-center text-pink-500 shrink-0 group-hover:scale-105 transition-transform">
                   <Sparkles className="h-5 w-5" />
                 </div>
                 <div>
-                  <span className="block text-xs font-bold text-slate-800">Demo Evaluations</span>
+                  <span className="block text-xs font-bold text-slate-800">My Demo</span>
                   <span className="text-[10px] text-slate-400 font-medium">Grade candidate presentations</span>
                 </div>
               </button>
@@ -1758,13 +2369,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("profile")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group sm:col-span-2"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group sm:col-span-2"
               >
-                <div className="h-10 w-10 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-650 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-650 shrink-0 group-hover:scale-105 transition-transform">
                   <User className="h-5 w-5" />
                 </div>
                 <div>
-                  <span className="block text-xs font-bold text-slate-800">My Profile</span>
+                  <span className="block text-xs font-bold text-slate-800">Profile</span>
                   <span className="text-[10px] text-slate-400 font-medium">View profile stats & info</span>
                 </div>
               </button>
@@ -1772,13 +2383,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           </div>
         )}
 
+        {/* Tab Leave Requests */}
+        {activeTab === "leave_requests" && currentMentor && (
+          <MentorFacultyLeavePanel mentor={currentMentor} />
+        )}
+
         {activeTab === "home" && (
           <>
+            {currentMentor && <MentorPunchWidget mentor={currentMentor} />}
 
-        {/*  Dedicated Metrics Grid */}
+            {/*  Dedicated Metrics Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1: Timetable Target */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5 hover:shadow-sm transition-all">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3.5 hover:shadow-sm transition-all">
             <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
               <Calendar className="h-5 w-5" />
             </div>
@@ -1789,7 +2406,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           </div>
 
           {/* Card 2: Coverages Received */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5 hover:shadow-sm transition-all">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3.5 hover:shadow-sm transition-all">
             <div className="h-10 w-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 shrink-0">
               <PlusCircle className="h-5 w-5" />
             </div>
@@ -1802,7 +2419,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           </div>
 
           {/* Card 3: Handovers Given */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5 hover:shadow-sm transition-all">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3.5 hover:shadow-sm transition-all">
             <div className="h-10 w-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600 shrink-0">
               <MinusCircle className="h-5 w-5" />
             </div>
@@ -1815,7 +2432,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           </div>
 
           {/* Card 4: Net Actual Workload */}
-          <div className="bg-white p-4 rounded-2xl border border-indigo-200 shadow-sm flex items-center gap-3.5 relative overflow-hidden hover:shadow-md transition-all">
+          <div className="bg-white p-4 rounded-xl border border-indigo-200 shadow-sm flex items-center gap-3.5 relative overflow-hidden hover:shadow-md transition-all">
             <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-indigo-500 to-teal-400"></div>
             <div className="h-10 w-10 rounded-xl bg-indigo-100/50 flex items-center justify-center text-indigo-700 shrink-0">
               <Clock className="h-5 w-5" />
@@ -1831,15 +2448,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: Today's Agenda (Col-span 2) */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-xs flex flex-col space-y-5 h-auto lg:h-full">
+            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs flex flex-col space-y-5 h-auto lg:h-full">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-4">
                 <div className="flex items-center gap-2">
                   <CalendarCheck2 className="h-5 w-5 text-indigo-500 shrink-0" />
                   <div>
                     <h3 className="text-sm font-bold text-slate-900">Today's Class Agenda</h3>
-                    <p className="text-xs text-slate-400 font-semibold mt-0.5">
-                      Your scheduled teachings and substitutions.
-                    </p>
                   </div>
                 </div>
 
@@ -1962,7 +2576,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             </div>
 
             {/*  Compensation & Workload Balance Ledger */}
-            <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-xs space-y-4">
+            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <BookOpen className="h-5 w-5 text-indigo-500" />
@@ -2162,7 +2776,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 const upcomingDemos = demoSessions.filter(ds => ds.mentorId === currentMentor.id && ds.status === "scheduled");
                 if (upcomingDemos.length === 0) return null;
                 return (
-                  <div className="bg-gradient-to-br from-pink-50/50 via-white to-white border border-pink-100 rounded-3xl p-5 shadow-xs space-y-4">
+                  <div className="bg-gradient-to-br from-pink-50/50 via-white to-white border border-pink-100 rounded-xl p-5 shadow-xs space-y-4">
                     <div className="flex items-center justify-between border-b border-pink-100/50 pb-2">
                       <div className="flex items-center gap-2">
                         <Sparkles className="h-4.5 w-4.5 text-pink-500 animate-pulse" />
@@ -2196,7 +2810,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 );
               })()}
               {/* Quick Action Center */}
-              <div className="hidden md:block bg-white border border-gray-200 rounded-3xl p-5 shadow-xs space-y-4">
+              <div className="hidden md:block bg-white border border-gray-200 rounded-xl p-5 shadow-xs space-y-4">
                 <h3 className="text-xs font-black text-slate-805 uppercase tracking-widest border-b border-slate-100 pb-2">Quick Actions</h3>
                 <div className="grid grid-cols-2 gap-3">
                   <button
@@ -2209,7 +2823,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         setActiveTab("timetable");
                       }
                     }}
-                    className="flex flex-col items-center justify-center p-3.5 rounded-2xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/10 text-center gap-2 transition-all cursor-pointer bg-white"
+                    className="flex flex-col items-center justify-center p-3.5 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/10 text-center gap-2 transition-all cursor-pointer bg-white"
                   >
                     <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-650 shrink-0">
                       <Calendar className="h-4.5 w-4.5" />
@@ -2223,7 +2837,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveTab("handovers")}
-                    className="flex flex-col items-center justify-center p-3.5 rounded-2xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/10 text-center gap-2 transition-all cursor-pointer bg-white"
+                    className="flex flex-col items-center justify-center p-3.5 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/10 text-center gap-2 transition-all cursor-pointer bg-white"
                   >
                     <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-655 shrink-0">
                       <Clock className="h-4.5 w-4.5" />
@@ -2238,7 +2852,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
               {/* Assigned Subjects breakdown */}
               {allMentorSubjects.length > 0 && (
-                <div className="bg-white border border-gray-200 rounded-3xl p-5 shadow-xs space-y-3">
+                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs space-y-3">
                   <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">My Subjects</h3>
                   <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
                     {allMentorSubjects.map((sub, idx) => {
@@ -2270,7 +2884,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               )}
 
               {/* Recent Handover Activity */}
-              <div className="bg-white border border-gray-200 rounded-3xl p-5 shadow-xs space-y-3">
+              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs space-y-3">
                 <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">Recent Handovers</h3>
                 {myRequests.length === 0 && myCoverageRequests.length === 0 ? (
                   <p className="text-[11px] text-slate-400 italic text-center py-4">No recent handover activity</p>
@@ -2320,12 +2934,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
       {/* Main Timetable Interface */}
       {activeTab === "timetable" && (
-        <div id="timetable-grid" className="bg-white border border-gray-200/80 rounded-3xl p-6 space-y-6 backdrop-blur-md shadow-sm">
+        <div id="timetable-grid" className="bg-white border border-gray-200/80 rounded-xl p-6 space-y-6 backdrop-blur-md shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
                 <Calendar className="h-5 w-5 text-indigo-650" />
-                <h2 className="text-lg font-bold text-gray-900">Your Personal Timetable</h2>
+                <h2 className="text-lg font-bold text-gray-900">My Schedule</h2>
               </div>
               
               {/* Week Navigation */}
@@ -2393,7 +3007,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           </div>
 
           {/* Timetable Control Center (Filters & Legends) - Always visible in Timetable Tab */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50/50 p-5 rounded-2xl border border-gray-150 shadow-inner text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50/50 p-5 rounded-xl border border-gray-150 shadow-inner text-xs">
             {/* 1. Status Filters */}
             <div className="space-y-2">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Status Filters</span>
@@ -2493,7 +3107,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             )}
           </div>
 
-          <div className="overflow-auto max-h-[70vh] rounded-2xl border border-gray-200 shadow-sm relative no-scrollbar">
+          <div className="overflow-auto max-h-[70vh] rounded-xl border border-gray-200 shadow-sm relative no-scrollbar">
             {/* Weekly Grid Table View */}
             <table className="w-full table-fixed border-collapse text-left min-w-[950px]">
               <thead>
@@ -2734,10 +3348,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
       {/* Handover Requests Tracker */}
       {activeTab === "handovers" && (
-        <div className="bg-white border border-gray-200 rounded-3xl p-6 backdrop-blur-md shadow-sm space-y-8">
+        <div className="bg-white border border-gray-200 rounded-xl p-6 backdrop-blur-md shadow-sm space-y-8">
           <div className="flex items-center gap-2 mb-2">
             <ListTodo className="h-5 w-5 text-indigo-655" />
-            <h2 className="text-lg font-bold text-gray-900">Class Handover Tracker</h2>
+            <h2 className="text-lg font-bold text-gray-900">Handovers</h2>
           </div>
 
           {/* Section 1: Requests Sent */}
@@ -2748,7 +3362,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 <p className="text-xs text-gray-500">No sent handover requests submitted yet.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-gray-205 shadow-sm">
+              <div className="overflow-x-auto rounded-xl border border-gray-205 shadow-sm">
                 <table className="w-full border-collapse text-left text-xs">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200 text-gray-550 font-bold uppercase text-[10px]">
@@ -2857,7 +3471,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <p className="text-xs text-gray-550">No coverage tasks assigned to you yet.</p>
                       </div>
                     ) : (
-                      <div className="overflow-x-auto rounded-2xl border border-gray-205 shadow-sm">
+                      <div className="overflow-x-auto rounded-xl border border-gray-205 shadow-sm">
                         <table className="w-full border-collapse text-left text-xs">
                           <thead>
                             <tr className="bg-gray-55 border-b border-gray-200 text-gray-550 font-bold uppercase text-[10px]">
@@ -3065,7 +3679,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex items-center gap-3">
+              <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl flex items-center gap-3">
                 <Sparkles className="h-5 w-5 text-indigo-650 shrink-0" />
                 <div className="text-[11px] text-indigo-850 font-semibold leading-normal">
                   Your academic profile and subjects list are managed by your Campus Manager (CM). Shift changes or subject reallocations will be updated automatically upon approval.
@@ -3078,25 +3692,25 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           <div className="bg-pastel-blue p-7 rounded-dribbble-panel border-transparent shadow-sm space-y-6">
             <h3 className="text-xs font-black text-slate-555 uppercase tracking-widest font-sans">Workload & Coverage Metrics</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
-              <div className="p-4 bg-white/80 rounded-2xl border border-slate-100/40">
+              <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                 <span className="text-3xl font-extrabold text-slate-900">
                   {slots.filter(s => s.mentorId === currentMentor.id).length}
                 </span>
                 <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Weekly Teaching Slots</span>
               </div>
-              <div className="p-4 bg-white/80 rounded-2xl border border-slate-100/40">
+              <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                 <span className="text-3xl font-extrabold text-slate-900">
                   {requests.filter(r => r.requestorId === currentMentor.id).length}
                 </span>
                 <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Handovers Requested</span>
               </div>
-              <div className="p-4 bg-white/80 rounded-2xl border border-slate-100/40">
+              <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                 <span className="text-3xl font-extrabold text-slate-900">
                   {requests.filter(r => r.targetStaffId === currentMentor.id && r.status === "approved").length}
                 </span>
                 <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Substitution Duties Covered</span>
               </div>
-              <div className="p-4 bg-white/80 rounded-2xl border border-slate-105/40">
+              <div className="p-4 bg-white/80 rounded-xl border border-slate-105/40">
                 <span className="text-3xl font-extrabold text-slate-900">
                   {studentAttendance.filter(a => a.markedBy === currentMentor.id).length}
                 </span>
@@ -3194,8 +3808,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <h2 className="text-base font-black text-slate-905">Class-wise Attendance Logs</h2>
-                    <p className="text-xs text-slate-400 font-semibold mt-0.5">Records of all period attendance sheets you have submitted.</p>
+                    <h2 className="text-base font-black text-slate-905">Student Attendance</h2>
                   </div>
                   
                   {/* Search Log Bar */}
@@ -3214,7 +3827,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
 
                 {/* Table */}
-                <div className="overflow-x-auto rounded-2xl border border-slate-205 shadow-sm">
+                <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
                   <table className="w-full border-collapse text-left text-xs font-semibold">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9.5px]">
@@ -3305,7 +3918,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
 
                 {/* Filters */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/50 p-5 rounded-2xl border border-slate-150">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/50 p-5 rounded-xl border border-slate-150">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Select Cohort (Class Group)</label>
                     <select
@@ -3340,7 +3953,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
 
                 {/* Holiday Status Notification Banner */}
-                <div className="bg-indigo-50/50 border border-indigo-150 p-4 rounded-2xl space-y-2">
+                <div className="bg-indigo-50/50 border border-indigo-150 p-4 rounded-xl space-y-2">
                   <div className="flex items-center gap-2 text-indigo-850 font-bold text-[11px]">
                     <AlertCircle className="h-4.5 w-4.5 text-indigo-600 shrink-0" />
                     <span>Holiday Marking Policy Active</span>
@@ -3366,7 +3979,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
 
                 {/* Calculation Results Table */}
-                <div className="overflow-x-auto rounded-2xl border border-slate-205 shadow-sm">
+                <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
                   <table className="w-full border-collapse text-left text-xs font-semibold">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9.5px]">
@@ -3479,7 +4092,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       {/* Modal / Slider Drawer */}
       {isModalOpen && selectedCell && selectedCell.slot && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-sm p-0 sm:p-4">
-          <div className="relative w-full max-w-2xl h-[90vh] sm:h-[640px] bg-white border-t sm:border border-slate-205 rounded-t-3xl sm:rounded-3xl shadow-2xl p-4 sm:p-5 flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200">
+          <div className="relative w-full max-w-2xl h-[90vh] sm:h-[640px] bg-white border-t sm:border border-slate-205 rounded-t-3xl sm:rounded-xl shadow-2xl p-4 sm:p-5 flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200">
             <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-indigo-500/5 blur-xl pointer-events-none"></div>
 
             {/* Header */}
@@ -3497,7 +4110,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             </div>
 
             {/* Sleek Segmented Switch for Tabs */}
-            <div className="flex bg-slate-100/60 p-1 rounded-2xl border border-slate-200/50 mb-3.5 shrink-0">
+            <div className="flex bg-slate-100/60 p-1 rounded-xl border border-slate-200/50 mb-3.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setModalTab("attendance")}
@@ -3530,7 +4143,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               const yearStr = getYearForClass(selectedCell.slot.classGroup);
               const shiftLabel = selectedCell.slot.shift === "shift_1" ? "Shift 1" : selectedCell.slot.shift === "shift_2" ? "Shift 2" : "General";
               return (
-                <div className="mb-3.5 p-3 rounded-2xl bg-indigo-50/40 border border-indigo-100/55 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs shrink-0">
+                <div className="mb-3.5 p-3 rounded-xl bg-indigo-50/40 border border-indigo-100/55 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs shrink-0">
                   <div className="flex items-center gap-2">
                     <span className="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white text-[9.5px] font-black uppercase tracking-wider">{deptShort || "Class"}</span>
                     {yearStr && <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-800 text-[9.5px] font-black uppercase border border-amber-200">{yearStr}</span>}
@@ -3593,12 +4206,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 const prevAbsent = prevExisting.filter(a => a.status === "absent").length;
                 const prevOD = prevExisting.filter(a => a.status === "od").length;
                 return (
-                  <div className="py-6 px-4 bg-red-50/50 border border-red-100 rounded-2xl text-center text-xs text-red-800 space-y-3 shrink-0 overflow-y-auto">
+                  <div className="py-6 px-4 bg-red-50/50 border border-red-100 rounded-xl text-center text-xs text-red-800 space-y-3 shrink-0 overflow-y-auto">
                     <Lock className="h-8 w-8 mx-auto text-red-500" />
                     <p className="font-bold text-sm">Attendance Window Closed</p>
                     <p className="text-gray-500 font-semibold">{windowCheck.message}</p>
                     {prevExisting.length > 0 ? (
-                      <div className="mt-3 p-4 bg-white rounded-2xl border border-red-150 text-left text-slate-700 space-y-2 shadow-sm">
+                      <div className="mt-3 p-4 bg-white rounded-xl border border-red-150 text-left text-slate-700 space-y-2 shadow-sm">
                         <p className="font-black text-xs text-slate-800 uppercase tracking-wider mb-2 border-b pb-1">Marked Summary:</p>
                         <p className="flex justify-between"><span>Present:</span> <span className="font-black text-emerald-600">{prevPresent}</span></p>
                         <p className="flex justify-between"><span>Absent:</span> <span className="font-black text-rose-600">{prevAbsent}</span></p>
@@ -3617,7 +4230,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               // and the logged in mentor is the original mentor
               if (selectedCell.type === "own" && approvedReq) {
                 return (
-                  <div className="py-8 px-4 bg-blue-50 border border-blue-100 rounded-2xl text-center text-xs text-blue-800 space-y-2 shrink-0">
+                  <div className="py-8 px-4 bg-blue-50 border border-blue-100 rounded-xl text-center text-xs text-blue-800 space-y-2 shrink-0">
                     <CheckCircle className="h-8 w-8 mx-auto text-blue-500" />
                     <p className="font-bold">Class Handed Over</p>
                     <p className="text-gray-500 font-medium">This class has been handed over to <span className="font-bold">{approvedReq.coverStaffName}</span>. They are responsible for marking attendance.</p>
@@ -3632,7 +4245,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
               if (classStudents.length === 0) {
                 return (
-                  <div className="py-8 px-4 bg-gray-50 border border-gray-150 rounded-2xl text-center text-xs text-gray-500 shrink-0">
+                  <div className="py-8 px-4 bg-gray-50 border border-gray-150 rounded-xl text-center text-xs text-gray-500 shrink-0">
                     <p className="font-bold">No students registered</p>
                     <p className="text-[10px] text-gray-400 mt-1">There are no students registered under the class group: <span className="font-semibold">{selectedCell.slot!.classGroup}</span>.</p>
                   </div>
@@ -4426,7 +5039,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               // 1. Cannot request handover for coverage class
               if (selectedCell.type === "covering") {
                 return (
-                  <div className="py-8 px-4 bg-rose-50 border border-rose-100 rounded-2xl text-center text-xs text-rose-800 space-y-2 shrink-0">
+                  <div className="py-8 px-4 bg-rose-50 border border-rose-100 rounded-xl text-center text-xs text-rose-800 space-y-2 shrink-0">
                     <AlertCircle className="h-8 w-8 mx-auto text-rose-500" />
                     <p className="font-bold">Cannot Handover Coverage Class</p>
                     <p className="text-gray-500 font-medium">You are covering this class for <span className="font-bold">{mentors.find(m => m.id === selectedCell.originalMentorId)?.name || "another staff member"}</span>. You cannot request handover for a class you are covering.</p>
@@ -4440,7 +5053,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
               if (approvedReq) {
                 return (
-                  <div className="py-8 px-4 bg-teal-55 border border-teal-100 rounded-2xl text-center text-xs text-teal-800 space-y-2 shrink-0">
+                  <div className="py-8 px-4 bg-teal-55 border border-teal-100 rounded-xl text-center text-xs text-teal-800 space-y-2 shrink-0">
                     <CheckCircle className="h-8 w-8 mx-auto text-teal-500" />
                     <p className="font-bold">Handover Approved</p>
                     <p className="text-gray-500 font-medium">This class slot has already been approved for handover on this date to <span className="font-bold">{approvedReq.coverStaffName}</span>.</p>
@@ -4450,7 +5063,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
               if (pendingReq) {
                 return (
-                  <div className="py-8 px-4 bg-amber-50 border border-amber-100 rounded-2xl text-center text-xs text-amber-805 space-y-2 shrink-0">
+                  <div className="py-8 px-4 bg-amber-50 border border-amber-100 rounded-xl text-center text-xs text-amber-805 space-y-2 shrink-0">
                     <AlertCircle className="h-8 w-8 mx-auto text-amber-500 animate-pulse" />
                     <p className="font-bold">Handover Pending</p>
                     <p className="text-gray-500 font-medium">A handover request for this class slot on this date is already pending approval (Sent to: <span className="font-bold text-amber-900">{pendingReq.targetStaffName}</span>).</p>
@@ -4681,22 +5294,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
         return (
         <div className="space-y-6 font-sans">
-          {/* Header */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-150 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
-                <GraduationCap className="h-5 w-5" />
-              </div>
-              <div>
-                <h2 className="text-lg font-black text-slate-800 leading-tight">Student Tracker &amp; Interview Module</h2>
-                <p className="text-xs text-slate-455 font-medium mt-0.5">
-                  Track weekly task submissions or conduct internal &amp; external student interviews.
-                </p>
-              </div>
-            </div>
+          {/* Sub-tab Navigation */}
+          <div className="flex justify-end border-b border-slate-150 pb-4">
 
             {/* Sub-tab Dual Buttons */}
-            <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shrink-0">
+            <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
               <button
                 onClick={() => setTrackerSubView("tracker")}
                 className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
@@ -4726,7 +5328,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             <div className="space-y-6">
 
           {/* Interactive 4-Dropdown Selector Bar: Department -> Semester -> Subject -> Week */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs font-sans">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs font-sans">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
                 {/* 1. Department */}
@@ -4824,7 +5426,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             );
 
             return (
-              <div className="bg-gradient-to-r from-indigo-500/5 via-teal-500/5 to-transparent border border-indigo-100 rounded-3xl p-5 shadow-xs space-y-3 font-sans">
+              <div className="bg-gradient-to-r from-indigo-500/5 via-teal-500/5 to-transparent border border-indigo-100 rounded-xl p-5 shadow-xs space-y-3 font-sans">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100/50 pb-3">
                   <div className="flex items-center gap-2.5">
                     <div className="p-2 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600">
@@ -4902,7 +5504,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
 
                 {currentTask ? (
-                  <div className="bg-white border border-slate-150 p-4 rounded-2xl flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-xs">
+                  <div className="bg-white border border-slate-150 p-4 rounded-xl flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-xs">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold font-mono rounded border border-indigo-150">
@@ -4950,7 +5552,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-6 bg-white/60 border border-dashed border-indigo-200 rounded-2xl flex flex-col items-center justify-center gap-2">
+                  <div className="text-center py-6 bg-white/60 border border-dashed border-indigo-200 rounded-xl flex flex-col items-center justify-center gap-2">
                     <p className="text-xs text-slate-500 font-medium">No task assigned for Week {trackerWeek} in {activeSubj} yet.</p>
                     <button
                       onClick={() => {
@@ -4970,7 +5572,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           })()}
 
           {/* Student Submissions & Evaluation */}
-          <div className="bg-white border border-slate-250/60 rounded-3xl p-6 shadow-xs space-y-5">
+          <div className="bg-white border border-slate-250/60 rounded-xl p-6 shadow-xs space-y-5">
             {/* Student Submissions Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
@@ -5108,7 +5710,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               return (
                 <div className="space-y-4">
                   {/* Filters Header Bar */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-150">
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="relative">
                         <input
@@ -5135,7 +5737,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto rounded-2xl border border-slate-205 shadow-xs bg-white scroll-touch">
+                  <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-xs bg-white scroll-touch">
                     <table className="w-full border-collapse text-left text-xs font-semibold min-w-[980px]">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9.5px] whitespace-nowrap">
@@ -5406,7 +6008,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   </div>
 
                   {/* Pagination Bar */}
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-150 text-xs font-bold text-slate-700">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-150 text-xs font-bold text-slate-700">
                     <div className="flex flex-wrap items-center gap-3">
                       <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider">Rows per page:</span>
                       <select
@@ -5459,7 +6061,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   {/* Assign / Edit Task Modal */}
                   {editingTask && (
                     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                      <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-2xl w-full overflow-hidden animate-slideUp flex flex-col">
+                      <div className="bg-white rounded-xl border border-gray-150 shadow-xl max-w-2xl w-full overflow-hidden animate-slideUp flex flex-col">
                         <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
                           <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
                             <BookOpen className="h-5 w-5 text-indigo-650" />
@@ -5606,7 +6208,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             </div>
                           </div>
                           
-                          <div className="p-3 bg-rose-50 border border-rose-100 rounded-2xl flex items-center justify-between text-[11px] text-rose-700 font-medium">
+                          <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-center justify-between text-[11px] text-rose-700 font-medium">
                             <span>Deadline: <strong className="font-extrabold">3 Days from Assignment</strong></span>
                             <span className="px-2 py-0.5 bg-rose-100 font-bold rounded-lg uppercase tracking-wider text-[9px]">
                               {trackerWeek % 2 === 0 ? "ASSESSMENT WEEK" : "REGULAR WEEK"}
@@ -5657,25 +6259,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
             return (
               <div className="space-y-6 font-sans">
-                {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-150 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-pink-50 flex items-center justify-center text-pink-600 shrink-0">
-                      <Sparkles className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-black text-slate-800 leading-tight">My Demo Evaluations</h2>
-                      <p className="text-xs text-slate-455 font-medium mt-0.5">
-                        Track upcoming demo evaluations and review grades, marks, and feedback from Subject Matter Experts.
-                      </p>
-                    </div>
-                  </div>
-                </div>
+
 
                 {/* Statistics Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-white border border-slate-205 rounded-3xl p-5 shadow-xs flex items-center gap-4">
-                    <div className="p-3 bg-indigo-50 border border-indigo-100 text-indigo-650 rounded-2xl">
+                  <div className="bg-white border border-slate-205 rounded-xl p-5 shadow-xs flex items-center gap-4">
+                    <div className="p-3 bg-indigo-50 border border-indigo-100 text-indigo-650 rounded-xl">
                       <Calendar className="h-5 w-5" />
                     </div>
                     <div>
@@ -5684,8 +6273,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
                   </div>
 
-                  <div className="bg-white border border-slate-205 rounded-3xl p-5 shadow-xs flex items-center gap-4">
-                    <div className="p-3 bg-pink-50 border border-pink-100 text-pink-650 rounded-2xl">
+                  <div className="bg-white border border-slate-205 rounded-xl p-5 shadow-xs flex items-center gap-4">
+                    <div className="p-3 bg-pink-50 border border-pink-100 text-pink-650 rounded-xl">
                       <Sparkles className="h-5 w-5" />
                     </div>
                     <div>
@@ -5694,8 +6283,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
                   </div>
 
-                  <div className="bg-white border border-slate-205 rounded-3xl p-5 shadow-xs flex items-center gap-4">
-                    <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-650 rounded-2xl">
+                  <div className="bg-white border border-slate-205 rounded-xl p-5 shadow-xs flex items-center gap-4">
+                    <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-650 rounded-xl">
                       <GraduationCap className="h-5 w-5" />
                     </div>
                     <div>
@@ -5709,13 +6298,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   
                   {/* Left Column: Upcoming Evaluations (1/3 width) */}
                   <div className="lg:col-span-1 space-y-4">
-                    <div className="bg-white border border-slate-205 rounded-3xl p-5 shadow-xs space-y-4">
+                    <div className="bg-white border border-slate-205 rounded-xl p-5 shadow-xs space-y-4">
                       <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">Upcoming Reviews</h3>
                       
                       {pendingDemos.length > 0 ? (
                         <div className="space-y-4">
                           {pendingDemos.map(demo => (
-                            <div key={demo.id} className="p-4 bg-slate-50/50 border border-slate-150 rounded-2xl space-y-2">
+                            <div key={demo.id} className="p-4 bg-slate-50/50 border border-slate-150 rounded-xl space-y-2">
                               <div className="flex justify-between items-center">
                                 <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-150 text-indigo-600 text-[8px] font-black uppercase rounded">
                                   {demo.subject}
@@ -5832,13 +6421,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                   {/* Right Column: Completed Evaluations & Feedback (2/3 width) */}
                   <div className="lg:col-span-2 space-y-4">
-                    <div className="bg-white border border-slate-205 rounded-3xl p-5 shadow-xs space-y-4">
+                    <div className="bg-white border border-slate-205 rounded-xl p-5 shadow-xs space-y-4">
                       <h3 className="text-xs font-black text-slate-805 uppercase tracking-widest border-b border-slate-100 pb-2">Completed Evaluations</h3>
                       
                       {completedDemos.length > 0 ? (
                         <div className="space-y-4">
                           {completedDemos.map(demo => (
-                            <div key={demo.id} className="p-5 border border-slate-150 hover:border-indigo-200 rounded-2xl bg-white transition-all shadow-xs flex flex-col md:flex-row justify-between gap-4">
+                            <div key={demo.id} className="p-5 border border-slate-150 hover:border-indigo-200 rounded-xl bg-white transition-all shadow-xs flex flex-col md:flex-row justify-between gap-4">
                               <div className="space-y-2 flex-grow">
                                 <div className="flex items-center gap-2">
                                   <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[8.5px] font-black uppercase rounded-lg">
@@ -5912,7 +6501,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
         return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all duration-300">
-          <div className={`bg-white rounded-3xl shadow-2xl w-full overflow-hidden flex flex-col transition-all duration-300 ${swapSuccess ? "max-w-md" : "max-w-5xl max-h-[90vh]"}`}>
+          <div className={`bg-white rounded-xl shadow-2xl w-full overflow-hidden flex flex-col transition-all duration-300 ${swapSuccess ? "max-w-md" : "max-w-5xl max-h-[90vh]"}`}>
             {/* Modal Header */}
             <div style={{background: "linear-gradient(135deg, #D528A2 0%, #F4A863 100%)"}} className="p-5 text-white flex-shrink-0">
               <div className="flex items-center justify-between">
@@ -5958,7 +6547,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               ) : (
                 <>
                   {/* Context Card */}
-                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex gap-3">
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-3">
                     <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="text-xs font-black text-amber-800">Compensation Required</p>
@@ -5988,7 +6577,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
 
                     {/* Grid */}
-                    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
                       <table className="w-full table-fixed border-collapse text-left min-w-[700px]">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-200">
@@ -6192,7 +6781,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       {/* Mentor Internal Swap Modal */}
       {demoSwapModalSession && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4 flex flex-col max-h-[85vh]">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4 flex flex-col max-h-[85vh]">
             
             <button
               onClick={() => setDemoSwapModalSession(null)}

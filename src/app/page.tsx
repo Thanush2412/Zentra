@@ -54,10 +54,7 @@ export default function Home() {
   const [signupError, setSignupError] = useState("");
   const [signupSuccess, setSignupSuccess] = useState("");
 
-  // Dark Mode State
-  const [darkMode, setDarkMode] = useState(false);
-
-  // Check login state and theme from localStorage on mount
+  // Check login state on mount
   useEffect(() => {
     const loggedIn = localStorage.getItem("fp_logged_in") === "true";
     if (loggedIn) {
@@ -71,11 +68,8 @@ export default function Home() {
     
     setSessionLoading(false);
 
-    const isDark = localStorage.getItem("fp_dark_mode") === "true";
-    setDarkMode(isDark);
-    if (isDark) {
-      document.documentElement.classList.add("dark");
-    } else {
+    localStorage.removeItem("fp_dark_mode");
+    if (typeof document !== "undefined") {
       document.documentElement.classList.remove("dark");
     }
   }, [router]);
@@ -267,19 +261,19 @@ export default function Home() {
             </div>
 
             {/* Form Card */}
-            <div className="bg-white border border-slate-200/80 rounded-3xl shadow-[0_15px_30px_rgba(0,0,0,0.02)] p-8 space-y-6">
+            <div className="bg-white border border-slate-200/80 rounded-xl shadow-[0_15px_30px_rgba(0,0,0,0.02)] p-8 space-y-6">
               {isSignupMode ? (
                 // --- SIGNUP FORM ---
                 <form onSubmit={handleSignupSubmit} className="space-y-4">
                   {signupError && (
-                    <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-2xl text-xs text-rose-600 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-600 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
                       <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                       <span className="font-semibold leading-relaxed">{signupError}</span>
                     </div>
                   )}
 
                   {signupSuccess && (
-                    <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl text-xs text-emerald-600 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-600 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
                       <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
                       <span className="font-semibold leading-relaxed">{signupSuccess}</span>
                     </div>
@@ -296,7 +290,7 @@ export default function Home() {
                       placeholder="John Doe"
                       value={signupName}
                       onChange={(e) => setSignupName(e.target.value)}
-                      className="w-full bg-slate-50/70 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all shadow-sm"
+                      className="w-full bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all shadow-sm"
                       disabled={signupLoading}
                     />
                   </div>
@@ -312,7 +306,7 @@ export default function Home() {
                       placeholder="john.doe@university.edu"
                       value={signupEmail}
                       onChange={(e) => setSignupEmail(e.target.value)}
-                      className="w-full bg-slate-50/70 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all shadow-sm"
+                      className="w-full bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all shadow-sm"
                       disabled={signupLoading}
                     />
                   </div>
@@ -328,7 +322,7 @@ export default function Home() {
                       placeholder="••••••••"
                       value={signupPassword}
                       onChange={(e) => setSignupPassword(e.target.value)}
-                      className="w-full bg-slate-50/70 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all shadow-sm"
+                      className="w-full bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all shadow-sm"
                       disabled={signupLoading}
                     />
                   </div>
@@ -344,7 +338,7 @@ export default function Home() {
                       placeholder="••••••••"
                       value={signupConfirmPassword}
                       onChange={(e) => setSignupConfirmPassword(e.target.value)}
-                      className="w-full bg-slate-50/70 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all shadow-sm"
+                      className="w-full bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all shadow-sm"
                       disabled={signupLoading}
                     />
                   </div>
@@ -353,7 +347,7 @@ export default function Home() {
                   <button
                     type="submit"
                     disabled={signupLoading}
-                    className="w-full btn-gradient font-bold py-3 rounded-2xl text-sm transition-all shadow-md mt-2 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-70"
+                    className="w-full btn-gradient font-bold py-3 rounded-xl text-sm transition-all shadow-md mt-2 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-70"
                   >
                     {signupLoading ? (
                       <>
@@ -384,7 +378,7 @@ export default function Home() {
                 // --- LOGIN FORM ---
                 <>
                   {loginError && (
-                    <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-2xl text-xs text-rose-600 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-600 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
                       <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                       <span className="font-semibold leading-relaxed">{loginError}</span>
                     </div>
@@ -404,7 +398,7 @@ export default function Home() {
                           placeholder="your.name@university.edu"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          className="w-full bg-slate-50/70 border border-slate-200 rounded-2xl pl-11 pr-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all duration-200 shadow-sm"
+                          className="w-full bg-slate-50/70 border border-slate-200 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all duration-200 shadow-sm"
                           disabled={loginLoading}
                           autoComplete="email"
                         />
@@ -424,7 +418,7 @@ export default function Home() {
                           placeholder="••••••••"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          className="w-full bg-slate-50/70 border border-slate-200 rounded-2xl pl-11 pr-11 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all duration-200 shadow-sm"
+                          className="w-full bg-slate-50/70 border border-slate-200 rounded-xl pl-11 pr-11 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all duration-200 shadow-sm"
                           disabled={loginLoading}
                           autoComplete="current-password"
                         />
@@ -447,7 +441,7 @@ export default function Home() {
                       loadingText="Verifying credentials…"
                       variant="gradient"
                       icon={<ArrowRight className="h-4 w-4" />}
-                      className="w-full py-3.5 rounded-2xl text-sm mt-2"
+                      className="w-full py-3.5 rounded-xl text-sm mt-2"
                     >
                       Sign in to Dashboard
                     </LoadingButton>

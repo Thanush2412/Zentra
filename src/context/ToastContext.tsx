@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, {
   createContext,
@@ -156,7 +156,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
       {/* ── Floating Action Progress Indicator ───── */}
       {isActionLoading && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10001] flex items-center gap-3 px-5 py-3 rounded-2xl bg-slate-900/90 text-white backdrop-blur-xl border border-slate-700/80 shadow-2xl animate-in fade-in slide-in-from-bottom-3 duration-200 pointer-events-none">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10001] flex items-center gap-3 px-5 py-3 rounded-xl bg-slate-900/90 text-white backdrop-blur-xl border border-slate-700/80 shadow-2xl animate-in fade-in slide-in-from-bottom-3 duration-200 pointer-events-none">
           <div className="flex items-center gap-1.5">
             <div className="h-2.5 w-2.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "0s", animationDuration: "0.8s" }} />
             <div className="h-2.5 w-2.5 rounded-full bg-[#D528A2] animate-bounce" style={{ animationDelay: "0.15s", animationDuration: "0.8s" }} />

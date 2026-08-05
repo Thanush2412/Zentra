@@ -809,7 +809,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <button
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id as any)}
-                      className={`w-full flex items-center rounded-2xl text-xs font-bold tracking-tight transition-all duration-200 cursor-pointer ${
+                      className={`w-full flex items-center rounded-md text-xs font-bold tracking-tight transition-all duration-200 cursor-pointer ${
                         isCollapsed ? "justify-center px-0 py-3" : "justify-start gap-3 px-4 py-3 text-left"
                       } ${
                         isActive
@@ -951,9 +951,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("marks")}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-amber-50 dark:bg-amber-900/25 flex items-center justify-center text-amber-500 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-900/25 flex items-center justify-center text-amber-500 shrink-0 group-hover:scale-105 transition-transform">
                   <Award className="h-5 w-5" />
                 </div>
                 <div>
@@ -965,9 +965,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("leave")}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/25 flex items-center justify-center text-indigo-500 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/25 flex items-center justify-center text-indigo-500 shrink-0 group-hover:scale-105 transition-transform">
                   <FileText className="h-5 w-5" />
                 </div>
                 <div>
@@ -979,9 +979,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("exams")}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-rose-50 dark:bg-rose-900/25 flex items-center justify-center text-rose-500 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-900/25 flex items-center justify-center text-rose-500 shrink-0 group-hover:scale-105 transition-transform">
                   <BookOpen className="h-5 w-5" />
                 </div>
                 <div>
@@ -993,9 +993,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("library")}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-teal-50 dark:bg-teal-900/25 flex items-center justify-center text-teal-500 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-teal-50 dark:bg-teal-900/25 flex items-center justify-center text-teal-500 shrink-0 group-hover:scale-105 transition-transform">
                   <Book className="h-5 w-5" />
                 </div>
                 <div>
@@ -1007,9 +1007,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("profile")}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group sm:col-span-2"
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group sm:col-span-2"
               >
-                <div className="h-10 w-10 rounded-2xl bg-slate-100 dark:bg-slate-800/80 flex items-center justify-center text-slate-600 dark:text-slate-350 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-800/80 flex items-center justify-center text-slate-600 dark:text-slate-350 shrink-0 group-hover:scale-105 transition-transform">
                   <User className="h-5 w-5" />
                 </div>
                 <div>
@@ -1124,7 +1124,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                 {/* Add Task Inline Form */}
                 {showAddTaskForm && (
-                  <form onSubmit={handleAddTask} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 animate-in fade-in duration-200">
+                  <form onSubmit={handleAddTask} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 animate-in fade-in duration-200">
                     <div className="text-xs font-bold text-slate-700">Add New Academic Task</div>
                     <input
                       type="text"
@@ -1164,7 +1164,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     .map((task) => (
                       <div
                         key={task.id}
-                        className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-2xl hover:bg-slate-50 hover:shadow-xs transition-all duration-200"
+                        className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-xl hover:bg-slate-50 hover:shadow-xs transition-all duration-200"
                       >
                         <div className="flex items-start gap-4">
                           <button
@@ -1310,7 +1310,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     const initial = teacherName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
                     
                     return (
-                      <div key={slot.id || index} className="p-4 bg-slate-50/50 border border-slate-100 rounded-2xl flex items-center justify-between gap-4">
+                      <div key={slot.id || index} className="p-4 bg-slate-50/50 border border-slate-100 rounded-xl flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="h-8.5 w-8.5 rounded-full bg-indigo-50 border border-slate-150 flex items-center justify-center font-bold text-indigo-650 text-xs shrink-0 select-none">
                             {initial}
@@ -1345,7 +1345,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
         {/* Tab 2: e-Campus Timetable */}
         {activeTab === "schedule" && (
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3">
               <div>
                 <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Weekly Class Timetable</h2>
@@ -1375,28 +1375,28 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
             </div>
 
-            <div className="overflow-auto max-h-[70vh] rounded-2xl border border-slate-200 shadow-sm relative no-scrollbar">
+            <div className="overflow-auto max-h-[70vh] rounded-xl border border-slate-200 shadow-sm relative no-scrollbar">
               <table className="w-full table-fixed border-collapse text-left min-w-[800px]">
                 <thead>
-                  <tr className="text-xs text-slate-550 font-bold uppercase">
-                    <th className="sticky top-0 left-0 z-30 p-4 w-[12%] text-slate-700 bg-slate-100/95 backdrop-blur-xs border-r border-b border-slate-200">Day / Date</th>
+                  <tr className="text-xs text-slate-550 dark:text-slate-300 font-bold uppercase">
+                    <th className="sticky top-0 left-0 z-30 p-4 w-[12%] text-slate-700 dark:text-slate-200 bg-slate-100/95 dark:bg-[#141419] backdrop-blur-xs border-r border-b border-slate-200 dark:border-white/5">Day / Date</th>
                     {(() => {
                       let slotCounter = 0;
                       return rows.map((col, idx) => {
                         if (col.type === "break" || col.type === "lunch") {
                           return (
-                            <th key={idx} className="sticky top-0 z-20 p-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-center select-none bg-slate-55/95 backdrop-blur-xs border-b border-slate-200 w-[8%]">
+                            <th key={idx} className="sticky top-0 z-20 p-4 text-xs font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider text-center select-none bg-slate-55/95 dark:bg-[#0f0f14] backdrop-blur-xs border-b border-slate-200 dark:border-white/5 w-[8%]">
                               <div>{col.label}</div>
-                              <div className="text-[9px] text-slate-450 font-normal mt-0.5">{formatTimeLabel(col.timeRange)}</div>
+                              <div className="text-[9px] text-slate-450 dark:text-slate-400 font-normal mt-0.5">{formatTimeLabel(col.timeRange)}</div>
                             </th>
                           );
                         }
                         if (col.type === "slot") {
                           slotCounter++;
                           return (
-                            <th key={col.time} className="sticky top-0 z-20 p-4 text-xs font-bold text-slate-700 bg-slate-55/95 backdrop-blur-xs border-b border-slate-200 w-[12%]">
+                            <th key={col.time} className="sticky top-0 z-20 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-55/95 dark:bg-[#141419] backdrop-blur-xs border-b border-slate-200 dark:border-white/5 w-[12%]">
                               <div>Period {slotCounter}</div>
-                              <div className="text-[10px] text-slate-400 font-normal mt-0.5">{formatTimeLabel(col.time)}</div>
+                              <div className="text-[10px] text-slate-400 dark:text-slate-400 font-normal mt-0.5">{formatTimeLabel(col.time)}</div>
                             </th>
                           );
                         }
@@ -1405,12 +1405,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     })()}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-150 bg-white">
+                <tbody className="divide-y divide-slate-150 dark:divide-white/5 bg-white dark:bg-[#101015]">
                   {weekDates.map((date) => {
                     return (
-                      <tr key={date.day} className="h-24 hover:bg-slate-55/10 transition-colors">
+                      <tr key={date.day} className="h-24 hover:bg-slate-55/10 dark:hover:bg-white/[0.02] transition-colors">
                         {/* First Cell: Day / Date */}
-                        <td className="sticky left-0 z-10 p-3 text-xs font-bold text-slate-705 border-r border-slate-200 bg-slate-50/95 backdrop-blur-xs align-middle">
+                        <td className="sticky left-0 z-10 p-3 text-xs font-bold text-slate-705 border-r border-slate-200 bg-slate-50/95 dark:bg-[#141419] dark:border-white/5 backdrop-blur-xs align-middle">
                           <div className="flex flex-col justify-center items-center">
                             <span className="text-sm font-black text-slate-900 leading-none">{date.day}</span>
                             <span className="text-[9px] text-slate-400 font-extrabold uppercase mt-1 leading-none">{date.formatted}</span>
@@ -1435,18 +1435,18 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           const cellData = getAttendanceForCell(date.day, date.dateStr, time);
 
                           return (
-                            <td key={time} className="p-1.5 h-24 border-r border-slate-150 last:border-r-0 align-top bg-white">
+                            <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-white dark:bg-[#101015]">
                               {!cellData ? (
                                 <div className="h-full flex items-center justify-center text-[9px] text-slate-400 italic border border-dashed border-slate-150 rounded-xl bg-slate-55/30">
                                   Free Period
                                 </div>
                               ) : (
-                                <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-slate-200 bg-slate-50/20 shadow-sm relative overflow-hidden">
+                                <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-slate-200 dark:border-white/8 bg-slate-50/20 dark:bg-[#1c1c26] shadow-sm relative overflow-hidden">
                                   <div className="space-y-1">
                                     <div className="text-[9px] font-extrabold text-indigo-650 truncate" title={cellData.handover?.course || cellData.slot.course}>
                                       {cellData.handover?.course || cellData.slot.course}
                                     </div>
-                                    <div className="text-[8px] text-slate-450 font-bold truncate">
+                                    <div className="text-[8px] text-slate-450 dark:text-slate-300 font-bold truncate">
                                       {cellData.handover ? (
                                         <span className="text-slate-700 font-extrabold">{cellData.handover.coverStaffName}</span>
                                       ) : (
@@ -1456,7 +1456,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                   </div>
 
                                   <div className="flex justify-between items-center text-[8.5px] mt-2 border-t border-slate-100 pt-1.5">
-                                    <span className="flex items-center gap-0.5 text-slate-500 font-semibold bg-white border border-slate-200 px-1 rounded">
+                                    <span className="flex items-center gap-0.5 text-slate-500 dark:text-slate-300 font-semibold bg-white dark:bg-[#1c1c26] border border-slate-200 dark:border-white/10 px-1 rounded">
                                       <MapPin className="h-2 w-2 shrink-0" />
                                       {cellData.slot.location.split(" ")[0]}
                                     </span>
@@ -1472,7 +1472,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                         {cellData.attendance.status}
                                       </span>
                                     ) : (
-                                      <span className="text-[8px] text-slate-400 italic">Unmarked</span>
+                                      <span className="text-[8px] text-slate-400 dark:text-slate-300 italic">Unmarked</span>
                                     )}
                                   </div>
                                 </div>
@@ -1491,7 +1491,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
         {/* Tab 3: Continuous Internal Assessment (CIA) */}
         {activeTab === "marks" && (
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-6 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm">
             <div>
               <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Continuous Internal Assessment (CIA)</h2>
               <p className="text-[11px] text-slate-450 mt-1">
@@ -1501,7 +1501,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* GPA card summary */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-col justify-between items-center text-center space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 flex flex-col justify-between items-center text-center space-y-4">
                 <h3 className="text-xs font-extrabold text-slate-650 uppercase tracking-wider">GPA Status</h3>
                 
                 <div className="h-24 w-24 rounded-full border-4 border-indigo-600 bg-white flex flex-col items-center justify-center shadow-inner">
@@ -1514,7 +1514,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="md:col-span-2 overflow-x-auto rounded-2xl border border-slate-200 scroll-touch">
+              <div className="md:col-span-2 overflow-x-auto rounded-xl border border-slate-200 scroll-touch">
                 <table className="w-full border-collapse text-left text-xs min-w-[600px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
@@ -1557,7 +1557,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         {activeTab === "leave" && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Submission Form */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
               <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Apply for Leave / OD</h2>
               
               <form onSubmit={handleLeaveSubmit} className="space-y-3.5">
@@ -1633,7 +1633,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             </div>
 
             {/* Applications History log */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4 md:col-span-2">
+            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4 md:col-span-2">
               <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Leave & OD Requests History</h2>
               
               {myLeaveRequests.length === 0 ? (
@@ -1641,7 +1641,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   No submitted leave or OD applications found.
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-2xl border border-slate-150 scroll-touch">
+                <div className="overflow-x-auto rounded-xl border border-slate-150 scroll-touch">
                   <table className="w-full border-collapse text-left text-xs min-w-[600px]">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
@@ -1690,7 +1690,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
         {/* Tab 5: Exams & Seating */}
         {activeTab === "exams" && (
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-6 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3">
               <div>
                 <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Examination Schedule & Tickets</h2>
@@ -1707,7 +1707,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </button>
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-slate-250 scroll-touch">
+            <div className="overflow-x-auto rounded-xl border border-slate-250 scroll-touch">
               <table className="w-full border-collapse text-left text-xs min-w-[600px]">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
@@ -1750,7 +1750,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
         {/* Tab 6: Library OPAC Finder */}
         {activeTab === "library" && (
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-6 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -1775,7 +1775,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-slate-250 scroll-touch">
+            <div className="overflow-x-auto rounded-xl border border-slate-250 scroll-touch">
               <table className="w-full border-collapse text-left text-xs min-w-[650px]">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
@@ -1835,7 +1835,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           if (feeLoading) return <div className="py-16 text-center text-sm text-slate-400">Loading your fee details…</div>;
 
           if (!feeData) return (
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm font-sans">
+            <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm font-sans">
               <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Fees & Online Payments</h2>
               <p className="text-[11px] text-slate-450 mt-1">Could not load fee data. Try refreshing.</p>
               <button onClick={fetchFeeData} className="px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold cursor-pointer">Retry</button>
@@ -1853,20 +1853,20 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   { label: "Due", value: fmtR(stats.totalOutstanding), color: "text-slate-500", bg: "bg-slate-50" },
                   { label: "Status", value: stats.unpaidCount > 0 ? `${stats.unpaidCount} Unpaid` : "All Clear Yes", color: stats.unpaidCount > 0 ? "text-[#D528A2]" : "text-[#F4A863]", bg: "bg-slate-50" },
                 ].map(({ label, value, color, bg }) => (
-                  <div key={label} className={`rounded-2xl p-3.5 border border-slate-100 ${bg}`}>
+                  <div key={label} className={`rounded-xl p-3.5 border border-slate-100 ${bg}`}>
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
                     <p className={`text-base font-extrabold mt-1 ${color}`}>{value}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-3xl p-5 space-y-3 shadow-sm">
+              <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 shadow-sm">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider">Fee Breakdown</h3>
                   <button onClick={fetchFeeData} className="p-1.5 rounded-xl border border-slate-200 text-slate-400 hover:text-[#D528A2] cursor-pointer transition-colors"><RefreshCw className="h-3 w-3" /></button>
                 </div>
                 {fees.map((fee: any) => (
-                  <div key={fee.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl border border-slate-150 bg-slate-50/50 gap-3">
+                  <div key={fee.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-150 bg-slate-50/50 gap-3">
                     <div className="space-y-0.5">
                       <h4 className="text-xs font-extrabold text-slate-800">{fee.term_name}</h4>
                       <div className="flex items-center gap-3 text-[10px] text-slate-450 font-bold">
@@ -1899,7 +1899,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
 
               {payments.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
+                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
                   <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-4">Payment History</h3>
                   <div className="space-y-2">
                     {[...payments].sort((a: any, b: any) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()).map((p: any) => (
@@ -1921,7 +1921,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
               {feePayModal && (
                 <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                  <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-7">
+                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-7">
                     {feePaySuccess ? (
                       <div className="text-center space-y-4">
                         <div className="h-14 w-14 rounded-full bg-slate-100 flex items-center justify-center mx-auto">
@@ -1929,7 +1929,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         </div>
                         <h3 className="text-lg font-extrabold text-slate-800">Payment Successful!</h3>
                         <p className="text-sm text-slate-500">Receipt No: <span className="font-bold text-[#D528A2]">{feePaySuccess}</span></p>
-                        <button onClick={() => setFeePayModal(null)} className="w-full py-3 rounded-2xl btn-gradient text-white font-bold cursor-pointer transition-colors">Close</button>
+                        <button onClick={() => setFeePayModal(null)} className="w-full py-3 rounded-xl btn-gradient text-white font-bold cursor-pointer transition-colors">Close</button>
                       </div>
                     ) : (
                       <>
@@ -1958,8 +1958,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             </div>
                           </div>
                           <div className="flex gap-3 pt-1">
-                            <button onClick={() => setFeePayModal(null)} className="flex-1 py-2.5 rounded-2xl border border-slate-200 text-sm font-bold text-slate-600 cursor-pointer hover:bg-slate-50">Cancel</button>
-                            <button onClick={handleFeePayment} disabled={!feePayAmount || feePaySubmitting} className="flex-1 py-2.5 rounded-2xl btn-gradient text-white text-sm font-bold cursor-pointer disabled:opacity-50">
+                            <button onClick={() => setFeePayModal(null)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 cursor-pointer hover:bg-slate-50">Cancel</button>
+                            <button onClick={handleFeePayment} disabled={!feePayAmount || feePaySubmitting} className="flex-1 py-2.5 rounded-xl btn-gradient text-white text-sm font-bold cursor-pointer disabled:opacity-50">
                               {feePaySubmitting ? "Processing…" : "Confirm Payment"}
                             </button>
                           </div>
@@ -1977,7 +1977,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         {activeTab === "tracker" && (
           <div className="space-y-6 font-sans">
             {/* Dropdown select for Subject */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-wrap gap-4 items-center justify-between">
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-wrap gap-4 items-center justify-between">
               <div className="space-y-1.5 flex-grow max-w-md">
                 <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Select Course Subject</label>
                 <select
@@ -1991,7 +1991,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   {studentSubjects.length === 0 && <option value="">No subjects in this semester</option>}
                 </select>
               </div>
-              <div className="bg-indigo-50/50 border border-indigo-100 px-4 py-3 rounded-2xl max-w-sm text-right shrink-0">
+              <div className="bg-indigo-50/50 border border-indigo-100 px-4 py-3 rounded-xl max-w-sm text-right shrink-0">
                 <div className="text-[10px] text-indigo-700 font-extrabold uppercase">Tracker Academic Session</div>
                 <div className="text-xs font-bold text-slate-800 mt-0.5">{studentClassDetails.sem} • {studentClassDetails.year}</div>
               </div>
@@ -2017,7 +2017,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 const isSubmitting = submittingUrlMap[wk] || false;
 
                 return (
-                  <div key={wk} className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs space-y-4 hover:shadow-sm transition-all duration-200">
+                  <div key={wk} className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4 hover:shadow-sm transition-all duration-200">
                     <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
                       <div className="flex items-center gap-2">
                         <span className="h-6.5 w-6.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 font-black text-xs flex items-center justify-center">
@@ -2110,7 +2110,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                                  {currentUrl && !editSubmissionMode[wk] ? (
                                    <div className="space-y-3 mt-2">
-                                     <div className="rounded-2xl border border-slate-150 p-4 bg-slate-50/50 space-y-3 shadow-xs">
+                                     <div className="rounded-xl border border-slate-150 p-4 bg-slate-50/50 space-y-3 shadow-xs">
                                        <div className="flex items-start justify-between gap-3">
                                          <div className="space-y-1 truncate">
                                            <span className="text-[8px] text-slate-400 font-extrabold uppercase tracking-wider block">Submitted Link / File</span>
@@ -2325,7 +2325,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                           {/* Feedback */}
                           {entry?.viva_assessment && (
-                            <div className="bg-indigo-50/50 border border-indigo-100/50 p-3 rounded-2xl space-y-1">
+                            <div className="bg-indigo-50/50 border border-indigo-100/50 p-3 rounded-xl space-y-1">
                               <span className="text-[9px] text-indigo-700 font-extrabold uppercase tracking-wider block">Faculty Feedback (VIVA / Assessment)</span>
                               <p className="text-[11px] font-semibold text-indigo-950 italic leading-relaxed">
                                 &ldquo;{entry.viva_assessment}&rdquo;
@@ -2354,7 +2354,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           return (
             <form onSubmit={handleSaveProfile} className="space-y-6 font-sans">
               {/* Access Controller Banner */}
-              <div className="flex justify-between items-center bg-white p-4.5 rounded-3xl border border-slate-100 shadow-sm flex-wrap gap-4">
+              <div className="flex justify-between items-center bg-white p-4.5 rounded-xl border border-slate-100 shadow-sm flex-wrap gap-4">
                 <div className="flex items-center gap-3">
                   <div className={`p-2.5 rounded-xl ${isProfileEditAllowed ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
                     {isProfileEditAllowed ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
@@ -2384,7 +2384,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
               {/* Editing Action Row */}
               {isEditingProfile && (
-                <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-150 p-4.5 rounded-3xl justify-end flex-wrap">
+                <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-150 p-4.5 rounded-xl justify-end flex-wrap">
                   <span className="text-xs font-bold text-indigo-850 mr-auto">
                      You are in editing mode. Save your changes to persist them to the database.
                   </span>
@@ -2807,19 +2807,19 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <div className="bg-pastel-blue p-7 rounded-dribbble-panel border-transparent shadow-sm space-y-6">
                 <h3 className="text-xs font-black text-slate-555 uppercase tracking-widest font-sans">Attendance Performance Stats</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
-                  <div className="p-4 bg-white/80 rounded-2xl border border-slate-100/40">
+                  <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                     <span className="text-3xl font-extrabold text-slate-900">{overallPercentage.toFixed(1)}%</span>
                     <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Average Attendance</span>
                   </div>
-                  <div className="p-4 bg-white/80 rounded-2xl border border-slate-100/40">
+                  <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                     <span className="text-3xl font-extrabold text-slate-900">{(overallPercentage / 20).toFixed(2)}</span>
                     <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Attendance GPA</span>
                   </div>
-                  <div className="p-4 bg-white/80 rounded-2xl border border-slate-100/40">
+                  <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                     <span className="text-3xl font-extrabold text-slate-900">{totalClasses}</span>
                     <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Total Slots Marked</span>
                   </div>
-                  <div className="p-4 bg-white/80 rounded-2xl border border-slate-105/40">
+                  <div className="p-4 bg-white/80 rounded-xl border border-slate-105/40">
                     <span className="text-3xl font-extrabold text-slate-900">{presentClasses}</span>
                     <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Present Intervals</span>
                   </div>

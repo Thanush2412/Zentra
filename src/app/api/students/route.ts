@@ -154,8 +154,15 @@ export async function POST(request: Request) {
       }
 
       const stEmail = (email || `${stId.toLowerCase()}@university.edu`).toString().trim();
-      const stRoll = (roll_number || stId).toString().trim();
-      const stReg = (register_number || stId).toString().trim();
+      const emailPrefix = stEmail.split("@")[0].toLowerCase();
+      let stRoll = roll_number ? String(roll_number).trim() : "";
+      if (stRoll.toLowerCase() === emailPrefix) stRoll = "";
+      let stReg = register_number ? String(register_number).trim() : "";
+      if (stReg.toLowerCase() === emailPrefix) stReg = "";
+
+      // Fallback if neither exists: keep clean reg/roll or use raw ID only if valid alphanumeric reg format
+      if (!stReg && stRoll) stReg = stRoll;
+      if (!stRoll && stReg) stRoll = stReg;
 
       await db.run(
         `INSERT OR REPLACE INTO students (

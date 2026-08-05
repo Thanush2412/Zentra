@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useMemo } from "react";
 import { useApp } from "../context/AppContext";
@@ -1015,7 +1015,7 @@ export function DemoAllocationDashboard() {
       </div>
 
       {/* Filters Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-4 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-4 rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
         <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
           
           {/* College Dropdown */}
@@ -1074,7 +1074,7 @@ export function DemoAllocationDashboard() {
       </div>
 
       {/* 🔹 DYNAMIC TIMETABLE TABLE */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-855 rounded-3xl shadow-sm overflow-auto max-h-[70vh] w-full no-scrollbar relative">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-855 rounded-xl shadow-sm overflow-auto max-h-[70vh] w-full no-scrollbar relative">
         <table className="w-full table-fixed border-collapse text-left min-w-[950px]">
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-955 text-xs font-bold uppercase">
@@ -1267,7 +1267,7 @@ export function DemoAllocationDashboard() {
       {/* 🔹 BOTTOM INFRASTRUCTURE CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
         {/* Card 1: Legend */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-4">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4">
           <h3 className="text-xs font-black uppercase text-slate-705 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">Legend</h3>
           <div className="grid grid-cols-2 gap-3 text-[10.5px] font-semibold text-slate-550 dark:text-slate-400">
             <div className="flex items-center gap-2">
@@ -1302,7 +1302,7 @@ export function DemoAllocationDashboard() {
         </div>
 
         {/* Card 2: Info */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3">
           <h3 className="text-xs font-black uppercase text-slate-705 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">Info</h3>
           <ul className="list-disc pl-4 text-[10.5px] text-slate-505 dark:text-slate-400 space-y-1.5 font-semibold">
             <li>Time slots are in 60 min duration</li>
@@ -1312,7 +1312,7 @@ export function DemoAllocationDashboard() {
         </div>
 
         {/* Card 3: Beyond College Hours */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-805 rounded-2xl p-5 shadow-xs space-y-3 flex flex-col justify-between">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-805 rounded-xl p-5 shadow-xs space-y-3 flex flex-col justify-between">
           <div>
             <h3 className="text-xs font-black uppercase text-slate-705 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-1.5">
               <Moon className="h-3.5 w-3.5 text-indigo-505" />
@@ -1335,7 +1335,7 @@ export function DemoAllocationDashboard() {
       {/* 🔹 AUTOMATED GENERATION PREVIEW MODAL */}
       {showPreviewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 rounded-3xl p-6 w-full max-w-2xl shadow-2xl relative animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+          <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 rounded-xl p-6 w-full max-w-2xl shadow-2xl relative animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
             
             <button
               onClick={() => { if(!isGenerating) setShowPreviewModal(false); }}
@@ -1373,7 +1373,7 @@ export function DemoAllocationDashboard() {
                   </div>
                   
                   {/* Visual checklist indicators */}
-                  <div className="w-full max-w-xs bg-slate-50 dark:bg-slate-855 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-505 dark:text-slate-405 space-y-2 text-left">
+                  <div className="w-full max-w-xs bg-slate-50 dark:bg-slate-855 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-505 dark:text-slate-405 space-y-2 text-left">
                     <div className="flex items-center gap-2 text-emerald-600">
                       <CheckCircle className="h-3.5 w-3.5" /> Checked college shift timings
                     </div>
@@ -1389,7 +1389,7 @@ export function DemoAllocationDashboard() {
                 /* RESULTS COMPLETED STATE */
                 <div className="space-y-4">
                   {/* Scanned Metrics Grid */}
-                  <div className="grid grid-cols-3 gap-3 bg-slate-50 dark:bg-slate-850/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 text-center">
+                  <div className="grid grid-cols-3 gap-3 bg-slate-50 dark:bg-slate-850/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800 text-center">
                     <div className="p-1">
                       <span className="text-[8.5px] font-black uppercase text-slate-400 tracking-wider block">Available Mentors</span>
                       <span className="text-base font-black text-slate-850 block">{filteredMentors.length}</span>
@@ -1437,7 +1437,7 @@ export function DemoAllocationDashboard() {
                       </h4>
                       <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
                         {exceptions.map(exc => (
-                          <div key={exc.id} className="p-3 bg-rose-50/20 dark:bg-rose-950/10 border border-rose-150/40 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                          <div key={exc.id} className="p-3 bg-rose-50/20 dark:bg-rose-950/10 border border-rose-150/40 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                             <div className="text-[10.5px]">
                               <p className="font-bold text-slate-800 dark:text-slate-200">
                                 {exc.mentorName} • <span className="text-slate-400 font-semibold">{exc.subject}</span>
@@ -1477,7 +1477,7 @@ export function DemoAllocationDashboard() {
                   {/* Generated sessions preview ledger list */}
                   <div className="space-y-2">
                     <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Generated Sessions Ledger Preview</h4>
-                    <div className="border border-slate-150 rounded-2xl overflow-hidden max-h-[200px] overflow-y-auto">
+                    <div className="border border-slate-150 rounded-xl overflow-hidden max-h-[200px] overflow-y-auto">
                       <table className="w-full text-left border-collapse text-[10.5px]">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-155 text-slate-405 font-bold uppercase text-[9px]">
@@ -1543,7 +1543,7 @@ export function DemoAllocationDashboard() {
       {/* 🔹 DEPARTMENT RULES SETTINGS MODAL */}
       {showSettingsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4 flex flex-col max-h-[85vh]">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4 flex flex-col max-h-[85vh]">
 
             <button
               onClick={() => setShowSettingsModal(false)}
@@ -1579,7 +1579,7 @@ export function DemoAllocationDashboard() {
                 const isDirty = localVal !== dbVal;
 
                 return (
-                  <div key={groupName} className="grid grid-cols-[1fr_80px_56px] gap-3 items-center p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-150 dark:border-slate-800">
+                  <div key={groupName} className="grid grid-cols-[1fr_80px_56px] gap-3 items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-150 dark:border-slate-800">
                     <div className="space-y-0.5 min-w-0">
                       <span className="text-xs font-black text-slate-800 dark:text-slate-100 block truncate">{groupName}</span>
                       <span className="text-[8.5px] text-slate-400 font-semibold block">
@@ -1643,7 +1643,7 @@ export function DemoAllocationDashboard() {
       {/* MANUAL OVERRIDE / CREATE MODAL */}
       {editSession !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-5">
+          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-5">
             
             <button
               onClick={setEditSession.bind(null, null)}
@@ -1806,7 +1806,7 @@ export function DemoAllocationDashboard() {
       {/* 🔹 CELL DETAILS POPUP / VIEW MENTORS DRAWER */}
       {cellPopover !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4">
             
             <button
               onClick={setCellPopover.bind(null, null)}
@@ -1922,7 +1922,7 @@ export function DemoAllocationDashboard() {
       {/* 🔹 SWAP REQUESTS RESOLUTION MODAL */}
       {showSwapRequestsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-2xl shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-5 flex flex-col max-h-[85vh]">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-2xl shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-5 flex flex-col max-h-[85vh]">
 
             <button
               onClick={() => setShowSwapRequestsModal(false)}
@@ -1970,7 +1970,7 @@ export function DemoAllocationDashboard() {
                     return (
                       <div
                         key={req.id}
-                        className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-800 space-y-3.5"
+                        className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-800 space-y-3.5"
                       >
                         <div className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-2">
                           <div>
@@ -2077,7 +2077,7 @@ export function DemoAllocationDashboard() {
                 )
               ) : (
                 demoSwapRequests.filter((r: any) => r.status !== "pending").length > 0 ? (
-                  <div className="border border-slate-150 dark:border-slate-800 rounded-2xl overflow-hidden">
+                  <div className="border border-slate-150 dark:border-slate-800 rounded-xl overflow-hidden">
                     <table className="w-full text-left border-collapse text-[11px]">
                       <thead>
                         <tr className="bg-slate-50 dark:bg-slate-850 text-slate-405 font-black uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">

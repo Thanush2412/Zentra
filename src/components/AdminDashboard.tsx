@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useApp, SHIFT_TIME_SLOTS, Slot, Mentor, AuditLog, College, Subject, Department } from "@/context/AppContext";
@@ -2242,7 +2242,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 {/* Floating Dropdown Outside (To the right) on Hover */}
-                <div className="invisible opacity-0 group-hover/nav-group:visible group-hover/nav-group:opacity-100 absolute left-full top-0 ml-2 bg-white border border-gray-250 rounded-2xl shadow-xl p-3 min-w-[210px] z-50 space-y-2 border-l-4 border-l-[#D528A2] transition-all duration-150 transform translate-x-2 group-hover/nav-group:translate-x-0 pointer-events-auto">
+                <div className="invisible opacity-0 group-hover/nav-group:visible group-hover/nav-group:opacity-100 absolute left-full top-0 ml-2 bg-white border border-gray-250 rounded-xl shadow-xl p-3 min-w-[210px] z-50 space-y-2 border-l-4 border-l-[#D528A2] transition-all duration-150 transform translate-x-2 group-hover/nav-group:translate-x-0 pointer-events-auto">
                   <div className="px-2.5 py-1 text-[10px] font-black text-[#D528A2] uppercase tracking-wider border-b border-[#D528A2]/10 pb-1.5 mb-1.5">
                     {group.title}
                   </div>
@@ -2316,9 +2316,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("courses")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-550 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-550 shrink-0 group-hover:scale-105 transition-transform">
                   <Network className="h-5 w-5" />
                 </div>
                 <div>
@@ -2330,9 +2330,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("subjects")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-teal-50 flex items-center justify-center text-teal-600 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 shrink-0 group-hover:scale-105 transition-transform">
                   <GraduationCap className="h-5 w-5" />
                 </div>
                 <div>
@@ -2344,9 +2344,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("kams")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-550 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-550 shrink-0 group-hover:scale-105 transition-transform">
                   <Briefcase className="h-5 w-5" />
                 </div>
                 <div>
@@ -2358,9 +2358,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("cams")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0 group-hover:scale-105 transition-transform">
                   <Users className="h-5 w-5" />
                 </div>
                 <div>
@@ -2372,9 +2372,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("smes")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-500 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500 shrink-0 group-hover:scale-105 transition-transform">
                   <BookOpen className="h-5 w-5" />
                 </div>
                 <div>
@@ -2386,9 +2386,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("users")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-600 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 shrink-0 group-hover:scale-105 transition-transform">
                   <ShieldCheck className="h-5 w-5" />
                 </div>
                 <div>
@@ -2400,9 +2400,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("holidays")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-orange-50 flex items-center justify-center text-orange-600 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600 shrink-0 group-hover:scale-105 transition-transform">
                   <Calendar className="h-5 w-5" />
                 </div>
                 <div>
@@ -2414,9 +2414,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("announcements")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
-                <div className="h-10 w-10 rounded-2xl bg-pink-50 flex items-center justify-center text-pink-500 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-pink-50 flex items-center justify-center text-pink-500 shrink-0 group-hover:scale-105 transition-transform">
                   <Megaphone className="h-5 w-5" />
                 </div>
                 <div>
@@ -2428,9 +2428,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("logs")}
-                className="p-5 bg-white border border-slate-200 rounded-3xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group sm:col-span-2"
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group sm:col-span-2"
               >
-                <div className="h-10 w-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                   <History className="h-5 w-5" />
                 </div>
                 <div>
@@ -2463,7 +2463,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {/* ── KPI Stats Row (Visible on campuses tab only) ── */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
               {/* Card 1 */}
-              <div className="bg-white border border-gray-150 rounded-2xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
+              <div className="bg-white border border-gray-150 rounded-xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-8 w-8 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
                     <Building2 className="h-4 w-4 text-indigo-500" />
@@ -2475,7 +2475,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {/* Card 2 */}
-              <div className="bg-white border border-gray-150 rounded-2xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
+              <div className="bg-white border border-gray-150 rounded-xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-8 w-8 rounded-xl bg-teal-50 flex items-center justify-center shrink-0">
                     <Users className="h-4 w-4 text-teal-600" />
@@ -2487,7 +2487,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {/* Card 3 */}
-              <div className="bg-white border border-gray-150 rounded-2xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
+              <div className="bg-white border border-gray-150 rounded-xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-8 w-8 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
                     <Grid className="h-4 w-4 text-amber-500" />
@@ -2510,7 +2510,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {/* Card 4 */}
-              <div className="bg-white border border-gray-150 rounded-2xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
+              <div className="bg-white border border-gray-150 rounded-xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-8 w-8 rounded-xl bg-rose-50 flex items-center justify-center shrink-0">
                     <Layers className="h-4 w-4 text-rose-500" />
@@ -2525,14 +2525,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
 
         {/* TABS CONTAINER */}
-        <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm min-h-[400px]">
+        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm min-h-[400px]">
           {/* ── Tab: Overview ── */}
           {activeTab === "overview" && (
             <div className="space-y-8 animate-fadeIn text-xs">
               {/* Split Screen: Campuses Summary & Reporting Hierarchy */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {/* Campuses Overview Card */}
-                <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-xs flex flex-col">
+                <div className="bg-white border border-gray-150 rounded-xl p-5 shadow-xs flex flex-col">
                   <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
                     <Building2 className="h-5 w-5 text-indigo-650" />
                     <h3 className="text-sm font-bold text-gray-900">Campus Breakdown</h3>
@@ -2565,7 +2565,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 {/* Hierarchy Quick Tree */}
-                <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-xs flex flex-col">
+                <div className="bg-white border border-gray-150 rounded-xl p-5 shadow-xs flex flex-col">
                   <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
                     <Network className="h-5 w-5 text-indigo-655" />
                     <h3 className="text-sm font-bold text-gray-900">System Hierarchy</h3>
@@ -2573,7 +2573,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <p className="text-[10px] text-gray-450 font-semibold mb-3 leading-relaxed">
                     Interactive Reporting Chain of Command (Super Admin → Key Account Managers → Campuses)
                   </p>
-                  <div className="bg-gray-50 border border-gray-150 rounded-2xl p-4 shadow-inner space-y-3 max-h-[300px] overflow-y-auto text-xs">
+                  <div className="bg-gray-50 border border-gray-150 rounded-xl p-4 shadow-inner space-y-3 max-h-[300px] overflow-y-auto text-xs">
                     {/* Super Admin Level */}
                     <div className="space-y-2">
                       <div
@@ -2629,7 +2629,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {/* Recent Audit Logs Summary */}
-              <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-xs">
+              <div className="bg-white border border-gray-150 rounded-xl p-5 shadow-xs">
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
                   <div className="flex items-center gap-2">
                     <History className="h-5 w-5 text-indigo-650" />
@@ -2693,10 +2693,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* ── UNFINISHED DRAFT CARD ── */}
                 {draftLastSaved && (
-                  <div className="lg:col-span-3 bg-white p-6 rounded-2xl border-2 border-amber-200/90 shadow-sm space-y-4 relative overflow-hidden animate-fadeIn">
+                  <div className="lg:col-span-3 bg-white p-6 rounded-xl border-2 border-amber-200/90 shadow-sm space-y-4 relative overflow-hidden animate-fadeIn">
                     <div className="flex items-center justify-between flex-wrap gap-4 border-b border-gray-100 pb-4">
                       <div className="flex items-center gap-3.5">
-                        <div className="p-3 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200">
+                        <div className="p-3 rounded-xl bg-amber-50 text-amber-600 border border-amber-200">
                           <Sparkles className="h-5 w-5 text-amber-600 animate-pulse" />
                         </div>
                         <div>
@@ -2768,7 +2768,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   };
 
                   return (
-                    <div key={col.id} className="p-6 rounded-2xl border border-gray-200 bg-white hover:shadow-md transition-all flex flex-col justify-between min-h-[320px] relative overflow-hidden group">
+                    <div key={col.id} className="p-6 rounded-xl border border-gray-200 bg-white hover:shadow-md transition-all flex flex-col justify-between min-h-[320px] relative overflow-hidden group">
                       {/* Shift badge in top-right corner with 12px padding */}
                       <div className="absolute top-3 right-3">
                         <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${col.has_shifts === 0
@@ -2871,7 +2871,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               </div>
 
-              <div className="overflow-x-auto rounded-2xl border border-gray-200">
+              <div className="overflow-x-auto rounded-xl border border-gray-200">
                 <table className="w-full border-collapse text-left text-xs">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
@@ -2947,7 +2947,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {/* ── Charts Row ── */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Donut: Mentors Overview */}
-                <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm space-y-3">
+                <div className="bg-white border border-gray-150 rounded-xl p-5 shadow-sm space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-bold text-gray-900">Mentors Overview</h3>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold">This Month</span>
@@ -2994,7 +2994,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 {/* Line: Scheduled Hours Trend */}
-                <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm space-y-3">
+                <div className="bg-white border border-gray-150 rounded-xl p-5 shadow-sm space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-bold text-gray-900">Scheduled Hours Trend</h3>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold">This Month</span>
@@ -3020,7 +3020,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 {/* System Activity feed */}
-                <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-sm space-y-3">
+                <div className="bg-white border border-gray-150 rounded-xl p-5 shadow-sm space-y-3">
                   <h3 className="text-sm font-bold text-gray-900">System Activity</h3>
                   <div className="space-y-3">
                     {[
@@ -3066,7 +3066,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               </div>
 
-              <div className="overflow-x-auto rounded-2xl border border-gray-200">
+              <div className="overflow-x-auto rounded-xl border border-gray-200">
                 <table className="w-full border-collapse text-left text-xs">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
@@ -3209,7 +3209,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-2xl border border-gray-200">
+              <div className="overflow-x-auto rounded-xl border border-gray-200">
                 <table className="w-full border-collapse text-left text-xs min-w-[850px]">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase tracking-wider">
@@ -3352,7 +3352,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   });
 
                   return (
-                    <div key={col.id} className="border border-gray-200 rounded-2xl bg-white shadow-sm overflow-hidden">
+                    <div key={col.id} className="border border-gray-200 rounded-xl bg-white shadow-sm overflow-hidden">
                       {/* College section header */}
                       <div className="p-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <button
@@ -3798,7 +3798,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {subjectsSubTab === "catalog" ? (
                 <>
                   {/* Filters Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-gray-150 rounded-2xl shadow-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-gray-150 rounded-xl shadow-xs">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                       <input
@@ -3844,7 +3844,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
 
                   {/* Subjects Table */}
-                  <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm bg-white">
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm bg-white">
                     <table className="w-full border-collapse text-left text-xs min-w-[700px]">
                       <thead>
                         <tr className="bg-gray-55 border-b border-gray-200 text-gray-555 font-bold uppercase text-[9px] tracking-wider">
@@ -3970,7 +3970,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </>
               ) : (
                 <div className="space-y-6">
-                  <div className="flex justify-between items-center bg-white p-4 border border-gray-150 rounded-2xl shadow-xs">
+                  <div className="flex justify-between items-center bg-white p-4 border border-gray-150 rounded-xl shadow-xs">
                     <div>
                       <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Configured Mentor Groups</h3>
                       <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Create custom groups to cluster mentors and SMEs (e.g. Technical, Aptitude, Soft Skills) and allocate demo sessions.</p>
@@ -3984,7 +3984,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </button>
                   </div>
 
-                  <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm bg-white">
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm bg-white">
                     <table className="w-full border-collapse text-left text-xs min-w-[600px]">
                       <thead>
                         <tr className="bg-gray-55 border-b border-gray-200 text-gray-555 font-bold uppercase text-[9px] tracking-wider">
@@ -4099,12 +4099,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {filteredSlots.length === 0 ? (
-                <div className="text-center py-16 border border-gray-200 rounded-2xl bg-gray-55/50">
+                <div className="text-center py-16 border border-gray-200 rounded-xl bg-gray-55/50">
                   <Grid className="h-10 w-10 text-gray-300 mx-auto mb-2" />
                   <p className="text-sm text-gray-555 font-semibold">No slot schedules matched your filter query.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
                   <table className="w-full border-collapse text-left text-xs min-w-[850px]">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
@@ -4184,7 +4184,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </p>
 
               {/* Tree Start */}
-              <div className="bg-gray-50 border border-gray-150 rounded-2xl p-6 shadow-inner space-y-4 text-xs select-none">
+              <div className="bg-gray-50 border border-gray-150 rounded-xl p-6 shadow-inner space-y-4 text-xs select-none">
                 {/* Level 0: Super Admin */}
                 <div className="space-y-2">
                   <div
@@ -4302,12 +4302,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {filteredLogs.length === 0 ? (
-                <div className="text-center py-16 border border-gray-200 rounded-2xl bg-gray-55/50">
+                <div className="text-center py-16 border border-gray-200 rounded-xl bg-gray-55/50">
                   <ShieldAlert className="h-10 w-10 text-gray-300 mx-auto mb-2" />
                   <p className="text-sm text-gray-555 font-semibold">No audit logs found matching your query.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
                   <table className="w-full border-collapse text-left text-xs min-w-[700px]">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
@@ -4374,7 +4374,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {announcements.length === 0 ? (
-                <div className="text-center py-16 border border-gray-205 rounded-2xl bg-gray-55/50">
+                <div className="text-center py-16 border border-gray-205 rounded-xl bg-gray-55/50">
                   <Megaphone className="h-10 w-10 text-gray-300 mx-auto mb-2" />
                   <p className="text-sm text-gray-555 font-semibold">No announcements published yet.</p>
                 </div>
@@ -4383,7 +4383,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {announcements.map((ann) => {
                     const targetCampus = colleges.find(c => c.id === ann.college_id)?.name || "All Campuses";
                     return (
-                      <div key={ann.id} className="p-6 bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition-all relative flex flex-col justify-between">
+                      <div key={ann.id} className="p-6 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all relative flex flex-col justify-between">
                         <div className="space-y-3">
                           <div className="flex justify-between items-start gap-4">
                             <h3 className="text-sm font-bold text-gray-900 leading-snug">{ann.title}</h3>
@@ -4444,12 +4444,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {holidays.length === 0 ? (
-                <div className="text-center py-16 border border-gray-205 rounded-2xl bg-gray-55/50">
+                <div className="text-center py-16 border border-gray-205 rounded-xl bg-gray-55/50">
                   <Calendar className="h-10 w-10 text-gray-300 mx-auto mb-2" />
                   <p className="text-sm text-gray-555 font-semibold">No holidays scheduled.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
                   <table className="w-full border-collapse text-left text-xs">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
@@ -4537,7 +4537,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {userSubTab === "directory" ? (
                   <div className="space-y-4">
                     {/* Role Filter & Control Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-gray-150 rounded-2xl shadow-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-gray-150 rounded-xl shadow-xs">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {[
                           { id: "all", label: "All Roles" },
@@ -4606,7 +4606,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       if (filteredUsers.length === 0) {
                         return (
-                          <div className="text-center py-16 border border-gray-200 rounded-2xl bg-gray-55/50">
+                          <div className="text-center py-16 border border-gray-200 rounded-xl bg-gray-55/50">
                             <Users className="h-10 w-10 text-gray-300 mx-auto mb-2" />
                             <p className="text-sm text-gray-555 font-semibold">No user credentials found matching your filter query.</p>
                           </div>
@@ -4614,7 +4614,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       }
 
                       return (
-                        <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm bg-white">
+                        <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm bg-white">
                           <table className="w-full border-collapse text-left text-xs min-w-[700px]">
                             <thead>
                               <tr className="bg-gray-55 border-b border-gray-200 text-gray-555 font-bold uppercase text-[9px] tracking-wider">
@@ -4726,7 +4726,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     })()}
                   </div>
                 ) : (
-                  <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                  <div className="overflow-x-auto rounded-xl border border-gray-200">
                     <table className="w-full border-collapse text-left text-xs">
                       <thead>
                         <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
@@ -4820,7 +4820,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {/* Approval Mapping Modal */}
                 {showApprovalModal && approvingSignup && (
                   <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-gray-150 overflow-hidden animate-scaleIn font-sans">
+                    <div className="bg-white rounded-xl max-w-md w-full shadow-2xl border border-gray-150 overflow-hidden animate-scaleIn font-sans">
                       <div className="p-6 border-b border-gray-150 flex justify-between items-center bg-gray-50">
                         <div>
                           <h3 className="text-base font-black text-gray-900">Approve & Map User Request</h3>
@@ -4839,7 +4839,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       <form onSubmit={handleApproveSignupSubmit} className="p-6 space-y-4 text-xs font-semibold">
                         {/* User Details */}
-                        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200/50 space-y-1">
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/50 space-y-1">
                           <div className="flex justify-between">
                             <span className="text-gray-500">Name:</span>
                             <span className="text-gray-900 font-bold">{approvingSignup.name}</span>
@@ -5052,7 +5052,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               </div>
 
-              <div className="overflow-x-auto rounded-2xl border border-gray-200">
+              <div className="overflow-x-auto rounded-xl border border-gray-200">
                 <table className="w-full border-collapse text-left text-xs">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
@@ -5122,12 +5122,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {loginHistory.length === 0 ? (
-                <div className="text-center py-16 border border-gray-205 rounded-2xl bg-gray-55/50">
+                <div className="text-center py-16 border border-gray-205 rounded-xl bg-gray-55/50">
                   <History className="h-10 w-10 text-gray-300 mx-auto mb-2" />
                   <p className="text-sm text-gray-555 font-semibold">No login sessions recorded.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
                   <table className="w-full border-collapse text-left text-xs">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase">
@@ -5166,7 +5166,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* ── Campus Modal ── */}
         {showCampusModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-            <div className={`bg-white rounded-3xl border border-gray-150 shadow-xl w-full overflow-hidden animate-slideUp flex flex-col my-auto max-h-[90vh] transition-all duration-300 ${campusWizardStep === 3 ? "max-w-5xl" : "max-w-2xl"}`}>
+            <div className={`bg-white rounded-xl border border-gray-150 shadow-xl w-full overflow-hidden animate-slideUp flex flex-col my-auto max-h-[90vh] transition-all duration-300 ${campusWizardStep === 3 ? "max-w-5xl" : "max-w-2xl"}`}>
               {/* Modal Header */}
               <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
                 <div className="flex items-center gap-3">
@@ -5238,7 +5238,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         setCampusSuccessCreatedId(null);
                         setActiveTab("campuses");
                       }}
-                      className="flex flex-col items-center gap-1.5 p-4 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 rounded-2xl transition-all cursor-pointer group"
+                      className="flex flex-col items-center gap-1.5 p-4 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 rounded-xl transition-all cursor-pointer group"
                     >
                       <Building2 className="h-5 w-5 text-indigo-650 group-hover:scale-110 transition-transform" />
                       <span className="text-xs font-extrabold text-indigo-700">Open Campus</span>
@@ -5252,7 +5252,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         setCamForm({ id: "", name: "", email: "", college_id: campusSuccessCreatedId, kam_id: "" });
                         setEditingCam(false);
                       }}
-                      className="flex flex-col items-center gap-1.5 p-4 bg-violet-50 hover:bg-violet-100 border border-violet-150 rounded-2xl transition-all cursor-pointer group"
+                      className="flex flex-col items-center gap-1.5 p-4 bg-violet-50 hover:bg-violet-100 border border-violet-150 rounded-xl transition-all cursor-pointer group"
                     >
                       <Users className="h-5 w-5 text-violet-650 group-hover:scale-110 transition-transform" />
                       <span className="text-xs font-extrabold text-violet-700">Add Campus Manager</span>
@@ -5264,7 +5264,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         setCampusSuccessCreatedId(null);
                         setShowSubjectModal(true);
                       }}
-                      className="flex flex-col items-center gap-1.5 p-4 bg-amber-50 hover:bg-amber-100 border border-amber-150 rounded-2xl transition-all cursor-pointer group"
+                      className="flex flex-col items-center gap-1.5 p-4 bg-amber-50 hover:bg-amber-100 border border-amber-150 rounded-xl transition-all cursor-pointer group"
                     >
                       <BookOpen className="h-5 w-5 text-amber-650 group-hover:scale-110 transition-transform" />
                       <span className="text-xs font-extrabold text-amber-700">Add Subjects</span>
@@ -5276,7 +5276,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         setCampusSuccessCreatedId(null);
                         setActiveTab("schedules");
                       }}
-                      className="flex flex-col items-center gap-1.5 p-4 bg-emerald-50 hover:bg-emerald-100 border border-emerald-150 rounded-2xl transition-all cursor-pointer group"
+                      className="flex flex-col items-center gap-1.5 p-4 bg-emerald-50 hover:bg-emerald-100 border border-emerald-150 rounded-xl transition-all cursor-pointer group"
                     >
                       <CalendarDays className="h-5 w-5 text-emerald-650 group-hover:scale-110 transition-transform" />
                       <span className="text-xs font-extrabold text-emerald-700">Generate Timetable</span>
@@ -5547,7 +5547,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {wizardCourses.length > 0 && (
                           <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
                             {wizardCourses.map((c, idx) => (
-                              <div key={idx} className="bg-indigo-50/40 border border-indigo-100 p-3 rounded-2xl space-y-2">
+                              <div key={idx} className="bg-indigo-50/40 border border-indigo-100 p-3 rounded-xl space-y-2">
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="space-y-1 flex-1 min-w-0">
                                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -5636,7 +5636,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         )}
 
                         {/* Add Course Sub-Form */}
-                        <div className="bg-slate-50/60 p-4 rounded-2xl border border-gray-205 space-y-3.5">
+                        <div className="bg-slate-50/60 p-4 rounded-xl border border-gray-205 space-y-3.5">
                           <div className="text-[10px] font-black text-gray-550 uppercase tracking-wider">+ Add Course</div>
 
                           {/* Course Name */}
@@ -5905,7 +5905,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </select>
                             </div>
 
-                            <div className="bg-slate-50/50 p-4 border border-gray-205 rounded-2xl space-y-3.5">
+                            <div className="bg-slate-50/50 p-4 border border-gray-205 rounded-xl space-y-3.5">
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div className="space-y-1">
                                   <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Name / Label</label>
@@ -5984,7 +5984,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                                   {/* Clock Presets Dropdown */}
                                   {showClockPresets && (
-                                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-indigo-150 rounded-2xl p-2.5 shadow-lg z-30 space-y-1.5 animate-fadeIn">
+                                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-indigo-150 rounded-xl p-2.5 shadow-lg z-30 space-y-1.5 animate-fadeIn">
                                       <div className="text-[9px] font-black text-gray-400 uppercase tracking-wider px-1">Quick Clock Presets</div>
                                       <div className="grid grid-cols-4 gap-1">
                                         {["08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM", "10:00 AM", "01:00 PM", "01:30 PM", "02:00 PM"].map(timePreset => (
@@ -6096,7 +6096,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
 
                             {/* Configured Breaks List */}
-                            <div className="space-y-3 bg-white p-4 border border-gray-205 rounded-2xl">
+                            <div className="space-y-3 bg-white p-4 border border-gray-205 rounded-xl">
                               <div className="flex items-center justify-between border-b border-gray-100 pb-2">
                                 <span className="text-[10px] uppercase font-bold text-gray-455 tracking-wider">Configured Breaks</span>
                                 <span className="text-[9px] text-indigo-500 font-bold bg-indigo-50 px-2 py-0.5 rounded-full">
@@ -6227,7 +6227,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {(() => {
                               const schedule = calculateShiftSchedule(shiftConfigsParams[activeConfigShift]);
                               return (
-                                <div className="bg-slate-900 text-white p-4.5 rounded-3xl space-y-3.5 shadow-xl border border-slate-800 animate-fadeIn">
+                                <div className="bg-slate-900 text-white p-4.5 rounded-xl space-y-3.5 shadow-xl border border-slate-800 animate-fadeIn">
                                   <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                                     <div>
                                       <div className="text-[11px] uppercase font-black tracking-wider text-indigo-300 flex items-center gap-1.5">
@@ -6243,11 +6243,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   </div>
 
                                   {schedule.error ? (
-                                    <div className="text-[10.5px] font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-2xl p-3">
+                                    <div className="text-[10.5px] font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-xl p-3">
                                       {schedule.error}
                                     </div>
                                   ) : (shiftConfigsParams[activeConfigShift].breaks.length === 0) ? (
-                                    <div className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-2xl p-3 flex items-center gap-2">
+                                    <div className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-xl p-3 flex items-center gap-2">
                                       <span>⚠️</span>
                                       <span>At least one break must be configured for this shift.</span>
                                     </div>
@@ -6289,7 +6289,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                 setDraggedBreakId(null);
                                               }
                                             }}
-                                            className={`relative flex flex-col gap-1.5 p-2.5 rounded-2xl transition-all border ${isBreak
+                                            className={`relative flex flex-col gap-1.5 p-2.5 rounded-xl transition-all border ${isBreak
                                                 ? "bg-amber-950/40 border-amber-500/30 hover:bg-amber-900/50 cursor-grab active:cursor-grabbing"
                                                 : "bg-slate-800/70 border-slate-700/60 hover:bg-slate-800"
                                               } ${draggedBreakId && matchedBreak?.id === draggedBreakId ? "opacity-40 scale-[0.98]" : ""}`}
@@ -6459,7 +6459,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
 
                         {/* Campus Info Summary */}
-                        <div className="bg-indigo-50/40 border border-indigo-100 rounded-2xl p-4 space-y-2">
+                        <div className="bg-indigo-50/40 border border-indigo-100 rounded-xl p-4 space-y-2">
                           <div className="text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-2">Campus Info</div>
                           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                             <div>
@@ -6498,7 +6498,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
 
                         {/* Courses Summary */}
-                        <div className="bg-slate-50 border border-gray-200 rounded-2xl p-4 space-y-2">
+                        <div className="bg-slate-50 border border-gray-200 rounded-xl p-4 space-y-2">
                           <div className="text-[10px] font-black text-gray-700 uppercase tracking-wider mb-2">
                             Courses ({wizardCourses.length})
                           </div>
@@ -6530,7 +6530,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
 
                         {/* Shift Summary */}
-                        <div className="bg-slate-50 border border-gray-200 rounded-2xl p-4 space-y-2">
+                        <div className="bg-slate-50 border border-gray-200 rounded-xl p-4 space-y-2">
                           <div className="text-[10px] font-black text-gray-700 uppercase tracking-wider mb-2">Shift Schedule</div>
                           {(campusForm.has_shifts === 1 ? (["shift_1", "shift_2", "general"] as const) : (["general"] as const)).map(sh => {
                             const p = shiftConfigsParams[sh];
@@ -6651,7 +6651,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {showKamModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+            <div className="bg-white rounded-xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
               <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
                 <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
                   <Briefcase className="h-5 w-5 text-indigo-655" />
@@ -6744,7 +6744,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* ── CAM Modal ── */}
         {showCamModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+            <div className="bg-white rounded-xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
               <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
                 <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
                   <Users className="h-5 w-5 text-indigo-655" />
@@ -6856,7 +6856,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* ── SME Modal ── */}
         {showSmeModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+            <div className="bg-white rounded-xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
               <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
                 <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5 font-sans">
                   <BookOpen className="h-5 w-5 text-indigo-650" />
@@ -6943,7 +6943,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* ── Mentor Modal ── */}
         {showMentorModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-lg w-full overflow-hidden animate-slideUp">
+            <div className="bg-white rounded-xl border border-gray-150 shadow-xl max-w-lg w-full overflow-hidden animate-slideUp">
               <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
                 <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
                   <Users className="h-5 w-5 text-indigo-650" />
@@ -7143,7 +7143,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {showSubjectModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className={`bg-white rounded-3xl border border-gray-150 shadow-xl w-full overflow-hidden animate-slideUp transition-all ${editingSubject ? "max-w-md" : "max-w-3xl"}`}>
+            <div className={`bg-white rounded-xl border border-gray-150 shadow-xl w-full overflow-hidden animate-slideUp transition-all ${editingSubject ? "max-w-md" : "max-w-3xl"}`}>
               <div className="flex justify-between items-center p-5 border-b border-gray-100 bg-gray-50">
                 <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
                   <GraduationCap className="h-5 w-5 text-indigo-655" />
@@ -7319,7 +7319,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     const campusMentors = mentors.filter(m => m.college_id === subjectForm.college_id);
                     if (campusMentors.length === 0) {
                       return (
-                        <div className="flex flex-col items-center justify-center p-8 bg-gray-55 border border-dashed border-gray-200 rounded-2xl h-full text-center">
+                        <div className="flex flex-col items-center justify-center p-8 bg-gray-55 border border-dashed border-gray-200 rounded-xl h-full text-center">
                           <Users className="h-8 w-8 text-gray-300 mb-2" />
                           <span className="text-[11px] text-gray-400 font-bold">No Staff on Selected Campus</span>
                           <span className="text-[9px] text-gray-400 mt-0.5">You can link staff to this subject later.</span>
@@ -7354,7 +7354,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           />
                         </div>
 
-                        <div className="flex-1 max-h-56 overflow-y-auto rounded-2xl border border-gray-200 divide-y divide-gray-100 bg-gray-55">
+                        <div className="flex-1 max-h-56 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100 bg-gray-55">
                           {filteredMentors.length === 0 ? (
                             <div className="p-4 text-center text-gray-400 text-[11px] italic">
                               No staff match "{subjectStaffSearch}"
@@ -7425,7 +7425,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* ── Course Modal ── */}
         {showDeptModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-            <div className="bg-white rounded-3xl border border-gray-150 shadow-2xl max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden animate-slideUp">
+            <div className="bg-white rounded-xl border border-gray-150 shadow-2xl max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden animate-slideUp">
               {/* Header (Fixed) */}
               <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/80 shrink-0">
                 <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
@@ -7637,7 +7637,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* ── Mentor Group Modal ── */}
         {showGroupModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+            <div className="bg-white rounded-xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
               <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
                 <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5 font-sans">
                   <Layers className="h-5 w-5 text-indigo-650" />
@@ -7784,7 +7784,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* ── Compose Announcement Modal ── */}
         {showAnnModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+            <div className="bg-white rounded-xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
               <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-55">
                 <h3 className="font-extrabold text-gray-905 text-sm flex items-center gap-1.5">
                   <Megaphone className="h-5 w-5 text-indigo-650" />
@@ -7874,7 +7874,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* ── Schedule Holiday Modal ── */}
         {showHolModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+            <div className="bg-white rounded-xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
               <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-55">
                 <h3 className="font-extrabold text-gray-905 text-sm flex items-center gap-1.5">
                   <Calendar className="h-5 w-5 text-indigo-650" />
@@ -7978,10 +7978,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* ── FACULTY BULK IMPORT PREVIEW MODAL ── */}
       {showFacultyImportModal && facultyImportPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl border border-gray-100 max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-xl max-w-4xl w-full p-6 space-y-5 shadow-2xl border border-gray-100 max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-gray-100 pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100">
+                <div className="p-3 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100">
                   <FileSpreadsheet className="h-6 w-6" />
                 </div>
                 <div>
@@ -8005,7 +8005,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             {facultyImportPreview.warnings.length > 0 && (
-              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold space-y-1">
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold space-y-1">
                 <div className="font-extrabold flex items-center gap-1.5">
                   <AlertTriangle className="h-4 w-4 text-amber-600" />
                   Validation Warnings ({facultyImportPreview.warnings.length}):
@@ -8018,7 +8018,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto border border-gray-200 rounded-2xl">
+            <div className="flex-1 overflow-y-auto border border-gray-200 rounded-xl">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-extrabold uppercase text-[10px] tracking-wider">
@@ -8101,7 +8101,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* ── User Credentials CRUD Modal ── */}
         {showUserModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
+            <div className="bg-white rounded-xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
               <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
                 <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5 font-sans">
                   <ShieldCheck className="h-5 w-5 text-indigo-650" />

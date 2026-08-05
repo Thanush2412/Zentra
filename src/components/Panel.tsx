@@ -9,7 +9,7 @@ interface PanelProps {
   headerActions?: React.ReactNode;
 }
 
-// Matches the project panel style: bg-white border border-gray-200 rounded-2xl shadow-sm
+// Matches the project panel style: bg-white border border-gray-200 rounded-xl shadow-sm
 export const Panel: React.FC<PanelProps> = ({
   children,
   className = "",
@@ -20,7 +20,7 @@ export const Panel: React.FC<PanelProps> = ({
 }) => {
   const rightSlot = headerActions ?? actions;
   return (
-    <div className={`bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md hover:border-slate-300/65 transition-all duration-300 ${className}`}>
+    <div className={`bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-slate-300/65 transition-all duration-300 ${className}`}>
       {(title || subtitle || rightSlot) && (
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-x-3 gap-y-2 px-5 py-3.5 border-b border-gray-150">
           <div className="min-w-0">

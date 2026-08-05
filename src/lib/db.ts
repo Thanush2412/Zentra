@@ -605,6 +605,42 @@ export function getDb(): Promise<TursoDbAdapter> {
       notes TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS mentor_attendance (
+      id TEXT PRIMARY KEY,
+      mentor_id TEXT NOT NULL,
+      college_id TEXT NOT NULL,
+      date_str TEXT NOT NULL,
+      status TEXT NOT NULL,
+      punch_in_time TEXT,
+      punch_out_time TEXT,
+      reason TEXT,
+      marked_by TEXT NOT NULL DEFAULT 'self',
+      marked_by_id TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (mentor_id) REFERENCES mentors(id) ON DELETE CASCADE,
+      FOREIGN KEY (college_id) REFERENCES colleges(id) ON DELETE CASCADE,
+      UNIQUE(mentor_id, date_str)
+    );
+
+    CREATE TABLE IF NOT EXISTS faculty_leave_requests (
+      id TEXT PRIMARY KEY,
+      mentor_id TEXT NOT NULL,
+      college_id TEXT NOT NULL,
+      request_type TEXT NOT NULL,
+      leave_category TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      approved_by TEXT,
+      rejection_reason TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (mentor_id) REFERENCES mentors(id) ON DELETE CASCADE,
+      FOREIGN KEY (college_id) REFERENCES colleges(id) ON DELETE CASCADE
+    );
   `);
 
   try {

@@ -26,22 +26,19 @@ export async function GET(request: Request) {
     if (toDate) {
       dateFilterFees += " AND created_at <= ?";
       dateFilterPayments += " AND payment_date <= ?";
-      // append 23:59:59 to include the whole day if toDate is just YYYY-MM-DD
       dateParams.push(toDate.includes("T") ? toDate : `${toDate}T23:59:59.999Z`);
     }
 
     if (role === "fee_manager") {
-      // Full cross-college data
       const colleges = await db.all("SELECT * FROM colleges ORDER BY name");
-      const students = await db.all("SELECT id, name, email, classGroup, department, college_id, register_number, phone, batch_start_year, batch_end_year, semester FROM students ORDER BY name");
+      const students = await db.all("SELECT id, name, email, classGroup, department, college_id, register_number, phone, batch_start_year, batch_end_year, semester, year FROM students ORDER BY name");
       const fees = await db.all(`SELECT * FROM student_fees WHERE 1=1 ${dateFilterFees} ORDER BY created_at DESC`, ...dateParams);
       const payments = await db.all(`SELECT * FROM fee_payments WHERE 1=1 ${dateFilterPayments} ORDER BY payment_date DESC`, ...dateParams);
       const cams = await db.all("SELECT cm.*, c.name as college_name FROM campus_managers cm JOIN colleges c ON cm.college_id = c.id");
 
-      // Aggregate stats
       const totalFees = fees.reduce((s: number, f: any) => s + f.amount, 0);
       const totalPaid = fees.reduce((s: number, f: any) => s + f.paid_amount, 0);
-      const totalOutstanding = totalFees - totalPaid;
+      const totalOutstanding = Math.max(totalFees - totalPaid, 0);
       const paidCount = fees.filter((f: any) => f.status === 'paid').length;
       const partialCount = fees.filter((f: any) => f.status === 'partial').length;
       const unpaidCount = fees.filter((f: any) => f.status === 'unpaid').length;
@@ -59,7 +56,7 @@ export async function GET(request: Request) {
 
       const collegeId = cam.college_id;
       const students = await db.all(
-        "SELECT id, name, email, classGroup, department, batch_start_year, batch_end_year, semester FROM students WHERE college_id = ? ORDER BY name",
+        "SELECT id, name, email, classGroup, department, batch_start_year, batch_end_year, semester, year FROM students WHERE college_id = ? ORDER BY name",
         collegeId
       );
       const studentIds = students.map((s: any) => s.id);
@@ -84,10 +81,10 @@ export async function GET(request: Request) {
         students, fees, payments,
         stats: {
           totalFees, totalPaid,
-          totalOutstanding: totalFees - totalPaid,
+          totalOutstanding: Math.max(totalFees - totalPaid, 0),
           paidCount, partialCount, unpaidCount,
           totalStudents: students.length,
-          collectionRate: totalFees > 0 ? Math.round((totalPaid / totalFees) * 100) : 0
+          collectionRate: totalFees > 0 ? Math.min(Math.round((totalPaid / totalFees) * 100), 100) : 0
         }
       });
     }
@@ -104,11 +101,11 @@ export async function GET(request: Request) {
 
       return NextResponse.json({
         success: true,
-        student: { id: student.id, name: student.name, email: student.email, classGroup: student.classGroup, department: student.department, batch_start_year: student.batch_start_year, batch_end_year: student.batch_end_year, semester: student.semester },
+        student: { id: student.id, name: student.name, email: student.email, classGroup: student.classGroup, department: student.department, batch_start_year: student.batch_start_year, batch_end_year: student.batch_end_year, semester: student.semester, year: student.year },
         fees, payments,
         stats: {
           totalFees, totalPaid,
-          totalOutstanding: totalFees - totalPaid,
+          totalOutstanding: Math.max(totalFees - totalPaid, 0),
           paidCount: fees.filter((f: any) => f.status === 'paid').length,
           partialCount: fees.filter((f: any) => f.status === 'partial').length,
           unpaidCount: fees.filter((f: any) => f.status === 'unpaid').length
@@ -123,29 +120,76 @@ export async function GET(request: Request) {
   }
 }
 
-// POST /api/fees — Process a payment or update a fee directly
+// POST /api/fees — CRUD endpoint for Semester Fees
 export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { feeId, studentId, amount, paymentMethod, referenceNo, isDirectUpdate, paidAmount, status } = body;
+    const {
+      feeId, studentId, amount, paymentMethod, referenceNo,
+      isDirectUpdate, isCreateFee, isDeleteFee,
+      paidAmount, status, termName, dueDate, payLink, paymentProof
+    } = body;
 
-    if (!feeId || !studentId) {
-      return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
+    const now = new Date().toISOString();
+
+    // 1. Create a new Semester Fee Record
+    if (isCreateFee) {
+      if (!studentId || !termName) {
+        return NextResponse.json({ success: false, message: "Missing studentId or termName" }, { status: 400 });
+      }
+
+      const student = await db.get("SELECT college_id FROM students WHERE id = ?", studentId);
+      if (!student) return NextResponse.json({ success: false, message: "Student not found" }, { status: 404 });
+
+      const newFeeId = "fee_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
+      const targetAmount = Number(amount) || 0;
+      const targetPaid = Number(paidAmount) || 0;
+      const targetStatus = status || (targetPaid >= targetAmount && targetAmount > 0 ? "paid" : targetPaid > 0 ? "partial" : "unpaid");
+
+      await db.run(
+        `INSERT INTO student_fees (id, student_id, college_id, term_name, amount, paid_amount, due_date, status, pay_link, payment_proof, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [newFeeId, studentId, student.college_id, termName, targetAmount, targetPaid, dueDate || "", targetStatus, payLink || "", paymentProof || "", now, now]
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: "Semester fee record created successfully",
+        feeId: newFeeId
+      });
+    }
+
+    // 2. Delete a Fee Record
+    if (isDeleteFee) {
+      if (!feeId) return NextResponse.json({ success: false, message: "Missing feeId" }, { status: 400 });
+      await db.run("DELETE FROM student_fees WHERE id = ?", feeId);
+      await db.run("DELETE FROM fee_payments WHERE fee_id = ?", feeId);
+      return NextResponse.json({ success: true, message: "Semester fee deleted successfully" });
+    }
+
+    // 3. Direct Update of an existing Fee Record
+    if (!feeId) {
+      return NextResponse.json({ success: false, message: "Missing feeId" }, { status: 400 });
     }
 
     const fee = await db.get("SELECT * FROM student_fees WHERE id = ?", feeId);
     if (!fee) return NextResponse.json({ success: false, message: "Fee record not found" }, { status: 404 });
 
-    const now = new Date().toISOString();
-
     if (isDirectUpdate) {
-      const targetPaid = Number(paidAmount);
-      const targetStatus = status || (targetPaid >= fee.amount ? 'paid' : targetPaid > 0 ? 'partial' : 'unpaid');
+      const targetPaid = paidAmount !== undefined ? Number(paidAmount) : fee.paid_amount;
+      const targetAmount = amount !== undefined ? Number(amount) : fee.amount;
+      const targetTerm = termName || fee.term_name;
+      const targetDue = dueDate !== undefined ? dueDate : fee.due_date;
+      const targetPayLink = payLink !== undefined ? payLink : (fee.pay_link || "");
+      const targetProof = paymentProof !== undefined ? paymentProof : (fee.payment_proof || "");
+      const targetStatus = status || (targetPaid >= targetAmount && targetAmount > 0 ? 'paid' : targetPaid > 0 ? 'partial' : 'unpaid');
 
       await db.run(
-        "UPDATE student_fees SET paid_amount = ?, status = ?, updated_at = ? WHERE id = ?",
-        [targetPaid, targetStatus, now, feeId]
+        `UPDATE student_fees 
+         SET amount = ?, paid_amount = ?, term_name = ?, due_date = ?, status = ?, pay_link = ?, payment_proof = ?, updated_at = ? 
+         WHERE id = ?`,
+        [targetAmount, targetPaid, targetTerm, targetDue, targetStatus, targetPayLink, targetProof, now, feeId]
       );
 
       const diff = targetPaid - fee.paid_amount;
@@ -158,7 +202,7 @@ export async function POST(request: Request) {
         await db.run(
           `INSERT INTO fee_payments (id, fee_id, student_id, college_id, amount, payment_method, reference_no, receipt_no, payment_date)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [payId, feeId, studentId, fee.college_id, diff, method, refNo, receiptNo, now]
+          [payId, feeId, fee.student_id, fee.college_id, diff, method, refNo, receiptNo, now]
         );
       }
 
@@ -187,15 +231,14 @@ export async function POST(request: Request) {
       await db.run(
         `INSERT INTO fee_payments (id, fee_id, student_id, college_id, amount, payment_method, reference_no, receipt_no, payment_date)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [payId, feeId, studentId, fee.college_id, payAmount, method, refNo, receiptNo, now]
+        [payId, feeId, fee.student_id, fee.college_id, payAmount, method, refNo, receiptNo, now]
       );
 
       return NextResponse.json({
         success: true,
         message: "Payment recorded successfully",
-        receiptNo,
         newStatus,
-        newPaidAmount: newPaid
+        newPaid
       });
     }
   } catch (error: any) {

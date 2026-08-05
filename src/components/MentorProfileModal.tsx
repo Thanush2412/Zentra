@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import { useApp, Slot, Mentor } from "@/context/AppContext";
@@ -245,7 +245,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
       <div 
-        className="relative bg-white w-full max-w-4xl rounded-3xl shadow-xl overflow-y-auto md:overflow-hidden flex flex-col md:flex-row h-[90vh] md:h-auto md:max-h-[90vh] border border-gray-150 animate-in fade-in zoom-in-95 duration-200 scroll-touch"
+        className="relative bg-white w-full max-w-4xl rounded-xl shadow-xl overflow-y-auto md:overflow-hidden flex flex-col md:flex-row h-[90vh] md:h-auto md:max-h-[90vh] border border-gray-150 animate-in fade-in zoom-in-95 duration-200 scroll-touch"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
@@ -260,7 +260,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
         {/* Left Panel: Profile Detail Overview */}
         <div className="w-full md:w-[32%] bg-slate-50 border-r border-slate-200/80 p-6 flex flex-col gap-5 select-none shrink-0">
           <div className="text-center space-y-3 pt-4">
-            <div className="h-16 w-16 mx-auto rounded-2xl btn-gradient flex items-center justify-center font-extrabold text-white text-xl shadow-md">
+            <div className="h-16 w-16 mx-auto rounded-xl btn-gradient flex items-center justify-center font-extrabold text-white text-xl shadow-md">
               {mentor.avatar}
             </div>
             <div>
@@ -302,7 +302,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
           {/* Key Workload Metrics */}
           <div className="grid grid-cols-1 gap-2.5 mt-auto">
             {/* Hours Split Card */}
-            <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-xs">
+            <div className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-xs">
               {/* Total */}
               <div className="px-3 pt-3 pb-1 text-center">
                 <span className="block text-2xl font-black text-gradient">{toHrs(totalMinutes)} hrs</span>
@@ -496,7 +496,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Active Weekly Class Slots</h4>
                 </div>
 
-                <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-xs">
+                <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
                   <table className="w-full border-collapse text-left text-xs min-w-[650px] table-fixed">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200">

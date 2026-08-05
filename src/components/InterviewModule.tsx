@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useMemo } from "react";
 import { useApp, StudentInterview } from "../context/AppContext";
@@ -278,10 +278,10 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   return (
     <div className="space-y-6 font-sans">
       {/* ── Top Header Banner & Stats ────────────────────────────────────── */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs transition-all">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs transition-all">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shrink-0">
+            <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shrink-0">
               <Award className="h-7 w-7" />
             </div>
             <div>
@@ -298,7 +298,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           </div>
 
           {/* Dual Button Switcher */}
-          <div className="flex items-center p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700/60 shrink-0">
+          <div className="flex items-center p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700/60 shrink-0">
             <button
               onClick={() => setActiveMode("internal")}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
@@ -327,7 +327,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
         {/* Quick Stats Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-slate-150 dark:border-slate-800">
-          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-3.5 flex items-center gap-3">
+          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3.5 flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
               <FileText className="h-4 w-4" />
             </div>
@@ -337,7 +337,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
             </div>
           </div>
 
-          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-3.5 flex items-center gap-3">
+          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3.5 flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
               <CheckCircle2 className="h-4 w-4" />
             </div>
@@ -347,7 +347,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
             </div>
           </div>
 
-          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-3.5 flex items-center gap-3">
+          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3.5 flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
               <UserCheck className="h-4 w-4" />
             </div>
@@ -357,7 +357,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
             </div>
           </div>
 
-          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-3.5 flex items-center gap-3">
+          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3.5 flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
               <Award className="h-4 w-4" />
             </div>
@@ -374,7 +374,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column: Form & Student Selector */}
           <div className="lg:col-span-5 space-y-6">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs space-y-5">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs space-y-5">
               <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800 pb-4">
                 <div className="flex items-center gap-2">
                   <UserCheck className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
@@ -434,7 +434,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
                 {/* Selected Student Preview Card */}
                 {selectedInternalStudent && (
-                  <div className="p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 flex items-center gap-3">
+                  <div className="p-3.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 flex items-center gap-3">
                     <div className="h-10 w-10 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-sm shrink-0">
                       {selectedInternalStudent.name.charAt(0).toUpperCase()}
                     </div>
@@ -548,7 +548,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
           {/* Right Column: History & Evaluations List */}
           <div className="lg:col-span-7 space-y-6">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs space-y-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800 pb-4">
                 <div>
                   <h3 className="text-base font-black text-slate-800 dark:text-slate-100">Internal Evaluation Records</h3>
@@ -574,7 +574,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                   {filteredInternalInterviews.map((item) => (
                     <div
                       key={item.id}
-                      className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -635,7 +635,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       {activeMode === "external" && (
         <div className="space-y-6">
           {/* External Evaluation Form */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs space-y-5">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs space-y-5">
             <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800 pb-4">
               <div className="flex items-center gap-2">
                 <Award className="h-5 w-5 text-amber-500" />
@@ -810,7 +810,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           </div>
 
           {/* External Audit & Marks Table for KAM / CM / Mentors */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs space-y-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-150 dark:border-slate-800 pb-4">
               <div>
                 <h3 className="text-base font-black text-slate-800 dark:text-slate-100">External Interview Audit Log</h3>

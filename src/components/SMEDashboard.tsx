@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useMemo } from "react";
 import { useApp } from "@/context/AppContext";
@@ -471,7 +471,7 @@ export function SMEDashboard() {
             Conduct demo evaluations, score faculty presentations, and provide pedagogical feedback.
           </p>
         </div>
-        <div className="px-4 py-2.5 bg-pink-50/50 dark:bg-pink-950/10 border border-pink-100 dark:border-pink-900 rounded-2xl">
+        <div className="px-4 py-2.5 bg-pink-50/50 dark:bg-pink-950/10 border border-pink-100 dark:border-pink-900 rounded-xl">
           <span className="text-[9px] font-black uppercase text-pink-600 dark:text-pink-400 tracking-wider block">Specialization</span>
           <span className="text-xs font-black text-slate-800 dark:text-white">{currentSME.subject || "General"} Expert</span>
         </div>
@@ -479,14 +479,14 @@ export function SMEDashboard() {
 
       {/* Alerts */}
       {successMsg && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl flex items-center gap-3 text-xs font-bold shadow-sm animate-in zoom-in-95">
+        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl flex items-center gap-3 text-xs font-bold shadow-sm animate-in zoom-in-95">
           <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" />
           <span>{successMsg}</span>
           <button onClick={() => setSuccessMsg("")} className="ml-auto text-emerald-500 hover:text-emerald-700"><X className="h-4 w-4" /></button>
         </div>
       )}
       {errorMsg && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl flex items-center gap-3 text-xs font-bold shadow-sm animate-in zoom-in-95">
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl flex items-center gap-3 text-xs font-bold shadow-sm animate-in zoom-in-95">
           <AlertCircle className="h-5 w-5 text-rose-600 shrink-0" />
           <span>{errorMsg}</span>
           <button onClick={() => setErrorMsg("")} className="ml-auto text-rose-500 hover:text-rose-700"><X className="h-4 w-4" /></button>
@@ -494,7 +494,7 @@ export function SMEDashboard() {
       )}
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-1.5 rounded-2xl overflow-x-auto">
+      <div className="flex gap-1 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-1.5 rounded-xl overflow-x-auto">
         {tabs.map(tab => (
           <button
             key={tab.key}
@@ -531,7 +531,7 @@ export function SMEDashboard() {
               { label: "Avg Score", value: avgScore > 0 ? `${avgScore}` : "—", icon: <Award className="h-5 w-5" />, color: "bg-pink-50 text-pink-600 dark:bg-pink-950/30 dark:text-pink-400" },
               { label: "This Week", value: weeklyCompleted, icon: <TrendingUp className="h-5 w-5" />, color: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/30 dark:text-indigo-400" },
             ].map((kpi, i) => (
-              <div key={i} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-4 rounded-2xl shadow-sm">
+              <div key={i} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-4 rounded-xl shadow-sm">
                 <div className={`h-10 w-10 rounded-xl flex items-center justify-center mb-2 ${kpi.color}`}>
                   {kpi.icon}
                 </div>
@@ -545,7 +545,7 @@ export function SMEDashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
             {/* Today's Demos */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-3xl shadow-sm space-y-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-xl shadow-sm space-y-4">
               <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                 <Clock className="h-4 w-4 text-violet-500" />
                 Today&apos;s Demos
@@ -553,7 +553,7 @@ export function SMEDashboard() {
               {todayDemos.length > 0 ? (
                 <div className="space-y-3">
                   {todayDemos.map(demo => (
-                    <div key={demo.id} className="p-3 rounded-2xl border border-slate-150 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/30 flex items-center justify-between gap-3">
+                    <div key={demo.id} className="p-3 rounded-xl border border-slate-150 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/30 flex items-center justify-between gap-3">
                       <div>
                         <h3 className="text-xs font-black text-slate-800 dark:text-white">{demo.mentorName}</h3>
                         <p className="text-[9.5px] text-slate-450 font-semibold">{demo.timeSlot} • {demo.subject}</p>
@@ -588,7 +588,7 @@ export function SMEDashboard() {
 
             {/* Upcoming This Week + Swap Approvals */}
             <div className="space-y-6">
-              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-3xl shadow-sm space-y-4">
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-xl shadow-sm space-y-4">
                 <h2 className="text-sm font-black text-slate-855 dark:text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                   <Calendar className="h-4 w-4 text-amber-500" />
                   Upcoming This Week ({pendingDemos.length})
@@ -625,14 +625,14 @@ export function SMEDashboard() {
                 ) || [];
                 if (approvals.length === 0) return null;
                 return (
-                  <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-3xl shadow-sm space-y-4">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-xl shadow-sm space-y-4">
                     <h2 className="text-sm font-black text-slate-855 dark:text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                       <RefreshCw className="h-4 w-4 text-indigo-500 animate-spin-slow" />
                       Internal Swap Approvals ({approvals.length})
                     </h2>
                     <div className="space-y-3">
                       {approvals.map((req: any) => (
-                        <div key={req.id} className="p-4 rounded-2xl bg-indigo-50/10 border border-indigo-150 space-y-3">
+                        <div key={req.id} className="p-4 rounded-xl bg-indigo-50/10 border border-indigo-150 space-y-3">
                           <div className="flex justify-between items-center text-xs">
                             <span className="font-bold text-slate-800 dark:text-white">{req.subject} • Week {req.week}</span>
                             <span className="px-2 py-0.5 bg-indigo-50 text-indigo-705 font-bold rounded-lg text-[9px] uppercase">Mentor Swap</span>
@@ -677,7 +677,7 @@ export function SMEDashboard() {
       {activeTab === "queue" && (
         <div className="space-y-5">
           {/* Filter Bar */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-4 rounded-2xl shadow-sm">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-4 rounded-xl shadow-sm">
             <div className="flex items-center gap-2 mb-3">
               <Filter className="h-4 w-4 text-slate-400" />
               <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Filters</span>
@@ -710,7 +710,7 @@ export function SMEDashboard() {
           </div>
 
           {/* Results Table */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-3xl shadow-sm overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-xl shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs min-w-[620px]">
                 <thead>
@@ -783,7 +783,7 @@ export function SMEDashboard() {
       {/* ═══════════════ CALENDAR TAB ═══════════════ */}
       {activeTab === "calendar" && (
         <div className="space-y-5">
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-3xl shadow-sm">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-xl shadow-sm">
             <h2 className="text-sm font-black text-slate-855 dark:text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 mb-4">
               <Calendar className="h-4 w-4 text-indigo-500" />
               Weekly Calendar View
@@ -793,7 +793,7 @@ export function SMEDashboard() {
                 const dayDemos = myDemos.filter(d => d.dateStr === wd.dateStr);
                 const isToday = wd.dateStr === todayFormatted;
                 return (
-                  <div key={wd.dateStr} className={`border rounded-2xl p-3 min-h-[200px] ${isToday ? "border-pink-300 bg-pink-50/20 dark:bg-pink-950/10" : "border-slate-150 dark:border-slate-800"}`}>
+                  <div key={wd.dateStr} className={`border rounded-xl p-3 min-h-[200px] ${isToday ? "border-pink-300 bg-pink-50/20 dark:bg-pink-950/10" : "border-slate-150 dark:border-slate-800"}`}>
                     <div className="flex items-center justify-between mb-3">
                       <span className={`text-[10px] font-black uppercase tracking-wider ${isToday ? "text-pink-600" : "text-slate-400"}`}>
                         {wd.day}
@@ -844,7 +844,7 @@ export function SMEDashboard() {
       {activeTab === "history" && (
         <div className="space-y-5">
           {/* Search Bar */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-4 rounded-2xl shadow-sm">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-4 rounded-xl shadow-sm">
             <div className="relative">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input type="text" placeholder="Search evaluations by mentor, subject, or date..." value={historySearch} onChange={e => setHistorySearch(e.target.value)}
@@ -853,7 +853,7 @@ export function SMEDashboard() {
           </div>
 
           {/* History List */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-3xl shadow-sm overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-xl shadow-sm overflow-hidden">
             {filteredHistory.length > 0 ? (
               <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredHistory.map(demo => (
@@ -913,7 +913,7 @@ export function SMEDashboard() {
               { label: "This Month", value: monthlyCompleted, color: "text-violet-600" },
               { label: "Total Assigned", value: totalAssigned, color: "text-blue-600" },
             ].map((stat, i) => (
-              <div key={i} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-4 rounded-2xl shadow-sm text-center">
+              <div key={i} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-4 rounded-xl shadow-sm text-center">
                 <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block mb-1">{stat.label}</span>
                 <span className={`text-xl font-black ${stat.color}`}>{stat.value}</span>
               </div>
@@ -922,7 +922,7 @@ export function SMEDashboard() {
 
           {/* Score Distribution Visual */}
           {completedDemos.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-3xl shadow-sm">
+            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-xl shadow-sm">
               <h2 className="text-sm font-black text-slate-855 dark:text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 mb-4">
                 <Award className="h-4 w-4 text-pink-500" />
                 Score Distribution
@@ -951,7 +951,7 @@ export function SMEDashboard() {
 
           {/* Subject-wise Table */}
           {subjectStats.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-3xl shadow-sm">
+            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-xl shadow-sm">
               <h2 className="text-sm font-black text-slate-855 dark:text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 mb-4">
                 <BarChart3 className="h-4 w-4 text-indigo-500" />
                 Subject-wise Evaluation Statistics
@@ -988,7 +988,7 @@ export function SMEDashboard() {
       {/* ═══════════════ SWAP REQUEST MODAL ═══════════════ */}
       {swapModalSession && (
         <div className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                 <RefreshCw className="h-4.5 w-4.5 text-indigo-500 animate-spin-slow" />
@@ -999,7 +999,7 @@ export function SMEDashboard() {
 
             {swapStep === 1 ? (
               <div className="space-y-4">
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-350 space-y-1">
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-350 space-y-1">
                   <p><strong>Demo Details:</strong> {swapModalSession.mentorName} ({swapModalSession.subject})</p>
                   <p><strong>Scheduled:</strong> {swapModalSession.dateStr} • {swapModalSession.timeSlot}</p>
                   <p><strong>College:</strong> {getMentorCollege(swapModalSession.mentorId)}</p>
@@ -1043,7 +1043,7 @@ export function SMEDashboard() {
                     getSwapRecommendations(swapModalSession).mentorSwaps.length > 0 ? (
                       getSwapRecommendations(swapModalSession).mentorSwaps.map(cand => (
                         <div key={cand.mentorId} onClick={() => setSelectedProposedMentor(cand)}
-                          className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${selectedProposedMentor?.mentorId === cand.mentorId ? "border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/20" : "border-slate-150 dark:border-slate-800 hover:border-indigo-300"}`}>
+                          className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${selectedProposedMentor?.mentorId === cand.mentorId ? "border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/20" : "border-slate-150 dark:border-slate-800 hover:border-indigo-300"}`}>
                           <div className="flex-1">
                             <div className="flex items-center gap-1.5">
                               <span className="text-xs font-bold text-slate-800 dark:text-white">{cand.mentorName}</span>
@@ -1067,7 +1067,7 @@ export function SMEDashboard() {
                     getSwapRecommendations(swapModalSession).timeSwaps.length > 0 ? (
                       getSwapRecommendations(swapModalSession).timeSwaps.map((cand, idx) => (
                         <div key={idx} onClick={() => setSelectedProposedTime(cand)}
-                          className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${selectedProposedTime?.dateStr === cand.dateStr && selectedProposedTime?.timeSlot === cand.timeSlot ? "border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/20" : "border-slate-150 dark:border-slate-800 hover:border-indigo-300"}`}>
+                          className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${selectedProposedTime?.dateStr === cand.dateStr && selectedProposedTime?.timeSlot === cand.timeSlot ? "border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/20" : "border-slate-150 dark:border-slate-800 hover:border-indigo-300"}`}>
                           <div className="flex-1">
                             <span className="text-xs font-bold text-slate-800 dark:text-white">{cand.dateStr}</span>
                             <span className="text-xs text-slate-500 block font-semibold">{cand.timeSlot}</span>
@@ -1103,7 +1103,7 @@ export function SMEDashboard() {
       {/* ═══════════════ EVALUATION MODAL (11 CRITERIA) ═══════════════ */}
       {evaluationModalSession && (
         <div className="fixed inset-0 bg-slate-955/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-850 dark:text-white uppercase tracking-wider">
                 SME Demo Evaluation Form
@@ -1131,7 +1131,7 @@ export function SMEDashboard() {
               </div>
 
               {/* 11 Scoring Criteria */}
-              <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
                 <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block mb-2">Evaluation Criteria</span>
                 {EVAL_CRITERIA.map(crit => (
                   <div key={crit.key} className="flex items-center justify-between gap-3">
@@ -1151,7 +1151,7 @@ export function SMEDashboard() {
               </div>
 
               {/* Total score */}
-              <div className="flex justify-between items-center p-3 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-150 rounded-2xl text-xs font-bold">
+              <div className="flex justify-between items-center p-3 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-150 rounded-xl text-xs font-bold">
                 <span className="text-slate-800 dark:text-slate-200">Calculated Total Marks:</span>
                 <span className={`text-sm font-black ${marks >= 80 ? "text-emerald-600" : marks >= 60 ? "text-amber-600" : "text-rose-600"}`}>{marks} / 100</span>
               </div>
@@ -1189,7 +1189,7 @@ export function SMEDashboard() {
       {/* ═══════════════ VIEW EVALUATION (READ-ONLY) MODAL ═══════════════ */}
       {viewEvalSession && (
         <div className="fixed inset-0 bg-slate-955/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-5 animate-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6 space-y-5 animate-in zoom-in-95 duration-200">
             <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-850 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                 <Lock className="h-4 w-4 text-emerald-500" />

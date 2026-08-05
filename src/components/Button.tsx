@@ -25,10 +25,10 @@ const variantClasses: Record<Variant, string> = {
 };
 
 const sizeClasses: Record<Size, string> = {
-  xs: "px-2 py-1 text-[10px] rounded-lg gap-1",
-  sm: "px-3 py-1.5 text-xs rounded-xl gap-1.5",
-  md: "px-4 py-2 text-xs rounded-xl gap-2",
-  lg: "px-5 py-2.5 text-sm rounded-2xl gap-2",
+  xs: "px-2 py-1 text-[10px] rounded-md gap-1",
+  sm: "px-3 py-1.5 text-xs rounded-md gap-1.5",
+  md: "px-4 py-2 text-xs rounded-lg gap-2",
+  lg: "px-5 py-2.5 text-sm rounded-lg gap-2",
 };
 
 export const Button: React.FC<ButtonProps> = ({

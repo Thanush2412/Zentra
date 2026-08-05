@@ -39,7 +39,10 @@ export async function POST(request: Request) {
       const rowEmail = (row.email || "").toLowerCase().trim();
       const rowName = (row.studentName || "").toUpperCase().trim();
       const rowPhone = String(row.phone || "").replace(/\D/g, "");
-      const rowReg = String(row.registerNumber || "").trim();
+      let rowReg = String(row.registerNumber || "").trim();
+      if (rowEmail && rowReg.toLowerCase() === rowEmail.split("@")[0].toLowerCase()) {
+        rowReg = "";
+      }
 
       // Find student
       let student = null;

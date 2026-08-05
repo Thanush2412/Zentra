@@ -5,7 +5,7 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   error?: string;
 }
 
-// Matches the project input style: bg-gray-55 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-600
+// Matches the project input style: bg-gray-55 border border-gray-200 rounded-lg focus:ring-1 focus:ring-indigo-600
 export const Input: React.FC<InputProps> = ({
   label,
   error,
@@ -27,7 +27,7 @@ export const Input: React.FC<InputProps> = ({
       <input
         id={inputId}
         {...rest}
-        className={`w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 text-sm
+        className={`w-full bg-gray-55 border border-gray-200 rounded-lg px-3 py-2 text-sm
           font-semibold text-gray-800 placeholder-gray-350
           focus:outline-none focus:ring-2 focus:ring-[#D528A2]/15 focus:border-[#D528A2] focus:scale-[1.01] focus:shadow-md
           transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:focus:scale-100

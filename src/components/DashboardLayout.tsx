@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import { useApp, Role } from "@/context/AppContext";
 import {
   LogOut,
-  Sun,
-  Moon,
   ChevronDown,
   KeyRound,
   Eye,
@@ -44,7 +42,6 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const isAuthorized = isLoggedInClient && (currentRole === requiredRole || storedRoleClient === requiredRole);
 
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
 
   const isFirstLoginRequired = typeof window !== "undefined" && localStorage.getItem("fp_must_change_pass") === "true";
 
@@ -137,48 +134,38 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     }
   };
 
-  // Sync dark mode on mount
+  // Ensure dark mode class is removed on mount
   useEffect(() => {
     if (localStorage.getItem("fp_must_change_pass") === "true") {
       setShowPasswordModal(true);
     }
-    const isDark = localStorage.getItem("fp_dark_mode") === "true";
-    setDarkMode(isDark);
-    if (isDark) {
-      document.documentElement.classList.add("dark");
-    } else {
+    localStorage.removeItem("fp_dark_mode");
+    if (typeof document !== "undefined") {
       document.documentElement.classList.remove("dark");
     }
   }, []);
 
-  // Handle route protection
+  // Handle route protection cleanly without premature logouts
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || isDataLoading) return;
 
-    const isLoggedIn = localStorage.getItem("fp_logged_in") === "true";
+    const isLoggedIn =
+      (typeof window !== "undefined" && localStorage.getItem("fp_logged_in") === "true") ||
+      (typeof window !== "undefined" && sessionStorage.getItem("fp_logged_in") === "true");
+
     if (!isLoggedIn) {
       router.replace("/");
       return;
     }
 
-    if (currentRole && currentRole !== requiredRole) {
-      const targetPath = "/" + (currentRole === "fee_manager" ? "fee-manager" : currentRole);
+    const storedRole = typeof window !== "undefined" ? (localStorage.getItem("fp_current_role") || sessionStorage.getItem("fp_current_role")) : null;
+    const activeRole = currentRole || storedRole;
+
+    if (activeRole && activeRole !== requiredRole && !isLoading && !isDataLoading) {
+      const targetPath = "/" + (activeRole === "fee_manager" ? "fee-manager" : activeRole);
       router.replace(targetPath);
     }
-  }, [isLoading, currentRole, requiredRole, router]);
-
-  const toggleDarkMode = () => {
-    setDarkMode((prev) => {
-      const nextVal = !prev;
-      localStorage.setItem("fp_dark_mode", String(nextVal));
-      if (nextVal) {
-        document.documentElement.classList.add("dark");
-      } else {
-        document.documentElement.classList.remove("dark");
-      }
-      return nextVal;
-    });
-  };
+  }, [isLoading, isDataLoading, currentRole, requiredRole, router]);
 
   const handleLogout = async () => {
     try {
@@ -215,17 +202,17 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   }
 
   return (
-    <div className={`h-screen flex flex-col font-sans bg-warm-canvas text-gray-800 transition-colors duration-200 overflow-hidden ${darkMode ? "dark" : ""}`}>
+    <div className="h-screen flex flex-col font-sans bg-warm-canvas text-gray-800 transition-colors duration-200 overflow-hidden">
       {/* Compact 75% Width Global Header */}
-      <header className="floating-header w-[92%] sm:w-[85%] md:w-[80%] lg:w-[75%] max-w-[1200px] mx-auto self-center mt-3 md:mt-4 px-3 sm:px-6 py-3 md:py-4 flex items-center justify-between z-30 transition-all rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-md bg-white/80 dark:bg-slate-900/80 backdrop-blur-md">
+      <header className="floating-header w-[95%] sm:w-[85%] md:w-[80%] lg:w-[75%] max-w-[1200px] mx-auto self-center mt-2.5 md:mt-4 px-3 sm:px-6 py-2.5 md:py-4 flex items-center justify-between z-30 transition-all rounded-xl border border-slate-200/80 shadow-md bg-white/80 backdrop-blur-md">
         {/* Left: Brand */}
-        <div className="flex items-center gap-3">
-          <img src="/E-Campus.png" alt="FACE Prep E-Campus Logo" className="h-8 sm:h-9 md:h-10 w-auto object-contain shrink-0 max-h-10" />
-          <div className="border-l border-slate-200 dark:border-slate-700 pl-3">
-            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider block truncate max-w-[120px] sm:max-w-none">
+        <div className="flex items-center gap-3 shrink-0">
+          <img src="/E-Campus.png" alt="FACE Prep E-Campus Logo" className="h-7 sm:h-9 md:h-10 w-auto object-contain shrink-0 max-h-10" />
+          <div className="hidden sm:block border-l border-slate-200 pl-3">
+            <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block truncate">
               {currentRole === "mentor" && "Faculty Workspace"}
               {currentRole === "hr" && "HR Audit Portal"}
-              {currentRole === "cam" && "Campus Manager"}
+              {currentRole === "cam" && "CM Dashboard"}
               {currentRole === "kam" && "Key Account Manager"}
               {currentRole === "admin" && "Super Admin Console"}
               {currentRole === "student" && "Student Portal"}
@@ -236,17 +223,8 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
           </div>
         </div>
 
-        {/* Right: Theme toggle + Profile trigger + Logout */}
+        {/* Right: Profile trigger + Logout */}
         <div className="flex items-center gap-3">
-          {/* Theme Toggle */}
-          <button
-            type="button"
-            onClick={toggleDarkMode}
-            className="p-2 rounded-lg bg-gray-55 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-all cursor-pointer"
-            title={darkMode ? "Light Mode" : "Dark Mode"}
-          >
-            {darkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-          </button>
 
           {/* Profile Dropdown trigger */}
           {/* Last Refreshed Badge */}
@@ -290,7 +268,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                   {currentRole === "allocator" && ((typeof window !== "undefined" && localStorage.getItem("fp_user_name")) || "Demo Allocator Head")}
                 </span>
                 <span className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider block mt-0.5">
-                  {currentRole}
+                  {currentRole === "cam" ? "CM" : currentRole}
                 </span>
               </div>
               <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform duration-200 ${showProfileDropdown ? "rotate-180" : ""}`} />
@@ -298,7 +276,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
  
             {/* Dropdown panel */}
             {showProfileDropdown && (
-              <div className="absolute right-0 mt-2.5 w-60 bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-2xl shadow-xl z-50 overflow-hidden">
+              <div className="absolute right-0 mt-2.5 w-60 bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden">
                 {/* User info */}
                 <div className="px-4 py-3.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50">
                   <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
@@ -345,13 +323,6 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                     Change Password
                   </button>
                   <button
-                    onClick={() => { toggleDarkMode(); setShowProfileDropdown(false); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-all cursor-pointer"
-                  >
-                    {darkMode ? <Sun className="h-3.5 w-3.5 text-gray-400" /> : <Moon className="h-3.5 w-3.5 text-gray-400" />}
-                    {darkMode ? "Light Theme" : "Dark Theme"}
-                  </button>
-                  <button
                     id="logout-btn"
                     onClick={() => { setShowProfileDropdown(false); handleLogout(); }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition-all cursor-pointer"
@@ -391,14 +362,14 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       {/* Change Password Glassmorphic Modal */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-7 overflow-hidden">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xl p-6 sm:p-7 overflow-hidden">
             {/* Ambient Top Glow */}
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
 
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-4 mb-5 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-sm">
+                <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-sm">
                   <ShieldCheck className="h-5 w-5" />
                 </div>
                 <div>
@@ -423,7 +394,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
             {/* Mandatory First Login Notice */}
             {isFirstLoginRequired && (
-              <div className="mb-4 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 flex items-start gap-3 text-xs text-amber-800 dark:text-amber-300">
+              <div className="mb-4 p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 flex items-start gap-3 text-xs text-amber-800 dark:text-amber-300">
                 <Lock className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
                 <div>
                   <p className="font-bold">First Login Security Requirement</p>
@@ -436,14 +407,14 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
             {/* Notifications */}
             {passError && (
-              <div className="mb-4 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/50 flex items-start gap-2.5 text-xs text-rose-600 dark:text-rose-400">
+              <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/50 flex items-start gap-2.5 text-xs text-rose-600 dark:text-rose-400">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                 <span>{passError}</span>
               </div>
             )}
 
             {passSuccess && (
-              <div className="mb-4 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 flex items-start gap-2.5 text-xs text-emerald-600 dark:text-emerald-400">
+              <div className="mb-4 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 flex items-start gap-2.5 text-xs text-emerald-600 dark:text-emerald-400">
                 <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
                 <span>{passSuccess}</span>
               </div>
@@ -587,10 +558,10 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
       {/* Global Feedback & Issue Modal */}
       <div id="global-feedback-modal" className="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200">
-        <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 overflow-hidden">
+        <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-6 overflow-hidden">
           <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold">
+              <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold">
                 <AlertCircle className="h-5 w-5" />
               </div>
               <div>
@@ -694,12 +665,12 @@ export function ProfessionalLoader({ message = "Loading your workspace..." }: { 
       <div className="absolute bottom-[35%] right-[35%] h-[320px] w-[320px] rounded-full bg-[#D528A2]/10 blur-[120px] pointer-events-none animate-pulse" />
 
       {/* Glassmorphic Card */}
-      <div className="relative z-10 flex flex-col items-center p-8 sm:p-10 rounded-3xl border border-slate-200/90 bg-white/95 backdrop-blur-xl shadow-2xl max-w-sm w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-300">
+      <div className="relative z-10 flex flex-col items-center p-8 sm:p-10 rounded-xl border border-slate-200/90 bg-white/95 backdrop-blur-xl shadow-2xl max-w-sm w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-300">
         
         {/* FACE Prep E-Campus Logo Header */}
         <div className="relative mb-6 flex items-center justify-center">
-          <div className="absolute -inset-3 rounded-2xl bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-[#D528A2]/20 blur-md animate-pulse" />
-          <div className="relative flex items-center justify-center px-6 py-3.5 rounded-2xl bg-white border border-slate-200 shadow-md">
+          <div className="absolute -inset-3 rounded-xl bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-[#D528A2]/20 blur-md animate-pulse" />
+          <div className="relative flex items-center justify-center px-6 py-3.5 rounded-xl bg-white border border-slate-200 shadow-md">
             <img src="/E-Campus.png" alt="FACE Prep E-Campus Logo" className="h-10 w-auto object-contain" />
           </div>
         </div>

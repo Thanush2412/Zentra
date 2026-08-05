@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useApp } from "../context/AppContext";
@@ -37,9 +37,261 @@ const colorMap: Record<string, string> = {
   fuchsia: "bg-fuchsia-50 border-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/10 dark:border-fuchsia-500/20 dark:text-fuchsia-300",
 };
 
+/* ─── KAM Mentor Attendance Audit Panel ─── */
+const KAMMentorAttendanceTab: React.FC<{ kamId: string }> = ({ kamId }) => {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [dateStr, setDateStr] = useState(() => new Date().toISOString().split("T")[0]);
+  const [records, setRecords] = useState<any[]>([]);
+  const [colleges, setColleges] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>({ total: 0, present: 0, od: 0, leave: 0, absent: 0, unpunched: 0 });
+  const [search, setSearch] = useState("");
+  const [selectedCollege, setSelectedCollege] = useState("all");
+  const [selectedStatus, setSelectedStatus] = useState("all");
+
+  const fetchAttendance = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/mentor-attendance?kamId=${encodeURIComponent(kamId)}&dateStr=${encodeURIComponent(dateStr)}`);
+      const json = await res.json();
+      if (json.success) {
+        setRecords(json.records || []);
+        setColleges(json.colleges || []);
+        setSummary(json.summary || { total: 0, present: 0, od: 0, leave: 0, absent: 0, unpunched: 0 });
+      }
+    } catch (e) {
+      console.error(e);
+      toast("Failed to fetch cross-college mentor attendance data", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAttendance();
+  }, [kamId, dateStr]);
+
+  const filteredRecords = records.filter(r => {
+    const matchesSearch = !search || r.name.toLowerCase().includes(search.toLowerCase()) || (r.collegeName && r.collegeName.toLowerCase().includes(search.toLowerCase()));
+    const matchesCollege = selectedCollege === "all" || r.collegeId === selectedCollege;
+    const matchesStatus = selectedStatus === "all" || r.status === selectedStatus;
+    return matchesSearch && matchesCollege && matchesStatus;
+  });
+
+  const attendanceRate = summary.total > 0 ? Math.round(((summary.present + summary.od) / summary.total) * 100) : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Header & Controls */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+            <UserCheck className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-lg font-black text-slate-800 dark:text-white leading-tight">Cross-College Mentor Attendance Audit</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+              Read-only daily mentor punch logs, OD status, and attendance compliance across all assigned campuses.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 pl-2">Date:</span>
+            <input
+              type="date"
+              value={dateStr}
+              onChange={(e) => setDateStr(e.target.value)}
+              className="bg-white dark:bg-slate-900 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={fetchAttendance}
+            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+            title="Refresh Attendance Data"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Mentors</p>
+          <p className="text-xl font-black text-slate-900 dark:text-white mt-0.5">{summary.total}</p>
+        </div>
+        <div className="p-4 rounded-xl bg-emerald-50/60 dark:bg-emerald-500/10 border border-emerald-200/80 dark:border-emerald-500/20 shadow-xs">
+          <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Present</p>
+          <p className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-0.5">{summary.present}</p>
+        </div>
+        <div className="p-4 rounded-xl bg-indigo-50/60 dark:bg-indigo-500/10 border border-indigo-200/80 dark:border-indigo-500/20 shadow-xs">
+          <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">On Duty (OD)</p>
+          <p className="text-xl font-black text-indigo-700 dark:text-indigo-300 mt-0.5">{summary.od}</p>
+        </div>
+        <div className="p-4 rounded-xl bg-amber-50/60 dark:bg-amber-500/10 border border-amber-200/80 dark:border-amber-500/20 shadow-xs">
+          <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">On Leave</p>
+          <p className="text-xl font-black text-amber-700 dark:text-amber-300 mt-0.5">{summary.leave}</p>
+        </div>
+        <div className="p-4 rounded-xl bg-rose-50/60 dark:bg-rose-500/10 border border-rose-200/80 dark:border-rose-500/20 shadow-xs">
+          <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Absent</p>
+          <p className="text-xl font-black text-rose-700 dark:text-rose-300 mt-0.5">{summary.absent}</p>
+        </div>
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Overall Rate</p>
+          <p className={`text-xl font-black mt-0.5 ${attendanceRate >= 80 ? "text-emerald-600" : "text-amber-600"}`}>
+            {attendanceRate}%
+          </p>
+        </div>
+      </div>
+
+      {/* Main Filter & Table Container */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4">
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search mentor or campus name..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full text-xs font-semibold pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            {/* Campus Filter */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">Campus:</label>
+              <select
+                value={selectedCollege}
+                onChange={(e) => setSelectedCollege(e.target.value)}
+                className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+              >
+                <option value="all">All Campuses ({colleges.length})</option>
+                {colleges.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">Status:</label>
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+              >
+                <option value="all">All Statuses</option>
+                <option value="Present">Present</option>
+                <option value="OD">On Duty (OD)</option>
+                <option value="Leave">On Leave</option>
+                <option value="Absent">Absent</option>
+                <option value="Not Punched">Unpunched</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Audit Roster Table */}
+        <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-extrabold uppercase text-[10px] tracking-wider">
+                <th className="p-3">Campus / College</th>
+                <th className="p-3">Faculty / Mentor</th>
+                <th className="p-3">Department</th>
+                <th className="p-3">Punch Time</th>
+                <th className="p-3">Attendance Status</th>
+                <th className="p-3">OD / Leave Remarks</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 font-medium text-slate-800 dark:text-slate-200">
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                    Loading cross-college attendance logs...
+                  </td>
+                </tr>
+              ) : filteredRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                    No mentor attendance records found matching criteria.
+                  </td>
+                </tr>
+              ) : (
+                filteredRecords.map((m, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                    <td className="p-3">
+                      <div className="font-extrabold text-indigo-600 dark:text-indigo-400">{m.collegeName}</div>
+                    </td>
+                    <td className="p-3">
+                      <div className="font-extrabold text-slate-900 dark:text-white">{m.name}</div>
+                      <div className="text-[10px] font-mono text-slate-400">{m.email}</div>
+                    </td>
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold">
+                        {m.department || "General"}
+                      </span>
+                    </td>
+                    <td className="p-3 font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                      {m.punchInTime || <span className="text-slate-350 dark:text-slate-600 italic">—</span>}
+                    </td>
+                    <td className="p-3">
+                      {m.status === "Present" && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-[10px] font-black">
+                          <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> Present
+                        </span>
+                      )}
+                      {m.status === "OD" && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-800 dark:text-indigo-300 text-[10px] font-black">
+                          <Activity className="h-3 w-3 text-indigo-600 dark:text-indigo-400" /> OD (On Duty)
+                        </span>
+                      )}
+                      {m.status === "Leave" && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 text-[10px] font-black">
+                          <Clock className="h-3 w-3 text-amber-600 dark:text-amber-400" /> On Leave
+                        </span>
+                      )}
+                      {m.status === "Absent" && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 text-[10px] font-black">
+                          <XCircle className="h-3 w-3 text-rose-600 dark:text-rose-400" /> Absent
+                        </span>
+                      )}
+                      {m.status === "Not Punched" && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-bold">
+                          Unpunched
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3 text-[11px] text-slate-600 dark:text-slate-400 max-w-[250px] truncate">
+                      {m.reason ? (
+                        <span className="italic text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-100 dark:border-indigo-500/20" title={m.reason}>
+                          {m.reason}
+                        </span>
+                      ) : (
+                        <span className="text-slate-350 dark:text-slate-600 italic">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export interface KAMDashboardProps {
-  activeTab?: "overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "interviews" | "profile";
-  onTabChange?: (tab: "overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "interviews" | "profile") => void;
+  activeTab?: "overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "interviews" | "profile" | "mentor_attendance";
+  onTabChange?: (tab: "overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "interviews" | "profile" | "mentor_attendance") => void;
 }
 
 // ── CAM Detail Card: shows one CAM's full college data ──────────────────────
@@ -95,12 +347,12 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
   );
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden transition-all" data-kam-card>
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden transition-all" data-kam-card>
       {/* Card Header */}
       <div className="p-5 flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-start gap-4">
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-[#D528A2] flex items-center justify-center text-white font-black text-lg shadow-md shrink-0">
+            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-indigo-500 to-[#D528A2] flex items-center justify-center text-white font-black text-lg shadow-md shrink-0">
               {(cam?.name || "C").substring(0, 1)}
             </div>
             <div>
@@ -233,7 +485,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
 
             {/* MENTORS section */}
             {activeSection === "mentors" && (
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                 {filteredMentors.length === 0 ? (
                   <div className="text-center py-8 text-xs text-slate-400 italic">No faculty found.</div>
                 ) : (
@@ -281,7 +533,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
 
             {/* STUDENTS section */}
             {activeSection === "students" && (
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                 {filteredStudents.length === 0 ? (
                   <div className="text-center py-8 text-xs text-slate-400 italic">No students found.</div>
                 ) : (
@@ -330,7 +582,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
 
             {/* HANDOVERS section */}
             {activeSection === "handovers" && (
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                 {approvedHandovers.length === 0 ? (
                   <div className="text-center py-8 text-xs text-slate-400 italic">No approved handovers yet.</div>
                 ) : (
@@ -379,7 +631,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                     const isApproved = r.status === "approved";
                     const isRejected = r.status === "rejected";
                     return (
-                      <div key={r.id} className={`p-4 rounded-2xl border transition-all ${
+                      <div key={r.id} className={`p-4 rounded-xl border transition-all ${
                         isPending ? "border-amber-200 dark:border-amber-500/30 bg-amber-50/40 dark:bg-amber-500/5" :
                         isApproved ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/30 dark:bg-emerald-500/5" :
                         "border-slate-200 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/20"
@@ -459,7 +711,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                   <div className="text-center py-8 text-xs text-slate-400 italic">No campus issues reported.</div>
                 ) : (
                   escalations.map((esc: any) => (
-                    <div key={esc.id} className={`p-4 rounded-2xl border transition-all ${
+                    <div key={esc.id} className={`p-4 rounded-xl border transition-all ${
                       esc.status === "pending" || esc.status === "open"
                         ? "border-rose-200 dark:border-rose-500/30 bg-rose-50/30 dark:bg-rose-500/5"
                         : "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-500/5"
@@ -501,7 +753,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                     { label: "Absent", value: collegeAttendance.filter((a: any) => a.status === "absent").length, color: "rose" },
                     { label: "OD", value: collegeAttendance.filter((a: any) => a.status === "od").length, color: "amber" },
                   ].map(s => (
-                    <div key={s.label} className={`p-3 rounded-2xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
+                    <div key={s.label} className={`p-3 rounded-xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
                       <div className={`text-xl font-black ${s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" : s.color === "rose" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}`}>{s.value}</div>
                       <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
                     </div>
@@ -530,7 +782,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                   )}
                 </div>
                 {/* Per-mentor slot attendance breakdown */}
-                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                   <table className="w-full text-xs font-semibold min-w-[420px]">
                     <thead>
                       <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-widest text-slate-500 font-black">
@@ -577,7 +829,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                     { label: "Mapped Depts", value: mappedDepts, color: mappedDepts === collegeDepts && collegeDepts > 0 ? "emerald" : "amber" },
                     { label: "Subjects", value: subjectCount, color: "purple" },
                   ].map(s => (
-                    <div key={s.label} className={`p-3 rounded-2xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
+                    <div key={s.label} className={`p-3 rounded-xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
                       <div className={`text-xl font-black ${
                         s.color === "indigo" ? "text-indigo-600 dark:text-indigo-400" :
                         s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
@@ -594,7 +846,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                     {collegeDepts - mappedDepts} department{collegeDepts - mappedDepts !== 1 ? "s" : ""} have no subjects mapped
                   </div>
                 )}
-                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                   <table className="w-full text-xs font-semibold min-w-[480px]">
                     <thead>
                       <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-widest text-slate-500 font-black">
@@ -647,7 +899,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                         { label: "Outstanding", value: `₹${(Math.max(0, feeStats.totalFees - feeStats.totalPaid)).toLocaleString()}`, color: feeStats.totalFees - feeStats.totalPaid > 0 ? "rose" : "emerald" },
                         { label: "Collection Rate", value: `${feeStats.collectionRate}%`, color: feeStats.collectionRate >= 80 ? "emerald" : "amber" },
                       ].map(s => (
-                        <div key={s.label} className={`p-3 rounded-2xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
+                        <div key={s.label} className={`p-3 rounded-xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
                           <div className={`text-sm font-black ${
                             s.color === "indigo" ? "text-indigo-600 dark:text-indigo-400" :
                             s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
@@ -676,7 +928,7 @@ const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
                         { label: "Partial", value: feeStats.partialCount, color: "amber" },
                         { label: "Unpaid", value: feeStats.unpaidCount, color: "rose" },
                       ].map(s => (
-                        <div key={s.label} className={`p-3 rounded-2xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
+                        <div key={s.label} className={`p-3 rounded-xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
                           <div className={`text-xl font-black ${
                             s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
                             s.color === "amber" ? "text-amber-600 dark:text-amber-400" :
@@ -729,7 +981,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
     [colleges, currentKAM]
   );
 
-  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "profile">("overview");
+  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "interviews" | "profile" | "mentor_attendance">("overview");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
@@ -992,6 +1244,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
         { id: "overview", label: "Overview", icon: Activity },
         { id: "cam_reports", label: "CM Reports", icon: Layers },
         { id: "colleges", label: "Campus Directory", icon: Building2 },
+        { id: "mentor_attendance", label: "Mentor Attendance", icon: UserCheck },
         { id: "swap_tracker", label: "Swap Ledger", icon: ArrowRightLeft },
       ]
     },
@@ -1054,7 +1307,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                   {/* Group button — acts as the hover trigger */}
                   <button
                     type="button"
-                    className={`sidebar-group-btn w-full flex items-center rounded-2xl transition-all duration-200 cursor-pointer ${
+                    className={`sidebar-group-btn w-full flex items-center rounded-md transition-all duration-200 cursor-pointer ${
                       isCollapsed ? "justify-center px-0 py-3.5" : "justify-between px-4 py-3.5 text-left"
                     } ${
                       isAnyChildActive
@@ -1080,7 +1333,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
 
                   {/* Flyout sub-menu popover — appears on hover to the right */}
                   <div className={`absolute left-full top-0 pl-2 w-56 z-50 ${hoveredGroupId === group.id ? "block" : "hidden"}`}>
-                    <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-indigo-100 dark:border-slate-700 shadow-xl rounded-2xl p-2.5 animate-fadeIn">
+                    <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-indigo-100 dark:border-slate-700 shadow-xl rounded-xl p-2.5 animate-fadeIn">
                       <div className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 mb-1.5 text-indigo-600 dark:text-indigo-400">
                         {group.title}
                       </div>
@@ -1203,7 +1456,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
         <div className="max-w-7xl mx-auto w-full space-y-6 relative z-10 animate-fadeIn">
 
           {/* ── Global Header ── */}
-          <div data-kam-panel className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-3xl p-5 md:p-8 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div data-kam-panel className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-xl p-5 md:p-8 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <span className="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-[10px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-500/30">
@@ -1237,7 +1490,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 const emergencyReqs = requests.filter(r => r.status === "pending_cam" && portfolioMentorIds.has(r.requestorId));
                 if (emergencyReqs.length === 0) return null;
                 return (
-                  <div className="bg-gradient-to-r from-rose-500 to-amber-500 p-0.5 rounded-3xl shadow-md">
+                  <div className="bg-gradient-to-r from-rose-500 to-amber-500 p-0.5 rounded-xl shadow-md">
                     <div className="bg-white dark:bg-slate-900 rounded-[23px] p-4 sm:p-5 space-y-3">
                       <div className="flex items-center justify-between gap-3 flex-wrap">
                         <div className="flex items-center gap-2">
@@ -1300,7 +1553,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
               })()}
 
               {/* 📅 Today's Operations Panel */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 md:p-6 shadow-sm space-y-4">
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-5 md:p-6 shadow-sm space-y-4">
                 <div className="flex items-center justify-between gap-3 flex-wrap border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div>
                     <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
@@ -1328,7 +1581,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                     const sessionMode = config?.session_mode || "Offline";
 
                     return (
-                      <div key={college.id} className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/60 flex flex-col justify-between gap-3">
+                      <div key={college.id} className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/60 flex flex-col justify-between gap-3">
                         <div>
                           <div className="flex items-center justify-between gap-2 mb-2">
                             <span className="text-xs font-black text-slate-800 dark:text-white truncate">{college.name}</span>
@@ -1378,7 +1631,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 ].map(kpi => {
                   const Icon = kpi.icon;
                   return (
-                    <div key={kpi.label} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
+                    <div key={kpi.label} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
                       <div className={`h-8 w-8 rounded-xl flex items-center justify-center ${kpi.bg} border ${kpi.border}`}>
                         <Icon className={`h-4 w-4 ${kpi.text}`} />
                       </div>
@@ -1395,7 +1648,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
                 {/* Campus Comparison Bar Chart */}
-                <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 shadow-sm">
+                <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-5 shadow-sm">
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Campus Comparison</h3>
@@ -1484,7 +1737,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 </div>
 
                 {/* Request Pipeline Donut */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 shadow-sm flex flex-col">
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-5 shadow-sm flex flex-col">
                   <div className="mb-4">
                     <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Request Pipeline</h3>
                     <p className="text-[10px] text-slate-400 mt-0.5">All handover requests status</p>
@@ -1563,7 +1816,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                   return { name: college.name, attRate, feeRate };
                 });
                 return (
-                  <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 shadow-sm">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-5 shadow-sm">
                     <div className="mb-4">
                       <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Portfolio Health</h3>
                       <p className="text-[10px] text-slate-400 mt-0.5">Attendance & fee collection rates per campus</p>
@@ -1631,7 +1884,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                     const collegeIssues = escalations.filter(e => e.collegeId === college.id && (e.status === "pending" || e.status === "open"));
                     const collegeTasks = tasks.filter(t => t.collegeId === college.id && t.status === "pending");
                     return (
-                      <div key={college.id} className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-all">
+                      <div key={college.id} className="p-5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-all">
                         <div className="flex items-start justify-between gap-3 mb-4">
                           <div>
                             <h4 className="text-sm font-black text-slate-800 dark:text-white">{college.name}</h4>
@@ -1738,7 +1991,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                   ].map(s => {
                     const Icon = s.icon;
                     return (
-                      <div key={s.label} className={`${s.bg} border border-slate-100 dark:border-slate-800 rounded-2xl p-4 flex items-center gap-3`}>
+                      <div key={s.label} className={`${s.bg} border border-slate-100 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3`}>
                         <Icon className={`h-5 w-5 ${s.text} shrink-0`} />
                         <div>
                           <div className={`text-xl font-black ${s.text}`}>{s.value}</div>
@@ -1754,9 +2007,9 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                   {loadingCams ? (
                     // Loading skeleton
                     Array.from({ length: activeColleges.length || 2 }).map((_, i) => (
-                      <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 animate-pulse">
+                      <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 animate-pulse">
                         <div className="flex items-center gap-4">
-                          <div className="h-12 w-12 rounded-2xl bg-slate-200 dark:bg-slate-700 shrink-0" />
+                          <div className="h-12 w-12 rounded-xl bg-slate-200 dark:bg-slate-700 shrink-0" />
                           <div className="flex-1 space-y-2">
                             <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-1/3" />
                             <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded w-1/2" />
@@ -1805,7 +2058,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                     })
                   )}
                   {activeColleges.length === 0 && !loadingCams && (
-                    <div className="text-center py-16 text-sm text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-700 rounded-3xl">
+                    <div className="text-center py-16 text-sm text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
                       No colleges assigned to your KAM portfolio yet.
                     </div>
                   )}
@@ -1826,7 +2079,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 ].map(kpi => {
                   const Icon = kpi.icon;
                   return (
-                    <div key={kpi.label} className={`${kpi.bg} border ${kpi.border} rounded-2xl p-4 flex items-center gap-3`}>
+                    <div key={kpi.label} className={`${kpi.bg} border ${kpi.border} rounded-xl p-4 flex items-center gap-3`}>
                       <Icon className={`h-5 w-5 ${kpi.text} shrink-0`} />
                       <div>
                         <div className={`text-xl font-black ${kpi.text}`}>{kpi.value}</div>
@@ -1853,11 +2106,11 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                   const feeStat = feeStatsMap[c.id];
 
                   return (
-                    <div key={c.id} data-kam-panel className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col gap-4 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-all shadow-sm">
+                    <div key={c.id} data-kam-panel className="p-5 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col gap-4 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-all shadow-sm">
                       {/* Header row */}
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-[#D528A2] flex items-center justify-center text-white font-black text-base shrink-0">
+                          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-[#D528A2] flex items-center justify-center text-white font-black text-base shrink-0">
                             {c.name.substring(0, 1)}
                           </div>
                           <div>
@@ -1927,7 +2180,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                   );
                 })}
                 {activeColleges.length === 0 && (
-                  <div className="col-span-2 text-center py-16 text-sm text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                  <div className="col-span-2 text-center py-16 text-sm text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
                     No colleges assigned to your KAM portfolio yet.
                   </div>
                 )}
@@ -1952,7 +2205,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                     { label: "Completed", value: doneTasks.length, color: "emerald" },
                     { label: "Overdue", value: overdueTasks.length, color: overdueTasks.length > 0 ? "rose" : "slate" },
                   ].map(s => (
-                    <div key={s.label} className={`bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 rounded-2xl p-4 text-center`}>
+                    <div key={s.label} className={`bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 rounded-xl p-4 text-center`}>
                       <div className={`text-2xl font-black text-${s.color}-600 dark:text-${s.color}-400`}>{s.value}</div>
                       <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
                     </div>
@@ -2174,7 +2427,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   {campusBreakdown.map(cb => (
-                    <div key={cb.college.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-4 rounded-2xl shadow-sm flex flex-col gap-3">
+                    <div key={cb.college.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-4 rounded-xl shadow-sm flex flex-col gap-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-slate-800 dark:text-white">{cb.college.name}</span>
                         <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase border ${cb.pending > 0 ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" : "bg-teal-50 border-teal-200 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300"}`}>
@@ -2197,12 +2450,12 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
 
                 <Panel title="All Swap Requests Across Portfolio" subtitle="Chronological log of all swap-to-compensate offers">
                   {allSwapRequests.length === 0 ? (
-                    <div className="text-center py-10 border border-dashed border-slate-205 dark:border-slate-800 rounded-2xl">
+                    <div className="text-center py-10 border border-dashed border-slate-205 dark:border-slate-800 rounded-xl">
                       <p className="text-3xl mb-2">↔</p>
                       <p className="text-xs text-slate-400 italic font-semibold">No swap compensation requests across portfolio yet.</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs mt-2">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs mt-2">
                       <table className="w-full border-collapse text-left text-xs font-semibold min-w-[580px]">
                         <thead>
                           <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold uppercase text-[9px] tracking-widest">
@@ -2239,7 +2492,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
 
                 {ledgerList.length > 0 && (
                   <Panel title="Faculty Workload Balance Overview" subtitle="Mentors with outstanding hour debts across your portfolio">
-                    <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs mt-2">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs mt-2">
                       <table className="w-full border-collapse text-left text-xs font-semibold min-w-[620px]">
                         <thead>
                           <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold uppercase text-[9px] tracking-widest">
@@ -2279,12 +2532,19 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
             );
           })()}
 
+          {/* ══ TAB: MENTOR ATTENDANCE ══ */}
+          {activeTab === "mentor_attendance" && (
+            <div data-kam-panel>
+              <KAMMentorAttendanceTab kamId={currentKAM?.id || "kam_1"} />
+            </div>
+          )}
+
           {/* ══ TAB: PROFILE ══ */}
           {activeTab === "profile" && (
             /* Bug 11 fix: show empty state when currentKAM is null */
             !currentKAM ? (
               <div className="flex flex-col items-center justify-center py-24 gap-4 text-center" data-kam-panel>
-                <div className="h-16 w-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                <div className="h-16 w-16 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
                   <User className="h-8 w-8 text-slate-400" />
                 </div>
                 <p className="text-sm font-bold text-slate-600 dark:text-slate-400">No KAM profile loaded.</p>
@@ -2294,7 +2554,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
             <div className="space-y-6 max-w-4xl mx-auto w-full" data-kam-panel>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Identity card */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-3xl shadow-sm flex flex-col items-center justify-between text-center min-h-[300px]">
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-xl shadow-sm flex flex-col items-center justify-between text-center min-h-[300px]">
                   <div className="flex flex-col items-center space-y-4 w-full">
                     <div className="h-20 w-20 rounded-full bg-gradient-to-br from-indigo-500 to-[#D528A2] border-4 border-white dark:border-slate-800 text-white flex items-center justify-center text-3xl font-black shadow-lg uppercase">
                       {currentKAM.name.substring(0, 2)}
@@ -2315,7 +2575,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 </div>
 
                 {/* Jurisdiction card */}
-                <div className="md:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-3xl shadow-sm space-y-6 flex flex-col justify-between">
+                <div className="md:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-xl shadow-sm space-y-6 flex flex-col justify-between">
                   <div>
                     <h3 className="text-xs font-black text-indigo-600 dark:text-indigo-300 uppercase tracking-widest mb-4">Operations & Jurisdiction</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -2333,7 +2593,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                       ))}
                     </div>
                   </div>
-                  <div className="bg-indigo-50/50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 p-4 rounded-2xl flex items-center gap-3">
+                  <div className="bg-indigo-50/50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 p-4 rounded-xl flex items-center gap-3">
                     <Compass className="h-5 w-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                     <div className="text-[11px] text-indigo-700 dark:text-indigo-200 font-semibold leading-normal">
                       Your KAM authority covers regional resource planning, campus-level SLA verification, escalations audit, and overall academic policy enforcement.
@@ -2343,7 +2603,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
               </div>
 
               {/* Portfolio metrics — all scoped to this KAM's portfolio */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-3xl shadow-sm space-y-5">
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-xl shadow-sm space-y-5">
                 <h3 className="text-xs font-black text-indigo-600 dark:text-indigo-300 uppercase tracking-widest">Regional Network Metrics</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
                   {[
@@ -2356,7 +2616,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                     { label: "Pending Requests", value: totalPendingRequests, sub: "handover queue", bg: totalPendingRequests > 0 ? "bg-amber-50 dark:bg-amber-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalPendingRequests > 0 ? "border-amber-100 dark:border-amber-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalPendingRequests > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400" },
                     { label: "Subjects Mapped", value: subjectsList.filter(s => activeColleges.some(c => c.id === s.college_id)).length, sub: "curriculum entries", bg: "bg-teal-50 dark:bg-teal-500/10", border: "border-teal-100 dark:border-teal-500/20", text: "text-teal-600 dark:text-teal-400" },
                   ].map(m => (
-                    <div key={m.label} className={`p-4 ${m.bg} rounded-2xl border ${m.border}`}>
+                    <div key={m.label} className={`p-4 ${m.bg} rounded-xl border ${m.border}`}>
                       <span className={`text-2xl font-extrabold ${m.text} block`}>{m.value}</span>
                       <span className="text-[9px] text-slate-500 dark:text-slate-400 font-extrabold uppercase tracking-wider block mt-0.5">{m.label}</span>
                       <span className="text-[8px] text-slate-400 block">{m.sub}</span>
@@ -2379,7 +2639,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
       {/* ── Set Day Order Modal ── */}
       {selectedDayConfigCollege && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-scaleUp">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-scaleUp">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
                 <h3 className="text-sm font-black text-slate-800 dark:text-white">Set Day Order & Status</h3>
@@ -2459,7 +2719,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
       {/* ── Broadcast Announcement Modal ── */}
       {showAnnouncementModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-scaleUp">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-scaleUp">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
                 <h3 className="text-sm font-black text-slate-800 dark:text-white">Broadcast Announcement</h3>
