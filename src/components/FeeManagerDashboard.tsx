@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useApp } from "../context/AppContext";
@@ -8,7 +8,8 @@ import {
   Receipt, CreditCard, Wallet, PieChart, BarChart2, ArrowUpRight,
   X, Check, RefreshCw, FileText, Printer, Eye, IndianRupee, BadgePercent,
   School, CircleDollarSign, Activity, Target, Layers, ListFilter, Upload,
-  Sparkles, ArrowRight, Calendar, ShieldCheck, CheckCircle, ExternalLink, Plus, Trash2
+  Sparkles, ArrowRight, Calendar, ShieldCheck, CheckCircle, ExternalLink, Plus, Trash2,
+  ChevronsLeft, ChevronsRight
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -149,6 +150,13 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   const [filterToDate, setFilterToDate] = useState("");
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [selectedReportYear, setSelectedReportYear] = useState("2025-2027");
+
+  // Sidebar Collapse State
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  useEffect(() => {
+    const stored = localStorage.getItem("fp_sidebar_collapsed") === "true";
+    setIsCollapsed(stored);
+  }, []);
 
   // Individual Fee Editing States
   const [editingFeeId, setEditingFeeId] = useState<string | null>(null);
@@ -928,41 +936,50 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   return (
     <div className="flex flex-col md:flex-row h-full overflow-hidden bg-warm-canvas text-slate-800 dark:text-slate-200 font-sans">
       {/* Sleek Floating Sidebar */}
-      <aside className="hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 w-64 p-5">
-        <div className="space-y-6">
-          <div className="p-4 rounded-xl bg-gradient-to-br from-[#D528A2]/10 via-[#F4A863]/10 to-[#D528A2]/5 border border-[#D528A2]/20 shadow-xs">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl btn-gradient flex items-center justify-center text-white shadow-md shrink-0">
-                <IndianRupee className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs font-black text-slate-900 dark:text-slate-100 tracking-tight">Fee Collections</p>
-                <p className="text-[10px] font-black text-[#D528A2] dark:text-[#f45fc6] uppercase tracking-widest mt-0.5">Manager Console</p>
-              </div>
-            </div>
-          </div>
-
-          <nav className="space-y-2">
+      <aside className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-3" : "w-64 p-5"}`}>
+        <div className="flex flex-col flex-1 overflow-y-auto">
+          {/* Nav items */}
+          <nav className={`py-2 space-y-1 ${isCollapsed ? "px-1" : "px-4"}`}>
             {tabs.map(({ id, label, icon: Icon }) => {
               const isActive = activeTab === id;
               return (
                 <button
                   key={id}
                   onClick={() => setActiveTab(id)}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs font-extrabold transition-all duration-200 cursor-pointer ${
+                  className={`w-full flex items-center rounded-md text-xs font-bold tracking-tight transition-all duration-200 cursor-pointer ${
+                    isCollapsed ? "justify-center px-0 py-3" : "justify-start gap-3 px-4 py-3 text-left"
+                  } ${
                     isActive
-                      ? "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white shadow-md shadow-[#D528A2]/25 translate-x-1"
-                      : "text-slate-600 dark:text-slate-400 hover:text-[#D528A2] hover:bg-slate-100/80 dark:hover:bg-slate-800/50"
+                      ? "sidebar-active-item"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-white" : "text-slate-400"}`} />
-                    <span>{label}</span>
+                  <div className="relative flex items-center justify-center">
+                    <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-[#4F46E5]" : "text-slate-400 group-hover:text-slate-650"}`} />
                   </div>
+                  {!isCollapsed && <span>{label}</span>}
                 </button>
               );
             })}
           </nav>
+        </div>
+
+        {/* Sidebar Footer — universal collapse toggle */}
+        <div className="border-t border-slate-100/85 dark:border-slate-800 pt-3.5 space-y-3 shrink-0">
+          <div className="flex justify-center pt-1">
+            <button
+              type="button"
+              onClick={() => setIsCollapsed(prev => {
+                const next = !prev;
+                localStorage.setItem("fp_sidebar_collapsed", String(next));
+                return next;
+              })}
+              className="h-8.5 w-8.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-850 hover:bg-slate-50 shadow-xs transition-all cursor-pointer"
+              title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            >
+              {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
       </aside>
 

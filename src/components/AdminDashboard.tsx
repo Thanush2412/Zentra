@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useApp, SHIFT_TIME_SLOTS, Slot, Mentor, AuditLog, College, Subject, Department } from "@/context/AppContext";
@@ -2191,87 +2191,90 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 font-sans h-full overflow-hidden">
-      {/* ── Sticky Left Sidebar — nav items + collapse only ── */}
-      <aside className={`hidden md:flex shrink-0 flex-col sticky top-0 z-30 floating-sidebar transition-all duration-300 h-full ${isCollapsed ? "w-[72px]" : "w-[230px]"
-        }`}>
-
-        {/* Collapse / Expand toggle */}
-        <div className={`flex items-center shrink-0 py-3 border-b border-slate-100 ${isCollapsed ? "justify-center" : "justify-end px-3"
-          }`}>
-          <button
-            onClick={() => setIsCollapsed((prev) => {
-              const next = !prev;
-              localStorage.setItem("fp_sidebar_collapsed", String(next));
-              return next;
-            })}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-all cursor-pointer"
-            title={isCollapsed ? "Expand" : "Collapse"}
-          >
-            {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
-          </button>
-        </div>
+      {/* ── Sticky Left Sidebar ── */}
+      <aside className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-3" : "w-64 p-5"}`}>
 
         {/* Nav items — Hover Flyout dropdowns outside sidebar */}
-        <nav className="flex-1 py-6 px-3 space-y-4">
-          {navGroups.map(group => {
-            const GroupIcon = group.icon;
-            const hasActiveItem = group.items.some(item => item.id === activeTab);
+        <div className="flex flex-col flex-1 overflow-visible">
+          <nav className={`py-2 space-y-3 ${isCollapsed ? "px-1" : "px-2"}`}>
+            {navGroups.map(group => {
+              const GroupIcon = group.icon;
+              const hasActiveItem = group.items.some(item => item.id === activeTab);
 
-            return (
-              <div key={group.title} className="group/nav-group relative">
-                {/* Category Header Row */}
-                <div
-                  className={`w-full flex items-center justify-between rounded-xl transition-all duration-150 cursor-pointer ${isCollapsed ? "justify-center p-3" : "px-4 py-3"
-                    } ${hasActiveItem
-                      ? "bg-[#D528A2]/10 text-[#D528A2] font-extrabold shadow-sm border border-[#D528A2]/20"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent"
-                    }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <GroupIcon className={`h-5 w-5 shrink-0 ${hasActiveItem ? "text-[#D528A2]" : "text-slate-400"}`} />
+              return (
+                <div key={group.title} className="group/nav-group relative">
+                  {/* Category Header Row */}
+                  <div
+                    className={`w-full flex items-center justify-between rounded-md transition-all duration-150 cursor-pointer ${isCollapsed ? "justify-center p-3" : "px-4 py-3"
+                      } ${hasActiveItem
+                        ? "bg-[#D528A2]/10 text-[#D528A2] font-black shadow-xs border border-[#D528A2]/20"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent font-bold"
+                      }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <GroupIcon className={`h-4.5 w-4.5 shrink-0 ${hasActiveItem ? "text-[#D528A2]" : "text-slate-400"}`} />
+                      {!isCollapsed && (
+                        <span className="text-xs tracking-wide uppercase">
+                          {group.title}
+                        </span>
+                      )}
+                    </div>
                     {!isCollapsed && (
-                      <span className="text-[13px] font-bold tracking-wide uppercase">
-                        {group.title}
-                      </span>
+                      <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-hover/nav-group:translate-x-1 ${hasActiveItem ? "text-[#D528A2]" : "text-slate-400"
+                        }`} />
                     )}
                   </div>
-                  {!isCollapsed && (
-                    <ChevronRight className={`h-4 w-4 shrink-0 transition-transform duration-200 group-hover/nav-group:translate-x-1 ${hasActiveItem ? "text-[#D528A2]/80" : "text-slate-400"
-                      }`} />
-                  )}
-                </div>
 
-                {/* Floating Dropdown Outside (To the right) on Hover */}
-                <div className="invisible opacity-0 group-hover/nav-group:visible group-hover/nav-group:opacity-100 absolute left-full top-0 ml-2 bg-white border border-gray-250 rounded-xl shadow-xl p-3 min-w-[210px] z-50 space-y-2 border-l-4 border-l-[#D528A2] transition-all duration-150 transform translate-x-2 group-hover/nav-group:translate-x-0 pointer-events-auto">
-                  <div className="px-2.5 py-1 text-[10px] font-black text-[#D528A2] uppercase tracking-wider border-b border-[#D528A2]/10 pb-1.5 mb-1.5">
-                    {group.title}
-                  </div>
-                  <div className="space-y-1">
-                    {group.items.map(t => {
-                      const Icon = t.icon;
-                      const isActive = activeTab === t.id;
-                      return (
-                        <button
-                          key={t.id}
-                          onClick={() => {
-                            setActiveTab(t.id as any);
-                          }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[12.5px] font-semibold transition-all duration-150 cursor-pointer text-left border-none ${isActive
-                              ? "sidebar-active-item font-black shadow-sm"
-                              : "text-slate-650 hover:text-[#D528A2] hover:bg-[#D528A2]/5"
-                            }`}
-                        >
-                          <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-white" : "text-slate-450 group-hover:text-[#D528A2]"}`} />
-                          <span className="truncate">{t.label}</span>
-                        </button>
-                      );
-                    })}
+                  {/* Floating Dropdown Outside (To the right) on Hover */}
+                  <div className="invisible opacity-0 group-hover/nav-group:visible group-hover/nav-group:opacity-100 absolute left-full top-0 ml-2 bg-white border border-slate-200 rounded-xl shadow-xl p-3 min-w-[210px] z-50 space-y-2 border-l-4 border-l-[#D528A2] transition-all duration-150 transform translate-x-2 group-hover/nav-group:translate-x-0 pointer-events-auto">
+                    <div className="px-2.5 py-1 text-[10px] font-black text-[#D528A2] uppercase tracking-wider border-b border-[#D528A2]/10 pb-1.5 mb-1.5">
+                      {group.title}
+                    </div>
+                    <div className="space-y-1">
+                      {group.items.map(t => {
+                        const Icon = t.icon;
+                        const isActive = activeTab === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => {
+                              setActiveTab(t.id as any);
+                            }}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-xs font-bold transition-all duration-150 cursor-pointer text-left border-none ${isActive
+                                ? "sidebar-active-item font-black shadow-xs"
+                                : "text-slate-650 hover:text-[#D528A2] hover:bg-[#D528A2]/5"
+                              }`}
+                          >
+                            <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-white" : "text-slate-450 group-hover:text-[#D528A2]"}`} />
+                            <span className="truncate">{t.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </nav>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Sidebar Footer — universal collapse toggle */}
+        <div className="border-t border-slate-100/85 dark:border-slate-800 pt-3.5 space-y-3 shrink-0">
+          <div className="flex justify-center pt-1">
+            <button
+              type="button"
+              onClick={() => setIsCollapsed((prev) => {
+                const next = !prev;
+                localStorage.setItem("fp_sidebar_collapsed", String(next));
+                return next;
+              })}
+              className="h-8.5 w-8.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-850 hover:bg-slate-50 shadow-xs transition-all cursor-pointer"
+              title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            >
+              {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
       </aside>
 
       {/* Mobile Bottom Navigation — visible only on small screens */}

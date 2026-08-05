@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useApp, Slot, Mentor, Student, Subject } from "../context/AppContext";
@@ -947,20 +947,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     management: false
   });
 
-  // Automatically expand the group containing the active tab
+  // Automatically expand the group containing the active tab (single group accordion)
   useEffect(() => {
     if (["overview"].includes(activeTab)) {
-      setExpandedGroups(prev => ({ ...prev, dashboard: true }));
+      setExpandedGroups({ dashboard: true });
     } else if (["config", "curriculum"].includes(activeTab)) {
-      setExpandedGroups(prev => ({ ...prev, academics: true }));
+      setExpandedGroups({ academics: true });
     } else if (["faculty", "handovers"].includes(activeTab)) {
-      setExpandedGroups(prev => ({ ...prev, faculty: true }));
+      setExpandedGroups({ faculty: true });
     } else if (["timetable", "monitoring"].includes(activeTab)) {
-      setExpandedGroups(prev => ({ ...prev, schedules: true }));
+      setExpandedGroups({ schedules: true });
     } else if (["tracker", "fees", "students_list"].includes(activeTab)) {
-      setExpandedGroups(prev => ({ ...prev, students: true }));
+      setExpandedGroups({ students: true });
     } else if (["reports", "tasks", "profile"].includes(activeTab)) {
-      setExpandedGroups(prev => ({ ...prev, management: true }));
+      setExpandedGroups({ management: true });
     }
   }, [activeTab]);
 
@@ -3846,10 +3846,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               setActiveTab(group.items[0].id as any);
                             }
                           } else {
-                            setExpandedGroups(prev => ({
-                              ...prev,
-                              [group.id]: !prev[group.id]
-                            }));
+                            setExpandedGroups(prev => {
+                              const isCurrentlyOpen = !!prev[group.id];
+                              return isCurrentlyOpen ? {} : { [group.id]: true };
+                            });
                           }
                         }}
                         className={`sidebar-group-btn w-full flex items-center rounded-md transition-all duration-200 cursor-pointer ${
@@ -3962,55 +3962,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               </nav>
             </div>
 
-            {/* User profile card & collapse button at bottom */}
+            {/* Collapse button at bottom */}
             <div className="border-t border-slate-100/85 dark:border-slate-800 pt-3.5 space-y-3 shrink-0">
-              {!isCollapsed ? (
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-850 border border-slate-150 dark:border-slate-800">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="relative">
-                      <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-[#D528A2] to-pink-500 flex items-center justify-center text-white text-[10px] font-black shadow-xs shrink-0">
-                        {(currentCAM?.name || "CM").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
-                      </div>
-                      <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="block text-xs font-black text-slate-800 dark:text-slate-100 truncate leading-tight">
-                        {currentCAM?.name || "Dunomine"}
-                      </span>
-                      <span className="block text-[9px] font-extrabold uppercase text-[#D528A2] dark:text-[#F4A863] tracking-wider mt-0.5">
-                        CM Lead
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsCollapsed(prev => {
-                      const next = !prev;
-                      localStorage.setItem("fp_sidebar_collapsed", String(next));
-                      return next;
-                    })}
-                    className="h-7 w-7 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-xs transition-all cursor-pointer shrink-0"
-                    title="Collapse Sidebar"
-                  >
-                    <ChevronsLeft className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex justify-center pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setIsCollapsed(prev => {
-                      const next = !prev;
-                      localStorage.setItem("fp_sidebar_collapsed", String(next));
-                      return next;
-                    })}
-                    className="h-8.5 w-8.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-850 hover:bg-slate-50 shadow-xs transition-all cursor-pointer"
-                    title="Expand Sidebar"
-                  >
-                    <ChevronsRight className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
+              <div className="flex justify-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsCollapsed(prev => {
+                    const next = !prev;
+                    localStorage.setItem("fp_sidebar_collapsed", String(next));
+                    return next;
+                  })}
+                  className="h-8.5 w-8.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-850 hover:bg-slate-50 shadow-xs transition-all cursor-pointer"
+                  title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+                >
+                  {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
           </aside>
         );

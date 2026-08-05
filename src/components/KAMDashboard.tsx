@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useApp } from "../context/AppContext";
@@ -1377,25 +1377,8 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
           </nav>
         </div>
 
-        {/* Sidebar Footer — user card + collapse toggle */}
-        <div className="border-t border-slate-100/85 dark:border-slate-800 pt-4 space-y-3 shrink-0">
-          {!isCollapsed && (
-            <div className="px-3 py-2.5 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-500/10 dark:to-purple-500/10 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-full bg-gradient-to-r from-indigo-500 to-[#D528A2] flex items-center justify-center text-white text-xs font-bold shrink-0">
-                  {currentKAM?.name?.substring(0, 2).toUpperCase() || "KM"}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-slate-800 dark:text-white truncate">
-                    {currentKAM?.name || "KAM User"}
-                  </p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                    Key Account Manager
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+        {/* Sidebar Footer — universal collapse toggle */}
+        <div className="border-t border-slate-100/85 dark:border-slate-800 pt-3.5 space-y-3 shrink-0">
           <div className="flex justify-center pt-1">
             <button
               type="button"
@@ -1404,7 +1387,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 localStorage.setItem("fp_sidebar_collapsed", String(next));
                 return next;
               })}
-              className="h-8 w-8 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-all cursor-pointer"
+              className="h-8.5 w-8.5 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-xs transition-all cursor-pointer"
               title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
             >
               {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
