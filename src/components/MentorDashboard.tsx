@@ -50,6 +50,7 @@ import { MentorProfileModal } from "./MentorProfileModal";
 /* ─── Mentor Daily Attendance Punch Widget ─── */
 const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   const { toast } = useToast();
+  const { requests, refreshData, colleges } = useApp();
   const [loading, setLoading] = useState(true);
   const [punchStatus, setPunchStatus] = useState<string>("Not Punched");
   const [punchTime, setPunchTime] = useState<string | null>(null);
@@ -59,7 +60,61 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Late Punch CAM Request state
+  const [latePunchExplanation, setLatePunchExplanation] = useState("");
+  const [submittingLatePunchReq, setSubmittingLatePunchReq] = useState(false);
+
   const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
+
+  // College start time & 30-minute deadline calculation
+  const collegeObj = colleges.find(c => c.id === mentor.college_id);
+  const collegeStartTimeStr = collegeObj?.start_time || "08:30 AM";
+
+  const { isDeadlinePassed, collegeStartTimeFormatted, deadlineTimeFormatted } = useMemo(() => {
+    const match = collegeStartTimeStr.match(/(\d{1,2})[.:]\s*(\d{2})\s*(A\.?M\.?|P\.?M\.?)/i);
+    const now = new Date();
+    let hours = 8;
+    let minutes = 30;
+    if (match) {
+      hours = parseInt(match[1], 10);
+      minutes = parseInt(match[2], 10);
+      const period = match[3].replace(/\./g, "").toUpperCase();
+      if (period === "PM" && hours !== 12) hours += 12;
+      if (period === "AM" && hours === 12) hours = 0;
+    }
+
+    const startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
+    const deadline = new Date(startTime.getTime() + 30 * 60 * 1000); // 30 minutes after start time
+
+    const cStartFormatted = startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const cDeadlineFormatted = deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    return {
+      isDeadlinePassed: now > deadline,
+      collegeStartTimeFormatted: cStartFormatted,
+      deadlineTimeFormatted: cDeadlineFormatted
+    };
+  }, [collegeStartTimeStr]);
+
+  const approvedLateCamReq = useMemo(() => {
+    return requests.find(r => 
+      r.requestorId === mentor.id && 
+      r.dateStr === todayStr && 
+      r.status === "approved" &&
+      (r.reason?.includes("Late Mentor Attendance Punch") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Mentor Punch"))
+    );
+  }, [requests, mentor.id, todayStr]);
+
+  const pendingLateCamReq = useMemo(() => {
+    return requests.find(r => 
+      r.requestorId === mentor.id && 
+      r.dateStr === todayStr && 
+      (r.status === "pending" || r.status === "pending_cam") &&
+      (r.reason?.includes("Late Mentor Attendance Punch") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Mentor Punch"))
+    );
+  }, [requests, mentor.id, todayStr]);
+
+  const isPunchLocked = isDeadlinePassed && punchStatus === "Not Punched" && !approvedLateCamReq;
 
   const fetchMyAttendance = async () => {
     setLoading(true);
@@ -119,6 +174,10 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   };
 
   const triggerPunchClick = (status: "Present" | "OD" | "Leave") => {
+    if (isPunchLocked) {
+      toast("30-Minute Daily Punch Deadline Expired. Please submit an explanation to CAM for approval.", "warning");
+      return;
+    }
     if (status === "Present") {
       handlePunch("Present");
     } else {
@@ -128,20 +187,32 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   };
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-xs space-y-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
-            <UserCheck className="h-5 w-5" />
+          <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+            <UserCheck className="h-4.5 w-4.5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-extrabold text-slate-900">Today's Attendance Punch</h3>
-              <span className="text-[10px] font-bold text-slate-400 font-mono">({todayStr})</span>
+              <h3 className="text-xs font-extrabold text-slate-900">Today's Attendance Punch</h3>
+              <span className="text-[10px] font-medium text-slate-400 font-mono">({todayStr})</span>
+              {approvedLateCamReq && punchStatus === "Not Punched" && (
+                <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9.5px] font-extrabold">
+                  ✓ CAM Unlocked
+                </span>
+              )}
             </div>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
+            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
               {punchStatus === "Not Punched" ? (
-                "Please record your presence or OD status for today."
+                isPunchLocked ? (
+                  <span className="text-rose-600 font-bold flex items-center gap-1">
+                    <Clock className="h-3 w-3 shrink-0" />
+                    30m Deadline Passed (College Start: {collegeStartTimeFormatted})
+                  </span>
+                ) : (
+                  "Record presence or OD status within 30m of college start."
+                )
               ) : (
                 <>Punched as <span className="font-bold text-slate-800">{punchStatus}</span> at <span className="font-mono font-bold text-slate-700">{punchTime || "Today"}</span></>
               )}
@@ -152,36 +223,42 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            disabled={submitting}
+            disabled={submitting || isPunchLocked}
             onClick={() => triggerPunchClick("Present")}
-            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               punchStatus === "Present"
                 ? "bg-emerald-600 text-white shadow-xs"
-                : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                : isPunchLocked
+                  ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                  : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
             }`}
           >
             Present
           </button>
           <button
             type="button"
-            disabled={submitting}
+            disabled={submitting || isPunchLocked}
             onClick={() => triggerPunchClick("OD")}
-            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               punchStatus === "OD"
                 ? "bg-indigo-600 text-white shadow-xs"
-                : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
+                : isPunchLocked
+                  ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                  : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
             }`}
           >
             OD (On Duty)
           </button>
           <button
             type="button"
-            disabled={submitting}
+            disabled={submitting || isPunchLocked}
             onClick={() => triggerPunchClick("Leave")}
-            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               punchStatus === "Leave"
                 ? "bg-amber-500 text-white shadow-xs"
-                : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+                : isPunchLocked
+                  ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                  : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
             }`}
           >
             On Leave
@@ -189,20 +266,86 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
         </div>
       </div>
 
-      {showReasonInput && (
-        <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center gap-3">
+      {/* Minimal Inline Request Form when Punch is Locked */}
+      {isPunchLocked && (
+        pendingLateCamReq ? (
+          <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2 text-xs text-amber-900 bg-amber-50/50 p-2.5 rounded-lg border border-amber-200/60">
+            <div className="flex items-center gap-2 min-w-0">
+              <Clock className="h-3.5 w-3.5 text-amber-600 animate-pulse shrink-0" />
+              <span className="truncate font-medium">
+                Late Punch Request sent to CAM: <span className="italic">"{pendingLateCamReq.reason?.replace("[Late Mentor Attendance Punch] ", "")}"</span>
+              </span>
+            </div>
+            <span className="text-[10px] font-black uppercase text-amber-700 bg-white px-2 py-0.5 rounded border border-amber-200 shrink-0">
+              Pending CAM
+            </span>
+          </div>
+        ) : (
+          <div className="pt-2.5 border-t border-slate-100 flex flex-col sm:flex-row items-center gap-2">
+            <input
+              type="text"
+              value={latePunchExplanation}
+              onChange={e => setLatePunchExplanation(e.target.value)}
+              placeholder="Reason for late punch (e.g. Bus delay, field assignment...)"
+              className="flex-1 w-full text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-rose-400 bg-slate-50/50 text-slate-800 placeholder:text-slate-400"
+            />
+            <button
+              type="button"
+              disabled={!latePunchExplanation.trim() || submittingLatePunchReq}
+              onClick={async () => {
+                if (!latePunchExplanation.trim()) return;
+                setSubmittingLatePunchReq(true);
+                try {
+                  const res = await fetch("/api/requests", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      mentorId: mentor.id,
+                      slotId: "mentor_daily_punch_" + mentor.id,
+                      dateStr: todayStr,
+                      dateFormatted: todayStr,
+                      targetStaffId: "cam_approval",
+                      targetStaffName: "CAM Approval (Late Mentor Attendance Punch)",
+                      reason: "[Late Mentor Attendance Punch] " + latePunchExplanation.trim(),
+                      course: "Late Mentor Attendance Punch",
+                      classGroup: mentor.mentor_group || mentor.department || "Faculty"
+                    })
+                  });
+                  const json = await res.json();
+                  if (json.success) {
+                    toast("Late Punch request sent to CAM for approval!", "success");
+                    await refreshData();
+                  } else {
+                    toast(json.message || "Failed to submit request", "error");
+                  }
+                } catch (err: any) {
+                  toast("Error submitting request: " + err.message, "error");
+                } finally {
+                  setSubmittingLatePunchReq(false);
+                }
+              }}
+              className="w-full sm:w-auto px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              {submittingLatePunchReq ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Request CAM Exemption"}
+            </button>
+          </div>
+        )
+      )}
+
+      {showReasonInput && !isPunchLocked && (
+        <div className="pt-2.5 border-t border-slate-100 flex flex-col sm:flex-row items-center gap-2">
           <input
             type="text"
-            placeholder={`Remarks for ${targetStatus} (e.g. Conducted Placement Workshop at Auditorium)`}
+            placeholder={`Remarks for ${targetStatus} (e.g. Workshop at Auditorium)`}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className="flex-1 w-full text-xs font-medium px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500"
+            className="flex-1 w-full text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 text-slate-800"
           />
           <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setShowReasonInput(false)}
-              className="flex-1 sm:flex-none px-3 py-2 rounded-xl text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 cursor-pointer"
+              className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 cursor-pointer"
             >
               Cancel
             </button>
@@ -210,7 +353,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
               type="button"
               disabled={submitting}
               onClick={() => handlePunch(targetStatus, reason)}
-              className="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs cursor-pointer"
+              className="flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs cursor-pointer"
             >
               Submit Punch →
             </button>
@@ -749,6 +892,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [isSubmittingAttendance, setIsSubmittingAttendance] = useState(false);
   const [targetStaffId, setTargetStaffId] = useState<string>("");
   const [reasonText, setReasonText] = useState("");
+  const [lateAttendanceReason, setLateAttendanceReason] = useState("");
+  const [isSubmittingLateReq, setIsSubmittingLateReq] = useState(false);
   const [formError, setFormError] = useState("");
   const [modalSemester, setModalSemester] = useState<string>("Semester 1");
   const [handoverSubject, setHandoverSubject] = useState<string>("original"); // "original" | "substitute_own" | "custom"
@@ -2558,14 +2703,50 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               <span className="text-[9.5px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200/80 flex items-center justify-center gap-1 w-full sm:w-auto text-center">
                                 <CheckCircle className="h-3 w-3 shrink-0" /> Marked
                               </span>
-                            ) : (
-                              <button
-                                type="button"
-                                className="w-full sm:w-auto text-center px-3 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 font-black text-[9.5px] uppercase tracking-wider rounded-lg shadow-xs transition-all cursor-pointer"
-                              >
-                                Mark Attendance
-                              </button>
-                            )}
+                            ) : (() => {
+                              const windowCheck = checkAttendanceWindow(dateStr, item.slot.time);
+                              const approvedLateCamReq = requests.find(r => 
+                                r.slotId === item.slot.id && 
+                                r.dateStr === dateStr && 
+                                r.status === "approved" &&
+                                (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))
+                              );
+                              const pendingLateCamReq = requests.find(r => 
+                                r.slotId === item.slot.id && 
+                                r.dateStr === dateStr && 
+                                (r.status === "pending" || r.status === "pending_cam") &&
+                                (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))
+                              );
+                              const isDeadlineExpired = !windowCheck.open && windowCheck.reason === "expired" && !approvedLateCamReq;
+
+                              if (pendingLateCamReq) {
+                                return (
+                                  <span className="text-[9.5px] font-black text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center justify-center gap-1 w-full sm:w-auto text-center">
+                                    <Clock className="h-3 w-3 shrink-0 animate-pulse" /> Pending CAM
+                                  </span>
+                                );
+                              }
+
+                              if (isDeadlineExpired) {
+                                return (
+                                  <button
+                                    type="button"
+                                    className="w-full sm:w-auto text-center px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-black text-[9.5px] uppercase tracking-wider rounded-lg shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1"
+                                  >
+                                    <Clock className="h-3 w-3 shrink-0" /> Request CAM
+                                  </button>
+                                );
+                              }
+
+                              return (
+                                <button
+                                  type="button"
+                                  className="w-full sm:w-auto text-center px-3 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 font-black text-[9.5px] uppercase tracking-wider rounded-lg shadow-xs transition-all cursor-pointer"
+                                >
+                                  Mark Attendance
+                                </button>
+                              );
+                            })()}
                           </div>
                         </div>
                       );
@@ -3259,25 +3440,66 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     <span className="text-[8.5px] font-bold text-emerald-600 flex items-center gap-0.5">
                                       <CheckCircle className="h-3.5 w-3.5 shrink-0" /> Marked
                                     </span>
-                                  ) : !isFuture ? (
-                                    <span className="text-[8.5px] font-black text-amber-700 flex items-center gap-0.5 uppercase tracking-wider animate-pulse">
-                                      ⚠️ Pending
-                                    </span>
-                                  ) : isCovering ? (
-                                    <span className="text-blue-600 flex items-center gap-0.5 truncate">
-                                      Cover: {mentors.find(m => m.id === slotResult.originalMentorId)?.name?.split(" ")[0] || "Staff"}
-                                    </span>
-                                  ) : approvedReq ? (
-                                    <span className="text-blue-600 flex items-center gap-0.5 truncate">
-                                      Covered: {approvedReq.coverStaffName?.split(" ")[0] || "Staff"}
-                                    </span>
-                                  ) : pendingReq ? (
-                                    <span className="text-amber-600 truncate">
-                                      Cover Pending
-                                    </span>
-                                  ) : (
-                                    <span className="text-gray-550">My Class</span>
-                                  )}
+                                  ) : (() => {
+                                    const windowCheck = checkAttendanceWindow(date.dateStr, time);
+                                    const approvedLateCamReq = requests.find(r => 
+                                      r.slotId === slot.id && 
+                                      r.dateStr === date.dateStr && 
+                                      r.status === "approved" &&
+                                      (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))
+                                    );
+                                    const pendingLateCamReq = requests.find(r => 
+                                      r.slotId === slot.id && 
+                                      r.dateStr === date.dateStr && 
+                                      (r.status === "pending" || r.status === "pending_cam") &&
+                                      (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))
+                                    );
+                                    const isDeadlineExpired = !windowCheck.open && windowCheck.reason === "expired" && !approvedLateCamReq;
+
+                                    if (pendingLateCamReq) {
+                                      return (
+                                        <span className="text-[8.5px] font-black text-amber-700 flex items-center gap-0.5 uppercase tracking-wider animate-pulse">
+                                          ⏰ CAM Pending
+                                        </span>
+                                      );
+                                    }
+                                    if (isDeadlineExpired) {
+                                      return (
+                                        <span className="text-[8.5px] font-black text-rose-700 flex items-center gap-0.5 uppercase tracking-wider">
+                                          ⏰ Request CAM
+                                        </span>
+                                      );
+                                    }
+                                    if (!isFuture) {
+                                      return (
+                                        <span className="text-[8.5px] font-black text-amber-700 flex items-center gap-0.5 uppercase tracking-wider animate-pulse">
+                                          ⚠️ Pending
+                                        </span>
+                                      );
+                                    }
+                                    if (isCovering) {
+                                      return (
+                                        <span className="text-blue-600 flex items-center gap-0.5 truncate">
+                                          Cover: {mentors.find(m => m.id === slotResult.originalMentorId)?.name?.split(" ")[0] || "Staff"}
+                                        </span>
+                                      );
+                                    }
+                                    if (approvedReq) {
+                                      return (
+                                        <span className="text-blue-600 flex items-center gap-0.5 truncate">
+                                          Covered: {approvedReq.coverStaffName?.split(" ")[0] || "Staff"}
+                                        </span>
+                                      );
+                                    }
+                                    if (pendingReq) {
+                                      return (
+                                        <span className="text-amber-600 truncate">
+                                          Cover Pending
+                                        </span>
+                                      );
+                                    }
+                                    return <span className="text-gray-550">My Class</span>;
+                                  })()}
 
                                   <span className={`px-1.5 py-0.5 rounded-[4px] text-[7.5px] font-extrabold uppercase ${isCovering || approvedReq
                                       ? 'bg-blue-100 text-blue-700 border border-blue-200/50'
@@ -4195,8 +4417,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
               const approvedReq = approvedHandovers.find(h => h.slotId === selectedCell.slot!.id && h.dateStr === selectedCell.dateStr);
 
-
-
               // 1b. If the attendance window has expired (Locked)
               if (isLocked) {
                 const prevExisting = studentAttendance.filter(
@@ -4205,6 +4425,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 const prevPresent = prevExisting.filter(a => a.status === "present").length;
                 const prevAbsent = prevExisting.filter(a => a.status === "absent").length;
                 const prevOD = prevExisting.filter(a => a.status === "od").length;
+
                 return (
                   <div className="py-6 px-4 bg-red-50/50 border border-red-100 rounded-xl text-center text-xs text-red-800 space-y-3 shrink-0 overflow-y-auto">
                     <Lock className="h-8 w-8 mx-auto text-red-500" />
@@ -4216,7 +4437,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <p className="flex justify-between"><span>Present:</span> <span className="font-black text-emerald-600">{prevPresent}</span></p>
                         <p className="flex justify-between"><span>Absent:</span> <span className="font-black text-rose-600">{prevAbsent}</span></p>
                         <p className="flex justify-between"><span>OD (On Duty):</span> <span className="font-black text-blue-600">{prevOD}</span></p>
-                        <p className="text-[10px] text-slate-450 font-bold mt-3 italic text-center block bg-slate-50 p-2 rounded-xl border">Contact your Campus Manager (CM) for in-person corrections.</p>
                       </div>
                     ) : (
                       <p className="text-[10px] text-slate-450 italic font-semibold">No attendance was marked for this slot before the window closed.</p>

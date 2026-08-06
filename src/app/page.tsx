@@ -18,7 +18,13 @@ import {
   Users,
   ArrowRight,
   Eye,
-  EyeOff
+  EyeOff,
+  GraduationCap,
+  Layers,
+  ClipboardList,
+  IndianRupee,
+  Award,
+  Calendar
 } from "lucide-react";
 
 
@@ -74,6 +80,9 @@ export default function Home() {
     }
   }, [router]);
 
+  // Master Role Access Modal state for thanush@faceprep.in
+  const [showMasterRoleModal, setShowMasterRoleModal] = useState(false);
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
@@ -94,8 +103,18 @@ export default function Home() {
       const data = await res.json();
 
       if (data.success) {
-        setRole(data.role, data.userId);
         localStorage.setItem("fp_logged_in", "true");
+        localStorage.setItem("fp_user_email", email.trim().toLowerCase());
+        localStorage.setItem("fp_user_name", "Thanush");
+
+        const isSuperAdmin = data.isSuperAdmin || email.trim().toLowerCase() === "thanush@faceprep.in";
+
+        if (isSuperAdmin) {
+          setShowMasterRoleModal(true);
+          return;
+        }
+
+        setRole(data.role, data.userId);
         if (data.mustChangePassword) {
           localStorage.setItem("fp_must_change_pass", "true");
         } else {
@@ -468,6 +487,66 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* ── MASTER ROLE ACCESS SELECTION MODAL (For thanush@faceprep.in) ── */}
+      {showMasterRoleModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 sm:p-8 space-y-6 animate-scaleUp max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="text-center space-y-2 border-b border-slate-100 pb-5">
+              <div className="inline-flex items-center justify-center h-12 w-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-[#D528A2] text-white shadow-md mx-auto">
+                <Sparkles className="h-6 w-6 text-amber-300 animate-pulse" />
+              </div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Master Role Access Activated</h2>
+              <p className="text-xs font-semibold text-slate-500 max-w-md mx-auto">
+                Welcome <span className="text-indigo-600 font-extrabold">Thanush</span>! You have full access to all 9 system workspaces. Choose a dashboard to launch:
+              </p>
+            </div>
+
+            {/* Grid of Workspaces */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+              {[
+                { id: "admin", label: "Super Admin", desc: "System control & global settings", path: "/admin", icon: ShieldCheck, color: "from-[#D528A2] to-pink-600" },
+                { id: "cam", label: "CM Dashboard", desc: "Campus operations & timetables", path: "/cam", icon: Building2, color: "from-indigo-600 to-purple-600" },
+                { id: "mentor", label: "Faculty Workspace", desc: "Schedules, logs & permissions", path: "/mentor", icon: GraduationCap, color: "from-emerald-600 to-teal-600" },
+                { id: "kam", label: "KAM Portfolio", desc: "Multi-campus account oversight", path: "/kam", icon: Layers, color: "from-purple-600 to-indigo-600" },
+                { id: "student", label: "Student Portal", desc: "Class schedule & task tracker", path: "/student", icon: User, color: "from-blue-600 to-sky-600" },
+                { id: "hr", label: "HR Audit Portal", desc: "Conduction & attendance logs", path: "/hr", icon: ClipboardList, color: "from-orange-600 to-amber-600" },
+                { id: "fee_manager", label: "Fee Collections", desc: "Student fee dues & receipts", path: "/fee-manager", icon: IndianRupee, color: "from-teal-600 to-emerald-600" },
+                { id: "sme", label: "SME Evaluation", desc: "Mock interviews & grading", path: "/sme", icon: Award, color: "from-rose-600 to-pink-600" },
+                { id: "allocator", label: "Demo Scheduler", desc: "Demo sessions & faculty slots", path: "/allocator", icon: Calendar, color: "from-amber-600 to-orange-600" },
+              ].map(w => {
+                const Icon = w.icon;
+                return (
+                  <button
+                    key={w.id}
+                    type="button"
+                    onClick={() => {
+                      setRole(w.id as any);
+                      localStorage.setItem("fp_current_role", w.id);
+                      localStorage.setItem("fp_logged_in", "true");
+                      localStorage.setItem("fp_user_email", "thanush@faceprep.in");
+                      localStorage.setItem("fp_user_name", "Thanush");
+                      router.push(w.path);
+                    }}
+                    className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left flex flex-col justify-between group cursor-pointer relative overflow-hidden"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`h-9 w-9 rounded-xl bg-gradient-to-tr ${w.color} flex items-center justify-center text-white shadow-xs shrink-0 group-hover:scale-110 transition-transform`}>
+                        <Icon className="h-4.5 w-4.5" />
+                      </div>
+                      <div>
+                        <span className="block text-xs font-black text-slate-800 group-hover:text-indigo-600 transition-colors">{w.label}</span>
+                        <span className="block text-[9.5px] font-medium text-slate-500 mt-0.5 line-clamp-1">{w.desc}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

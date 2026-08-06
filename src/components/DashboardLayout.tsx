@@ -14,7 +14,18 @@ import {
   X,
   Loader2,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  Building2,
+  GraduationCap,
+  Layers,
+  User,
+  ClipboardList,
+  IndianRupee,
+  Award,
+  Calendar,
+  Globe,
+  Check
 } from "lucide-react";
 
 interface DashboardLayoutProps {
@@ -26,6 +37,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const router = useRouter();
   const {
     currentRole,
+    setRole,
     currentMentor,
     currentHR,
     currentCAM,
@@ -33,15 +45,37 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     currentAdmin,
     currentStudent,
     currentSME,
+    colleges,
     isLoading,
     isDataLoading,
   } = useApp();
 
+  const storedUserEmail = typeof window !== "undefined" ? (localStorage.getItem("fp_user_email") || "") : "";
+  const isSuperAdminEmail = storedUserEmail.toLowerCase().trim() === "thanush@faceprep.in";
+
+  const [selectedCampusScope, setSelectedCampusScope] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("fp_superadmin_campus_scope") || "all";
+    }
+    return "all";
+  });
+  const [showCampusDropdown, setShowCampusDropdown] = useState(false);
+
+  const handleSelectCampusScope = (scopeId: string) => {
+    setSelectedCampusScope(scopeId);
+    localStorage.setItem("fp_superadmin_campus_scope", scopeId);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage"));
+      window.location.reload();
+    }
+  };
+
   const isLoggedInClient = typeof window !== "undefined" && localStorage.getItem("fp_logged_in") === "true";
   const storedRoleClient = typeof window !== "undefined" ? localStorage.getItem("fp_current_role") : null;
-  const isAuthorized = isLoggedInClient && (currentRole === requiredRole || storedRoleClient === requiredRole);
+  const isAuthorized = isLoggedInClient && (isSuperAdminEmail || currentRole === requiredRole || storedRoleClient === requiredRole);
 
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [showDashboardSwitch, setShowDashboardSwitch] = useState(false);
 
   const isFirstLoginRequired = typeof window !== "undefined" && localStorage.getItem("fp_must_change_pass") === "true";
 
@@ -63,8 +97,6 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   useEffect(() => {
     setRefreshedAtTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
   }, []);
-
-  const storedUserEmail = typeof window !== "undefined" ? localStorage.getItem("fp_user_email") : null;
 
   const currentUserEmail =
     storedUserEmail ||
@@ -161,11 +193,11 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     const storedRole = typeof window !== "undefined" ? (localStorage.getItem("fp_current_role") || sessionStorage.getItem("fp_current_role")) : null;
     const activeRole = currentRole || storedRole;
 
-    if (activeRole && activeRole !== requiredRole && !isLoading && !isDataLoading) {
+    if (!isSuperAdminEmail && activeRole && activeRole !== requiredRole && !isLoading && !isDataLoading) {
       const targetPath = "/" + (activeRole === "fee_manager" ? "fee-manager" : activeRole);
       router.replace(targetPath);
     }
-  }, [isLoading, isDataLoading, currentRole, requiredRole, router]);
+  }, [isLoading, isDataLoading, currentRole, requiredRole, router, isSuperAdminEmail]);
 
   const handleLogout = async () => {
     try {
@@ -232,6 +264,163 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span>Refreshed at {refreshedAtTime || "Just now"}</span>
           </div>
+
+          {/* Master Multi-Role Switcher (Restricted to thanush@faceprep.in) */}
+          {isSuperAdminEmail && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowDashboardSwitch(prev => !prev)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 via-purple-600 to-[#D528A2] text-white font-extrabold text-xs shadow-sm hover:shadow-md transition-all cursor-pointer"
+                title="Switch Workspace (Thanush Master Access)"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-amber-300 animate-pulse" />
+                <span className="hidden sm:inline">Switch Workspace</span>
+                <ChevronDown className={`h-3.5 w-3.5 opacity-80 transition-transform ${showDashboardSwitch ? "rotate-180" : ""}`} />
+              </button>
+
+              {showDashboardSwitch && (
+                <div className="absolute right-0 mt-2.5 w-64 bg-white border border-slate-200 rounded-xl shadow-2xl p-2 z-50 animate-fadeIn space-y-1">
+                  <div className="px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-indigo-600 border-b border-slate-100 flex items-center justify-between">
+                    <span>Master Role Launcher</span>
+                    <span className="text-[8px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-bold">Thanush</span>
+                  </div>
+                  {[
+                    { id: "admin", label: "Super Admin Console", path: "/admin", icon: ShieldCheck, color: "text-[#D528A2]" },
+                    { id: "cam", label: "CM Operations Hub", path: "/cam", icon: Building2, color: "text-indigo-600" },
+                    { id: "mentor", label: "Faculty Workspace", path: "/mentor", icon: GraduationCap, color: "text-emerald-600" },
+                    { id: "kam", label: "Key Account Manager", path: "/kam", icon: Layers, color: "text-purple-600" },
+                    { id: "student", label: "Student Portal", path: "/student", icon: User, color: "text-blue-600" },
+                    { id: "hr", label: "HR Audit Portal", path: "/hr", icon: ClipboardList, color: "text-orange-600" },
+                    { id: "fee_manager", label: "Fee Collections", path: "/fee-manager", icon: IndianRupee, color: "text-teal-600" },
+                    { id: "sme", label: "SME Evaluation Hub", path: "/sme", icon: Award, color: "text-rose-600" },
+                    { id: "allocator", label: "Demo Scheduler Portal", path: "/allocator", icon: Calendar, color: "text-amber-600" },
+                  ].map(item => {
+                    const Icon = item.icon;
+                    const isCurrent = currentRole === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setShowDashboardSwitch(false);
+                          localStorage.setItem("fp_current_role", item.id);
+                          localStorage.setItem("fp_logged_in", "true");
+                          localStorage.setItem("fp_user_email", "thanush@faceprep.in");
+
+                          if (item.id === "mentor") {
+                            localStorage.setItem("fp_superadmin_campus_scope", "college_sdnb");
+                            setSelectedCampusScope("college_sdnb");
+                            setRole("mentor", "mentor_thanush");
+                          } else if (item.id === "admin") {
+                            localStorage.setItem("fp_superadmin_campus_scope", "all");
+                            setSelectedCampusScope("all");
+                            setRole("admin", "admin_thanush");
+                          } else {
+                            localStorage.setItem("fp_superadmin_campus_scope", "all");
+                            setSelectedCampusScope("all");
+                            setRole(item.id as any);
+                          }
+
+                          router.push(item.path);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-left ${
+                          isCurrent
+                            ? "bg-indigo-50 text-indigo-700 font-extrabold border border-indigo-200 shadow-xs"
+                            : "text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Icon className={`h-4 w-4 ${item.color}`} />
+                          <span>{item.label}</span>
+                        </div>
+                        {isCurrent && <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Master Global Region / Campus Scope Switcher (Restricted to thanush@faceprep.in) */}
+          {isSuperAdminEmail && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowCampusDropdown(prev => !prev)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-800 font-extrabold text-xs shadow-xs hover:border-indigo-500 hover:text-indigo-600 transition-all cursor-pointer"
+                title="Filter Real-Time Data Region / Campus"
+              >
+                <Globe className="h-3.5 w-3.5 text-indigo-600 animate-pulse" />
+                <span className="hidden sm:inline">
+                  {selectedCampusScope === "all"
+                    ? "All Regions (Global)"
+                    : colleges.find(c => c.id === selectedCampusScope)?.name || "Selected Campus"}
+                </span>
+                <ChevronDown className={`h-3.5 w-3.5 opacity-80 transition-transform ${showCampusDropdown ? "rotate-180" : ""}`} />
+              </button>
+
+              {showCampusDropdown && (
+                <div className="absolute right-0 mt-2.5 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl p-2 z-50 animate-fadeIn space-y-1 max-h-80 overflow-y-auto">
+                  <div className="px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-indigo-600 border-b border-slate-100 flex items-center justify-between">
+                    <span>Global Data Scope</span>
+                    <span className="text-[8px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Thanush</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCampusDropdown(false);
+                      handleSelectCampusScope("all");
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-left ${
+                      selectedCampusScope === "all"
+                        ? "bg-indigo-50 text-indigo-700 font-extrabold border border-indigo-200 shadow-xs"
+                        : "text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Globe className="h-4 w-4 text-indigo-600 shrink-0" />
+                      <div>
+                        <span className="block font-black">All Regions & Campuses</span>
+                        <span className="text-[9px] text-slate-400 font-medium block">Aggregated real-time data</span>
+                      </div>
+                    </div>
+                    {selectedCampusScope === "all" && <Check className="h-4 w-4 text-indigo-600 shrink-0" />}
+                  </button>
+
+                  <div className="border-t border-slate-100 my-1 pt-1">
+                    <span className="px-2.5 py-1 text-[9px] font-extrabold uppercase text-slate-400 block">Individual Campuses</span>
+                    {colleges.map(c => {
+                      const isSelected = selectedCampusScope === c.id;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setShowCampusDropdown(false);
+                            handleSelectCampusScope(c.id);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-left ${
+                            isSelected
+                              ? "bg-indigo-50 text-indigo-700 font-extrabold border border-indigo-200 shadow-xs"
+                              : "text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <Building2 className="h-4 w-4 text-purple-600 shrink-0" />
+                            <span className="truncate">{c.name}</span>
+                          </div>
+                          {isSelected && <Check className="h-4 w-4 text-indigo-600 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="relative">
             <button

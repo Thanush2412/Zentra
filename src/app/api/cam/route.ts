@@ -18,8 +18,8 @@ export async function GET(request: Request) {
       FROM campus_managers cm
       JOIN colleges c ON cm.college_id = c.id
       JOIN kam_users k ON cm.kam_id = k.id
-      WHERE cm.id = ?
-    `, camId);
+      WHERE cm.id = ? OR cm.email = ?
+    `, [camId, camId]);
     if (!cam) {
       return NextResponse.json({ success: false, message: "Campus Manager not found" }, { status: 404 });
     }

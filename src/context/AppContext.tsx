@@ -84,6 +84,7 @@ export interface College {
   shift_configs?: string;
   rooms?: string;
   working_days?: number;
+  start_time?: string;
 }
 
 export interface Student {
@@ -897,48 +898,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem("fp_current_role", role);
     setCurrentRoleState(role);
 
+    const userEmail = (localStorage.getItem("fp_user_email") || "").toLowerCase().trim();
+    const isThanushUser = userEmail === "thanush@faceprep.in";
+
     if (role === "mentor") {
-      const selectedId = userId || currentMentor?.id;
-      const m = mentors.find((item) => item.id === selectedId) || mentors[0] || null;
+      const selectedId = userId || (isThanushUser ? "mentor_thanush" : currentMentor?.id);
+      const m = mentors.find((item) => item.id === selectedId || (isThanushUser && item.email.toLowerCase() === userEmail)) || mentors[0] || null;
       setCurrentMentor(m);
       setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
       if (m) {
         localStorage.setItem("fp_mentor_id", m.id);
       }
-    } else if (role === "cam" && userId) {
-      localStorage.setItem("fp_cam_id", userId);
-      setCurrentMentor(null); setCurrentHR(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
-      // Fetch CAM data
-      fetch(`/api/cam?id=${userId}`).then(r => r.json()).then(d => {
-        if (d.success) setCurrentCAM({ ...d.cam, role: "cam" as const });
-      });
-    } else if (role === "kam" && userId) {
-      localStorage.setItem("fp_kam_id", userId);
-      setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentAdmin(null); setCurrentStudent(null);
-      // Fetch KAM data
-      fetch(`/api/kam?id=${userId}`).then(r => r.json()).then(d => {
-        if (d.success) setCurrentKAM({ ...d.kam, role: "kam" as const });
-      });
-    } else if (role === "admin" && userId) {
-      localStorage.setItem("fp_admin_id", userId);
-      setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentStudent(null);
-      // Fetch Admin data
-      fetch(`/api/admin?id=${userId}`).then(r => r.json()).then(d => {
-        if (d.success) setCurrentAdmin({ ...d.admin, role: "admin" as const });
-      });
-    } else if (role === "student" && userId) {
-      localStorage.setItem("fp_student_id", userId);
-      const s = students.find((item) => item.id === userId) || students[0] || null;
-      setCurrentStudent(s);
-      setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentSME(null);
+    } else if (role === "cam") {
+      const targetCamId = userId || (isThanushUser ? "cam_thanush" : localStorage.getItem("fp_cam_id"));
+      if (targetCamId) {
+        localStorage.setItem("fp_cam_id", targetCamId);
+        setCurrentMentor(null); setCurrentHR(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
+        fetch(`/api/cam?id=${encodeURIComponent(targetCamId)}`).then(r => r.json()).then(d => {
+          if (d.success) setCurrentCAM({ ...d.cam, role: "cam" as const });
+        });
+      }
+    } else if (role === "kam") {
+      const targetKamId = userId || (isThanushUser ? "kam_thanush" : localStorage.getItem("fp_kam_id"));
+      if (targetKamId) {
+        localStorage.setItem("fp_kam_id", targetKamId);
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentAdmin(null); setCurrentStudent(null);
+        fetch(`/api/kam?id=${encodeURIComponent(targetKamId)}`).then(r => r.json()).then(d => {
+          if (d.success) setCurrentKAM({ ...d.kam, role: "kam" as const });
+        });
+      }
+    } else if (role === "admin") {
+      const targetAdminId = userId || (isThanushUser ? "admin_thanush" : localStorage.getItem("fp_admin_id"));
+      if (targetAdminId) {
+        localStorage.setItem("fp_admin_id", targetAdminId);
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentStudent(null);
+        fetch(`/api/admin?id=${encodeURIComponent(targetAdminId)}`).then(r => r.json()).then(d => {
+          if (d.success) setCurrentAdmin({ ...d.admin, role: "admin" as const });
+        });
+      }
+    } else if (role === "student") {
+      const targetStudentId = userId || (isThanushUser ? "std_thanush" : localStorage.getItem("fp_student_id"));
+      if (targetStudentId) {
+        localStorage.setItem("fp_student_id", targetStudentId);
+        const s = students.find((item) => item.id === targetStudentId || (isThanushUser && item.email.toLowerCase() === userEmail)) || students[0] || null;
+        setCurrentStudent(s);
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentSME(null);
+      }
     } else if (role === "fee_manager") {
       localStorage.setItem("fp_current_role", "fee_manager");
       setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
-    } else if (role === "sme" && userId) {
-      localStorage.setItem("fp_sme_id", userId);
-      const s = smes.find((item) => item.id === userId) || smes[0] || null;
-      setCurrentSME(s);
-      setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
+    } else if (role === "sme") {
+      const targetSmeId = userId || (isThanushUser ? "sme_thanush" : localStorage.getItem("fp_sme_id"));
+      if (targetSmeId) {
+        localStorage.setItem("fp_sme_id", targetSmeId);
+        const s = smes.find((item) => item.id === targetSmeId || (isThanushUser && item.email.toLowerCase() === userEmail)) || smes[0] || null;
+        setCurrentSME(s);
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
+      }
     } else if (role === "allocator") {
       localStorage.setItem("fp_current_role", "allocator");
       setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);

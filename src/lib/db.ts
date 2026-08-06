@@ -641,7 +641,41 @@ export function getDb(): Promise<TursoDbAdapter> {
       FOREIGN KEY (mentor_id) REFERENCES mentors(id) ON DELETE CASCADE,
       FOREIGN KEY (college_id) REFERENCES colleges(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS interview_evaluations (
+      id TEXT PRIMARY KEY,
+      interview_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      student_name TEXT,
+      class_group TEXT,
+      mentor_id TEXT NOT NULL,
+      mentor_name TEXT,
+      attendance TEXT DEFAULT 'present',
+      communication_score INTEGER DEFAULT 0,
+      content_score INTEGER DEFAULT 0,
+      technical_score INTEGER DEFAULT 0,
+      confidence_score INTEGER DEFAULT 0,
+      total_score INTEGER DEFAULT 0,
+      questions_asked TEXT,
+      remarks TEXT,
+      status TEXT DEFAULT 'Cleared',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+    );
   `);
+
+  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN mentor_id TEXT;`); } catch (_) {}
+  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN mentor_name TEXT;`); } catch (_) {}
+  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN target_date TEXT;`); } catch (_) {}
+  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN topics TEXT;`); } catch (_) {}
+  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN student_count INTEGER;`); } catch (_) {}
+  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN origin_college_id TEXT;`); } catch (_) {}
+  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN target_college_id TEXT;`); } catch (_) {}
+  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN gmeet_link TEXT;`); } catch (_) {}
+  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN priority_level INTEGER DEFAULT 1;`); } catch (_) {}
+  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN assigned_mentor_ids TEXT;`); } catch (_) {}
+
 
   try {
     await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN subject_group TEXT;`);

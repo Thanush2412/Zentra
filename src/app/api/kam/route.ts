@@ -12,7 +12,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, message: "KAM id required" }, { status: 400 });
     }
 
-    const kam = await db.get("SELECT * FROM kam_users WHERE id = ?", kamId);
+    const kam = await db.get("SELECT * FROM kam_users WHERE id = ? OR email = ?", [kamId, kamId]);
     if (!kam) {
       return NextResponse.json({ success: false, message: "KAM not found" }, { status: 404 });
     }

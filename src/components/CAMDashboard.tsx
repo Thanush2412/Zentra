@@ -858,8 +858,34 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   } = useApp();
   const { toast, confirm: showConfirm } = useToast();
 
-  const activeCollegeId = currentCAM?.college_id || colleges[0]?.id || "college_1";
-  const activeCollegeName = currentCAM?.college_name || colleges.find(c => c.id === activeCollegeId)?.name || "Primary Campus";
+  const storedUserEmail = typeof window !== "undefined" ? (localStorage.getItem("fp_user_email") || "") : "";
+  const isSuperAdminUser = storedUserEmail.toLowerCase().trim() === "thanush@faceprep.in";
+
+  const [superAdminScope, setSuperAdminScope] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("fp_superadmin_campus_scope") || "all";
+    }
+    return "all";
+  });
+
+  useEffect(() => {
+    const handleStorage = () => {
+      const scope = localStorage.getItem("fp_superadmin_campus_scope") || "all";
+      setSuperAdminScope(scope);
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  const isGlobalAllCampuses = isSuperAdminUser && superAdminScope === "all";
+
+  const activeCollegeId = isSuperAdminUser
+    ? (superAdminScope === "all" ? "all" : superAdminScope)
+    : (currentCAM?.college_id || colleges[0]?.id || "college_1");
+
+  const activeCollegeName = isGlobalAllCampuses
+    ? "All Regions & Campuses (Global Data Scope)"
+    : (currentCAM?.college_name || colleges.find(c => c.id === activeCollegeId)?.name || "Primary Campus");
 
   // Tab State
   const [localActiveTab, setLocalActiveTab] = useState<"overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance">("overview");
@@ -1678,15 +1704,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   };
 
   // Derived filters and variables
-  const collegeCourses = useMemo(() => coursesList.filter(c => !c.college_id || c.college_id === activeCollegeId), [coursesList, activeCollegeId]);
+  const collegeCourses = useMemo(() => {
+    if (isGlobalAllCampuses) return coursesList;
+    return coursesList.filter(c => !c.college_id || c.college_id === activeCollegeId);
+  }, [coursesList, activeCollegeId, isGlobalAllCampuses]);
 
   const collegeMentors = useMemo(() => {
+    if (isGlobalAllCampuses) return mentors;
     return mentors.filter(m => m.college_id === activeCollegeId);
-  }, [mentors, activeCollegeId]);
+  }, [mentors, activeCollegeId, isGlobalAllCampuses]);
 
   const collegeStudents = useMemo(() => {
+    if (isGlobalAllCampuses) return students;
     return students.filter(s => s.college_id === activeCollegeId);
-  }, [students, activeCollegeId]);
+  }, [students, activeCollegeId, isGlobalAllCampuses]);
 
   const isCampusShiftBased = useMemo(() => {
     const activeCollege = colleges.find(c => c.id === activeCollegeId);
@@ -1697,8 +1728,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   }, [colleges, activeCollegeId, collegeCourses]);
 
   const collegeSlots = useMemo(() => {
+    if (isGlobalAllCampuses) return slots;
     return slots.filter(s => s.college_id === activeCollegeId);
-  }, [slots, activeCollegeId]);
+  }, [slots, activeCollegeId, isGlobalAllCampuses]);
 
   const dbCourseNames = useMemo(() => {
     return Array.from(new Set(collegeCourses.map(c => c.name.trim()).filter(Boolean))).sort();
@@ -1721,16 +1753,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const fromSlots = collegeSlots.map(s => s.classGroup).filter(Boolean);
     return Array.from(new Set([...fromStudents, ...fromSlots])).sort();
   }, [collegeStudents, collegeSlots]);
-  const collegeSubjects = subjectsList.filter(s => !s.college_id || s.college_id === activeCollegeId);
+  const collegeSubjects = isGlobalAllCampuses ? subjectsList : subjectsList.filter(s => !s.college_id || s.college_id === activeCollegeId);
 
   // Seed tracker department when subjects/departments load
   useEffect(() => {
-    const collegeDepts = departmentsList.filter(d => !d.college_id || d.college_id === activeCollegeId);
+    const collegeDepts = isGlobalAllCampuses ? departmentsList : departmentsList.filter(d => !d.college_id || d.college_id === activeCollegeId);
     if (collegeDepts.length > 0 && !camTrackerDept) {
       setCamTrackerDept(collegeDepts[0].name.trim());
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [departmentsList, activeCollegeId]);
+  }, [departmentsList, activeCollegeId, isGlobalAllCampuses]);
 
   // States for divided cohort filters
   const [selectedCohortCourse, setSelectedCohortCourse] = useState("");
@@ -4150,39 +4182,55 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
           {/* 1. OPERATIONS HUB */}
           {activeTab === "overview" && (() => {
-            // Real Calculation 1: Student Attendance Avg from actual records & student database
+            const collegeDepts = (departmentsList || []).filter(d => !d.college_id || d.college_id === activeCollegeId);
+            const deptsCount = collegeDepts.length > 0 ? collegeDepts.length : FACULTY_DEPARTMENTS.length;
+
+            // Real Calculation 1: Student Attendance Avg from actual records & student database for active campus
             const calculatedStudentAttendancePct = (() => {
-              if (studentAttendance && studentAttendance.length > 0) {
-                const presentCount = studentAttendance.filter(a => a.status === "present" || a.status === "od").length;
-                return ((presentCount / studentAttendance.length) * 100).toFixed(1) + "%";
+              const collegeStudentIds = new Set((collegeStudents || []).map(s => s.id));
+              const campusAttendance = (studentAttendance || []).filter(a => collegeStudentIds.has(a.studentId));
+              
+              if (campusAttendance.length > 0) {
+                const presentCount = campusAttendance.filter(a => a.status === "present" || a.status === "od").length;
+                return ((presentCount / campusAttendance.length) * 100).toFixed(1) + "%";
               }
               if (collegeStudents && collegeStudents.length > 0) {
-                const validPcts = collegeStudents.map(s => Number((s as any).attendance_percentage || (s as any).attendancePct || 0)).filter(n => n > 0);
+                const validPcts = collegeStudents
+                  .map(s => Number((s as any).attendance_percentage || (s as any).attendancePct || 0))
+                  .filter(n => n > 0);
                 if (validPcts.length > 0) {
                   const avg = validPcts.reduce((sum, v) => sum + v, 0) / validPcts.length;
                   return avg.toFixed(1) + "%";
                 }
               }
-              return "88.4%";
+              return "0.0%";
             })();
 
-            // Real Calculation 2: Team Attendance Avg (Mentor Attendance) from faculty timetable conduction & logs
+            // Real Calculation 2: Team Attendance Avg (Faculty Conduction Rate) from timetable slots & logs for active campus
             const calculatedTeamAttendancePct = (() => {
               const facultyIds = new Set((collegeMentors || []).map(m => m.id));
-              const facultySlots = (collegeSlots || []).filter(s => facultyIds.has(s.mentorId));
-              if (facultySlots.length > 0) {
-                const logsSubmitted = studentAttendance ? new Set(studentAttendance.map(a => a.slotId || (a as any).slot_id)).size : 0;
-                const ratio = Math.min(100, Math.max(78, (logsSubmitted / facultySlots.length) * 100));
-                return (ratio > 10 ? ratio : 94.2).toFixed(1) + "%";
+              const facultySlots = (collegeSlots || []).filter(s => facultyIds.has(s.mentorId) || s.college_id === activeCollegeId);
+              const collegeStudentIds = new Set((collegeStudents || []).map(s => s.id));
+              const campusAttendance = (studentAttendance || []).filter(a => collegeStudentIds.has(a.studentId));
+              
+              if (facultySlots.length > 0 && campusAttendance.length > 0) {
+                const logsSubmitted = new Set(campusAttendance.map(a => a.slotId || (a as any).slot_id)).size;
+                const ratio = Math.min(100, (logsSubmitted / facultySlots.length) * 100);
+                return ratio.toFixed(1) + "%";
               }
-              return "94.2%";
+              if (collegeMentors.length > 0 && campusAttendance.length > 0) {
+                const activeMentorsWhoMarked = new Set(campusAttendance.map(a => a.markedBy || (a as any).marked_by)).size;
+                const ratio = Math.min(100, (activeMentorsWhoMarked / collegeMentors.length) * 100);
+                return ratio.toFixed(1) + "%";
+              }
+              return "0.0%";
             })();
 
             return (
               <div className="space-y-6">
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-5 pt-3.5 px-2">
                   {[
-                    { label: "Assigned Departments", value: depts.length, icon: GraduationCap, bg: "bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-yellow-500/10 border-amber-200/60 dark:border-amber-500/20", iconColor: "text-amber-600 dark:text-amber-400" },
+                    { label: "Assigned Departments", value: deptsCount, icon: GraduationCap, bg: "bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-yellow-500/10 border-amber-200/60 dark:border-amber-500/20", iconColor: "text-amber-600 dark:text-amber-400" },
                     { label: "Total Faculty", value: collegeMentors.length, icon: Users, bg: "bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-sky-500/10 border-blue-200/60 dark:border-blue-500/20", iconColor: "text-blue-600 dark:text-blue-400" },
                     { label: "Total Students", value: collegeStudents.length, icon: Users, bg: "bg-gradient-to-br from-purple-500/10 via-pink-500/5 to-fuchsia-500/10 border-purple-200/60 dark:border-purple-500/20", iconColor: "text-purple-600 dark:text-purple-400" },
                     { label: "Student Attendance Avg", value: calculatedStudentAttendancePct, icon: CheckCircle2, bg: "bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-green-500/10 border-emerald-200/60 dark:border-emerald-500/20", iconColor: "text-emerald-600 dark:text-emerald-400", success: true },
@@ -6987,7 +7035,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       {req.reason}
                                     </td>
                                     <td className="p-3 border-r border-slate-100">
-                                      {req.status === "pending_cam" ? (
+                                      {req.reason?.includes("Late Mentor Attendance Punch") ? (
+                                        <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 animate-pulse flex items-center gap-1 w-fit">
+                                          <span>⏰ Late Mentor Punch</span>
+                                        </span>
+                                      ) : req.reason?.includes("Late Attendance") ? (
+                                        <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 animate-pulse flex items-center gap-1 w-fit">
+                                          <span>⏰ Late Attendance</span>
+                                        </span>
+                                      ) : req.status === "pending_cam" ? (
                                         <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-indigo-50 border-indigo-150 text-indigo-700 animate-pulse">
                                           Emergency (CM)
                                         </span>

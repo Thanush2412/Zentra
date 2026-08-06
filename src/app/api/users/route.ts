@@ -82,6 +82,68 @@ export async function POST(request: Request) {
         [newId, cleanEmail, passHash, userRole, refId, userStatus, nowStr, nowStr]
       );
 
+      // Auto-sync into role-specific tables so new KAMs, CAMs, Mentors appear in dropdowns instantly
+      const rawName = body.name || body.userName || cleanEmail.split("@")[0];
+      const displayName = rawName.replace(/[._]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+
+      if (userRole === "kam") {
+        const existingKam = await db.get("SELECT id FROM kam_users WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
+        if (!existingKam) {
+          await db.run(
+            "INSERT INTO kam_users (id, name, email, title) VALUES (?, ?, ?, ?)",
+            [refId, displayName + " (KAM)", cleanEmail, "Key Account Manager"]
+          );
+        }
+      } else if (userRole === "cam") {
+        const existingCam = await db.get("SELECT id FROM campus_managers WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
+        if (!existingCam) {
+          const colId = body.college_id || "college_sdnb";
+          const kamId = body.kam_id || "kam_1";
+          await db.run(
+            "INSERT INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)",
+            [refId, displayName + " (CM)", cleanEmail, colId, kamId]
+          );
+        }
+      } else if (userRole === "mentor") {
+        const existingMentor = await db.get("SELECT id FROM mentors WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
+        if (!existingMentor) {
+          const colId = body.college_id || "college_sdnb";
+          await db.run(
+            `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, college_id, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              refId,
+              displayName,
+              cleanEmail,
+              body.department || "Computer Science",
+              "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+              body.subjects || "General Subjects",
+              body.classes || "All Classes",
+              colId,
+              userStatus,
+              nowStr,
+              nowStr
+            ]
+          );
+        }
+      } else if (userRole === "sme") {
+        const existingSme = await db.get("SELECT id FROM sme_users WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
+        if (!existingSme) {
+          await db.run(
+            "INSERT INTO sme_users (id, name, email) VALUES (?, ?, ?)",
+            [refId, displayName, cleanEmail]
+          );
+        }
+      } else if (userRole === "student") {
+        const existingStudent = await db.get("SELECT id FROM students WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
+        if (!existingStudent) {
+          await db.run(
+            "INSERT INTO students (id, name, email, classGroup, college_id) VALUES (?, ?, ?, ?, ?)",
+            [refId, displayName, cleanEmail, body.classGroup || "General", body.college_id || "college_sdnb"]
+          );
+        }
+      }
+
       return NextResponse.json({ success: true, message: "User credential created successfully.", id: newId });
     }
 

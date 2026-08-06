@@ -6,8 +6,9 @@ export async function GET(request: Request) {
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const studentId = searchParams.get("studentId");
-    const classGroup = searchParams.get("classGroup");
-    const subject = searchParams.get("subject");
+    const mentorId = searchParams.get("mentorId");
+    const collegeId = searchParams.get("collegeId");
+    const role = searchParams.get("role") || "mentor";
     const type = searchParams.get("type");
 
     let query = "SELECT * FROM student_interviews WHERE 1=1";
@@ -17,23 +18,26 @@ export async function GET(request: Request) {
       query += " AND student_id = ?";
       params.push(studentId);
     }
-    if (classGroup) {
-      query += " AND class_group = ?";
-      params.push(classGroup);
-    }
-    if (subject) {
-      query += " AND subject = ?";
-      params.push(subject);
-    }
     if (type) {
       query += " AND type = ?";
       params.push(type);
+    }
+    if (role === "mentor" && mentorId) {
+      query += " AND (mentor_id = ? OR assigned_mentor_ids LIKE ?)";
+      params.push(mentorId, `%${mentorId}%`);
+    } else if (role === "cam" && collegeId) {
+      query += " AND (origin_college_id = ? OR target_college_id = ?)";
+      params.push(collegeId, collegeId);
     }
 
     query += " ORDER BY created_at DESC";
 
     const interviews = await db.all(query, params);
-    return NextResponse.json({ success: true, interviews });
+
+    // Fetch evaluations as well
+    const evaluations = await db.all("SELECT * FROM interview_evaluations ORDER BY created_at DESC");
+
+    return NextResponse.json({ success: true, interviews, evaluations });
   } catch (error: any) {
     console.error("GET /api/interviews error:", error);
     return NextResponse.json({ success: false, message: error.message || "Failed to fetch interviews" }, { status: 500 });
@@ -49,30 +53,45 @@ export async function POST(request: Request) {
       id,
       student_id,
       student_name,
-      class_group,
+      class_group = "",
       subject,
       type = "internal",
-      marks = 0,
-      total_marks = 100,
-      technical_marks = 0,
-      communication_marks = 0,
-      status = "Cleared",
-      evaluator_name,
-      evaluator_role = "mentor",
+      target_date,
+      topics,
+      student_count = 1,
+      mentor_id,
+      mentor_name,
+      origin_college_id,
       notes = ""
     } = body;
 
-    if (!student_id || !class_group || !subject || !evaluator_name) {
+    if (!subject || !mentor_id || !target_date) {
       return NextResponse.json(
-        { success: false, message: "Missing required fields (student_id, class_group, subject, evaluator_name)" },
+        { success: false, message: "Missing required fields (subject, mentor_id, target_date)" },
         { status: 400 }
       );
     }
 
-    let resolvedStudentName = student_name;
-    if (!resolvedStudentName) {
-      const studentRow = await db.get("SELECT name FROM students WHERE id = ?", [student_id]);
-      resolvedStudentName = studentRow?.name || "Student";
+    // Rule 1: Exclude Tamil subject
+    if (subject.trim().toLowerCase() === "tamil") {
+      return NextResponse.json(
+        { success: false, message: "Interview Module features are not applicable for Tamil subject." },
+        { status: 400 }
+      );
+    }
+
+    // Rule 2: Date must be at least 2 days after current date
+    const reqDate = new Date(target_date);
+    const minAllowedDate = new Date();
+    minAllowedDate.setHours(0, 0, 0, 0);
+    minAllowedDate.setDate(minAllowedDate.getDate() + 2); // 2 days in future
+
+    if (isNaN(reqDate.getTime()) || reqDate < minAllowedDate) {
+      const minStr = minAllowedDate.toISOString().split("T")[0];
+      return NextResponse.json(
+        { success: false, message: `Interview target date must be at least 2 days in advance (on or after ${minStr}).` },
+        { status: 400 }
+      );
     }
 
     const interviewId = id || `int_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -81,37 +100,31 @@ export async function POST(request: Request) {
     await db.run(
       `INSERT INTO student_interviews (
         id, student_id, student_name, class_group, subject, type,
-        marks, total_marks, technical_marks, communication_marks,
-        status, evaluator_name, evaluator_role, notes, created_at, updated_at
+        target_date, topics, student_count, mentor_id, mentor_name,
+        origin_college_id, status, notes, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
-        student_name = excluded.student_name,
-        class_group = excluded.class_group,
         subject = excluded.subject,
         type = excluded.type,
-        marks = excluded.marks,
-        total_marks = excluded.total_marks,
-        technical_marks = excluded.technical_marks,
-        communication_marks = excluded.communication_marks,
-        status = excluded.status,
-        evaluator_name = excluded.evaluator_name,
-        evaluator_role = excluded.evaluator_role,
+        target_date = excluded.target_date,
+        topics = excluded.topics,
+        student_count = excluded.student_count,
         notes = excluded.notes,
         updated_at = excluded.updated_at`,
       [
         interviewId,
-        student_id,
-        resolvedStudentName,
+        student_id || "batch_all",
+        student_name || "Assigned Students",
         class_group,
         subject,
         type,
-        Number(marks) || 0,
-        Number(total_marks) || 100,
-        Number(technical_marks) || 0,
-        Number(communication_marks) || 0,
-        status,
-        evaluator_name,
-        evaluator_role,
+        target_date,
+        topics || "",
+        Number(student_count) || 1,
+        mentor_id,
+        mentor_name || "Mentor",
+        origin_college_id || "",
+        type === "external" ? "pending_external_cm" : "pending_cm",
         notes,
         now,
         now
@@ -122,7 +135,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "Interview record saved successfully",
+      message: "Interview request raised successfully and sent to CM.",
       interview: createdRecord
     });
   } catch (error: any) {
@@ -142,6 +155,7 @@ export async function DELETE(request: Request) {
     }
 
     await db.run("DELETE FROM student_interviews WHERE id = ?", [id]);
+    await db.run("DELETE FROM interview_evaluations WHERE interview_id = ?", [id]);
     return NextResponse.json({ success: true, message: "Interview deleted successfully" });
   } catch (error: any) {
     console.error("DELETE /api/interviews error:", error);
