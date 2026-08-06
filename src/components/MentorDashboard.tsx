@@ -801,8 +801,8 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
 };
 
 export interface MentorDashboardProps {
-  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu" | "leave_requests";
-  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu" | "leave_requests") => void;
+  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews";
+  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews") => void;
 }
 
 export const MentorDashboard: React.FC<MentorDashboardProps> = ({
@@ -1060,7 +1060,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
 
   // Active Dashboard Tab State
-  const [localActiveTab, setLocalActiveTab] = useState<"home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu">("home");
+  const [localActiveTab, setLocalActiveTab] = useState<"home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu" | "interviews">("home");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
@@ -5412,7 +5412,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         </div>
       )}
 
-      {activeTab === "tracker" && (() => {
+      {(activeTab === "tracker" || activeTab === "interviews") && (() => {
         const campusDepts = Array.from(new Set(
           coursesList
             .filter(c => !c.college_id || c.college_id === currentMentor?.college_id)
@@ -5542,7 +5542,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             </div>
           </div>
 
-          {trackerSubView === "interviews" ? (
+          {(activeTab === "interviews" || trackerSubView === "interviews") ? (
             <InterviewModule currentUserRole="mentor" currentUserName={currentMentor?.name || "Mentor"} />
           ) : (
             <div className="space-y-6">
