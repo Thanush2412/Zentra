@@ -214,7 +214,8 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           student_count: 0, // Assigned later by CAM
           mentor_id: currentMentor?.id || "mentor_1",
           mentor_name: currentMentor?.name || currentUserName,
-          origin_college_id: currentMentor?.college_id || defaultCollegeId || "col_1"
+          origin_college_id: currentMentor?.college_id || defaultCollegeId || "col_1",
+          college_id: currentMentor?.college_id || defaultCollegeId || "col_1"
         })
       });
 
@@ -426,9 +427,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                 >
                   <Layers className="w-3.5 h-3.5" />
                   Pending Allocations & GMeet
-                  {interviewsList.filter(i => i.status.includes("pending")).length > 0 && (
+                  {interviewsList.filter(i => (i.status || "").includes("pending")).length > 0 && (
                     <span className="bg-[#F4A863] text-slate-950 px-1.5 py-0.5 rounded-full text-[10px] font-black">
-                      {interviewsList.filter(i => i.status.includes("pending")).length}
+                      {interviewsList.filter(i => (i.status || "").includes("pending")).length}
                     </span>
                   )}
                 </button>
@@ -866,11 +867,11 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
                               req.type === "external" ? "bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-500/30" : "bg-pink-100 dark:bg-pink-500/20 text-pink-700 dark:text-pink-300 border border-pink-300 dark:border-pink-500/30"
                             }`}>
-                              {req.type}
+                              {req.type || "internal"}
                             </span>
                             <h3 className="font-extrabold text-slate-900 dark:text-white text-base">{req.subject}</h3>
                             <span className="text-xs font-semibold text-slate-500">
-                              [{req.class_group || "All Classes"}] • ({req.student_count && req.student_count > 0 ? `${req.student_count} Students Assigned` : "Student Count Pending CAM Assignment"})
+                              [{req.class_group || "All Classes"}] • ({req.student_count && req.student_count > 0 ? `${req.student_count} Students Assigned` : "Student Count Pending CM Assignment"})
                             </span>
                           </div>
 
@@ -900,7 +901,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
                         {/* CM Actions */}
                         <div className="flex items-center gap-2">
-                          {req.type === "external" && req.status === "pending_external_cm" && (
+                          {req.type === "external" && (req.status || "") === "pending_external_cm" && (
                             <Button
                               onClick={() => handleExternalAccept(req.id, "accept")}
                               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm"
@@ -1065,7 +1066,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
             <div className="bg-amber-50 dark:bg-amber-500/10 p-4 rounded-xl border border-amber-200 dark:border-amber-500/20">
               <div className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase">Pending CAM Allocation</div>
               <div className="text-2xl font-black text-amber-800 dark:text-amber-300 mt-1">
-                {interviewsList.filter(i => i.status.includes("pending")).length}
+                {interviewsList.filter(i => (i.status || "").includes("pending")).length}
               </div>
             </div>
             <div className="bg-pink-50 dark:bg-pink-500/10 p-4 rounded-xl border border-pink-200 dark:border-pink-500/20">
@@ -1078,7 +1079,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
             {interviewsList.map(i => (
               <div key={i.id} className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60 flex justify-between items-center text-xs">
                 <div>
-                  <strong className="text-slate-900 dark:text-white font-bold">{i.subject}</strong> [{i.class_group || "All Classes"}] ({i.type.toUpperCase()}) • Requested by {i.mentor_name}
+                  <strong className="text-slate-900 dark:text-white font-bold">{i.subject}</strong> [{i.class_group || "All Classes"}] ({(i.type || "internal").toUpperCase()}) • Requested by {i.mentor_name}
                   <div className="text-slate-500">{i.target_date} • {i.topics || "General"}</div>
                 </div>
                 <span className={`px-2.5 py-1 rounded-full font-extrabold uppercase text-[10px] ${

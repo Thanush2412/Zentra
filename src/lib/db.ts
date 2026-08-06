@@ -405,22 +405,32 @@ export function getDb(): Promise<TursoDbAdapter> {
 
     CREATE TABLE IF NOT EXISTS student_interviews (
       id TEXT PRIMARY KEY,
-      student_id TEXT NOT NULL,
-      student_name TEXT,
-      class_group TEXT NOT NULL,
+      student_id TEXT NOT NULL DEFAULT 'batch_all',
+      student_name TEXT DEFAULT 'Assigned Students',
+      class_group TEXT DEFAULT '',
       subject TEXT NOT NULL,
-      type TEXT NOT NULL,
-      marks REAL NOT NULL DEFAULT 0,
+      type TEXT NOT NULL DEFAULT 'internal',
+      marks REAL DEFAULT 0,
       total_marks REAL DEFAULT 100,
       technical_marks REAL DEFAULT 0,
       communication_marks REAL DEFAULT 0,
-      status TEXT DEFAULT 'Cleared',
+      status TEXT DEFAULT 'pending_cm',
       evaluator_name TEXT DEFAULT '',
       evaluator_role TEXT DEFAULT '',
-      notes TEXT,
+      notes TEXT DEFAULT '',
+      mentor_id TEXT,
+      mentor_name TEXT,
+      target_date TEXT,
+      topics TEXT,
+      student_count INTEGER DEFAULT 0,
+      origin_college_id TEXT DEFAULT '',
+      target_college_id TEXT,
+      gmeet_link TEXT,
+      priority_level INTEGER DEFAULT 1,
+      assigned_mentor_ids TEXT,
+      college_id TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS student_fees (
@@ -675,6 +685,7 @@ export function getDb(): Promise<TursoDbAdapter> {
   try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN gmeet_link TEXT;`); } catch (_) {}
   try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN priority_level INTEGER DEFAULT 1;`); } catch (_) {}
   try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN assigned_mentor_ids TEXT;`); } catch (_) {}
+  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN college_id TEXT;`); } catch (_) {}
   // Backfill evaluator_name / evaluator_role for existing rows that might be NULL
   // (these were previously NOT NULL with no default, causing new inserts without them to fail)
   try { await dbInstance.exec(`UPDATE student_interviews SET evaluator_name = '' WHERE evaluator_name IS NULL;`); } catch (_) {}
