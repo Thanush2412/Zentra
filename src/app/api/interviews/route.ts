@@ -101,8 +101,8 @@ export async function POST(request: Request) {
       `INSERT INTO student_interviews (
         id, student_id, student_name, class_group, subject, type,
         target_date, topics, student_count, mentor_id, mentor_name,
-        origin_college_id, status, notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        origin_college_id, status, notes, evaluator_name, evaluator_role, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         subject = excluded.subject,
         type = excluded.type,
@@ -126,6 +126,8 @@ export async function POST(request: Request) {
         origin_college_id || "",
         type === "external" ? "pending_external_cm" : "pending_cm",
         notes,
+        mentor_name || "",   // evaluator_name filled later when CM assigns
+        "mentor",             // evaluator_role default
         now,
         now
       ]

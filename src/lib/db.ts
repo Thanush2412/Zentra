@@ -415,8 +415,8 @@ export function getDb(): Promise<TursoDbAdapter> {
       technical_marks REAL DEFAULT 0,
       communication_marks REAL DEFAULT 0,
       status TEXT DEFAULT 'Cleared',
-      evaluator_name TEXT NOT NULL,
-      evaluator_role TEXT NOT NULL,
+      evaluator_name TEXT DEFAULT '',
+      evaluator_role TEXT DEFAULT '',
       notes TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -675,6 +675,10 @@ export function getDb(): Promise<TursoDbAdapter> {
   try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN gmeet_link TEXT;`); } catch (_) {}
   try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN priority_level INTEGER DEFAULT 1;`); } catch (_) {}
   try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN assigned_mentor_ids TEXT;`); } catch (_) {}
+  // Backfill evaluator_name / evaluator_role for existing rows that might be NULL
+  // (these were previously NOT NULL with no default, causing new inserts without them to fail)
+  try { await dbInstance.exec(`UPDATE student_interviews SET evaluator_name = '' WHERE evaluator_name IS NULL;`); } catch (_) {}
+  try { await dbInstance.exec(`UPDATE student_interviews SET evaluator_role = '' WHERE evaluator_role IS NULL;`); } catch (_) {}
 
 
   try {
