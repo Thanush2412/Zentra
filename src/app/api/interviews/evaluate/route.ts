@@ -75,10 +75,23 @@ export async function POST(request: Request) {
       ]
     );
 
-    // Check if all students in interview are evaluated, and if so, update interview status to 'completed'
-    const evalCount = await db.get("SELECT COUNT(*) as count FROM interview_evaluations WHERE interview_id = ?", [interview_id]);
-    if (evalCount && evalCount.count > 0) {
-      await db.run("UPDATE student_interviews SET status = 'completed', updated_at = ? WHERE id = ?", [now, interview_id]);
+    // Auto-complete ONLY if eval_count >= student_count (not just > 0)
+    const interview = await db.get("SELECT * FROM student_interviews WHERE id = ?", [interview_id]);
+    if (interview) {
+      const evalCount = await db.get(
+        "SELECT COUNT(*) as count FROM interview_evaluations WHERE interview_id = ?",
+        [interview_id]
+      );
+      const expectedCount = Number(interview.student_count) || 0;
+      const actualCount = Number(evalCount?.count) || 0;
+
+      // Only auto-complete if student_count is set AND all students evaluated
+      if (expectedCount > 0 && actualCount >= expectedCount) {
+        await db.run(
+          "UPDATE student_interviews SET status = 'pending_verification', updated_at = ? WHERE id = ? AND status = 'assigned'",
+          [now, interview_id]
+        );
+      }
     }
 
     const savedEval = await db.get("SELECT * FROM interview_evaluations WHERE id = ?", [evalId]);

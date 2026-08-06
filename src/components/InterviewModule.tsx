@@ -4,36 +4,14 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import { useToast } from "../context/ToastContext";
 import {
-  UserCheck,
-  Award,
-  BookOpen,
-  Users,
-  GraduationCap,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
-  XCircle,
-  Search,
-  Filter,
-  Trash2,
-  Sparkles,
-  ChevronRight,
-  FileText,
-  Star,
-  Plus,
-  Video,
-  Send,
-  Check,
-  Building,
-  Calendar,
-  MessageSquare,
-  BarChart3,
-  Layers,
-  Info,
-  ShieldCheck
+  UserCheck, Award, BookOpen, Users, GraduationCap, CheckCircle2,
+  AlertCircle, Clock, XCircle, Search, Plus, Video, Send, Check,
+  Building, Calendar, MessageSquare, BarChart3, Layers, Info,
+  ShieldCheck, RefreshCw, ChevronDown, ChevronUp, Star, FileText,
+  ExternalLink, AlertTriangle, Loader2
 } from "lucide-react";
-import { Button } from "./Button";
-import { Card } from "./Card";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface InterviewModuleProps {
   currentUserRole?: "mentor" | "cm" | "cam" | "kam" | "admin" | string;
@@ -41,164 +19,181 @@ interface InterviewModuleProps {
   defaultCollegeId?: string;
 }
 
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+
+const StatusBadge = ({ status }: { status: string }) => {
+  const map: Record<string, string> = {
+    pending_cm: "bg-amber-50 text-amber-700 border-amber-200",
+    pending_external_cm: "bg-purple-50 text-purple-700 border-purple-200",
+    assigned: "bg-blue-50 text-blue-700 border-blue-200",
+    pending_verification: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    cancelled: "bg-rose-50 text-rose-700 border-rose-200",
+  };
+  const label: Record<string, string> = {
+    pending_cm: "Pending CM",
+    pending_external_cm: "Awaiting External CM",
+    assigned: "Assigned",
+    pending_verification: "Pending Verification",
+    completed: "Completed",
+    cancelled: "Cancelled",
+  };
+  const cls = map[status] || "bg-slate-100 text-slate-600 border-slate-200";
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${cls}`}>
+      {label[status] || status}
+    </span>
+  );
+};
+
+// ─── Score Slider ─────────────────────────────────────────────────────────────
+
+const ScoreSlider = ({
+  label, emoji, value, onChange, color = "#D528A2"
+}: { label: string; emoji: string; value: number; onChange: (v: number) => void; color?: string }) => (
+  <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2 shadow-sm">
+    <div className="flex justify-between items-center">
+      <span className="text-xs font-bold text-slate-700">{emoji} {label}</span>
+      <span className="text-sm font-black" style={{ color }}>{value} / 10</span>
+    </div>
+    <input
+      type="range" min={1} max={10} value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="w-full cursor-pointer h-1.5 rounded-full appearance-none"
+      style={{ accentColor: color }}
+    />
+    <div className="flex justify-between text-[10px] text-slate-400 font-semibold">
+      <span>Needs Work</span><span>Excellent</span>
+    </div>
+  </div>
+);
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export const InterviewModule: React.FC<InterviewModuleProps> = ({
   currentUserRole = "mentor",
-  currentUserName = "Evaluator",
+  currentUserName = "User",
   defaultCollegeId
 }) => {
-  const { currentMentor, students, subjectsList, mentors, slots, colleges } = useApp();
+  const { currentMentor, students, mentors, currentCAM, currentKAM } = useApp();
   const { toast } = useToast();
 
   const isMentor = currentUserRole === "mentor";
   const isCM = currentUserRole === "cm" || currentUserRole === "cam";
-  const isAdminOrKAM = currentUserRole === "admin" || currentUserRole === "kam";
+  const isKAM = currentUserRole === "kam" || currentUserRole === "admin";
 
-  // Tab State scoped by Role:
-  const [activeTab, setActiveTab] = useState<string>(() => {
-    if (isCM) return "allocation";
-    if (isAdminOrKAM) return "overview";
-    return "raise";
-  });
-
+  const [activeTab, setActiveTab] = useState(() =>
+    isCM ? "pending" : isKAM ? "overview" : "raise"
+  );
   const [activeMode, setActiveMode] = useState<"internal" | "external">("internal");
-  
-  // Data states from backend API
+
+  // Data
   const [interviewsList, setInterviewsList] = useState<any[]>([]);
   const [evaluationsList, setEvaluationsList] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Form states for Raise Request (Subject, Class Group, Target Date, Topics)
-  const [selectedSubject, setSelectedSubject] = useState<string>("");
-  const [selectedClassGroup, setSelectedClassGroup] = useState<string>("");
-  const [targetDate, setTargetDate] = useState<string>("");
-  const [topics, setTopics] = useState<string>("");
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  // Raise Request form
+  const [selectedSubject, setSelectedSubject] = useState("");
+  const [selectedClassGroup, setSelectedClassGroup] = useState("");
+  const [targetDate, setTargetDate] = useState("");
+  const [topics, setTopics] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Selected Request for Conducting Evaluation or CM Assignment
-  const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
-  const [selectedStudentForEval, setSelectedStudentForEval] = useState<any | null>(null);
-
-  // Multi-Criteria Marking States
+  // Evaluate form
+  const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [evalAttendance, setEvalAttendance] = useState<"present" | "absent" | "od">("present");
-  const [commScore, setCommScore] = useState<number>(8);
-  const [contentScore, setContentScore] = useState<number>(8);
-  const [techScore, setTechScore] = useState<number>(8);
-  const [confidenceScore, setConfidenceScore] = useState<number>(8);
-  const [questionsAsked, setQuestionsAsked] = useState<string>("");
-  const [remarks, setRemarks] = useState<string>("");
-  const [isSavingEval, setIsSavingEval] = useState<boolean>(false);
+  const [commScore, setCommScore] = useState(7);
+  const [contentScore, setContentScore] = useState(7);
+  const [techScore, setTechScore] = useState(7);
+  const [confidenceScore, setConfidenceScore] = useState(7);
+  const [questionsAsked, setQuestionsAsked] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [isSavingEval, setIsSavingEval] = useState(false);
 
-  // CM Mapping & Student Split state
+  // CM allocation
+  const [expandedAllocation, setExpandedAllocation] = useState<string | null>(null);
   const [mappedMentorIds, setMappedMentorIds] = useState<string[]>([]);
-  const [camStudentCount, setCamStudentCount] = useState<number>(10);
-  const [isAssigning, setIsAssigning] = useState<boolean>(false);
+  const [camStudentCount, setCamStudentCount] = useState(10);
+  const [cmGmeetLink, setCmGmeetLink] = useState("");
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [isMarkingComplete, setIsMarkingComplete] = useState<string | null>(null);
 
-  // Calculate minimum allowed target date (Today + 2 days)
-  const minTargetDateStr = useMemo(() => {
-    const minD = new Date();
-    minD.setDate(minD.getDate() + 2);
-    return minD.toISOString().split("T")[0];
+  // Min date = today + 2 days
+  const minTargetDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 2);
+    return d.toISOString().split("T")[0];
   }, []);
 
-  // Mentor's Assigned Subjects (Excluding Tamil)
-  const mentorAssignedSubjects = useMemo(() => {
-    if (!currentMentor) {
-      return subjectsList
-        .map(s => s.name)
-        .filter(name => Boolean(name) && name.trim().toLowerCase() !== "tamil");
-    }
-    const rawList = (currentMentor.subjects || "").split(/,|\n/).map(s => s.trim()).filter(Boolean);
-    const filtered = rawList.filter(subj => subj.toLowerCase() !== "tamil");
-    return Array.from(new Set(filtered));
-  }, [currentMentor, subjectsList]);
-
-  // Mentor's Assigned Classes / Class Groups
-  const mentorAssignedClasses = useMemo(() => {
-    if (!currentMentor || !currentMentor.classes) {
-      const allGroups = Array.from(new Set(students.map(s => s.classGroup).filter(Boolean))).sort();
-      return allGroups.length > 0 ? allGroups : ["CSE-2024 (2024-2028)"];
-    }
-    const rawList = (currentMentor.classes || "").split(/,|\n/).map(c => c.trim()).filter(Boolean);
-    return Array.from(new Set(rawList));
-  }, [currentMentor, students]);
-
-  // Check if Tamil is mentor's ONLY subject
-  const isOnlyTamilMentor = useMemo(() => {
-    if (!currentMentor) return false;
-    const rawList = (currentMentor.subjects || "").split(/,|\n/).map(s => s.trim()).filter(Boolean);
-    return rawList.length > 0 && rawList.every(s => s.toLowerCase() === "tamil");
+  // Mentor's assigned subjects (Tamil excluded)
+  const mentorSubjects = useMemo(() => {
+    if (!currentMentor) return [];
+    const raw = (currentMentor.subjects || "").split(/,|\n/).map(s => s.trim()).filter(Boolean);
+    return Array.from(new Set(raw.filter(s => s.toLowerCase() !== "tamil")));
   }, [currentMentor]);
 
-  // Fetch interviews & evaluations from API
+  // Mentor's assigned classes
+  const mentorClasses = useMemo(() => {
+    if (!currentMentor?.classes) {
+      return Array.from(new Set(students.map(s => s.classGroup).filter(Boolean))).sort().slice(0, 10);
+    }
+    const raw = (currentMentor.classes || "").split(/,|\n/).map(c => c.trim()).filter(Boolean);
+    return Array.from(new Set(raw));
+  }, [currentMentor, students]);
+
+  const isOnlyTamil = useMemo(() => {
+    if (!currentMentor) return false;
+    const raw = (currentMentor.subjects || "").split(/,|\n/).map(s => s.trim()).filter(Boolean);
+    return raw.length > 0 && raw.every(s => s.toLowerCase() === "tamil");
+  }, [currentMentor]);
+
+  // Campus-scoped mentors for CM
+  const campusMentors = useMemo(() => {
+    if (!isCM || !defaultCollegeId) return mentors;
+    return mentors.filter(m => m.college_id === defaultCollegeId);
+  }, [isCM, defaultCollegeId, mentors]);
+
+  // Fetch interviews
   const fetchInterviews = async () => {
     setIsLoading(true);
     try {
-      const queryParams = new URLSearchParams();
-      if (currentMentor?.id) queryParams.set("mentorId", currentMentor.id);
-      if (defaultCollegeId) queryParams.set("collegeId", defaultCollegeId);
-      queryParams.set("role", currentUserRole);
+      const params = new URLSearchParams();
+      params.set("role", currentUserRole);
+      if (currentMentor?.id) params.set("mentorId", currentMentor.id);
+      if (defaultCollegeId) params.set("collegeId", defaultCollegeId);
 
-      const res = await fetch(`/api/interviews?${queryParams.toString()}`);
+      const res = await fetch(`/api/interviews?${params}`);
       const data = await res.json();
       if (data.success) {
         setInterviewsList(data.interviews || []);
         setEvaluationsList(data.evaluations || []);
       }
     } catch (err) {
-      console.error("Error fetching interviews:", err);
+      console.error("fetchInterviews error:", err);
     } finally {
       setIsLoading(false);
     }
   };
 
+  useEffect(() => { fetchInterviews(); }, [currentMentor?.id, defaultCollegeId, currentUserRole]);
+
+  // Auto-select first subject/class
   useEffect(() => {
-    fetchInterviews();
-  }, [currentMentor?.id, defaultCollegeId, currentUserRole]);
+    if (mentorSubjects.length > 0 && !selectedSubject) setSelectedSubject(mentorSubjects[0]);
+    if (mentorClasses.length > 0 && !selectedClassGroup) setSelectedClassGroup(mentorClasses[0]);
+  }, [mentorSubjects, mentorClasses]);
 
-  // Auto-select first available non-Tamil subject & class group
-  useEffect(() => {
-    if (mentorAssignedSubjects.length > 0 && !selectedSubject) {
-      setSelectedSubject(mentorAssignedSubjects[0]);
-    }
-    if (mentorAssignedClasses.length > 0 && !selectedClassGroup) {
-      setSelectedClassGroup(mentorAssignedClasses[0]);
-    }
-  }, [mentorAssignedSubjects, mentorAssignedClasses, selectedSubject, selectedClassGroup]);
+  // ── Handlers ────────────────────────────────────────────────────────────────
 
-  // Filter students for evaluation by selected request's class_group
-  const sessionStudents = useMemo(() => {
-    if (!selectedRequest) return students;
-    if (selectedRequest.class_group) {
-      const targetClass = selectedRequest.class_group.toLowerCase().trim();
-      const filtered = students.filter(s => (s.classGroup || "").toLowerCase().trim() === targetClass);
-      if (filtered.length > 0) return filtered;
-    }
-    return students;
-  }, [selectedRequest, students]);
-
-  // Handler: Mentor Raises Request (Includes Class Selection)
   const handleRaiseRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSubject) {
-      toast("Please select a valid subject.", "warning");
-      return;
-    }
-    if (selectedSubject.toLowerCase() === "tamil") {
-      toast("Interview Module features are not applicable for Tamil.", "error");
-      return;
-    }
-    if (!selectedClassGroup) {
-      toast("Please select a valid class / class group.", "warning");
-      return;
-    }
-    if (!targetDate) {
-      toast("Please select a target date.", "warning");
-      return;
-    }
-    if (targetDate < minTargetDateStr) {
-      toast(`Interview date must be at least 2 days in advance (on or after ${minTargetDateStr}).`, "error");
-      return;
-    }
+    if (!selectedSubject) { toast("Please select a subject.", "warning"); return; }
+    if (selectedSubject.toLowerCase() === "tamil") { toast("Interviews are not applicable for Tamil.", "error"); return; }
+    if (!selectedClassGroup) { toast("Please select a class group.", "warning"); return; }
+    if (!targetDate) { toast("Please select a target date.", "warning"); return; }
+    if (targetDate < minTargetDate) { toast(`Date must be on or after ${minTargetDate}.`, "error"); return; }
+    if (!topics.trim()) { toast("Please enter interview topics.", "warning"); return; }
 
     setIsSubmitting(true);
     try {
@@ -210,42 +205,76 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           class_group: selectedClassGroup,
           type: activeMode,
           target_date: targetDate,
-          topics,
-          student_count: 0, // Assigned later by CAM
+          topics: topics.trim(),
           mentor_id: currentMentor?.id || "mentor_1",
           mentor_name: currentMentor?.name || currentUserName,
-          origin_college_id: currentMentor?.college_id || defaultCollegeId || "col_1",
-          college_id: currentMentor?.college_id || defaultCollegeId || "col_1"
-        })
+          mentor_email: currentMentor?.email || "",
+          origin_college_id: currentMentor?.college_id || defaultCollegeId || "",
+          college_id: currentMentor?.college_id || defaultCollegeId || "",
+        }),
       });
-
       const data = await res.json();
       if (data.success) {
-        toast(`Interview request raised for ${selectedClassGroup}! Sent to Campus Manager for student allocation.`, "success");
-        setTopics("");
-        setTargetDate("");
+        toast("Interview request raised! Campus Manager has been notified.", "success");
+        setTopics(""); setTargetDate("");
         fetchInterviews();
-        setActiveTab("evaluate");
+        setActiveTab("myinterviews");
       } else {
         toast(data.message || "Failed to raise request.", "error");
       }
-    } catch (err) {
-      toast("An error occurred while raising interview request.", "error");
+    } catch {
+      toast("Error raising interview request.", "error");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Handler: CAM Assigns Student Count & Maps Mentors
-  const handleAssignMentors = async (interviewId: string) => {
-    if (mappedMentorIds.length === 0) {
-      toast("Please select at least one mentor to map.", "warning");
-      return;
+  const handleSaveEval = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expandedRequest || !selectedStudent) { toast("Select a student to evaluate.", "warning"); return; }
+
+    setIsSavingEval(true);
+    try {
+      const avgScore = (commScore + contentScore + techScore + confidenceScore) / 4;
+      const res = await fetch("/api/interviews/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          interview_id: expandedRequest,
+          student_id: selectedStudent.id,
+          student_name: selectedStudent.name,
+          class_group: selectedStudent.classGroup,
+          mentor_id: currentMentor?.id || "mentor_1",
+          mentor_name: currentMentor?.name || currentUserName,
+          attendance: evalAttendance,
+          communication_score: commScore,
+          content_score: contentScore,
+          technical_score: techScore,
+          confidence_score: confidenceScore,
+          questions_asked: questionsAsked,
+          remarks,
+          status: avgScore >= 6 ? "Cleared" : "Needs Improvement",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(`Evaluation saved for ${selectedStudent.name}!`, "success");
+        setSelectedStudent(null); setQuestionsAsked(""); setRemarks("");
+        setCommScore(7); setContentScore(7); setTechScore(7); setConfidenceScore(7);
+        fetchInterviews();
+      } else {
+        toast(data.message || "Failed to save evaluation.", "error");
+      }
+    } catch {
+      toast("Error saving evaluation.", "error");
+    } finally {
+      setIsSavingEval(false);
     }
-    if (!camStudentCount || camStudentCount < 1) {
-      toast("Please set a valid student count for this session.", "warning");
-      return;
-    }
+  };
+
+  const handleAssign = async (interviewId: string) => {
+    if (mappedMentorIds.length === 0) { toast("Select at least one mentor.", "warning"); return; }
+    if (!camStudentCount || camStudentCount < 1) { toast("Set a valid student count.", "warning"); return; }
 
     setIsAssigning(true);
     try {
@@ -256,27 +285,25 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           interview_id: interviewId,
           mapped_mentor_ids: mappedMentorIds,
           student_count: camStudentCount,
-          cm_name: currentUserName
-        })
+          cm_name: currentUserName,
+          gmeet_link: cmGmeetLink.trim(),
+        }),
       });
-
       const data = await res.json();
       if (data.success) {
-        toast("Student count assigned & mentors mapped with notification emails dispatched!", "success");
-        setSelectedRequest(null);
-        setMappedMentorIds([]);
+        toast("Mentors assigned! Notification emails dispatched.", "success");
+        setExpandedAllocation(null); setMappedMentorIds([]); setCmGmeetLink("");
         fetchInterviews();
       } else {
-        toast(data.message || "Failed to map mentors.", "error");
+        toast(data.message || "Failed to assign.", "error");
       }
-    } catch (err) {
-      toast("Failed to assign mentors.", "error");
+    } catch {
+      toast("Error assigning interview.", "error");
     } finally {
       setIsAssigning(false);
     }
   };
 
-  // Handler: External CM Accepts Request
   const handleExternalAccept = async (interviewId: string, action: "accept" | "decline") => {
     try {
       const res = await fetch("/api/interviews/external-accept", {
@@ -284,812 +311,842 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           interview_id: interviewId,
-          target_college_id: defaultCollegeId || "col_2",
+          target_college_id: defaultCollegeId || "",
           action,
-          cm_name: currentUserName
-        })
+          cm_name: currentUserName,
+        }),
       });
-
       const data = await res.json();
       if (data.success) {
         toast(data.message, "success");
         fetchInterviews();
       } else {
-        toast(data.message || "Failed to process external request.", "error");
+        toast(data.message || "Failed to process.", "error");
       }
-    } catch (err) {
+    } catch {
       toast("Error processing external request.", "error");
     }
   };
 
-  // Handler: Conducting Mentor Submits Evaluation & Marks
-  const handleSubmitEvaluation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedRequest || !selectedStudentForEval) {
-      toast("Please select a student to evaluate.", "warning");
-      return;
-    }
-
-    setIsSavingEval(true);
+  const handleMarkComplete = async (interviewId: string) => {
+    setIsMarkingComplete(interviewId);
     try {
-      const res = await fetch("/api/interviews/evaluate", {
-        method: "POST",
+      const res = await fetch("/api/interviews", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          interview_id: selectedRequest.id,
-          student_id: selectedStudentForEval.id,
-          student_name: selectedStudentForEval.name,
-          class_group: selectedStudentForEval.classGroup,
-          mentor_id: currentMentor?.id || "mentor_1",
-          mentor_name: currentMentor?.name || currentUserName,
-          attendance: evalAttendance,
-          communication_score: commScore,
-          content_score: contentScore,
-          technical_score: techScore,
-          confidence_score: confidenceScore,
-          questions_asked: questionsAsked,
-          remarks,
-          status: (commScore + contentScore + techScore + confidenceScore) / 4 >= 6 ? "Cleared" : "Needs Improvement"
-        })
+          interview_id: interviewId,
+          status: "completed",
+          cm_name: currentUserName,
+        }),
       });
-
       const data = await res.json();
       if (data.success) {
-        toast("Student evaluation and multi-criteria marks saved!", "success");
-        setQuestionsAsked("");
-        setRemarks("");
-        setSelectedStudentForEval(null);
+        toast("Interview verified & completed. Students notified!", "success");
         fetchInterviews();
       } else {
-        toast(data.message || "Failed to save evaluation.", "error");
+        toast(data.message || "Failed to mark complete.", "error");
       }
-    } catch (err) {
-      toast("Error saving evaluation.", "error");
+    } catch {
+      toast("Error marking interview complete.", "error");
     } finally {
-      setIsSavingEval(false);
+      setIsMarkingComplete(null);
     }
   };
 
-  // Find available subject mentors for CM free-slot mapping
-  const availableSubjectMentors = useMemo(() => {
-    if (!selectedRequest) return mentors;
-    const targetSubj = selectedRequest.subject.toLowerCase().trim();
-    return mentors.filter(m => {
-      const mSubjs = (m.subjects || "").toLowerCase();
-      return mSubjs.includes(targetSubj);
-    });
-  }, [selectedRequest, mentors]);
+  // ── Derived data ─────────────────────────────────────────────────────────────
+
+  const pendingRequests = interviewsList.filter(i =>
+    (i.status || "").includes("pending")
+  );
+
+  const sessionStudents = (req: any) => {
+    if (!req?.class_group) return students.slice(0, req?.student_count || 10);
+    const filtered = students.filter(s =>
+      (s.classGroup || "").toLowerCase().trim() === (req.class_group || "").toLowerCase().trim()
+    );
+    return filtered.length > 0 ? filtered.slice(0, req.student_count || 30) : students.slice(0, req.student_count || 10);
+  };
+
+  const subjectMentorsForReq = (req: any) =>
+    campusMentors.filter(m =>
+      (m.subjects || "").toLowerCase().includes((req?.subject || "").toLowerCase().trim())
+    );
+
+  const getEvalForStudent = (interviewId: string, studentId: string) =>
+    evaluationsList.find(ev => ev.interview_id === interviewId && ev.student_id === studentId);
+
+  // ── UI ────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner Card */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-xl border border-slate-800 relative overflow-hidden">
-        <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-72 h-72 bg-gradient-to-br from-[#D528A2]/20 to-[#F4A863]/20 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+    <div className="space-y-5">
+
+      {/* Header */}
+      <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider mb-1 text-transparent bg-clip-text bg-gradient-to-r from-[#D528A2] to-[#F4A863]">
-              <Sparkles className="w-4 h-4 text-[#D528A2]" />
-              FACE PREP E-CAMPUS • {isMentor ? "MENTOR PORTAL" : isCM ? "CAMPUS MANAGER WORKFLOW" : "INTERVIEW DASHBOARD"}
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[#D528A2] mb-1">
+              <Award className="w-3.5 h-3.5" />
+              FACE PREP E-CAMPUS • INTERVIEW MODULE
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white">
-              {isMentor ? "My Subject Interviews & Student Marking" : isCM ? "Campus Interview Routing & Allocation" : "Interview & Evaluation Management"}
+            <h1 className="text-lg font-black text-slate-800">
+              {isMentor ? "Subject Interviews & Student Evaluation"
+                : isCM ? "Campus Interview Management"
+                : "Interview Region Overview"}
             </h1>
-            <p className="text-slate-300/80 text-xs md:text-sm mt-1 max-w-2xl">
+            <p className="text-xs text-slate-500 mt-0.5">
               {isMentor
-                ? "Raise interview requests for your assigned subjects & class groups (minimum 2 days in advance) and evaluate assigned students."
+                ? "Raise interview requests for assigned subjects (min 2 days advance) and evaluate your students."
                 : isCM
-                ? "Review interview requests, assign student counts, check free-period mentor slots, split students, and manage external GMeet links."
-                : "Monitor all campus interview sessions, mentor mappings, and evaluation performance metrics."}
+                ? "Review requests, allocate student counts, map mentors, and verify completed sessions."
+                : "Monitor all campus interview sessions and evaluation metrics."}
             </p>
           </div>
 
-          {/* Sub-Navigation Tabs STRICTLY SCOPED BY ROLE */}
-          <div className="flex items-center gap-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/60 backdrop-blur-md">
-            {/* Mentor Options Only */}
+          {/* Tab bar */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 shrink-0">
             {isMentor && (
               <>
-                <button
-                  onClick={() => setActiveTab("raise")}
-                  className={`px-4 py-2 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 ${
-                    activeTab === "raise"
-                      ? "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white shadow-md shadow-pink-500/20"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/50"
-                  }`}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Raise Request
-                </button>
-                <button
-                  onClick={() => setActiveTab("evaluate")}
-                  className={`px-4 py-2 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 ${
-                    activeTab === "evaluate"
-                      ? "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white shadow-md shadow-pink-500/20"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/50"
-                  }`}
-                >
-                  <Award className="w-3.5 h-3.5" />
-                  Conduct & Mark Students
-                </button>
+                {[
+                  { key: "raise", label: "Raise Request", icon: <Plus className="w-3 h-3" /> },
+                  { key: "myinterviews", label: "My Interviews", icon: <FileText className="w-3 h-3" /> },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      activeTab === tab.key
+                        ? "bg-white shadow-sm border border-slate-200 text-[#D528A2]"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {tab.icon}{tab.label}
+                  </button>
+                ))}
               </>
             )}
 
-            {/* Campus Manager Options Only */}
             {isCM && (
               <>
-                <button
-                  onClick={() => setActiveTab("allocation")}
-                  className={`px-4 py-2 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 ${
-                    activeTab === "allocation"
-                      ? "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white shadow-md shadow-pink-500/20"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/50"
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  Pending Allocations & GMeet
-                  {interviewsList.filter(i => (i.status || "").includes("pending")).length > 0 && (
-                    <span className="bg-[#F4A863] text-slate-950 px-1.5 py-0.5 rounded-full text-[10px] font-black">
-                      {interviewsList.filter(i => (i.status || "").includes("pending")).length}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setActiveTab("overview")}
-                  className={`px-4 py-2 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 ${
-                    activeTab === "overview"
-                      ? "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white shadow-md shadow-pink-500/20"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/50"
-                  }`}
-                >
-                  <BarChart3 className="w-3.5 h-3.5" />
-                  Campus Overview
-                </button>
+                {[
+                  { key: "pending", label: "Pending Allocations", icon: <Layers className="w-3 h-3" />, count: pendingRequests.length },
+                  { key: "all", label: "All Campus", icon: <BarChart3 className="w-3 h-3" /> },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      activeTab === tab.key
+                        ? "bg-white shadow-sm border border-slate-200 text-[#D528A2]"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {tab.icon}{tab.label}
+                    {tab.count != null && tab.count > 0 && (
+                      <span className="bg-[#D528A2] text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                ))}
               </>
             )}
 
-            {/* Admin / KAM Options Only */}
-            {isAdminOrKAM && (
+            {isKAM && (
               <button
                 onClick={() => setActiveTab("overview")}
-                className="bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white px-4 py-2 rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-md"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white shadow-sm border border-slate-200 text-[#D528A2]"
               >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                All College Interviews
+                <ShieldCheck className="w-3 h-3" />Region Overview
               </button>
             )}
+
+            <button onClick={fetchInterviews} className="p-1.5 rounded-lg text-slate-400 hover:text-[#D528A2] hover:bg-white transition-all border border-transparent hover:border-slate-200" title="Refresh">
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Tamil Exclusion Warning Notice */}
-      {isMentor && isOnlyTamilMentor && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start gap-3 text-amber-900 dark:text-amber-200 text-sm">
-          <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-bold text-amber-800 dark:text-amber-300">Notice for Tamil Subject Mentors:</span> Interview Module features are not applicable for Tamil. You do not need to raise or conduct interview evaluations for Tamil language courses.
-          </div>
-        </div>
-      )}
-
-      {/* MENTOR VIEW: TAB 1 - Raise Request */}
-      {isMentor && activeTab === "raise" && !isOnlyTamilMentor && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-xl">
-          <div className="mb-6">
-            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-[#D528A2]" />
-              Raise New Interview Request
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Select interview type, assigned subject, class group, target date (minimum 2 days out), and typable topics. Student count is assigned by the Campus Manager.
-            </p>
+      {/* ── MENTOR: Raise Request ── */}
+      {isMentor && activeTab === "raise" && (
+        <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm">
+          <div className="flex items-center gap-2 mb-5">
+            <BookOpen className="w-4 h-4 text-[#D528A2]" />
+            <h2 className="text-sm font-black text-slate-800">Raise New Interview Request</h2>
           </div>
 
-          <form onSubmit={handleRaiseRequest} className="space-y-6">
-            {/* Mode Switcher: Internal vs External */}
-            <div className="grid grid-cols-2 gap-3 max-w-md bg-slate-100 dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
-              <button
-                type="button"
-                onClick={() => setActiveMode("internal")}
-                className={`py-2.5 px-4 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-2 ${
-                  activeMode === "internal"
-                    ? "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white shadow-md"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                <Building className="w-4 h-4" />
-                Internal Interview
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveMode("external")}
-                className={`py-2.5 px-4 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-2 ${
-                  activeMode === "external"
-                    ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                <Video className="w-4 h-4" />
-                External Interview
-              </button>
+          {/* Tamil-only notice */}
+          {isOnlyTamil && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 text-xs text-amber-800 mb-5">
+              <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <strong>Notice:</strong> Interview Module is not applicable for Tamil language subjects. You do not need to raise interview evaluations for Tamil.
+              </div>
             </div>
+          )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {/* Subject Dropdown (Mentors Assigned Subjects Only, Tamil Excluded) */}
-              <div>
-                <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Select Subject <span className="text-[#D528A2]">(Your Assigned Subjects)</span>
-                </label>
-                <select
-                  value={selectedSubject}
-                  onChange={(e) => setSelectedSubject(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#D528A2] focus:ring-2 focus:ring-[#D528A2]/20 font-semibold"
-                >
-                  {mentorAssignedSubjects.length === 0 ? (
-                    <option value="">No non-Tamil subjects available</option>
-                  ) : (
-                    mentorAssignedSubjects.map(sub => (
-                      <option key={sub} value={sub}>{sub}</option>
-                    ))
-                  )}
-                </select>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  * Tamil subject is excluded.
-                </p>
+          {!isOnlyTamil && (
+            <form onSubmit={handleRaiseRequest} className="space-y-5">
+              {/* Internal/External toggle */}
+              <div className="grid grid-cols-2 gap-3 max-w-sm bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+                {(["internal", "external"] as const).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setActiveMode(mode)}
+                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-extrabold transition-all ${
+                      activeMode === mode
+                        ? "bg-white shadow-sm border border-slate-200 text-[#D528A2]"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {mode === "internal" ? <Building className="w-3.5 h-3.5" /> : <Video className="w-3.5 h-3.5" />}
+                    {mode === "internal" ? "Internal" : "External (GMeet)"}
+                  </button>
+                ))}
               </div>
 
-              {/* Class Group Selection */}
-              <div>
-                <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Select Class / Class Group
-                </label>
-                <select
-                  value={selectedClassGroup}
-                  onChange={(e) => setSelectedClassGroup(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#D528A2] focus:ring-2 focus:ring-[#D528A2]/20 font-semibold"
-                >
-                  {mentorAssignedClasses.map(cls => (
-                    <option key={cls} value={cls}>{cls}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Subject */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">
+                    Subject <span className="text-[#D528A2]">(Assigned Only)</span>
+                  </label>
+                  <select
+                    value={selectedSubject}
+                    onChange={e => setSelectedSubject(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none"
+                  >
+                    {mentorSubjects.length === 0
+                      ? <option value="">No non-Tamil subjects assigned</option>
+                      : mentorSubjects.map(s => <option key={s} value={s}>{s}</option>)
+                    }
+                  </select>
+                  <p className="text-[10px] text-slate-400">Tamil subjects are excluded.</p>
+                </div>
+
+                {/* Class Group */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Class / Cohort</label>
+                  <select
+                    value={selectedClassGroup}
+                    onChange={e => setSelectedClassGroup(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none"
+                  >
+                    {mentorClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+
+                {/* Target Date */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">
+                    Target Date <span className="text-[#D528A2]">(Min +2 Days)</span>
+                  </label>
+                  <input
+                    type="date" min={minTargetDate} value={targetDate}
+                    onChange={e => setTargetDate(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
+                    required
+                  />
+                </div>
               </div>
 
-              {/* Target Date Picker (Must be >= 2 days in advance) */}
-              <div>
-                <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Target Date <span className="text-[#D528A2]">(Must be ≥ 2 days out)</span>
-                </label>
-                <input
-                  type="date"
-                  min={minTargetDateStr}
-                  value={targetDate}
-                  onChange={(e) => setTargetDate(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#D528A2] focus:ring-2 focus:ring-[#D528A2]/20 font-semibold"
-                  required
-                />
-              </div>
-
-              {/* Typable Topics */}
-              <div className="md:col-span-3">
-                <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Topics / Coverage Areas (Typable)
+              {/* Topics */}
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">
+                  Topics / Coverage Areas
                 </label>
                 <textarea
-                  rows={3}
-                  value={topics}
-                  onChange={(e) => setTopics(e.target.value)}
-                  placeholder="e.g. Data Structures, React State Management, System Architecture, Algorithm Complexity"
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#D528A2] focus:ring-2 focus:ring-[#D528A2]/20 placeholder-slate-400"
+                  rows={3} value={topics}
+                  onChange={e => setTopics(e.target.value)}
+                  placeholder="e.g. Data Structures, React Hooks, System Design, Algorithm Complexity"
+                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-300 resize-none"
                   required
                 />
               </div>
-            </div>
 
-            <div className="flex justify-end pt-2">
-              <Button
-                type="submit"
-                disabled={isSubmitting || mentorAssignedSubjects.length === 0}
-                className="bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white font-extrabold px-7 py-3 rounded-xl shadow-lg shadow-pink-500/25 hover:opacity-95 transition-all flex items-center gap-2 text-sm"
-              >
-                <Send className="w-4 h-4" />
-                {isSubmitting ? "Submitting Request..." : `Submit ${activeMode.toUpperCase()} Interview Request`}
-              </Button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* MENTOR VIEW: TAB 2 - Conduct & Multi-Criteria Marking */}
-      {isMentor && activeTab === "evaluate" && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-xl">
-            <div className="mb-6">
-              <h2 className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                <Award className="w-5 h-5 text-[#D528A2]" />
-                Conduct Student Interview & Multi-Criteria Marking
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Mark attendance (Present/Absent/OD) and rate student performance across Communication, Content Knowledge, Technical Skills, and Confidence.
-              </p>
-            </div>
-
-            {/* Select Request to Conduct */}
-            <div className="mb-6">
-              <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-                Select Interview Session to Conduct
-              </label>
-              <select
-                value={selectedRequest?.id || ""}
-                onChange={(e) => {
-                  const req = interviewsList.find(i => i.id === e.target.value);
-                  setSelectedRequest(req || null);
-                  setSelectedStudentForEval(null);
-                }}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#D528A2] font-semibold"
-              >
-                <option value="">-- Choose Assigned Interview Session --</option>
-                {interviewsList.map(i => (
-                  <option key={i.id} value={i.id}>
-                    {i.subject} [{i.class_group || "All Classes"}] ({i.target_date}) - {i.type.toUpperCase()} ({i.student_count || 10} Students)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {selectedRequest && (
-              <div className="space-y-6 border-t border-slate-200 dark:border-slate-800 pt-6">
-                {/* Student Selection for Session */}
-                <div>
-                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
-                    <GraduationCap className="w-4 h-4 text-[#D528A2]" />
-                    Select Student to Evaluate ({selectedRequest.class_group || "All Cohorts"})
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {sessionStudents.slice(0, selectedRequest.student_count || 10).map((st) => {
-                      const isEvaluated = evaluationsList.some(ev => ev.interview_id === selectedRequest.id && ev.student_id === st.id);
-                      const isSelected = selectedStudentForEval?.id === st.id;
-                      return (
-                        <div
-                          key={st.id}
-                          onClick={() => setSelectedStudentForEval(st)}
-                          className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between shadow-sm ${
-                            isSelected
-                              ? "bg-gradient-to-r from-pink-50 to-orange-50 dark:from-[#D528A2]/20 dark:to-[#F4A863]/20 border-[#D528A2]"
-                              : isEvaluated
-                              ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/30"
-                              : "bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/50 hover:bg-slate-100"
-                          }`}
-                        >
-                          <div>
-                            <div className="font-extrabold text-slate-900 dark:text-white text-xs">{st.name}</div>
-                            <div className="text-[11px] text-slate-500 font-medium">{st.classGroup || "CS-A"}</div>
-                          </div>
-                          {isEvaluated ? (
-                            <span className="text-[10px] font-black bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-500/30">
-                              Evaluated
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full">
-                              Pending
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Multi-Criteria Evaluation Form */}
-                {selectedStudentForEval && (
-                  <form onSubmit={handleSubmitEvaluation} className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-5 space-y-5 shadow-inner">
-                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700/50 pb-3">
-                      <div>
-                        <h4 className="font-extrabold text-slate-900 dark:text-white text-base">Evaluating: {selectedStudentForEval.name}</h4>
-                        <p className="text-xs text-slate-500 font-medium">{selectedRequest.subject} • {selectedStudentForEval.classGroup}</p>
-                      </div>
-
-                      {/* Attendance Selector */}
-                      <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-300 dark:border-slate-700">
-                        {(["present", "absent", "od"] as const).map((att) => (
-                          <button
-                            key={att}
-                            type="button"
-                            onClick={() => setEvalAttendance(att)}
-                            className={`px-3 py-1 rounded-lg text-xs font-extrabold uppercase transition-all ${
-                              evalAttendance === att
-                                ? att === "present"
-                                  ? "bg-emerald-600 text-white"
-                                  : att === "absent"
-                                  ? "bg-rose-600 text-white"
-                                  : "bg-amber-600 text-white"
-                                : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                            }`}
-                          >
-                            {att}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 4 Multi-Criteria Marking Sliders */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      {/* 1. Communication Skill */}
-                      <div className="bg-white dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 shadow-sm">
-                        <div className="flex justify-between items-center text-xs font-extrabold text-slate-900 dark:text-white">
-                          <span>🗣️ Communication Skill</span>
-                          <span className="text-[#D528A2] font-black text-sm">{commScore} / 10</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={1}
-                          max={10}
-                          value={commScore}
-                          onChange={(e) => setCommScore(Number(e.target.value))}
-                          className="w-full accent-[#D528A2] cursor-pointer"
-                        />
-                      </div>
-
-                      {/* 2. Content / Subject Knowledge */}
-                      <div className="bg-white dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 shadow-sm">
-                        <div className="flex justify-between items-center text-xs font-extrabold text-slate-900 dark:text-white">
-                          <span>📚 Content / Subject Knowledge</span>
-                          <span className="text-[#F4A863] font-black text-sm">{contentScore} / 10</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={1}
-                          max={10}
-                          value={contentScore}
-                          onChange={(e) => setContentScore(Number(e.target.value))}
-                          className="w-full accent-[#F4A863] cursor-pointer"
-                        />
-                      </div>
-
-                      {/* 3. Technical / Problem Solving */}
-                      <div className="bg-white dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 shadow-sm">
-                        <div className="flex justify-between items-center text-xs font-extrabold text-slate-900 dark:text-white">
-                          <span>💻 Technical / Problem Solving</span>
-                          <span className="text-emerald-600 dark:text-emerald-400 font-black text-sm">{techScore} / 10</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={1}
-                          max={10}
-                          value={techScore}
-                          onChange={(e) => setTechScore(Number(e.target.value))}
-                          className="w-full accent-emerald-500 cursor-pointer"
-                        />
-                      </div>
-
-                      {/* 4. Confidence & Presentation */}
-                      <div className="bg-white dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 shadow-sm">
-                        <div className="flex justify-between items-center text-xs font-extrabold text-slate-900 dark:text-white">
-                          <span>🌟 Confidence & Presentation</span>
-                          <span className="text-amber-600 dark:text-amber-400 font-black text-sm">{confidenceScore} / 10</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={1}
-                          max={10}
-                          value={confidenceScore}
-                          onChange={(e) => setConfidenceScore(Number(e.target.value))}
-                          className="w-full accent-amber-500 cursor-pointer"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Questions Asked & Remarks */}
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-                          Questions Asked During Interview
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={questionsAsked}
-                          onChange={(e) => setQuestionsAsked(e.target.value)}
-                          placeholder="e.g. Asked about React useEffect dependencies, Database joins, and array sorting algorithms."
-                          className="w-full bg-white dark:bg-slate-900/80 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#D528A2] placeholder-slate-400 font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-                          Mentor Remarks & Feedback
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={remarks}
-                          onChange={(e) => setRemarks(e.target.value)}
-                          placeholder="e.g. Good grasp of concepts, needs improvement in confidence during code explanation."
-                          className="w-full bg-white dark:bg-slate-900/80 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#D528A2] placeholder-slate-400 font-medium"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end gap-3 pt-2">
-                      <Button
-                        type="button"
-                        onClick={() => setSelectedStudentForEval(null)}
-                        className="bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 text-slate-800 dark:text-slate-300 text-xs font-bold px-4 py-2 rounded-xl"
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="submit"
-                        disabled={isSavingEval}
-                        className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-extrabold px-6 py-2 rounded-xl shadow-lg shadow-emerald-500/25 hover:from-emerald-600 hover:to-teal-700 text-xs flex items-center gap-1.5"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        {isSavingEval ? "Saving Marks..." : "Save Evaluation Marks"}
-                      </Button>
-                    </div>
-                  </form>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* CAMPUS MANAGER VIEW: Allocation, Student Count Assignment & GMeet Generation */}
-      {isCM && activeTab === "allocation" && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                <Layers className="w-5 h-5 text-[#D528A2]" />
-                Pending Interview Requests & Free-Period Mentor Allocation
-              </h2>
-              <button
-                onClick={fetchInterviews}
-                className="text-xs text-[#D528A2] hover:underline flex items-center gap-1 font-bold"
-              >
-                Refresh List
-              </button>
-            </div>
-
-            {isLoading ? (
-              <div className="py-12 text-center text-slate-500 text-sm font-semibold">Loading interview requests...</div>
-            ) : interviewsList.length === 0 ? (
-              <div className="py-12 text-center text-slate-400 text-sm">No active interview requests found for your campus.</div>
-            ) : (
-              <div className="space-y-4">
-                {interviewsList.map((req) => {
-                  const assignedMentors = mentors.filter(m => (req.assigned_mentor_ids || "").includes(m.id));
-                  return (
-                    <div
-                      key={req.id}
-                      className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-xl p-4 hover:border-[#D528A2]/50 transition-all shadow-sm"
-                    >
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                              req.type === "external" ? "bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-500/30" : "bg-pink-100 dark:bg-pink-500/20 text-pink-700 dark:text-pink-300 border border-pink-300 dark:border-pink-500/30"
-                            }`}>
-                              {req.type || "internal"}
-                            </span>
-                            <h3 className="font-extrabold text-slate-900 dark:text-white text-base">{req.subject}</h3>
-                            <span className="text-xs font-semibold text-slate-500">
-                              [{req.class_group || "All Classes"}] • ({req.student_count && req.student_count > 0 ? `${req.student_count} Students Assigned` : "Student Count Pending CM Assignment"})
-                            </span>
-                          </div>
-
-                          <div className="text-xs text-slate-600 dark:text-slate-300 flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-medium">
-                            <span className="flex items-center gap-1 text-slate-500">
-                              <Calendar className="w-3.5 h-3.5 text-[#D528A2]" /> Target Date: <strong className="text-slate-900 dark:text-white">{req.target_date}</strong>
-                            </span>
-                            <span className="flex items-center gap-1 text-slate-500">
-                              <UserCheck className="w-3.5 h-3.5 text-[#D528A2]" /> Requested By: <strong className="text-slate-900 dark:text-white">{req.mentor_name}</strong>
-                            </span>
-                            {req.gmeet_link && (
-                              <a
-                                href={req.gmeet_link}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 hover:underline font-bold"
-                              >
-                                <Video className="w-3.5 h-3.5" /> GMeet Link
-                              </a>
-                            )}
-                          </div>
-
-                          <p className="text-xs text-slate-500 dark:text-slate-400 pt-1">
-                            <strong className="text-slate-700 dark:text-slate-300">Topics:</strong> {req.topics || "General Review"}
-                          </p>
-                        </div>
-
-                        {/* CM Actions */}
-                        <div className="flex items-center gap-2">
-                          {req.type === "external" && (req.status || "") === "pending_external_cm" && (
-                            <Button
-                              onClick={() => handleExternalAccept(req.id, "accept")}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              Accept & Generate GMeet
-                            </Button>
-                          )}
-
-                          <Button
-                            onClick={() => {
-                              setSelectedRequest(req);
-                              setCamStudentCount(req.student_count || 10);
-                              setMappedMentorIds(req.assigned_mentor_ids ? JSON.parse(req.assigned_mentor_ids) : []);
-                            }}
-                            className="bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white text-xs font-extrabold px-3.5 py-1.5 rounded-lg flex items-center gap-1 shadow-md shadow-pink-500/20"
-                          >
-                            <Users className="w-3.5 h-3.5" />
-                            Assign Students & Map Mentors
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Display Mapped Mentors */}
-                      {assignedMentors.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700/50 flex items-center gap-2 text-xs">
-                          <span className="text-slate-500 font-bold">Mapped Mentors ({assignedMentors.length}):</span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {assignedMentors.map(m => (
-                              <span key={m.id} className="bg-pink-50 dark:bg-pink-500/20 text-[#D528A2] dark:text-pink-200 px-2 py-0.5 rounded-md text-[11px] font-bold border border-pink-200 dark:border-pink-500/30">
-                                {m.name}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* CM Student Count Assignment & Mentor Free-Slot Mapping Modal */}
-          {selectedRequest && (
-            <div className="bg-white dark:bg-slate-900 border border-[#D528A2]/40 rounded-2xl p-6 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-                <div>
-                  <h3 className="font-extrabold text-slate-900 dark:text-white text-base flex items-center gap-2">
-                    <Users className="w-5 h-5 text-[#D528A2]" />
-                    CAM Allocation: Set Student Count & Map Mentors
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Assign the student count for <strong className="text-slate-900 dark:text-white">{selectedRequest.subject}</strong> [{selectedRequest.class_group || "All Classes"}] on {selectedRequest.target_date} and split across available mentors.
-                  </p>
-                </div>
+              <div className="flex justify-end">
                 <button
-                  onClick={() => setSelectedRequest(null)}
-                  className="text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs font-bold"
+                  type="submit"
+                  disabled={isSubmitting || mentorSubjects.length === 0}
+                  className="btn-gradient flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-extrabold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  ✕ Close
+                  {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  {isSubmitting ? "Submitting..." : `Submit ${activeMode === "external" ? "External" : "Internal"} Request`}
                 </button>
               </div>
+            </form>
+          )}
+        </div>
+      )}
 
-              {/* CAM Student Count Allocation Field */}
-              <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Assign Student Count for this Session (Assigned by CAM)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={200}
-                  value={camStudentCount}
-                  onChange={(e) => setCamStudentCount(Number(e.target.value))}
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white font-bold focus:outline-none focus:border-[#D528A2]"
-                  required
-                />
+      {/* ── MENTOR: My Interviews & Evaluate ── */}
+      {isMentor && activeTab === "myinterviews" && (
+        <div className="space-y-4">
+          {/* Stats row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: "Total Raised", value: interviewsList.length, color: "text-slate-800" },
+              { label: "Pending CM", value: interviewsList.filter(i => (i.status || "").includes("pending")).length, color: "text-amber-700" },
+              { label: "Assigned", value: interviewsList.filter(i => i.status === "assigned" || i.status === "pending_verification").length, color: "text-blue-700" },
+              { label: "Completed", value: interviewsList.filter(i => i.status === "completed").length, color: "text-emerald-700" },
+            ].map(stat => (
+              <div key={stat.label} className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm text-center">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{stat.label}</div>
+                <div className={`text-2xl font-black mt-1 ${stat.color}`}>{stat.value}</div>
               </div>
+            ))}
+          </div>
 
-              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                {availableSubjectMentors.map(m => {
-                  const isChecked = mappedMentorIds.includes(m.id);
-                  return (
-                    <label
-                      key={m.id}
-                      className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
-                        isChecked ? "bg-pink-50 dark:bg-pink-500/20 border-[#D528A2]" : "bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/50 hover:bg-slate-100"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setMappedMentorIds(prev => [...prev, m.id]);
+          {isLoading ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-[#D528A2]" /> Loading your interviews...
+            </div>
+          ) : interviewsList.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+              <BookOpen className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-500">No interview requests yet.</p>
+              <p className="text-xs text-slate-400 mt-1">Use the "Raise Request" tab to create your first interview request.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {interviewsList.map(req => {
+                const isExpanded = expandedRequest === req.id;
+                const reqStudents = sessionStudents(req);
+                const isAssigned = req.status === "assigned" || req.status === "pending_verification";
+                const isVerified = req.status === "completed";
+
+                return (
+                  <div key={req.id} className="bg-white border border-slate-200/80 rounded-xl shadow-sm overflow-hidden">
+                    <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <StatusBadge status={req.status || "pending_cm"} />
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                            req.type === "external"
+                              ? "bg-purple-50 text-purple-700 border-purple-200"
+                              : "bg-blue-50 text-blue-700 border-blue-200"
+                          }`}>
+                            {(req.type || "internal").toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="font-black text-slate-800 text-sm">{req.subject}</div>
+                        <div className="text-xs text-slate-500 flex flex-wrap gap-x-4 gap-y-0.5">
+                          <span className="flex items-center gap-1"><GraduationCap className="w-3 h-3" />{req.class_group || "All Classes"}</span>
+                          <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{req.target_date || "Date TBD"}</span>
+                          <span className="flex items-center gap-1"><Users className="w-3 h-3" />
+                            {req.student_count > 0 ? `${req.student_count} Students` : "Count Pending CM"}
+                          </span>
+                        </div>
+                        {req.topics && (
+                          <p className="text-[11px] text-slate-400">
+                            <strong className="text-slate-600">Topics:</strong> {req.topics}
+                          </p>
+                        )}
+                        {req.gmeet_link && (
+                          <a href={req.gmeet_link} target="_blank" rel="noreferrer"
+                            className="text-[11px] text-emerald-600 hover:underline flex items-center gap-1 font-bold">
+                            <Video className="w-3 h-3" /> Join Google Meet
+                          </a>
+                        )}
+                      </div>
+
+                      {isAssigned && (
+                        <button
+                          onClick={() => {
+                            if (isExpanded) {
+                              setExpandedRequest(null); setSelectedStudent(null);
                             } else {
-                              setMappedMentorIds(prev => prev.filter(id => id !== m.id));
+                              setExpandedRequest(req.id); setSelectedStudent(null);
                             }
                           }}
-                          className="w-4 h-4 rounded text-[#D528A2] focus:ring-[#D528A2]"
-                        />
+                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold px-4 py-2 rounded-xl transition-all shrink-0"
+                        >
+                          <Award className="w-3.5 h-3.5" />
+                          {isExpanded ? "Close" : "Conduct & Evaluate"}
+                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Evaluation panel */}
+                    {isExpanded && isAssigned && (
+                      <div className="border-t border-slate-200 bg-slate-50 p-5 space-y-5">
+                        {/* Student grid */}
                         <div>
-                          <div className="font-extrabold text-slate-900 dark:text-white text-sm">{m.name}</div>
-                          <div className="text-xs text-slate-500 font-medium">{m.department || "Subject Mentor"} • Free Slot Available</div>
+                          <h3 className="text-xs font-black text-slate-700 mb-3 flex items-center gap-2">
+                            <GraduationCap className="w-4 h-4 text-[#D528A2]" />
+                            Select Student to Evaluate — {req.class_group || "All Cohorts"}
+                            {!isVerified && (
+                              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full ml-1">
+                                Scores Pending CM Verification
+                              </span>
+                            )}
+                          </h3>
+                          {reqStudents.length === 0 ? (
+                            <p className="text-xs text-slate-400 italic">No students found for {req.class_group}.</p>
+                          ) : (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                              {reqStudents.map(st => {
+                                const evl = getEvalForStudent(req.id, st.id);
+                                const isSelected = selectedStudent?.id === st.id;
+                                return (
+                                  <button
+                                    key={st.id}
+                                    onClick={() => setSelectedStudent(isSelected ? null : st)}
+                                    className={`text-left p-3 rounded-xl border transition-all text-xs ${
+                                      isSelected
+                                        ? "bg-indigo-50 border-indigo-400 shadow-sm"
+                                        : evl
+                                        ? "bg-emerald-50 border-emerald-200"
+                                        : "bg-white border-slate-200 hover:border-indigo-300"
+                                    }`}
+                                  >
+                                    <div className="font-bold text-slate-800 truncate">{st.name}</div>
+                                    <div className="text-[10px] text-slate-500 mt-0.5">{st.classGroup}</div>
+                                    {evl ? (
+                                      <div className="mt-1.5 space-y-0.5">
+                                        <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                                          Evaluated {evl.total_score}/10
+                                        </span>
+                                        {!isVerified && (
+                                          <div className="text-[9px] text-amber-600 font-semibold">Pending CM Review</div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="mt-1.5 text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">
+                                        Pending
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Eval form */}
+                        {selectedStudent && (
+                          <form onSubmit={handleSaveEval} className="border border-slate-200 rounded-xl bg-white p-5 space-y-5">
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                              <div>
+                                <h4 className="font-black text-slate-800 text-sm">Evaluating: {selectedStudent.name}</h4>
+                                <p className="text-[11px] text-slate-500">{req.subject} • {selectedStudent.classGroup}</p>
+                              </div>
+                              {/* Attendance */}
+                              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200">
+                                {(["present", "absent", "od"] as const).map(att => (
+                                  <button
+                                    key={att} type="button"
+                                    onClick={() => setEvalAttendance(att)}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold uppercase transition-all ${
+                                      evalAttendance === att
+                                        ? att === "present" ? "bg-emerald-600 text-white"
+                                          : att === "absent" ? "bg-rose-600 text-white"
+                                          : "bg-amber-500 text-white"
+                                        : "text-slate-500 hover:text-slate-800"
+                                    }`}
+                                  >{att}</button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <ScoreSlider label="Communication Skill" emoji="🗣️" value={commScore} onChange={setCommScore} color="#D528A2" />
+                              <ScoreSlider label="Content Knowledge" emoji="📚" value={contentScore} onChange={setContentScore} color="#F4A863" />
+                              <ScoreSlider label="Technical / Problem Solving" emoji="💻" value={techScore} onChange={setTechScore} color="#6366f1" />
+                              <ScoreSlider label="Confidence & Presentation" emoji="🌟" value={confidenceScore} onChange={setConfidenceScore} color="#f59e0b" />
+                            </div>
+
+                            {/* Overall score preview */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between">
+                              <span className="text-xs font-bold text-slate-600">Average Score</span>
+                              <span className={`text-sm font-black ${
+                                (commScore + contentScore + techScore + confidenceScore) / 4 >= 6
+                                  ? "text-emerald-600" : "text-rose-600"
+                              }`}>
+                                {((commScore + contentScore + techScore + confidenceScore) / 4).toFixed(1)} / 10 —{" "}
+                                {(commScore + contentScore + techScore + confidenceScore) / 4 >= 6 ? "Cleared" : "Needs Improvement"}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Questions Asked</label>
+                                <textarea
+                                  rows={2} value={questionsAsked}
+                                  onChange={e => setQuestionsAsked(e.target.value)}
+                                  placeholder="e.g. Asked about React useEffect, Database joins..."
+                                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-medium focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-300 resize-none"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Mentor Remarks</label>
+                                <textarea
+                                  rows={2} value={remarks}
+                                  onChange={e => setRemarks(e.target.value)}
+                                  placeholder="e.g. Good concept clarity, needs confidence improvement..."
+                                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-medium focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-300 resize-none"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedStudent(null)}
+                                className="text-xs font-bold text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-all"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit" disabled={isSavingEval}
+                                className="btn-gradient flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-extrabold disabled:opacity-50"
+                              >
+                                {isSavingEval ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                {isSavingEval ? "Saving..." : "Save Evaluation Marks"}
+                              </button>
+                            </div>
+                          </form>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── CM: Pending Allocations ── */}
+      {isCM && activeTab === "pending" && (
+        <div className="space-y-4">
+          {isLoading ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-[#D528A2]" /> Loading requests...
+            </div>
+          ) : pendingRequests.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+              <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-600">All caught up!</p>
+              <p className="text-xs text-slate-400 mt-1">No pending interview allocation requests for your campus.</p>
+            </div>
+          ) : (
+            pendingRequests.map(req => {
+              const isOpen = expandedAllocation === req.id;
+              const subjectMentors = subjectMentorsForReq(req);
+
+              return (
+                <div key={req.id} className="bg-white border border-slate-200/80 rounded-xl shadow-sm overflow-hidden">
+                  <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <StatusBadge status={req.status} />
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                          req.type === "external"
+                            ? "bg-purple-50 text-purple-700 border-purple-200"
+                            : "bg-blue-50 text-blue-700 border-blue-200"
+                        }`}>
+                          {(req.type || "internal").toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="font-black text-slate-800">{req.subject}</div>
+                      <div className="text-xs text-slate-500 flex flex-wrap gap-x-4 gap-y-0.5">
+                        <span className="flex items-center gap-1"><GraduationCap className="w-3 h-3" />{req.class_group || "All Classes"}</span>
+                        <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{req.target_date}</span>
+                        <span className="flex items-center gap-1"><UserCheck className="w-3 h-3" />Requested by {req.mentor_name}</span>
+                      </div>
+                      {req.topics && (
+                        <p className="text-[11px] text-slate-400"><strong className="text-slate-600">Topics:</strong> {req.topics}</p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {req.type === "external" && req.status === "pending_external_cm" && (
+                        <>
+                          <button
+                            onClick={() => handleExternalAccept(req.id, "accept")}
+                            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold px-3 py-2 rounded-xl transition-all"
+                          >
+                            <Check className="w-3.5 h-3.5" /> Accept & GMeet
+                          </button>
+                          <button
+                            onClick={() => handleExternalAccept(req.id, "decline")}
+                            className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold px-3 py-2 rounded-xl transition-all"
+                          >
+                            <XCircle className="w-3.5 h-3.5" /> Decline
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={() => {
+                          if (isOpen) {
+                            setExpandedAllocation(null);
+                          } else {
+                            setExpandedAllocation(req.id);
+                            setCamStudentCount(req.student_count || 10);
+                            setMappedMentorIds(req.assigned_mentor_ids ? JSON.parse(req.assigned_mentor_ids) : []);
+                            setCmGmeetLink(req.gmeet_link || "");
+                          }
+                        }}
+                        className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold px-4 py-2 rounded-xl transition-all"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        {isOpen ? "Close" : "Allocate"}
+                        {isOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Allocation panel */}
+                  {isOpen && (
+                    <div className="border-t border-slate-200 bg-slate-50 p-5 space-y-4">
+                      <h3 className="text-xs font-black text-slate-700 flex items-center gap-2">
+                        <Users className="w-4 h-4 text-[#D528A2]" />
+                        Assign Student Count & Map Mentors for {req.subject}
+                      </h3>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Student Count for This Session</label>
+                          <input
+                            type="number" min={1} max={500} value={camStudentCount}
+                            onChange={e => setCamStudentCount(Number(e.target.value))}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">
+                            Google Meet Link <span className="text-slate-300 font-medium">(Optional)</span>
+                          </label>
+                          <input
+                            type="url" value={cmGmeetLink}
+                            onChange={e => setCmGmeetLink(e.target.value)}
+                            placeholder="https://meet.google.com/xxx-xxxx-xxx"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-300"
+                          />
                         </div>
                       </div>
-                      <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-300 dark:border-emerald-500/20">
-                        {m.subjects || selectedRequest.subject}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
 
-              <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
-                <span className="text-xs text-slate-500 font-bold">
-                  Selected Mentors: <strong className="text-slate-900 dark:text-white">{mappedMentorIds.length}</strong>
-                </span>
-                <Button
-                  onClick={() => handleAssignMentors(selectedRequest.id)}
-                  disabled={isAssigning || mappedMentorIds.length === 0}
-                  className="bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white font-extrabold px-5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-pink-500/20"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  {isAssigning ? "Dispatching..." : "Assign Student Count & Map Mentors"}
-                </Button>
+                      {/* Mentor selector */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">
+                          Available Mentors — {req.subject} at This Campus
+                          {subjectMentors.length === 0 && <span className="text-rose-500 ml-1">(None found for this subject)</span>}
+                        </label>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                          {subjectMentors.length === 0 ? (
+                            <p className="text-xs text-slate-400 italic py-2">
+                              No mentors found for {req.subject} at this campus. You can still assign a general mentor below.
+                            </p>
+                          ) : (
+                            subjectMentors.map(m => {
+                              const checked = mappedMentorIds.includes(m.id);
+                              return (
+                                <label
+                                  key={m.id}
+                                  className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                                    checked
+                                      ? "bg-indigo-50 border-indigo-300"
+                                      : "bg-white border-slate-200 hover:border-indigo-200"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox" checked={checked}
+                                    onChange={e => {
+                                      if (e.target.checked) setMappedMentorIds(prev => [...prev, m.id]);
+                                      else setMappedMentorIds(prev => prev.filter(id => id !== m.id));
+                                    }}
+                                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-bold text-slate-800 text-xs truncate">{m.name}</div>
+                                    <div className="text-[10px] text-slate-500">{m.department || "Faculty"} • {m.subjects || req.subject}</div>
+                                  </div>
+                                  {checked && <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                        <span className="text-xs text-slate-500 font-bold">
+                          {mappedMentorIds.length} mentor(s) selected
+                        </span>
+                        <button
+                          onClick={() => handleAssign(req.id)}
+                          disabled={isAssigning || mappedMentorIds.length === 0}
+                          className="btn-gradient flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-extrabold disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isAssigning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                          {isAssigning ? "Dispatching..." : "Assign & Notify Mentors"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ── CM: All Campus Interviews ── */}
+      {isCM && activeTab === "all" && (
+        <div className="space-y-4">
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: "Total Sessions", value: interviewsList.length, color: "text-slate-800" },
+              { label: "Pending", value: interviewsList.filter(i => (i.status || "").includes("pending")).length, color: "text-amber-700" },
+              { label: "Assigned", value: interviewsList.filter(i => i.status === "assigned" || i.status === "pending_verification").length, color: "text-blue-700" },
+              { label: "Completed", value: interviewsList.filter(i => i.status === "completed").length, color: "text-emerald-700" },
+            ].map(stat => (
+              <div key={stat.label} className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm text-center">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{stat.label}</div>
+                <div className={`text-2xl font-black mt-1 ${stat.color}`}>{stat.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {isLoading ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-[#D528A2]" /> Loading...
+            </div>
+          ) : interviewsList.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+              <BarChart3 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-500">No interview sessions yet.</p>
+            </div>
+          ) : (
+            <div className="bg-white border border-slate-200/80 rounded-xl shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      {["Subject", "Class", "Type", "Requested By", "Target Date", "Students", "Status", "Actions"].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {interviewsList.map(i => (
+                      <tr key={i.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap">{i.subject}</td>
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{i.class_group || "All"}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                            i.type === "external"
+                              ? "bg-purple-50 text-purple-700 border-purple-200"
+                              : "bg-blue-50 text-blue-700 border-blue-200"
+                          }`}>{(i.type || "internal").toUpperCase()}</span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{i.mentor_name || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{i.target_date || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600 text-center">{i.student_count || "—"}</td>
+                        <td className="px-4 py-3"><StatusBadge status={i.status || "pending_cm"} /></td>
+                        <td className="px-4 py-3">
+                          {(i.status === "assigned" || i.status === "pending_verification") && (
+                            <button
+                              onClick={() => handleMarkComplete(i.id)}
+                              disabled={isMarkingComplete === i.id}
+                              className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50 whitespace-nowrap"
+                            >
+                              {isMarkingComplete === i.id
+                                ? <Loader2 className="w-3 h-3 animate-spin" />
+                                : <CheckCircle2 className="w-3 h-3" />
+                              }
+                              Mark Complete
+                            </button>
+                          )}
+                          {i.gmeet_link && (
+                            <a href={i.gmeet_link} target="_blank" rel="noreferrer"
+                              className="flex items-center gap-1 text-emerald-600 text-[10px] font-bold hover:underline mt-1">
+                              <Video className="w-3 h-3" /> GMeet
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* OVERVIEW VIEW (For Admin / KAM / CM Overview) */}
-      {(isAdminOrKAM || activeTab === "overview") && !isMentor && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-[#D528A2]" />
-              Campus Interview Sessions & Evaluation Metrics
-            </h2>
-            <button
-              onClick={fetchInterviews}
-              className="text-xs text-[#D528A2] hover:underline flex items-center gap-1 font-bold"
-            >
-              Refresh Data
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80">
-              <div className="text-xs font-bold text-slate-500 uppercase">Total Sessions</div>
-              <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">{interviewsList.length}</div>
-            </div>
-            <div className="bg-emerald-50 dark:bg-emerald-500/10 p-4 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
-              <div className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase">Completed Sessions</div>
-              <div className="text-2xl font-black text-emerald-800 dark:text-emerald-300 mt-1">
-                {interviewsList.filter(i => i.status === "completed").length}
-              </div>
-            </div>
-            <div className="bg-amber-50 dark:bg-amber-500/10 p-4 rounded-xl border border-amber-200 dark:border-amber-500/20">
-              <div className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase">Pending CAM Allocation</div>
-              <div className="text-2xl font-black text-amber-800 dark:text-amber-300 mt-1">
-                {interviewsList.filter(i => (i.status || "").includes("pending")).length}
-              </div>
-            </div>
-            <div className="bg-pink-50 dark:bg-pink-500/10 p-4 rounded-xl border border-pink-200 dark:border-pink-500/20">
-              <div className="text-xs font-bold text-[#D528A2] uppercase">Evaluations Logged</div>
-              <div className="text-2xl font-black text-[#D528A2] mt-1">{evaluationsList.length}</div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {interviewsList.map(i => (
-              <div key={i.id} className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700/60 flex justify-between items-center text-xs">
-                <div>
-                  <strong className="text-slate-900 dark:text-white font-bold">{i.subject}</strong> [{i.class_group || "All Classes"}] ({(i.type || "internal").toUpperCase()}) • Requested by {i.mentor_name}
-                  <div className="text-slate-500">{i.target_date} • {i.topics || "General"}</div>
-                </div>
-                <span className={`px-2.5 py-1 rounded-full font-extrabold uppercase text-[10px] ${
-                  i.status === "completed" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
-                }`}>
-                  {i.status}
-                </span>
+      {/* ── KAM/Admin: Region Overview ── */}
+      {isKAM && activeTab === "overview" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: "Total Sessions", value: interviewsList.length, color: "text-slate-800" },
+              { label: "Pending", value: interviewsList.filter(i => (i.status || "").includes("pending")).length, color: "text-amber-700" },
+              { label: "Assigned", value: interviewsList.filter(i => i.status === "assigned" || i.status === "pending_verification").length, color: "text-blue-700" },
+              { label: "Completed", value: interviewsList.filter(i => i.status === "completed").length, color: "text-emerald-700" },
+            ].map(stat => (
+              <div key={stat.label} className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm text-center">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{stat.label}</div>
+                <div className={`text-2xl font-black mt-1 ${stat.color}`}>{stat.value}</div>
               </div>
             ))}
           </div>
+
+          {isLoading ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-[#D528A2]" /> Loading all campus data...
+            </div>
+          ) : interviewsList.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+              <BarChart3 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-500">No interview sessions across region yet.</p>
+            </div>
+          ) : (
+            <div className="bg-white border border-slate-200/80 rounded-xl shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200">
+                <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-[#D528A2]" />
+                  All Interview Sessions — Region View
+                </h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      {["Subject", "Class", "Type", "Requested By", "Target Date", "Students", "Status"].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {interviewsList.map(i => (
+                      <tr key={i.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 font-bold text-slate-800">{i.subject}</td>
+                        <td className="px-4 py-3 text-slate-600">{i.class_group || "All"}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                            i.type === "external"
+                              ? "bg-purple-50 text-purple-700 border-purple-200"
+                              : "bg-blue-50 text-blue-700 border-blue-200"
+                          }`}>{(i.type || "internal").toUpperCase()}</span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{i.mentor_name || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{i.target_date || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600 text-center">{i.student_count || "—"}</td>
+                        <td className="px-4 py-3"><StatusBadge status={i.status || "pending_cm"} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
