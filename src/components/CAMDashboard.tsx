@@ -808,6 +808,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     students,
     slots,
     requests,
+    interviews,
     subjectsList,
     coursesList,
     assignSlot,
@@ -888,7 +889,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     : (currentCAM?.college_name || colleges.find(c => c.id === activeCollegeId)?.name || "Primary Campus");
 
   // Tab State
-  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance">("overview");
+  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews">("overview");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
@@ -3791,6 +3792,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           if (tabId === "handovers") {
             return requests.filter(r => r.status === "pending_cam").length;
           }
+          if (tabId === "interviews") {
+            return interviews.filter((i: any) => (i.status === "Pending" || i.status === "pending_cam") && (i.college_id === activeCollegeId || !i.college_id)).length;
+          }
           return 0;
         };
 
@@ -3833,7 +3837,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     icon: Calendar,
                     items: [
                       { id: "timetable", label: "Timetables & Rooms", icon: Calendar },
-                      { id: "monitoring", label: "Academic Monitoring", icon: Clock }
+                      { id: "monitoring", label: "Academic Monitoring", icon: Clock },
+                      { id: "interviews", label: "Interview Allocations & GMeet", icon: Award }
                     ]
                   },
                   {
@@ -3919,7 +3924,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="pl-4 pt-1.5 pb-1 space-y-1 animate-fadeIn">
                           {group.items.map(child => {
                             const ChildIcon = child.icon;
-                            const isChildActive = activeTab === child.id;
+                            const isChildActive = activeTab === child.id || (child.id === "interviews" && activeTab === "monitoring" && camTrackerSubView === "interviews");
                             const count = getNotificationCount(child.id);
                             return (
                               <button
@@ -7451,8 +7456,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <CAMMentorAttendanceTab collegeId={activeCollegeId} camName={currentCAM?.name || "Campus Manager"} />
                   )}
 
-                  {/* Student Tracker Audit Tab */}
-                  {activeTab === "tracker" && (() => {
+                  {/* Student Tracker Audit & Interview Module Tab */}
+                  {(activeTab === "tracker" || activeTab === "monitoring" || activeTab === "interviews") && (() => {
                     // ── DB-driven cascading filters ───────────────────────────────────────
                     // Helper: match college_id loosely (includes subjects with null college_id
                     // as well as those explicitly tied to this campus)
@@ -7533,9 +7538,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {/* Sub-tab Dual Buttons */}
                           <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
                             <button
-                              onClick={() => setCamTrackerSubView("tracker")}
+                              onClick={() => {
+                                setCamTrackerSubView("tracker");
+                                setActiveTab("monitoring" as any);
+                              }}
                               className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                                camTrackerSubView === "tracker"
+                                activeTab !== "interviews" && camTrackerSubView === "tracker"
                                   ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
                                   : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
                               }`}
@@ -7543,9 +7551,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               Task Tracker Audit
                             </button>
                             <button
-                              onClick={() => setCamTrackerSubView("interviews")}
+                              onClick={() => {
+                                setCamTrackerSubView("interviews");
+                                setActiveTab("interviews" as any);
+                              }}
                               className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                                camTrackerSubView === "interviews"
+                                activeTab === "interviews" || camTrackerSubView === "interviews"
                                   ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
                                   : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
                               }`}
@@ -7555,8 +7566,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </div>
                         </div>
 
-                        {camTrackerSubView === "interviews" ? (
-                          <InterviewModule currentUserRole="cm" currentUserName={currentCAM?.name || "Campus Manager"} />
+                        {(activeTab === "interviews" || camTrackerSubView === "interviews") ? (
+                          <InterviewModule currentUserRole="cm" currentUserName={currentCAM?.name || "Campus Manager"} defaultCollegeId={activeCollegeId} />
                         ) : (
                           <React.Fragment>
 

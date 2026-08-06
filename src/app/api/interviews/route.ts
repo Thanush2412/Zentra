@@ -25,9 +25,9 @@ export async function GET(request: Request) {
     if (role === "mentor" && mentorId) {
       query += " AND (mentor_id = ? OR assigned_mentor_ids LIKE ?)";
       params.push(mentorId, `%${mentorId}%`);
-    } else if (role === "cam" && collegeId) {
-      query += " AND (origin_college_id = ? OR target_college_id = ?)";
-      params.push(collegeId, collegeId);
+    } else if ((role === "cam" || role === "cm") && collegeId) {
+      query += " AND (origin_college_id = ? OR target_college_id = ? OR college_id = ? OR origin_college_id IS NULL OR origin_college_id = '')";
+      params.push(collegeId, collegeId, collegeId);
     }
 
     query += " ORDER BY created_at DESC";
