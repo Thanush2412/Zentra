@@ -71,27 +71,32 @@ export function getSubjectsForDepartment(
   slots: any[],
   targetDept: string
 ): any[] {
-  const deptLower = targetDept.toLowerCase().trim();
+  if (!subjectsList || !Array.isArray(subjectsList)) return [];
+  const safeMentors = Array.isArray(mentors) ? mentors : [];
+  const safeSlots = Array.isArray(slots) ? slots : [];
+  const deptLower = (targetDept || "").toLowerCase().trim();
+
+  if (!deptLower) return subjectsList;
 
   // 1. Find all mentors belonging to this department
-  const deptMentors = mentors.filter(m => m.department.toLowerCase().trim() === deptLower);
+  const deptMentors = safeMentors.filter(m => m && m.department && (m.department || "").toLowerCase().trim() === deptLower);
   const deptMentorIds = new Set(deptMentors.map(m => m.id));
 
   // 2. Gather all subjects mapped to these mentors in their profile
   const mappedSubjectNames = new Set<string>();
   deptMentors.forEach(m => {
-    if (m.subjects) {
-      m.subjects.split(/\n|\/|,|;/).forEach((s: string) => {
-        const cleaned = s.trim().replace(/[,;/]+$/, "").trim().toLowerCase();
+    if (m && m.subjects) {
+      String(m.subjects).split(/\n|\/|,|;/).forEach((s: string) => {
+        const cleaned = (s || "").trim().replace(/[,;/]+$/, "").trim().toLowerCase();
         if (cleaned) mappedSubjectNames.add(cleaned);
       });
     }
   });
 
   // 3. Gather all courses (subjects) actually taught by these mentors in the timetable
-  slots.forEach(s => {
-    if (deptMentorIds.has(s.mentorId) && s.course) {
-      const cleaned = s.course.trim().replace(/[,;/]+$/, "").trim().toLowerCase();
+  safeSlots.forEach(s => {
+    if (s && deptMentorIds.has(s.mentorId) && s.course) {
+      const cleaned = String(s.course).trim().replace(/[,;/]+$/, "").trim().toLowerCase();
       mappedSubjectNames.add(cleaned);
     }
   });
@@ -99,22 +104,22 @@ export function getSubjectsForDepartment(
   // 4. Gather all class groups (programs) taught by these mentors
   const mappedClassGroups = new Set<string>();
   deptMentors.forEach(m => {
-    if (m.classes) {
-      m.classes.split("\n").forEach((c: string) => {
-        const cleaned = c.trim().toLowerCase();
+    if (m && m.classes) {
+      String(m.classes).split("\n").forEach((c: string) => {
+        const cleaned = (c || "").trim().toLowerCase();
         if (cleaned) mappedClassGroups.add(cleaned);
       });
     }
   });
-  slots.forEach(s => {
-    if (deptMentorIds.has(s.mentorId) && s.classGroup) {
-      mappedClassGroups.add(s.classGroup.toLowerCase());
+  safeSlots.forEach(s => {
+    if (s && deptMentorIds.has(s.mentorId) && s.classGroup) {
+      mappedClassGroups.add(String(s.classGroup).toLowerCase());
     }
   });
 
   // Helper to extract program keywords
   const getProgramKeywords = (prog: string) => {
-    const p = prog.toLowerCase();
+    const p = (prog || "").toLowerCase();
     if (p.includes("cs") || p.includes("computer science")) return ["cs", "computer"];
     if (p.includes("datascience") || p.includes("data science") || p.includes("ds")) return ["ds", "data"];
     if (p.includes("cloud") || p.includes("cc")) return ["cloud", "cc"];
@@ -130,12 +135,13 @@ export function getSubjectsForDepartment(
 
   // 5. Filter subjectsList
   return subjectsList.filter(s => {
-    const sNameClean = s.name.trim().replace(/[,;/]+$/, "").trim().toLowerCase();
-    const sDeptClean = s.department.toLowerCase();
+    if (!s) return false;
+    const sNameClean = (s.name || "").trim().replace(/[,;/]+$/, "").trim().toLowerCase();
+    const sDeptClean = (s.department || "").toLowerCase();
 
     // Check A: Is this subject name explicitly mapped or taught by a mentor of this department?
     const hasExplicitMatch = Array.from(mappedSubjectNames).some(mappedName => 
-      isSubjectNameMatch(s.name, mappedName)
+      isSubjectNameMatch(s.name || "", mappedName)
     );
     if (hasExplicitMatch) return true;
 
@@ -159,46 +165,20 @@ export function isMentorInProgram(
   slots: any[],
   subjectsList: any[]
 ): boolean {
+  if (!mentor || !programName) return false;
   const pName = (programName || "").toLowerCase().trim();
   const mDept = (mentor.department || "").toLowerCase().trim();
 
-  // A. Check if the program name matches the mentor's department keywords
-  const getKeywords = (str: string) => {
-    const s = str.toLowerCase();
-    if (s.includes("cs") || s.includes("computer science")) return ["cs", "computer"];
-    if (s.includes("datascience") || s.includes("data science") || s.includes("ds")) return ["ds", "data"];
-    if (s.includes("cloud") || s.includes("cc")) return ["cloud", "cc"];
-    if (s.includes("fintech") || s.includes("finance")) return ["fintech", "finance"];
-    if (s.includes("banking")) return ["banking"];
-    if (s.includes("fashion") || s.includes("tech")) return ["fashion"];
-    if (s.includes("aviation") || s.includes("airport") || s.includes("airline")) return ["aviation", "airport", "airline"];
-    if (s.includes("commerce") || s.includes("bcom") || s.includes("b.com")) return ["commerce", "bcom", "b.com"];
-    return [s];
-  };
+  // A. Exact department match
+  if (mDept === pName) return true;
 
-  const pKeywords = getKeywords(pName);
-  const mKeywords = getKeywords(mDept);
-
-  const hasKeywordMatch = pKeywords.some(pk => mKeywords.includes(pk));
-  if (hasKeywordMatch) return true;
-
-  // B. Check if this mentor teaches any slot in this program's classGroup
-  const hasSlotInProgram = slots.some(s => 
-    s.mentorId === mentor.id && 
-    s.classGroup && 
-    (s.classGroup.toLowerCase().includes(pName) || pName.includes(s.classGroup.toLowerCase()))
+  // B. Check if this mentor teaches any slot in this program's department or classGroup
+  const hasSlotInProgram = (slots || []).some(s => 
+    s && s.mentorId === mentor.id && 
+    ((s.department || "").toLowerCase().trim() === pName ||
+     (s.classGroup || "").toLowerCase().includes(pName))
   );
   if (hasSlotInProgram) return true;
-
-  // C. Check if mentor teaches subjects in this program
-  const mentorSlots = slots.filter(s => s.mentorId === mentor.id);
-  const hasSubjectInProgram = mentorSlots.some(ms => 
-    subjectsList.some(s => 
-      s.department.toLowerCase() === pName && 
-      isSubjectNameMatch(s.name, ms.course)
-    )
-  );
-  if (hasSubjectInProgram) return true;
 
   return false;
 }
@@ -671,4 +651,83 @@ export function isCohortMatching(cg1?: string, cg2?: string, coursesList: any[] 
     }
   }
   return false;
+}
+
+/**
+ * Dynamically resolves all timetable period time slot ranges for a specific college
+ * from its actual database timetable slots and configured shift parameters.
+ */
+export function getCollegePeriodTimeSlots(
+  collegeId?: string,
+  colleges: any[] = [],
+  slots: any[] = []
+): string[] {
+  const resultSlots = new Set<string>();
+
+  // 1. Fetch from actual timetable slots recorded for this college
+  if (collegeId && slots && slots.length > 0) {
+    slots
+      .filter(s => s.college_id === collegeId && s.time)
+      .forEach(s => {
+        const t = (s.time || "").trim();
+        if (t) resultSlots.add(t);
+      });
+  }
+
+  // 2. Parse shift_configs if configured for this college
+  if (collegeId && colleges && colleges.length > 0) {
+    const college = colleges.find(c => c.id === collegeId);
+    if (college?.shift_configs) {
+      try {
+        const parsed = JSON.parse(college.shift_configs);
+        const allParams: any[] = [];
+        if (parsed.semesters) {
+          Object.values(parsed.semesters).forEach((semObj: any) => {
+            Object.values(semObj).forEach((shiftObj: any) => {
+              if (shiftObj?.custom_shift_params) allParams.push(shiftObj.custom_shift_params);
+            });
+          });
+        }
+        if (parsed.custom_shift_params) {
+          Object.values(parsed.custom_shift_params).forEach((param: any) => {
+            allParams.push(param);
+          });
+        }
+
+        allParams.forEach(param => {
+          const res = calculateShiftSchedule(param);
+          if (res && res.items) {
+            res.items
+              .filter(item => item.type === "period")
+              .forEach(item => {
+                resultSlots.add(`${item.startTimeStr} - ${item.endTimeStr}`);
+              });
+          }
+        });
+      } catch (_) {}
+    }
+  }
+
+  // 3. Fallback: gather from any other college slots in workspace
+  if (resultSlots.size === 0 && slots && slots.length > 0) {
+    slots.forEach(s => {
+      const t = (s.time || "").trim();
+      if (t) resultSlots.add(t);
+    });
+  }
+
+  // 4. Default standard fallback if completely unconfigured
+  if (resultSlots.size === 0) {
+    return [
+      "8.20 AM - 9.10 AM",
+      "9.10 AM - 10.00 AM",
+      "10.20 AM - 11.10 AM",
+      "11.10 AM - 12.00 PM",
+      "12.00 PM - 12.50 PM",
+      "02:00 PM - 03:00 PM",
+      "03:00 PM - 04:00 PM"
+    ];
+  }
+
+  return Array.from(resultSlots);
 }

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { sendMail, renderEmailShell } from "@/lib/mail";
+import { dispatchExternalInterviewNotifications } from "@/lib/interview-notifications";
+import { createGoogleCalendarEvent } from "@/lib/google-calendar";
+
 
 export async function POST(request: Request) {
   try {
@@ -21,51 +24,55 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
 
     if (action === "accept") {
-      // Generate real-time GMeet link
-      const meetId =
-        Math.random().toString(36).substring(2, 5) +
-        "-" +
-        Math.random().toString(36).substring(2, 6) +
-        "-" +
-        Math.random().toString(36).substring(2, 5);
-      const gmeetLink = `https://meet.google.com/${meetId}`;
+      // Generate real-time GMeet & GCal link
+      const gcalResult = await createGoogleCalendarEvent({
+        title: `Structured Interview: ${interview.subject} (${interview.class_group || 'Cohort'})`,
+        description: `Faculty evaluation assessment session for ${interview.subject}.\nCohort: ${interview.class_group || 'All'}`,
+        targetDate: interview.target_date || new Date().toISOString().slice(0, 10),
+        startTime: interview.preferred_start_time || "08:20 AM",
+        endTime: "09:10 AM",
+        existingMeetLink: interview.gmeet_link,
+        interviewId: interview_id
+      });
+
+      const gmeetLink = gcalResult.gmeet_link;
+      const gcalLink = gcalResult.gcal_link;
 
       await db.run(
         `UPDATE student_interviews 
-         SET target_college_id = ?, gmeet_link = ?, status = 'assigned', updated_at = ?
+         SET target_college_id = ?, gmeet_link = ?, gcal_link = ?, status = 'assigned', updated_at = ?
          WHERE id = ?`,
-        [target_college_id || "", gmeetLink, now, interview_id]
+        [target_college_id || "", gmeetLink, gcalLink, now, interview_id]
       );
 
-      // Notify origin CM
+      // Update any pending allocations for this interview to accepted
+      await db.run(
+        `UPDATE interview_allocations
+         SET status = 'accepted', gmeet_link = ?, updated_at = ?
+         WHERE interview_id = ?`,
+        [gmeetLink, now, interview_id]
+      );
+
+      // Dispatch notifications to KAM and regional colleges & target CM
       try {
-        const originCMs = await db.all(
-          "SELECT email, name FROM campus_managers WHERE college_id = ?",
-          [interview.origin_college_id || interview.college_id]
-        );
-        if (originCMs && originCMs.length > 0) {
-          const originCMEmails = originCMs.map((c: any) => c.email).filter(Boolean).join(", ");
-          if (originCMEmails) {
-            await sendMail({
-              to: originCMEmails,
-              subject: `[External Interview Accepted] ${interview.subject} — GMeet Link Ready`,
-              htmlBody: renderEmailShell({
-                title: "External Interview Request Accepted",
-                badgeText: "External Interview",
-                badgeColor: "emerald",
-                description: `Campus Manager <strong>${cm_name}</strong> has accepted the external interview request for <strong>${interview.subject}</strong>. A Google Meet link has been generated.`,
-                details: [
-                  { label: "Subject", value: interview.subject, highlight: true },
-                  { label: "Target Date", value: interview.target_date || "" },
-                  { label: "Accepted By", value: cm_name },
-                  { label: "Google Meet Link", value: gmeetLink, highlight: true },
-                ],
-                ctaText: "View Interview Details →",
-              }),
-            });
-          }
-        }
-      } catch (_) {}
+        await dispatchExternalInterviewNotifications({
+          interviewId: interview.id,
+          subject: interview.subject,
+          classGroup: interview.class_group,
+          targetDate: interview.target_date,
+          type: "external",
+          topics: interview.topics,
+          studentCount: interview.student_count,
+          mentorName: interview.mentor_name,
+          originCollegeId: interview.origin_college_id || interview.college_id,
+          targetCollegeId: target_college_id || interview.target_college_id,
+          actionType: "accepted",
+          gmeetLink: gmeetLink,
+          actorName: cm_name
+        });
+      } catch (notifErr) {
+        console.warn("External accept notification failed:", notifErr);
+      }
 
       return NextResponse.json({
         success: true,
@@ -73,17 +80,37 @@ export async function POST(request: Request) {
         gmeet_link: gmeetLink
       });
     } else if (action === "decline") {
-      // Cascade to 2nd priority
+      // Set status to declined
       await db.run(
         `UPDATE student_interviews 
-         SET priority_level = 2, status = 'pending_external_cm', updated_at = ?
+         SET status = 'declined', updated_at = ?
          WHERE id = ?`,
         [now, interview_id]
       );
 
+      // Dispatch notifications to KAM and regional colleges & target CM
+      try {
+        await dispatchExternalInterviewNotifications({
+          interviewId: interview.id,
+          subject: interview.subject,
+          classGroup: interview.class_group,
+          targetDate: interview.target_date,
+          type: "external",
+          topics: interview.topics,
+          studentCount: interview.student_count,
+          mentorName: interview.mentor_name,
+          originCollegeId: interview.origin_college_id || interview.college_id,
+          targetCollegeId: target_college_id || interview.target_college_id,
+          actionType: "declined",
+          actorName: cm_name
+        });
+      } catch (notifErr) {
+        console.warn("External decline notification failed:", notifErr);
+      }
+
       return NextResponse.json({
         success: true,
-        message: "Invitation declined. Cascaded to 2nd priority partner college CM."
+        message: "External interview request declined. Regional KAM & colleges notified."
       });
     }
 

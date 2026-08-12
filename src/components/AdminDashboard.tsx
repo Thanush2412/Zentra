@@ -3522,7 +3522,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                                           {Array.from({ length: dept.years ? Number(dept.years) : 4 }, (_, i) => `Year ${i + 1}`).map((yr, i) => {
-                                            const yrSubjects = deptSubjects.filter(s => s.year === yr && (searchQuery === "" || s.name.toLowerCase().includes(searchQuery.toLowerCase())));
+                                            const isSameYear = (sYear?: string, targetYrStr?: string) => {
+                                              if (!sYear || !targetYrStr) return false;
+                                              const s = sYear.toLowerCase().trim();
+                                              const t = targetYrStr.toLowerCase().trim();
+                                              if (s === t) return true;
+                                              if (t === "year 1" && (s === "year i" || s === "1" || s === "year 1")) return true;
+                                              if (t === "year 2" && (s === "year ii" || s === "2" || s === "year 2")) return true;
+                                              if (t === "year 3" && (s === "year iii" || s === "3" || s === "year 3")) return true;
+                                              if (t === "year 4" && (s === "year iv" || s === "4" || s === "year 4")) return true;
+                                              return false;
+                                            };
+                                            const yrSubjects = deptSubjects.filter(s => isSameYear(s.year, yr) && (searchQuery === "" || s.name.toLowerCase().includes(searchQuery.toLowerCase())));
                                             const yearKey = `${dept.id}_${yr}`;
                                             const isYearExpanded = expandedDeptYears[yearKey] !== false; // default to expanded/true
 
@@ -3592,8 +3603,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                               </tr>
                                                             </thead>
                                                             <tbody className="divide-y divide-gray-100">
-                                                              {yrSubjects.filter(s => s.semester === semOdd).map(sub => (
-                                                                <tr key={sub.id} className="hover:bg-gray-50/30 transition-colors">
+                                                              {yrSubjects.filter(s => s.semester === semOdd).map((sub, sIdx) => (
+                                                                <tr key={`${sub.id || sub.name}_${sIdx}`} className="hover:bg-gray-50/30 transition-colors">
                                                                   <td className="px-2 py-2">
                                                                     <div className="font-bold text-gray-900 leading-tight">
                                                                       {sub.name}
@@ -3676,8 +3687,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                               </tr>
                                                             </thead>
                                                             <tbody className="divide-y divide-gray-100">
-                                                              {yrSubjects.filter(s => s.semester === semEven).map(sub => (
-                                                                <tr key={sub.id} className="hover:bg-gray-50/30 transition-colors">
+                                                              {yrSubjects.filter(s => s.semester === semEven).map((sub, sIdx) => (
+                                                                <tr key={`${sub.id || sub.name}_${sIdx}`} className="hover:bg-gray-50/30 transition-colors">
                                                                   <td className="px-2 py-2">
                                                                     <div className="font-bold text-gray-900 leading-tight">
                                                                       {sub.name}

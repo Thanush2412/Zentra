@@ -36,7 +36,8 @@ import {
   RefreshCw,
   Menu,
   Edit2,
-  Loader2
+  Loader2,
+  Video
 } from "lucide-react";
 import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch } from "@/lib/utils";
 
@@ -63,8 +64,8 @@ const MOCK_LIBRARY_BOOKS: BookItem[] = [
 ];
 
 export interface StudentDashboardProps {
-  activeTab?: "dashboard" | "schedule" | "marks" | "leave" | "exams" | "library" | "fees" | "profile" | "tracker" | "more_menu";
-  onTabChange?: (tab: "dashboard" | "schedule" | "marks" | "leave" | "exams" | "library" | "fees" | "profile" | "tracker" | "more_menu") => void;
+  activeTab?: "dashboard" | "schedule" | "marks" | "leave" | "exams" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu";
+  onTabChange?: (tab: "dashboard" | "schedule" | "marks" | "leave" | "exams" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu") => void;
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({
@@ -88,6 +89,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     currentShift,
     setCurrentShift,
     updateStudent,
+    interviews,
+    interviewEvaluations,
     colleges,
     coursesList,
     weeklyTasks,
@@ -96,7 +99,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   } = useApp();
   const { toast } = useToast();
 
-  const [localActiveTab, setLocalActiveTab] = useState<"dashboard" | "schedule" | "marks" | "leave" | "exams" | "library" | "fees" | "profile" | "tracker" | "more_menu">("dashboard");
+  const [localActiveTab, setLocalActiveTab] = useState<"dashboard" | "schedule" | "marks" | "leave" | "exams" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu">("dashboard");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
@@ -200,6 +203,21 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       localStorage.setItem("fp_student_tasks", JSON.stringify(tasks));
     }
   }, [tasks]);
+
+  const [studentInterviews, setStudentInterviews] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (currentStudent?.id) {
+      fetch(`/api/interviews?role=student&studentId=${currentStudent.id}&classGroup=${encodeURIComponent(currentStudent.classGroup || "")}&collegeId=${currentStudent.college_id || ""}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            setStudentInterviews(data.interviews || []);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [currentStudent?.id, currentStudent?.classGroup, currentStudent?.college_id, activeTab]);
 
   useEffect(() => {
     const saved = localStorage.getItem("fp_allowed_profile_edit_classes");
@@ -349,6 +367,38 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   const studentGroupNorm = normalizeClassGroup(currentStudent.classGroup);
 
+  // Helper to parse student's classGroup into clean components
+  const getStudentClassDetails = (classGroup?: string) => {
+    if (!classGroup) return { course: "", shift: "", sem: "", year: "" };
+    
+    const { department, semester, year } = resolveClassGroupDetailsFromState(
+      classGroup,
+      subjectsList,
+      coursesList
+    );
+
+    // Extract Shift
+    let shift = "";
+    if (classGroup.toLowerCase().includes("shift 1") || classGroup.toLowerCase().includes("shift_1")) {
+      shift = "Shift 1";
+    } else if (classGroup.toLowerCase().includes("shift 2") || classGroup.toLowerCase().includes("shift_2")) {
+      shift = "Shift 2";
+    } else {
+      shift = "General Shift";
+    }
+
+    const num = parseInt(year.replace(/[^0-9]/g, ""), 10);
+    const ordinalMap = ["", "1st Year", "2nd Year", "3rd Year", "4th Year"];
+    const yearDisplay = ordinalMap[num] || year;
+
+    return { course: department, shift, sem: semester, year: yearDisplay };
+  };
+
+  const studentClassDetails = getStudentClassDetails(currentStudent?.classGroup);
+  const studentSubjects = subjectsList.filter(
+    s => s.semester && s.semester.toLowerCase() === studentClassDetails.sem.toLowerCase()
+  );
+
   // 1. Get all slots for student's class group — using robust fuzzy + cohort matching
   const myClassSlots = slots.filter((s) => {
     if (!currentStudent) return false;
@@ -405,38 +455,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       setCurrentShift(studentShift);
     }
   }, [myClassSlots, currentStudent, currentShift, setCurrentShift]);
-
-  // Helper to parse student's classGroup into clean components
-  const getStudentClassDetails = (classGroup?: string) => {
-    if (!classGroup) return { course: "", shift: "", sem: "", year: "" };
-    
-    const { department, semester, year } = resolveClassGroupDetailsFromState(
-      classGroup,
-      subjectsList,
-      coursesList
-    );
-
-    // Extract Shift
-    let shift = "";
-    if (classGroup.toLowerCase().includes("shift 1") || classGroup.toLowerCase().includes("shift_1")) {
-      shift = "Shift 1";
-    } else if (classGroup.toLowerCase().includes("shift 2") || classGroup.toLowerCase().includes("shift_2")) {
-      shift = "Shift 2";
-    } else {
-      shift = "General Shift";
-    }
-
-    const num = parseInt(year.replace(/[^0-9]/g, ""), 10);
-    const ordinalMap = ["", "1st Year", "2nd Year", "3rd Year", "4th Year"];
-    const yearDisplay = ordinalMap[num] || year;
-
-    return { course: department, shift, sem: semester, year: yearDisplay };
-  };
-
-  const studentClassDetails = getStudentClassDetails(currentStudent?.classGroup);
-  const studentSubjects = subjectsList.filter(
-    s => s.semester && s.semester.toLowerCase() === studentClassDetails.sem.toLowerCase()
-  );
 
   useEffect(() => {
     if (studentSubjects.length > 0 && !studentTrackerSubject) {
@@ -794,7 +812,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 {[
                   { id: "dashboard", label: "Dashboard", icon: Activity },
                   { id: "schedule", label: "Schedule", icon: Calendar },
-                  { id: "marks", label: "Tests", icon: Award },
+                  { id: "interviews", label: "My Interviews", icon: Award },
+                  { id: "marks", label: "Tests", icon: CheckCircle },
                   { id: "leave", label: "Leave & OD", icon: FileText },
                   { id: "tracker", label: "My Tasks & Grades", icon: GraduationCap },
                   { id: "exams", label: "Exams", icon: BookOpen },
@@ -1304,6 +1323,52 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 </div>
 
                 <div className="space-y-4">
+                  {/* Today's Scheduled Interview Banner if any */}
+                  {(() => {
+                    const todayStr = new Date().toISOString().slice(0, 10);
+                    const todayInterview = studentInterviews.find(inv => inv.target_date === todayStr);
+                    if (!todayInterview) return null;
+
+                    const mySlot = (todayInterview.student_slots || []).find((s: any) => 
+                      s.student_id === currentStudent?.id || s.roll_number === currentStudent?.roll_number
+                    );
+                    const meetLink = mySlot?.gmeet_link || todayInterview.gmeet_link;
+                    const evaluator = mySlot?.mentor_name || todayInterview.mentor_name || "Faculty Evaluator";
+                    const timing = mySlot?.slot_start_time || todayInterview.preferred_start_time || "8:20 AM - 8:35 AM";
+
+                    return (
+                      <div className="p-4 bg-purple-50/80 border border-purple-200 rounded-xl flex items-center justify-between gap-4 shadow-xs">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-8.5 w-8.5 rounded-full bg-purple-100 border border-purple-250 flex items-center justify-center font-bold text-purple-700 text-xs shrink-0 select-none">
+                            🎤
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-xs font-black text-purple-950 block truncate">{todayInterview.subject}</span>
+                            <span className="text-[10px] text-purple-700 block truncate font-semibold mt-0.5">
+                              Evaluator: {evaluator} • {timing}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          {meetLink ? (
+                            <a
+                              href={meetLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9.5px] font-black inline-flex items-center gap-1 shadow-2xs"
+                            >
+                              <Video className="w-3 h-3" /> Join Room
+                            </a>
+                          ) : (
+                            <span className="inline-block px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-[9px] font-bold">
+                              Scheduled
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {myClassSlots.slice(0, 3).map((slot, index) => {
                     const mentor = mentors.find(m => m.id === slot.mentorId);
                     const teacherName = mentor?.name || "Dr. Instructor";
@@ -1329,7 +1394,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       </div>
                     );
                   })}
-                  {myClassSlots.length === 0 && (
+                  {myClassSlots.length === 0 && !studentInterviews.some(inv => inv.target_date === new Date().toISOString().slice(0, 10)) && (
                     <div className="text-center py-6 text-slate-400 text-xs italic font-semibold">
                       No classes scheduled for today.
                     </div>
@@ -1414,6 +1479,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           <div className="flex flex-col justify-center items-center">
                             <span className="text-sm font-black text-slate-900 leading-none">{date.day}</span>
                             <span className="text-[9px] text-slate-400 font-extrabold uppercase mt-1 leading-none">{date.formatted}</span>
+                            {studentInterviews.some((inv: any) => inv.target_date === date.dateStr) && (
+                              <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                🎤 Interview
+                              </span>
+                            )}
                           </div>
                         </td>
 
@@ -1433,6 +1503,87 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           if (col.type !== "slot") return null;
                           const time = col.time;
                           const cellData = getAttendanceForCell(date.day, date.dateStr, time);
+
+                          // Check for student's scheduled interview session on this date & period
+                          const interviewForSlot = studentInterviews?.find((inv: any) => {
+                            if (inv.target_date !== date.dateStr) return false;
+                            const prefTime = inv.preferred_start_time || "08:20 AM - 09:10 AM";
+                            const slotTimeNorm = time.replace(/\s+/g, "").toLowerCase();
+                            const prefTimeNorm = prefTime.replace(/\s+/g, "").toLowerCase();
+                            if (slotTimeNorm.includes(prefTimeNorm) || prefTimeNorm.includes(slotTimeNorm)) return true;
+                            
+                            // Check student slots
+                            if (inv.student_slots && inv.student_slots.some((s: any) => 
+                              (s.student_id === currentStudent?.id || s.roll_number === currentStudent?.roll_number) && 
+                              (s.slot_start_time?.includes(time) || time.includes(s.slot_start_time))
+                            )) return true;
+
+                            // Match by start hour
+                            const startHourMin = prefTime.split("-")[0].trim().toLowerCase().replace(".", ":");
+                            const cellStartHourMin = time.split("-")[0].trim().toLowerCase().replace(".", ":");
+                            if (startHourMin && cellStartHourMin && (startHourMin.includes(cellStartHourMin) || cellStartHourMin.includes(startHourMin))) return true;
+
+                            // If assigned and Period 1:
+                            if ((time.startsWith("8.20") || time.startsWith("08:20") || time.startsWith("9.00") || time.startsWith("09:00")) && (inv.status === "assigned" || inv.status === "completed" || inv.status === "pending_verification")) return true;
+
+                            return false;
+                          });
+
+                          if (interviewForSlot) {
+                            const isCompleted = interviewForSlot.status === "completed";
+                            const mySlot = (interviewForSlot.student_slots || []).find((s: any) => 
+                              s.student_id === currentStudent?.id || s.roll_number === currentStudent?.roll_number
+                            );
+                            const meetLink = mySlot?.gmeet_link || interviewForSlot.gmeet_link;
+                            const evaluatorName = mySlot?.mentor_name || interviewForSlot.mentor_name || "Faculty Evaluator";
+                            const slotTiming = mySlot?.slot_start_time || interviewForSlot.preferred_start_time || "8:20 AM - 8:35 AM";
+
+                            return (
+                              <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-white dark:bg-[#101015]">
+                                <div className={`h-full flex flex-col justify-between p-2 rounded-xl border text-xs shadow-xs transition-all ${
+                                  isCompleted
+                                    ? "bg-emerald-50/80 border-emerald-300 text-emerald-950"
+                                    : "bg-purple-50/80 border-purple-300 text-purple-950 hover:shadow-sm"
+                                }`}>
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-1 mb-1 max-w-full">
+                                      <span className="px-1.5 py-0.5 rounded bg-purple-200/80 border border-purple-300 text-[7.5px] font-black text-purple-800 uppercase tracking-wide">
+                                        🎤 INTERVIEW ({interviewForSlot.type?.toUpperCase() || "EXTERNAL"})
+                                      </span>
+                                    </div>
+                                    <div className="font-extrabold text-[10px] leading-tight mb-1 text-purple-950 line-clamp-1" title={interviewForSlot.subject}>
+                                      {interviewForSlot.subject}
+                                    </div>
+                                    <div className="text-[8px] text-purple-700 font-semibold truncate leading-none">
+                                      Evaluator: {evaluatorName}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center justify-between text-[8px] mt-1 pt-1.5 border-t border-purple-200/60 font-black uppercase">
+                                    {meetLink ? (
+                                      <a
+                                        href={meetLink}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-indigo-600 hover:underline inline-flex items-center gap-0.5 font-bold"
+                                      >
+                                        <Video className="w-2.5 h-2.5" /> GMeet
+                                      </a>
+                                    ) : (
+                                      <span className="text-purple-600 font-mono">{slotTiming}</span>
+                                    )}
+                                    <span className={`px-1.5 py-0.5 rounded text-[7.5px] ${
+                                      isCompleted
+                                        ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                        : "bg-purple-100 text-purple-800 border border-purple-300"
+                                    }`}>
+                                      {isCompleted ? "Evaluated" : "Scheduled"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                            );
+                          }
 
                           return (
                             <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-white dark:bg-[#101015]">
@@ -1549,6 +1700,149 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: My Interviews & Evaluation Marks */}
+        {activeTab === "interviews" && (
+          <div className="space-y-6 font-sans">
+            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                  <h2 className="text-base font-black text-slate-900">My Interview Sessions &amp; Evaluation Marks</h2>
+                  <p className="text-xs text-slate-450 font-medium mt-0.5">
+                    View scheduled interview dates, evaluator ratings (Communication, Technical, Content, Confidence), questions asked, and clearance status.
+                  </p>
+                </div>
+              </div>
+
+              {(() => {
+                const myCohortInterviews = (interviews || []).filter((inv: any) =>
+                  inv.status !== "cancelled" && inv.status !== "declined" && (
+                    (inv.class_group && inv.class_group.toLowerCase().trim() === currentStudent.classGroup?.toLowerCase().trim()) ||
+                    (inv.student_slots && inv.student_slots.some((s: any) => s.student_id === currentStudent.id)) ||
+                    inv.student_id === currentStudent.id
+                  )
+                );
+
+                if (myCohortInterviews.length === 0) {
+                  return (
+                    <div className="text-center py-12 border border-slate-100 rounded-xl bg-slate-50/50">
+                      <Award className="h-8 w-8 text-slate-350 mx-auto mb-2" />
+                      <p className="text-xs font-bold text-slate-700">No Interview Sessions Scheduled</p>
+                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Your cohort has no active interview allocations scheduled at this time.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {myCohortInterviews.map((inv: any) => {
+                      const mySlot = (inv.student_slots || []).find(
+                        (s: any) => s.student_id === currentStudent.id
+                      );
+                      const myEval = (interviewEvaluations || []).find(
+                        (e: any) => e.interview_id === inv.id && e.student_id === currentStudent.id
+                      );
+
+                      const isAllocated = Boolean(mySlot) || (!inv.student_slots?.length && inv.status === "assigned");
+                      const assignedTime = mySlot ? `${mySlot.slot_start_time} - ${mySlot.slot_end_time}` : (inv.preferred_start_time || "09:00 AM");
+                      const assignedMentor = mySlot?.mentor_name || inv.mentor_name || "Assigned Faculty Evaluator";
+                      const meetLink = mySlot?.gmeet_link || inv.gmeet_link;
+                      const isVerified = inv.status === "completed";
+
+                      return (
+                        <div key={inv.id} className="p-5 rounded-xl border border-slate-200 bg-slate-50/30 space-y-3.5 shadow-xs">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              {(inv.type || "internal").toUpperCase()} INTERVIEW
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500 bg-white px-2.5 py-0.5 rounded-lg border border-slate-200">
+                              Target Date: {inv.target_date}
+                            </span>
+                          </div>
+
+                          <div>
+                            <h3 className="font-extrabold text-sm text-slate-900">{inv.subject}</h3>
+                            <p className="text-[11px] text-slate-500 font-medium mt-0.5">Topics: {inv.topics || "General Technical & Viva Review"}</p>
+                          </div>
+
+                          {/* Allocation & Time Slot Window */}
+                          {isAllocated ? (
+                            <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2">
+                              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                                <span className="flex items-center gap-1.5 text-indigo-700">
+                                  <Clock className="w-3.5 h-3.5" /> Assigned Time: {assignedTime}
+                                </span>
+                                <span className="text-[10px] text-slate-500">
+                                  Evaluator: <strong className="text-slate-800">{assignedMentor}</strong>
+                                </span>
+                              </div>
+
+                              {meetLink && (
+                                <div className="pt-1 flex items-center justify-between">
+                                  <span className="text-[10px] font-semibold text-slate-400">Virtual Meeting Room:</span>
+                                  <a
+                                    href={meetLink}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black px-3 py-1.5 rounded-lg transition-all shadow-2xs"
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5" /> Join Live Google Meet
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-center text-[11px] font-semibold text-amber-800">
+                              ⚠️ You are unallocated in this current batch (Capacity limited to {inv.allocated_students || inv.student_count || 10} students). You will be scheduled in the next upcoming cycle.
+                            </div>
+                          )}
+
+                          {/* Evaluation Status & Multi-criteria Scores */}
+                          {myEval ? (
+                            <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                                  myEval.status === "Cleared" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                                  myEval.status === "Needs Improvement" ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                                  "bg-rose-50 text-rose-700 border border-rose-200"
+                                }`}>
+                                  {isVerified ? `✓ Conducted & Verified — ${myEval.status}` : `Conducted — Pending CAM Verification`}
+                                </span>
+                                <span className="text-xs font-black text-indigo-700">Total Score: {myEval.total_score || 0}/100</span>
+                              </div>
+
+                              <div className="grid grid-cols-4 gap-2 text-center text-[10px] bg-slate-50 p-2 rounded-lg font-bold border border-slate-100">
+                                <div><span className="text-slate-400 block text-[8px]">COMM.</span>{myEval.communication_score}</div>
+                                <div><span className="text-slate-400 block text-[8px]">CONTENT</span>{myEval.content_score}</div>
+                                <div><span className="text-slate-400 block text-[8px]">TECH</span>{myEval.technical_score}</div>
+                                <div><span className="text-slate-400 block text-[8px]">CONF.</span>{myEval.confidence_score}</div>
+                              </div>
+
+                              {myEval.questions_asked && (
+                                <div className="text-[10.5px] text-slate-600">
+                                  <strong>Questions Asked:</strong> &ldquo;{myEval.questions_asked}&rdquo;
+                                </div>
+                              )}
+                              {myEval.remarks && (
+                                <div className="text-[10.5px] text-indigo-700 italic">
+                                  <strong>Evaluator Remarks:</strong> &ldquo;{myEval.remarks}&rdquo;
+                                </div>
+                              )}
+                            </div>
+                          ) : isAllocated ? (
+                            <div className="p-3 bg-indigo-50/60 border border-indigo-150 rounded-xl text-center text-[11px] font-bold text-indigo-800">
+                              ⏳ Scheduled & Ready — Awaiting Evaluation by {assignedMentor}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}

@@ -98,7 +98,7 @@ export function getDb(): Promise<TursoDbAdapter> {
         console.warn("[DB Warning] Remote database connection failed during init. Initializing local SQLite fallback.", err?.message);
         client = createClient({ url: "file:database.sqlite" });
         dbInstance = createDbAdapter(client);
-        try { await dbInstance.exec("PRAGMA foreign_keys = ON;"); } catch (_) {}
+        try { await dbInstance.exec("PRAGMA foreign_keys = ON;"); } catch (_) { }
       }
 
       // Check for legacy schema and drop to trigger rebuild of corrected schemas
@@ -107,17 +107,17 @@ export function getDb(): Promise<TursoDbAdapter> {
         if (hasLegacyTask) {
           await dbInstance.exec("DROP TABLE IF EXISTS kam_tasks;");
         }
-      } catch (_) {}
+      } catch (_) { }
 
       try {
         const hasLegacyIssue = await dbInstance.get("SELECT 1 FROM sqlite_master WHERE type='table' AND name='campus_issues' AND sql LIKE '%reported_by%'");
         if (hasLegacyIssue) {
           await dbInstance.exec("DROP TABLE IF EXISTS campus_issues;");
         }
-      } catch (_) {}
+      } catch (_) { }
 
-  // Create tables using raw SQL
-  await dbInstance.exec(`
+      // Create tables using raw SQL
+      await dbInstance.exec(`
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -269,6 +269,20 @@ export function getDb(): Promise<TursoDbAdapter> {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS class_mentor_assignments (
+      id TEXT PRIMARY KEY,
+      college_id TEXT NOT NULL,
+      year TEXT NOT NULL,
+      department TEXT NOT NULL,
+      classGroup TEXT NOT NULL,
+      mentor_id TEXT NOT NULL,
+      mentor_name TEXT,
+      created_at TEXT,
+      updated_at TEXT,
+      FOREIGN KEY (college_id) REFERENCES colleges(id),
+      FOREIGN KEY (mentor_id) REFERENCES mentors(id)
+    );
+
     CREATE TABLE IF NOT EXISTS students (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -316,9 +330,39 @@ export function getDb(): Promise<TursoDbAdapter> {
       user_id TEXT NOT NULL,
       title TEXT NOT NULL,
       message TEXT NOT NULL,
-      type TEXT NOT NULL,
       is_read INTEGER DEFAULT 0,
+      link TEXT,
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS approvals (
+      id TEXT PRIMARY KEY,
+      module_type TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      requester_id TEXT NOT NULL,
+      requester_name TEXT NOT NULL,
+      approver_id TEXT,
+      approver_name TEXT,
+      current_status TEXT NOT NULL DEFAULT 'pending',
+      remarks TEXT,
+      rejection_reason TEXT,
+      college_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      approved_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS leave_balances (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL UNIQUE,
+      role TEXT NOT NULL,
+      casual_leave INTEGER DEFAULT 12,
+      sick_leave INTEGER DEFAULT 12,
+      earned_leave INTEGER DEFAULT 10,
+      od_allowance INTEGER DEFAULT 15,
+      academic_year TEXT DEFAULT '2025-2026',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS announcements (
@@ -425,12 +469,68 @@ export function getDb(): Promise<TursoDbAdapter> {
       student_count INTEGER DEFAULT 0,
       origin_college_id TEXT DEFAULT '',
       target_college_id TEXT,
-      gmeet_link TEXT,
       priority_level INTEGER DEFAULT 1,
       assigned_mentor_ids TEXT,
       college_id TEXT,
+      preferred_start_time TEXT DEFAULT '09:00 AM',
+      total_duration_minutes INTEGER DEFAULT 0,
+      requested_students INTEGER DEFAULT 0,
+      accepted_capacity INTEGER DEFAULT 0,
+      allocated_students INTEGER DEFAULT 0,
+      remaining_students INTEGER DEFAULT 0,
+      unallocated_students INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS interview_allocations (
+      id TEXT PRIMARY KEY,
+      interview_id TEXT NOT NULL,
+      origin_college_id TEXT NOT NULL,
+      target_college_id TEXT NOT NULL,
+      mentor_id TEXT NOT NULL,
+      mentor_name TEXT NOT NULL,
+      allocated_student_count INTEGER NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      duration_minutes INTEGER NOT NULL,
+      status TEXT DEFAULT 'pending_acceptance',
+      gmeet_link TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(interview_id) REFERENCES student_interviews(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS cam_capacity_responses (
+      id TEXT PRIMARY KEY,
+      interview_id TEXT NOT NULL,
+      college_id TEXT NOT NULL,
+      college_name TEXT NOT NULL,
+      cam_id TEXT NOT NULL,
+      cam_name TEXT NOT NULL,
+      accepted_student_capacity INTEGER NOT NULL DEFAULT 0,
+      actual_available_capacity INTEGER NOT NULL DEFAULT 0,
+      unfulfilled_capacity INTEGER NOT NULL DEFAULT 0,
+      status TEXT DEFAULT 'pending',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(interview_id) REFERENCES student_interviews(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS student_interview_slots (
+      id TEXT PRIMARY KEY,
+      interview_id TEXT NOT NULL,
+      allocation_id TEXT NOT NULL,
+      student_id TEXT,
+      student_name TEXT,
+      mentor_id TEXT NOT NULL,
+      mentor_name TEXT NOT NULL,
+      college_id TEXT NOT NULL,
+      slot_start_time TEXT NOT NULL,
+      slot_end_time TEXT NOT NULL,
+      status TEXT DEFAULT 'scheduled',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(interview_id) REFERENCES student_interviews(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS student_fees (
@@ -675,701 +775,715 @@ export function getDb(): Promise<TursoDbAdapter> {
     );
   `);
 
-  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN mentor_id TEXT;`); } catch (_) {}
-  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN mentor_name TEXT;`); } catch (_) {}
-  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN target_date TEXT;`); } catch (_) {}
-  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN topics TEXT;`); } catch (_) {}
-  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN student_count INTEGER;`); } catch (_) {}
-  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN origin_college_id TEXT;`); } catch (_) {}
-  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN target_college_id TEXT;`); } catch (_) {}
-  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN gmeet_link TEXT;`); } catch (_) {}
-  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN priority_level INTEGER DEFAULT 1;`); } catch (_) {}
-  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN assigned_mentor_ids TEXT;`); } catch (_) {}
-  try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN college_id TEXT;`); } catch (_) {}
-  // Backfill evaluator_name / evaluator_role for existing rows that might be NULL
-  // (these were previously NOT NULL with no default, causing new inserts without them to fail)
-  try { await dbInstance.exec(`UPDATE student_interviews SET evaluator_name = '' WHERE evaluator_name IS NULL;`); } catch (_) {}
-  try { await dbInstance.exec(`UPDATE student_interviews SET evaluator_role = '' WHERE evaluator_role IS NULL;`); } catch (_) {}
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN mentor_id TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN mentor_name TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN target_date TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN topics TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN student_count INTEGER;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN origin_college_id TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN target_college_id TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN gmeet_link TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN gcal_link TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN priority_level INTEGER DEFAULT 1;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN assigned_mentor_ids TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN preferred_start_time TEXT DEFAULT '09:00 AM';`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN total_duration_minutes INTEGER DEFAULT 0;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN requested_students INTEGER DEFAULT 0;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN accepted_capacity INTEGER DEFAULT 0;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN allocated_students INTEGER DEFAULT 0;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN remaining_students INTEGER DEFAULT 0;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN unallocated_students INTEGER DEFAULT 0;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interview_slots ADD COLUMN gmeet_link TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interview_slots ADD COLUMN gcal_link TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interview_slots ADD COLUMN subject TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE student_interview_slots ADD COLUMN target_date TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE notifications ADD COLUMN link TEXT;`); } catch (_) { }
+      try { await dbInstance.exec(`ALTER TABLE notifications ADD COLUMN type TEXT DEFAULT 'info';`); } catch (_) { }
+
+      // Backfill evaluator_name / evaluator_role for existing rows that might be NULL
+      // (these were previously NOT NULL with no default, causing new inserts without them to fail)
+      try { await dbInstance.exec(`UPDATE student_interviews SET evaluator_name = '' WHERE evaluator_name IS NULL;`); } catch (_) { }
+      try { await dbInstance.exec(`UPDATE student_interviews SET evaluator_role = '' WHERE evaluator_role IS NULL;`); } catch (_) { }
 
 
-  try {
-    await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN subject_group TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN mentor_group TEXT;`);
-  } catch (_) {}
+      try {
+        await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN subject_group TEXT;`);
+      } catch (_) { }
+      try {
+        await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN mentor_group TEXT;`);
+      } catch (_) { }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN subject_group TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN mentor_group TEXT;`);
-  } catch (_) {}
+      try {
+        await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN subject_group TEXT;`);
+      } catch (_) { }
+      try {
+        await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN mentor_group TEXT;`);
+      } catch (_) { }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE sme_users ADD COLUMN mentor_group TEXT;`);
-  } catch (_) {}
+      try {
+        await dbInstance.exec(`ALTER TABLE sme_users ADD COLUMN mentor_group TEXT;`);
+      } catch (_) { }
 
-  // Dynamic migration: populate mentor_groups table from subject_groups if mentor_groups is empty
-  try {
-    const mgCount = await dbInstance.get("SELECT COUNT(*) as count FROM mentor_groups");
-    if (!mgCount || mgCount.count === 0) {
-      const existingSubGroups = await dbInstance.all("SELECT * FROM subject_groups");
-      for (const sg of existingSubGroups) {
+      // Dynamic migration: populate mentor_groups table from subject_groups if mentor_groups is empty
+      try {
+        const mgCount = await dbInstance.get("SELECT COUNT(*) as count FROM mentor_groups");
+        if (!mgCount || mgCount.count === 0) {
+          const existingSubGroups = await dbInstance.all("SELECT * FROM subject_groups");
+          for (const sg of existingSubGroups) {
+            await dbInstance.run(
+              "INSERT OR IGNORE INTO mentor_groups (id, name, description) VALUES (?, ?, ?)",
+              [sg.id || `mg_${sg.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`, sg.name, sg.description || `${sg.name} Mentor Group`]
+            );
+          }
+        }
+      } catch (_) { }
+
+      // No auto-fill fallback for mentor_group
+      try {
+      } catch (_) { }
+
+      const adminCount = await dbInstance.get("SELECT COUNT(*) as count FROM admin_users");
+      if (!adminCount || adminCount.count === 0) {
         await dbInstance.run(
-          "INSERT OR IGNORE INTO mentor_groups (id, name, description) VALUES (?, ?, ?)",
-          [sg.id || `mg_${sg.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`, sg.name, sg.description || `${sg.name} Mentor Group`]
+          "INSERT OR IGNORE INTO admin_users (id, name, email) VALUES ('admin_thanush', 'Thanush', 'Thanush@faceprep.in')"
+        );
+        await dbInstance.run(
+          "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES ('admin_thanush', 'thanush@faceprep.in', 'Thanush@24', 'admin', 'admin_thanush', datetime('now'), datetime('now'))"
         );
       }
-    }
-  } catch (_) {}
 
-  // No auto-fill fallback for mentor_group
-  try {
-  } catch (_) {}
-
-    const adminCount = await dbInstance.get("SELECT COUNT(*) as count FROM admin_users");
-    if (!adminCount || adminCount.count === 0) {
-      await dbInstance.run(
-        "INSERT OR IGNORE INTO admin_users (id, name, email) VALUES ('admin_thanush', 'Thanush', 'Thanush@faceprep.in')"
-      );
-      await dbInstance.run(
-        "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES ('admin_thanush', 'thanush@faceprep.in', 'Thanush@24', 'admin', 'admin_thanush', datetime('now'), datetime('now'))"
-      );
-    }
-
-    await dbInstance.exec(`
+      await dbInstance.exec(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         version INTEGER PRIMARY KEY
       );
     `);
 
-    const versionRow = await dbInstance.get("SELECT version FROM schema_migrations LIMIT 1");
-    const currentVersion = versionRow ? versionRow.version : 0;
+      const versionRow = await dbInstance.get("SELECT version FROM schema_migrations LIMIT 1");
+      const currentVersion = versionRow ? versionRow.version : 0;
 
-    if (currentVersion < 1) {
-      try {
-        await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN college_id TEXT;`);
-      } catch (_) {
-        // Column already exists — safe to ignore
-      }
+      if (currentVersion < 1) {
+        try {
+          await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN college_id TEXT;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN rooms TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN code TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN academic_year TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN manager TEXT;`);
-  } catch (_) {}
+        try {
+          await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN rooms TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN code TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN academic_year TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN manager TEXT;`);
+        } catch (_) { }
 
 
-  try {
-    await dbInstance.exec(`ALTER TABLE courses ADD COLUMN default_room TEXT;`);
-  } catch (_) {
-    // Column already exists
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE courses ADD COLUMN default_room TEXT;`);
+        } catch (_) {
+          // Column already exists
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE courses ADD COLUMN default_shift TEXT;`);
-  } catch (_) {
-    // Column already exists
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE courses ADD COLUMN default_shift TEXT;`);
+        } catch (_) {
+          // Column already exists
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN year TEXT;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN year TEXT;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE departments ADD COLUMN college_id TEXT;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE departments ADD COLUMN college_id TEXT;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE departments ADD COLUMN code TEXT;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE departments ADD COLUMN code TEXT;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE approved_handovers ADD COLUMN course TEXT;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE approved_handovers ADD COLUMN course TEXT;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE departments ADD COLUMN description TEXT;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE departments ADD COLUMN description TEXT;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE departments ADD COLUMN hod_name TEXT;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE departments ADD COLUMN hod_name TEXT;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE departments ADD COLUMN established_year TEXT;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE departments ADD COLUMN established_year TEXT;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE departments ADD COLUMN status TEXT DEFAULT 'Active';`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE departments ADD COLUMN status TEXT DEFAULT 'Active';`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE departments ADD COLUMN years INTEGER DEFAULT 4;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE departments ADD COLUMN years INTEGER DEFAULT 4;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE departments ADD COLUMN start_year TEXT;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE departments ADD COLUMN start_year TEXT;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE departments ADD COLUMN end_year TEXT;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE departments ADD COLUMN end_year TEXT;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  try {
-    await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN weekly_hours INTEGER DEFAULT 4;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
+        try {
+          await dbInstance.exec(`ALTER TABLE subjects ADD COLUMN weekly_hours INTEGER DEFAULT 4;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
 
-  // Slots table migrations for new columns
-  try {
-    await dbInstance.exec(`ALTER TABLE slots ADD COLUMN semester TEXT;`);
-  } catch (_) {
-    // Column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE slots ADD COLUMN year TEXT;`);
-  } catch (_) {
-    // Column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE slots ADD COLUMN department TEXT;`);
-  } catch (_) {
-    // Column already exists
-  }
+        // Slots table migrations for new columns
+        try {
+          await dbInstance.exec(`ALTER TABLE slots ADD COLUMN semester TEXT;`);
+        } catch (_) {
+          // Column already exists
+        }
+        try {
+          await dbInstance.exec(`ALTER TABLE slots ADD COLUMN year TEXT;`);
+        } catch (_) {
+          // Column already exists
+        }
+        try {
+          await dbInstance.exec(`ALTER TABLE slots ADD COLUMN department TEXT;`);
+        } catch (_) {
+          // Column already exists
+        }
 
-  // Handover requests and approved handovers migrations
-  try {
-    await dbInstance.exec(`ALTER TABLE handover_requests ADD COLUMN original_subject TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE handover_requests ADD COLUMN original_month TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE approved_handovers ADD COLUMN ledger_month TEXT;`);
-  } catch (_) {}
+        // Handover requests and approved handovers migrations
+        try {
+          await dbInstance.exec(`ALTER TABLE handover_requests ADD COLUMN original_subject TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE handover_requests ADD COLUMN original_month TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE approved_handovers ADD COLUMN ledger_month TEXT;`);
+        } catch (_) { }
 
-  // Populate year field if empty based on semester values
-  try {
-    await dbInstance.run(`
+        // Populate year field if empty based on semester values
+        try {
+          await dbInstance.run(`
       UPDATE subjects 
       SET year = 'Year 1' 
       WHERE (year IS NULL OR year = '') AND semester IN ('Semester 1', 'Semester 2')
     `);
-    await dbInstance.run(`
+          await dbInstance.run(`
       UPDATE subjects 
       SET year = 'Year 2' 
       WHERE (year IS NULL OR year = '') AND semester IN ('Semester 3', 'Semester 4')
     `);
-    await dbInstance.run(`
+          await dbInstance.run(`
       UPDATE subjects 
       SET year = 'Year 3' 
       WHERE (year IS NULL OR year = '') AND semester IN ('Semester 5', 'Semester 6')
     `);
-    await dbInstance.run(`
+          await dbInstance.run(`
       UPDATE subjects 
       SET year = 'Year 4' 
       WHERE (year IS NULL OR year = '') AND semester IN ('Semester 7', 'Semester 8')
     `);
-  } catch (err) {
-    console.error("Migration error populating year values:", err);
-  }
+        } catch (err) {
+          console.error("Migration error populating year values:", err);
+        }
 
-  // Attendance management and correction migrations
-  try {
-    await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN working_days INTEGER DEFAULT 5;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE campus_daily_configs ADD COLUMN session_mode TEXT DEFAULT 'Offline';`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN correction_count INTEGER DEFAULT 0;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE student_attendance ADD COLUMN type TEXT DEFAULT 'Regular';`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE student_attendance ADD COLUMN mode TEXT DEFAULT 'Offline';`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE student_attendance ADD COLUMN attendanceTypeSub TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE audit_logs ADD COLUMN old_status TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE audit_logs ADD COLUMN new_status TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE audit_logs ADD COLUMN reason TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE audit_logs ADD COLUMN changed_by TEXT;`);
-  } catch (_) {}
+        // Attendance management and correction migrations
+        try {
+          await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN working_days INTEGER DEFAULT 5;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE campus_daily_configs ADD COLUMN session_mode TEXT DEFAULT 'Offline';`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN correction_count INTEGER DEFAULT 0;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE student_attendance ADD COLUMN type TEXT DEFAULT 'Regular';`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE student_attendance ADD COLUMN mode TEXT DEFAULT 'Offline';`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE student_attendance ADD COLUMN attendanceTypeSub TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE audit_logs ADD COLUMN old_status TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE audit_logs ADD COLUMN new_status TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE audit_logs ADD COLUMN reason TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE audit_logs ADD COLUMN changed_by TEXT;`);
+        } catch (_) { }
 
-  // Add missing columns to users table
-  try {
-    await dbInstance.exec(`ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0;`);
-    console.log("Successfully added must_change_password column to users table");
-  } catch (error: any) {
-    if (error.message?.includes('duplicate column name')) {
-      console.log("Column must_change_password already exists");
-    } else {
-      console.error("Error adding must_change_password column:", error.message);
-    }
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL;`);
-    console.log("Successfully added last_login column to users table");
-  } catch (error: any) {
-    if (error.message?.includes('duplicate column name')) {
-      console.log("Column last_login already exists");
-    } else {
-      console.error("Error adding last_login column:", error.message);
-    }
-  }
+        // Add missing columns to users table
+        try {
+          await dbInstance.exec(`ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0;`);
+          console.log("Successfully added must_change_password column to users table");
+        } catch (error: any) {
+          if (error.message?.includes('duplicate column name')) {
+            console.log("Column must_change_password already exists");
+          } else {
+            console.error("Error adding must_change_password column:", error.message);
+          }
+        }
+        try {
+          await dbInstance.exec(`ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL;`);
+          console.log("Successfully added last_login column to users table");
+        } catch (error: any) {
+          if (error.message?.includes('duplicate column name')) {
+            console.log("Column last_login already exists");
+          } else {
+            console.error("Error adding last_login column:", error.message);
+          }
+        }
 
-  // Populate college_id in departments based on name
-  try {
-    await dbInstance.run(`
+        // Populate college_id in departments based on name
+        try {
+          await dbInstance.run(`
       UPDATE departments 
       SET college_id = 'college_2' 
       WHERE (college_id IS NULL OR college_id = '') 
         AND (LOWER(name) LIKE '%management%' OR LOWER(name) LIKE '%fashion%')
     `);
-    await dbInstance.run(`
+          await dbInstance.run(`
       UPDATE departments 
       SET college_id = 'college_1' 
       WHERE (college_id IS NULL OR college_id = '')
     `);
-  } catch (err) {
-    console.error("Migration error populating departments college_id:", err);
-  }
+        } catch (err) {
+          console.error("Migration error populating departments college_id:", err);
+        }
 
-  // Populate slots table columns if empty
-  try {
-    const emptySlots = await dbInstance.all(
-      "SELECT id, classGroup, shift FROM slots WHERE semester IS NULL OR semester = '' OR year IS NULL OR year = '' OR department IS NULL OR department = ''"
-    );
-    if (emptySlots.length > 0) {
-      console.log(`Backfilling ${emptySlots.length} slots...`);
-      for (const slot of emptySlots) {
-        if (slot.classGroup) {
-          const { department: dept, semester: sem, year: yr } = await resolveClassGroupDetails(dbInstance, slot.classGroup);
-          
-          let mShift = slot.shift;
-          if (slot.classGroup.toLowerCase().includes("shift 1") || slot.classGroup.toLowerCase().includes("shift_1")) {
-            mShift = "shift_1";
-          } else if (slot.classGroup.toLowerCase().includes("shift 2") || slot.classGroup.toLowerCase().includes("shift_2")) {
-            mShift = "shift_2";
+        // Populate slots table columns if empty
+        try {
+          const emptySlots = await dbInstance.all(
+            "SELECT id, classGroup, shift FROM slots WHERE semester IS NULL OR semester = '' OR year IS NULL OR year = '' OR department IS NULL OR department = ''"
+          );
+          if (emptySlots.length > 0) {
+            console.log(`Backfilling ${emptySlots.length} slots...`);
+            for (const slot of emptySlots) {
+              if (slot.classGroup) {
+                const { department: dept, semester: sem, year: yr } = await resolveClassGroupDetails(dbInstance, slot.classGroup);
+
+                let mShift = slot.shift;
+                if (slot.classGroup.toLowerCase().includes("shift 1") || slot.classGroup.toLowerCase().includes("shift_1")) {
+                  mShift = "shift_1";
+                } else if (slot.classGroup.toLowerCase().includes("shift 2") || slot.classGroup.toLowerCase().includes("shift_2")) {
+                  mShift = "shift_2";
+                }
+
+                await dbInstance.run(
+                  "UPDATE slots SET semester = ?, year = ?, department = ?, shift = ? WHERE id = ?",
+                  [sem, yr, dept, mShift, slot.id]
+                );
+              }
+            }
+            console.log("Backfill complete.");
+          }
+        } catch (err) {
+          console.error("Migration error populating slots columns:", err);
+        }
+
+        // Migrations for students and slots batch fields expansion
+        try {
+          await dbInstance.exec(`ALTER TABLE slots ADD COLUMN batch_start_year INTEGER;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE slots ADD COLUMN batch_end_year INTEGER;`);
+        } catch (_) { }
+
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN batch_start_year INTEGER;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN batch_end_year INTEGER;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN semester TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN shift TEXT;`);
+        } catch (_) { }
+
+        // Backfill students table batch columns if empty
+        try {
+          const emptyStudents = await dbInstance.all(
+            "SELECT id, classGroup FROM students WHERE batch_start_year IS NULL OR semester IS NULL"
+          );
+          if (emptyStudents.length > 0) {
+            console.log(`Backfilling ${emptyStudents.length} students...`);
+            for (const st of emptyStudents) {
+              if (st.classGroup) {
+                const { startYear, endYear, semester, shift } = parseClassGroupDetails(st.classGroup);
+                await dbInstance.run(
+                  "UPDATE students SET batch_start_year = ?, batch_end_year = ?, semester = ?, shift = ? WHERE id = ?",
+                  [startYear, endYear, semester, shift, st.id]
+                );
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Migration error populating students columns:", err);
+        }
+
+        // Backfill slots table batch columns if empty
+        try {
+          const emptySlotsBatch = await dbInstance.all(
+            "SELECT id, classGroup FROM slots WHERE batch_start_year IS NULL"
+          );
+          if (emptySlotsBatch.length > 0) {
+            console.log(`Backfilling batch years for ${emptySlotsBatch.length} slots...`);
+            for (const slot of emptySlotsBatch) {
+              if (slot.classGroup) {
+                const { startYear, endYear } = parseClassGroupDetails(slot.classGroup);
+                await dbInstance.run(
+                  "UPDATE slots SET batch_start_year = ?, batch_end_year = ? WHERE id = ?",
+                  [startYear, endYear, slot.id]
+                );
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Migration error populating slots batch years:", err);
+        }
+
+        // 13. Migration: Add extended fields to mentors
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN employee_id TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN phone TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN qualification TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN experience TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN specialization TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN designation TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN joining_date TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN status TEXT DEFAULT 'Active';`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN password_hash TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN last_login TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN created_at TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN updated_at TEXT;`);
+        } catch (_) { }
+
+        // 14. Migration: Add extended fields to students
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN register_number TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN roll_number TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN avatar TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN phone TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN gender TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN dob TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN address TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN guardian_name TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN guardian_phone TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN admission_date TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN password_hash TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN status TEXT DEFAULT 'Active';`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN last_login TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN created_at TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN updated_at TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN tenth_mark TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN eleventh_mark TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN twelfth_mark TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN academic_group TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN medium TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN blood_group TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN parent_phone TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN aadhar_number TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN linkedin_link TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN github_id TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN project_drive_link TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN hackerrank_link TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN leetcode_link TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE students ADD COLUMN figma_link TEXT;`);
+        } catch (_) { }
+
+        // 15. Centralized users table backfill migration
+        try {
+          // 1. Insert Admins
+          const admins = await dbInstance.all("SELECT id, name, email FROM admin_users");
+          for (const admin of admins) {
+            await dbInstance.run(
+              "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [admin.id, admin.email, 'password123', 'admin', admin.id, new Date().toISOString(), new Date().toISOString()]
+            );
           }
 
-          await dbInstance.run(
-            "UPDATE slots SET semester = ?, year = ?, department = ?, shift = ? WHERE id = ?",
-            [sem, yr, dept, mShift, slot.id]
-          );
-        }
-      }
-      console.log("Backfill complete.");
-    }
-  } catch (err) {
-    console.error("Migration error populating slots columns:", err);
-  }
-
-  // Migrations for students and slots batch fields expansion
-  try {
-    await dbInstance.exec(`ALTER TABLE slots ADD COLUMN batch_start_year INTEGER;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE slots ADD COLUMN batch_end_year INTEGER;`);
-  } catch (_) {}
-
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN batch_start_year INTEGER;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN batch_end_year INTEGER;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN semester TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN shift TEXT;`);
-  } catch (_) {}
-
-  // Backfill students table batch columns if empty
-  try {
-    const emptyStudents = await dbInstance.all(
-      "SELECT id, classGroup FROM students WHERE batch_start_year IS NULL OR semester IS NULL"
-    );
-    if (emptyStudents.length > 0) {
-      console.log(`Backfilling ${emptyStudents.length} students...`);
-      for (const st of emptyStudents) {
-        if (st.classGroup) {
-          const { startYear, endYear, semester, shift } = parseClassGroupDetails(st.classGroup);
-          await dbInstance.run(
-            "UPDATE students SET batch_start_year = ?, batch_end_year = ?, semester = ?, shift = ? WHERE id = ?",
-            [startYear, endYear, semester, shift, st.id]
-          );
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Migration error populating students columns:", err);
-  }
-
-  // Backfill slots table batch columns if empty
-  try {
-    const emptySlotsBatch = await dbInstance.all(
-      "SELECT id, classGroup FROM slots WHERE batch_start_year IS NULL"
-    );
-    if (emptySlotsBatch.length > 0) {
-      console.log(`Backfilling batch years for ${emptySlotsBatch.length} slots...`);
-      for (const slot of emptySlotsBatch) {
-        if (slot.classGroup) {
-          const { startYear, endYear } = parseClassGroupDetails(slot.classGroup);
-          await dbInstance.run(
-            "UPDATE slots SET batch_start_year = ?, batch_end_year = ? WHERE id = ?",
-            [startYear, endYear, slot.id]
-          );
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Migration error populating slots batch years:", err);
-  }
-
-  // 13. Migration: Add extended fields to mentors
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN employee_id TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN phone TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN qualification TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN experience TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN specialization TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN designation TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN joining_date TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN status TEXT DEFAULT 'Active';`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN password_hash TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN last_login TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN created_at TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN updated_at TEXT;`);
-  } catch (_) {}
-
-  // 14. Migration: Add extended fields to students
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN register_number TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN roll_number TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN avatar TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN phone TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN gender TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN dob TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN address TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN guardian_name TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN guardian_phone TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN admission_date TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN password_hash TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN status TEXT DEFAULT 'Active';`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN last_login TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN created_at TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN updated_at TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN tenth_mark TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN eleventh_mark TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN twelfth_mark TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN academic_group TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN medium TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN blood_group TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN parent_phone TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN aadhar_number TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN linkedin_link TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN github_id TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN project_drive_link TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN hackerrank_link TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN leetcode_link TEXT;`);
-  } catch (_) {}
-  try {
-    await dbInstance.exec(`ALTER TABLE students ADD COLUMN figma_link TEXT;`);
-  } catch (_) {}
-
-  // 15. Centralized users table backfill migration
-  try {
-    // 1. Insert Admins
-    const admins = await dbInstance.all("SELECT id, name, email FROM admin_users");
-    for (const admin of admins) {
-      await dbInstance.run(
-        "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [admin.id, admin.email, 'password123', 'admin', admin.id, new Date().toISOString(), new Date().toISOString()]
-      );
-    }
-
-    // 2. Insert KAMs
-    const kams = await dbInstance.all("SELECT id, name, email FROM kam_users");
-    for (const kam of kams) {
-      await dbInstance.run(
-        "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [kam.id, kam.email, 'password123', 'kam', kam.id, new Date().toISOString(), new Date().toISOString()]
-      );
-    }
-
-    // 3. Insert CAMs
-    const cams = await dbInstance.all("SELECT id, name, email FROM campus_managers");
-    for (const cam of cams) {
-      await dbInstance.run(
-        "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [cam.id, cam.email, 'password123', 'cam', cam.id, new Date().toISOString(), new Date().toISOString()]
-      );
-    }
-
-    // 5. Insert Mentors
-    const mentors = await dbInstance.all("SELECT id, name, email FROM mentors");
-    for (const m of mentors) {
-      await dbInstance.run(
-        "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [m.id, m.email, 'password123', 'mentor', m.id, new Date().toISOString(), new Date().toISOString()]
-      );
-    }
-
-    // 6. Insert Students
-    const students = await dbInstance.all("SELECT id, name, email FROM students");
-    for (const st of students) {
-      await dbInstance.run(
-        "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [st.id, st.email, 'password123', 'student', st.id, new Date().toISOString(), new Date().toISOString()]
-      );
-    }
-  } catch (err) {
-    console.error("Migration error populating users table:", err);
-  }
-
-  // 16. Clean up duplicate and synonym class group strings in mentors table
-  try {
-    const allMentors = await dbInstance.all("SELECT id, classes, email FROM mentors WHERE classes IS NOT NULL AND classes != ''");
-    for (const m of allMentors) {
-      if (m.classes.includes(",")) {
-        const rawItems = m.classes.split(/,|\n/).map((c: string) => c.trim()).filter(Boolean);
-        const seenSignatures = new Set<string>();
-        const cleanedItems: string[] = [];
-
-        // Sort items by length descending so longer/more detailed canonical names come first
-        const sortedItems = [...rawItems].sort((a, b) => b.length - a.length);
-
-        for (const item of sortedItems) {
-          const lower = item.toLowerCase();
-          const semMatch = lower.match(/sem(?:ester)?\s*([0-9ivx]+)/i);
-          const semKey = semMatch ? semMatch[1] : "";
-          const shiftKey = lower.includes("shift 1") || lower.includes("shift_1") ? "s1" : lower.includes("shift 2") || lower.includes("shift_2") ? "s2" : "";
-          const deptKey = lower.includes("cs") || lower.includes("computer") ? "cs" : lower.includes("ds") || lower.includes("data") ? "ds" : lower.includes("it") ? "it" : lower.includes("com") ? "com" : lower.slice(0, 10);
-
-          const sig = `${deptKey}_${shiftKey}_${semKey}`;
-          if (!seenSignatures.has(sig)) {
-            seenSignatures.add(sig);
-            cleanedItems.push(item);
+          // 2. Insert KAMs
+          const kams = await dbInstance.all("SELECT id, name, email FROM kam_users");
+          for (const kam of kams) {
+            await dbInstance.run(
+              "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [kam.id, kam.email, 'password123', 'kam', kam.id, new Date().toISOString(), new Date().toISOString()]
+            );
           }
+
+          // 3. Insert CAMs
+          const cams = await dbInstance.all("SELECT id, name, email FROM campus_managers");
+          for (const cam of cams) {
+            await dbInstance.run(
+              "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [cam.id, cam.email, 'password123', 'cam', cam.id, new Date().toISOString(), new Date().toISOString()]
+            );
+          }
+
+          // 5. Insert Mentors
+          const mentors = await dbInstance.all("SELECT id, name, email FROM mentors");
+          for (const m of mentors) {
+            await dbInstance.run(
+              "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [m.id, m.email, 'password123', 'mentor', m.id, new Date().toISOString(), new Date().toISOString()]
+            );
+          }
+
+          // 6. Insert Students
+          const students = await dbInstance.all("SELECT id, name, email FROM students");
+          for (const st of students) {
+            await dbInstance.run(
+              "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [st.id, st.email, 'password123', 'student', st.id, new Date().toISOString(), new Date().toISOString()]
+            );
+          }
+        } catch (err) {
+          console.error("Migration error populating users table:", err);
         }
 
-        const newClassesStr = cleanedItems.join(", ");
-        if (newClassesStr !== m.classes) {
-          await dbInstance.run("UPDATE mentors SET classes = ? WHERE id = ?", [newClassesStr, m.id]);
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Migration error cleaning mentor classes:", err);
-  }
+        // 16. Clean up duplicate and synonym class group strings in mentors table
+        try {
+          const allMentors = await dbInstance.all("SELECT id, classes, email FROM mentors WHERE classes IS NOT NULL AND classes != ''");
+          for (const m of allMentors) {
+            if (m.classes.includes(",")) {
+              const rawItems = m.classes.split(/,|\n/).map((c: string) => c.trim()).filter(Boolean);
+              const seenSignatures = new Set<string>();
+              const cleanedItems: string[] = [];
 
-  // Migrate existing departments from subjects if empty
-  try {
-    const row = await dbInstance.get("SELECT COUNT(*) as count FROM departments");
-    if (row && row.count === 0) {
-      const existingDepts = await dbInstance.all(`
+              // Sort items by length descending so longer/more detailed canonical names come first
+              const sortedItems = [...rawItems].sort((a, b) => b.length - a.length);
+
+              for (const item of sortedItems) {
+                const lower = item.toLowerCase();
+                const semMatch = lower.match(/sem(?:ester)?\s*([0-9ivx]+)/i);
+                const semKey = semMatch ? semMatch[1] : "";
+                const shiftKey = lower.includes("shift 1") || lower.includes("shift_1") ? "s1" : lower.includes("shift 2") || lower.includes("shift_2") ? "s2" : "";
+                const deptKey = lower.includes("cs") || lower.includes("computer") ? "cs" : lower.includes("ds") || lower.includes("data") ? "ds" : lower.includes("it") ? "it" : lower.includes("com") ? "com" : lower.slice(0, 10);
+
+                const sig = `${deptKey}_${shiftKey}_${semKey}`;
+                if (!seenSignatures.has(sig)) {
+                  seenSignatures.add(sig);
+                  cleanedItems.push(item);
+                }
+              }
+
+              const newClassesStr = cleanedItems.join(", ");
+              if (newClassesStr !== m.classes) {
+                await dbInstance.run("UPDATE mentors SET classes = ? WHERE id = ?", [newClassesStr, m.id]);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Migration error cleaning mentor classes:", err);
+        }
+
+        // Migrate existing departments from subjects if empty
+        try {
+          const row = await dbInstance.get("SELECT COUNT(*) as count FROM departments");
+          if (row && row.count === 0) {
+            const existingDepts = await dbInstance.all(`
         SELECT DISTINCT department FROM subjects WHERE department IS NOT NULL AND department != ''
       `);
-      for (const d of existingDepts) {
-        if (d.department) {
-          const cleanName = d.department.trim();
-          const deptId = "dept_" + cleanName.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_");
-          const cleanDeptLower = cleanName.toLowerCase();
-          const collegeId = (cleanDeptLower.includes("management") || cleanDeptLower.includes("fashion"))
-            ? "college_2"
-            : "college_1";
+            for (const d of existingDepts) {
+              if (d.department) {
+                const cleanName = d.department.trim();
+                const deptId = "dept_" + cleanName.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_");
+                const cleanDeptLower = cleanName.toLowerCase();
+                const collegeId = (cleanDeptLower.includes("management") || cleanDeptLower.includes("fashion"))
+                  ? "college_2"
+                  : "college_1";
 
-          await dbInstance.run(
-            "INSERT OR IGNORE INTO departments (id, name, college_id) VALUES (?, ?, ?)",
-            deptId,
-            cleanName,
-            collegeId
-          );
+                await dbInstance.run(
+                  "INSERT OR IGNORE INTO departments (id, name, college_id) VALUES (?, ?, ?)",
+                  deptId,
+                  cleanName,
+                  collegeId
+                );
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Migration error for departments:", err);
         }
+
+        // 16. Migration: Swap-to-Compensate columns on handover_requests
+        try {
+          await dbInstance.exec(`ALTER TABLE handover_requests ADD COLUMN request_type TEXT DEFAULT 'handover';`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
+        try {
+          await dbInstance.exec(`ALTER TABLE handover_requests ADD COLUMN compensates_handover_id TEXT;`);
+        } catch (_) {
+          // Column already exists — safe to ignore
+        }
+
+        await dbInstance.run("INSERT OR REPLACE INTO schema_migrations (version) VALUES (1);");
       }
-    }
-  } catch (err) {
-    console.error("Migration error for departments:", err);
-  }
 
-  // 16. Migration: Swap-to-Compensate columns on handover_requests
-  try {
-    await dbInstance.exec(`ALTER TABLE handover_requests ADD COLUMN request_type TEXT DEFAULT 'handover';`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE handover_requests ADD COLUMN compensates_handover_id TEXT;`);
-  } catch (_) {
-    // Column already exists — safe to ignore
-  }
-
-      await dbInstance.run("INSERT OR REPLACE INTO schema_migrations (version) VALUES (1);");
-    }
-
-    try {
-      await dbInstance.exec(`ALTER TABLE student_fees ADD COLUMN fpc_amount REAL DEFAULT 0;`);
-    } catch (_) {}
-    try {
-      await dbInstance.exec(`ALTER TABLE student_fees ADD COLUMN fpc_pending REAL DEFAULT 0;`);
-    } catch (_) {}
-    try {
-      await dbInstance.exec(`ALTER TABLE student_fees ADD COLUMN academic_year TEXT;`);
-    } catch (_) {}
-
-    if (currentVersion < 2) {
       try {
-        await dbInstance.exec(`ALTER TABLE courses ADD COLUMN shift_based INTEGER DEFAULT 0;`);
-      } catch (_) {}
+        await dbInstance.exec(`ALTER TABLE student_fees ADD COLUMN fpc_amount REAL DEFAULT 0;`);
+      } catch (_) { }
       try {
-        await dbInstance.exec(`ALTER TABLE departments ADD COLUMN shift_based INTEGER DEFAULT 0;`);
-      } catch (_) {}
-      await dbInstance.run("INSERT OR REPLACE INTO schema_migrations (version) VALUES (2);");
-    }
+        await dbInstance.exec(`ALTER TABLE student_fees ADD COLUMN fpc_pending REAL DEFAULT 0;`);
+      } catch (_) { }
+      try {
+        await dbInstance.exec(`ALTER TABLE student_fees ADD COLUMN academic_year TEXT;`);
+      } catch (_) { }
 
-    if (currentVersion < 3) {
-      try {
-        await dbInstance.exec(`ALTER TABLE slots ADD COLUMN college_id TEXT;`);
-      } catch (_) {}
-      try {
-        await dbInstance.exec(`
+      if (currentVersion < 2) {
+        try {
+          await dbInstance.exec(`ALTER TABLE courses ADD COLUMN shift_based INTEGER DEFAULT 0;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`ALTER TABLE departments ADD COLUMN shift_based INTEGER DEFAULT 0;`);
+        } catch (_) { }
+        await dbInstance.run("INSERT OR REPLACE INTO schema_migrations (version) VALUES (2);");
+      }
+
+      if (currentVersion < 3) {
+        try {
+          await dbInstance.exec(`ALTER TABLE slots ADD COLUMN college_id TEXT;`);
+        } catch (_) { }
+        try {
+          await dbInstance.exec(`
           UPDATE slots
           SET college_id = (
             SELECT college_id FROM mentors WHERE mentors.id = slots.mentorId
           )
           WHERE college_id IS NULL;
         `);
-        await dbInstance.exec(`
+          await dbInstance.exec(`
           UPDATE slots SET college_id = 'college_1' WHERE college_id IS NULL;
         `);
-      } catch (err) {
-        console.error("Migration error populating slots college_id:", err);
+        } catch (err) {
+          console.error("Migration error populating slots college_id:", err);
+        }
+        await dbInstance.run("INSERT OR REPLACE INTO schema_migrations (version) VALUES (3);");
       }
-      await dbInstance.run("INSERT OR REPLACE INTO schema_migrations (version) VALUES (3);");
-    }
 
-    return dbInstance;
-  })();
+      return dbInstance;
+    })();
   }
   return dbPromise;
 }
@@ -1458,7 +1572,7 @@ export async function resolveClassGroupDetails(db: any, classGroup: string) {
   // B. Determine Semester
   let resolvedSemester = "";
   const romanMap: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8 };
-  
+
   const semMatch = cgLower.match(/sem(?:ester)?[\s\-_]*([ivxldc\d]+)/i);
   if (semMatch) {
     const semVal = semMatch[1].toLowerCase();

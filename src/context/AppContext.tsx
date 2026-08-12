@@ -428,6 +428,10 @@ interface AppContextProps {
   weeklyTasks: WeeklyTask[];
   studentTracker: StudentTrackerEntry[];
   interviews: StudentInterview[];
+  interviewEvaluations: any[];
+  approvals: any[];
+  leaveBalances: any[];
+  resolveApproval: (approvalId: string, status: "approved" | "rejected", remarks?: string) => Promise<{ success: boolean; message: string }>;
   addInterview: (interviewData: Partial<StudentInterview>) => Promise<{ success: boolean; interview?: StudentInterview; message?: string }>;
   deleteInterview: (id: string) => Promise<{ success: boolean; message?: string }>;
   assignWeeklyTask: (taskData: { classGroup: string; subject: string; weekNumber: number; taskName: string; taskPdfUrl?: string; mentorId: string }) => Promise<{ success: boolean; task?: WeeklyTask; message?: string }>;
@@ -553,6 +557,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [weeklyTasks, setWeeklyTasks] = useState<WeeklyTask[]>([]);
   const [studentTracker, setStudentTracker] = useState<StudentTrackerEntry[]>([]);
   const [interviews, setInterviews] = useState<StudentInterview[]>([]);
+  const [interviewEvaluations, setInterviewEvaluations] = useState<any[]>([]);
+  const [approvals, setApprovals] = useState<any[]>([]);
+  const [leaveBalances, setLeaveBalances] = useState<any[]>([]);
   const [smes, setSmes] = useState<any[]>([]);
   const [demoSessions, setDemoSessions] = useState<any[]>([]);
   const [demoRules, setDemoRules] = useState<any[]>([]);
@@ -671,6 +678,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setWeeklyTasks(data.weeklyTasks || []);
         setStudentTracker(data.studentTracker || []);
         setInterviews(data.interviews || []);
+        setInterviewEvaluations(data.interviewEvaluations || []);
+        setApprovals(data.approvals || []);
+        setLeaveBalances(data.leaveBalances || []);
         setSmes(data.smes || []);
         setDemoSessions(data.demoSessions || []);
         setSubjectGroups(data.subjectGroups || []);
@@ -2852,6 +2862,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         weeklyTasks,
         studentTracker,
         interviews,
+        interviewEvaluations,
+        approvals,
+        leaveBalances,
+        resolveApproval: async (approvalId: string, status: "approved" | "rejected", remarks = "") => {
+          try {
+            const res = await fetch("/api/approvals", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                approval_id: approvalId,
+                status,
+                approver_id: "cm_curr",
+                approver_name: "Campus Manager",
+                remarks,
+                rejection_reason: remarks
+              })
+            });
+            const data = await res.json();
+            if (data.success) {
+              setApprovals(prev => prev.map(a => a.id === approvalId ? { ...a, current_status: status, remarks } : a));
+              return { success: true, message: data.message };
+            }
+            return { success: false, message: data.message || "Failed to resolve approval" };
+          } catch (err: any) {
+            return { success: false, message: err.message || "Network error" };
+          }
+        },
         addInterview,
         deleteInterview,
         assignWeeklyTask,

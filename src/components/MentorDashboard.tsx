@@ -40,7 +40,9 @@ import {
   Download,
   Lock,
   Trash2,
-  Loader2
+  Loader2,
+  Award,
+  Video
 } from "lucide-react";
 import { InterviewModule } from "./InterviewModule";
 import * as XLSX from "xlsx";
@@ -849,6 +851,53 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
   const [dailyConfigsList, setDailyConfigsList] = useState<any[]>([]);
 
+  const [studentLeaveRequests, setStudentLeaveRequests] = useState<any[]>([]);
+  const [isFetchingLeaveReqs, setIsFetchingLeaveReqs] = useState(false);
+
+  const fetchStudentLeaveRequests = async () => {
+    if (!currentMentor?.college_id) return;
+    setIsFetchingLeaveReqs(true);
+    try {
+      const res = await fetch(`/api/requests/leave?college_id=${encodeURIComponent(currentMentor.college_id)}`);
+      const data = await res.json();
+      if (data.success) {
+        setStudentLeaveRequests(data.requests || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch student leave requests:", err);
+    } finally {
+      setIsFetchingLeaveReqs(false);
+    }
+  };
+
+  const handleResolveStudentLeave = async (requestId: string, status: "approved" | "rejected") => {
+    try {
+      const res = await fetch("/api/requests/leave", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId,
+          status,
+          approvedBy: currentMentor?.name || "Class Teacher"
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(`Student request ${status} successfully!`, "success");
+        await fetchStudentLeaveRequests();
+        refreshData();
+      } else {
+        toast(data.message || "Failed to update request.", "error");
+      }
+    } catch (err: any) {
+      toast("Error: " + err.message, "error");
+    }
+  };
+
+  useEffect(() => {
+    fetchStudentLeaveRequests();
+  }, [currentMentor?.college_id]);
+
   // Fetch fresh data on mount so generated timetables are immediately visible
   useEffect(() => {
     refreshData();
@@ -873,6 +922,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAttendanceStudioOpen, setIsAttendanceStudioOpen] = useState(false);
+  const [attendanceFilterStatus, setAttendanceFilterStatus] = useState<"all" | "present" | "absent" | "od">("all");
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedCell, setSelectedCell] = useState<{
     day: string;
@@ -1071,6 +1122,22 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       setIsCollapsed(stored);
     }
   }, []);
+
+  // Fetch interviews assigned to this mentor
+  const [mentorInterviews, setMentorInterviews] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (currentMentor?.id) {
+      fetch(`/api/interviews?role=mentor&mentorId=${currentMentor.id}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            setMentorInterviews(data.interviews || []);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [currentMentor?.id, activeTab]);
 
   // Student Tracker filter and management states
   const [trackerSubView, setTrackerSubView] = useState<"tracker" | "interviews">("tracker");
@@ -1686,10 +1753,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       const mentorSlots = slots.filter(s => s.mentorId === currentMentor.id);
       const hasShift1 = mentorSlots.some(s => s.shift === "shift_1");
       const hasShift2 = mentorSlots.some(s => s.shift === "shift_2");
+      const hasGeneral = mentorSlots.some(s => s.shift === "general");
       if (hasShift1 && !hasShift2 && currentShift !== "shift_1") {
         setCurrentShift("shift_1");
       } else if (hasShift2 && !hasShift1 && currentShift !== "shift_2") {
         setCurrentShift("shift_2");
+      } else if (hasGeneral && !hasShift1 && !hasShift2 && currentShift !== "general") {
+        setCurrentShift("general");
       }
     }
   }, [currentMentor, slots]);
@@ -2040,6 +2110,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     )
   );
 
+  const isTimeMatch = (t1?: string, t2?: string) => {
+    if (!t1 || !t2) return false;
+    if (t1 === t2) return true;
+    const clean = (t: string) => t.toLowerCase().replace(/\./g, ":").replace(/\s+/g, " ").trim();
+    const norm = (t: string) => clean(t).replace(/\b0(\d:\d\d)/g, "$1");
+    return norm(t1) === norm(t2);
+  };
+
   // Helper to find slot for a day & time slot, and check if it's owned or covered on a specific date
   const getSlotAt = (day: string, dateStr: string, time: string) => {
     const queryDay = getMappedDayForDate(dateStr, day);
@@ -2048,7 +2126,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
 
     // 1. Check if the logged-in mentor has their own slot assigned at this (queryDay, time)
-    const ownSlot = slots.find((s) => s.mentorId === currentMentor.id && s.day === queryDay && s.time === time);
+    const ownSlot = slots.find((s) => s.mentorId === currentMentor.id && s.day === queryDay && isTimeMatch(s.time, time));
     
     // Check Handover state for this slot on this date
     const pendingReq = ownSlot ? requests.find(r => r.slotId === ownSlot.id && r.dateStr === dateStr && r.status === "pending") : null;
@@ -2058,7 +2136,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     const coverHandover = approvedHandovers.find(
       (h) => h.dateStr === dateStr && h.coverStaffId === currentMentor.id && (() => {
         const slotOfHandover = slots.find(s => s.id === h.slotId);
-        return slotOfHandover && slotOfHandover.day === queryDay && slotOfHandover.time === time;
+        return slotOfHandover && slotOfHandover.day === queryDay && isTimeMatch(slotOfHandover.time, time);
       })()
     );
     const coverSlot = coverHandover ? slots.find((s) => s.id === coverHandover.slotId) : null;
@@ -2244,15 +2322,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       return periodStart ? new Date() < periodStart : false;
     })());
 
-    if (slotResult.type === "covering") {
-      setModalTab("attendance");
-    } else {
-      if (isFuture) {
-        setModalTab("handover");
-      } else {
-        setModalTab("attendance");
-      }
-    }
+    // Always start by asking user: Mark Attendance or Request Handover
+    setModalTab("attendance");
+    setIsAttendanceStudioOpen(false);
 
     const targetSem = getSemesterFromSlot(slot);
     setModalSemester(targetSem);
@@ -2368,6 +2440,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 {[
                   { id: "home", label: "Home", icon: Home },
                   { id: "timetable", label: "My Schedule", icon: Calendar },
+                  { id: "interviews", label: "Interview Module", icon: Award },
                   { id: "demo_evaluations", label: "My Demo", icon: Sparkles },
                   { id: "attendance", label: "Student Attendance", icon: ClipboardList },
                   { id: "tracker", label: "Skill Development Tracker", icon: GraduationCap },
@@ -2629,14 +2702,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 const dateFormatted = dateObj ? dateObj.formatted : "";
                 const dateStr = dateObj ? dateObj.dateStr : "";
 
-                if (agendaClasses.length === 0) {
+                const dayInterviews = mentorInterviews.filter(inv => inv.target_date === dateStr);
+
+                if (agendaClasses.length === 0 && dayInterviews.length === 0) {
                   return (
                     <div className="flex-grow flex flex-col items-center justify-center py-12 text-center space-y-2">
                       <div className="h-12 w-12 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400">
                         <Calendar className="h-5 w-5" />
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-slate-750">No classes scheduled</p>
+                        <p className="text-xs font-bold text-slate-750">No classes or interviews scheduled</p>
                         <p className="text-[10px] text-slate-400 font-semibold mt-0.5">{agendaDay}, {dateFormatted || "This week"}</p>
                       </div>
                     </div>
@@ -2644,7 +2719,41 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 }
 
                 return (
-                  <div className="divide-y divide-slate-100 flex-grow overflow-y-auto max-h-[360px] pr-1 space-y-3">
+                  <div className="divide-y divide-slate-100 flex-grow overflow-y-auto max-h-[420px] pr-1 space-y-3">
+                    {/* Render Interview Sessions for this day */}
+                    {dayInterviews.map((inv: any) => (
+                      <div
+                        key={inv.id}
+                        onClick={() => setActiveTab("interviews" as any)}
+                        className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/70 hover:bg-purple-100/70 transition-all cursor-pointer flex items-center justify-between shadow-2xs group mb-2"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="h-9 w-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                            <Award className="h-4.5 w-4.5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-extrabold text-xs text-purple-900">{inv.subject}</h4>
+                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+                                {(inv.type || "internal").toUpperCase()} INTERVIEW
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-purple-700 font-medium mt-0.5">
+                              Cohort: <strong>{inv.class_group || "All Cohorts"}</strong> • {inv.student_count || 10} Students
+                            </p>
+                            {inv.gmeet_link && (
+                              <div className="text-[10px] text-emerald-700 font-bold mt-0.5 flex items-center gap-1">
+                                <Video className="h-3 w-3" /> GMeet Link Available
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-xs font-black text-purple-700 group-hover:underline shrink-0">
+                          Evaluate Students →
+                        </span>
+                      </div>
+                    ))}
+
                     {agendaClasses.map((item, idx) => {
                       const isCovering = item.type === "covering";
                       const isHandedOver = item.isHandedOver;
@@ -3328,6 +3437,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <div className="flex flex-col justify-center items-center">
                           <span className="text-sm font-black text-gray-900 leading-none">{date.day}</span>
                           <span className="text-[9px] text-gray-400 font-extrabold uppercase mt-1 leading-none">{date.formatted}</span>
+                          {mentorInterviews.some((inv: any) => inv.target_date === date.dateStr) && (
+                            <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                              🎤 Interview
+                            </span>
+                          )}
                         </div>
                       </td>
                       
@@ -3512,6 +3626,88 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 </div>
                               </div>
                             ) : (() => {
+                              // Check for scheduled interview session on this date & period
+                              const interviewSession = mentorInterviews?.find((inv: any) => {
+                                if (inv.target_date !== date.dateStr) return false;
+                                const prefTime = inv.preferred_start_time || "08:20 AM - 09:10 AM";
+                                const slotTimeNorm = time.replace(/\s+/g, "").toLowerCase();
+                                const prefTimeNorm = prefTime.replace(/\s+/g, "").toLowerCase();
+                                if (slotTimeNorm.includes(prefTimeNorm) || prefTimeNorm.includes(slotTimeNorm)) return true;
+                                
+                                // Check student slots for this mentor on this time
+                                if (inv.student_slots && inv.student_slots.some((s: any) => s.mentor_id === currentMentor.id && (s.slot_start_time?.includes(time) || time.includes(s.slot_start_time)))) return true;
+
+                                // Match by start hour (e.g. 8.20 / 08:20 or 9.00 / 09:00)
+                                const startHourMin = prefTime.split("-")[0].trim().toLowerCase().replace(".", ":");
+                                const cellStartHourMin = time.split("-")[0].trim().toLowerCase().replace(".", ":");
+                                if (startHourMin && cellStartHourMin && (startHourMin.includes(cellStartHourMin) || cellStartHourMin.includes(startHourMin))) return true;
+
+                                // If session is assigned to mentor and this is Period 1 (8.20 AM / 9.00 AM):
+                                if ((time.startsWith("8.20") || time.startsWith("08:20") || time.startsWith("9.00") || time.startsWith("09:00")) && (inv.status === "assigned" || inv.status === "completed" || inv.status === "pending_verification")) return true;
+
+                                return false;
+                              });
+
+                              if (interviewSession) {
+                                const isCompleted = interviewSession.status === "completed";
+                                const isEvaluator = interviewSession.student_slots?.some((s: any) => s.mentor_id === currentMentor.id) ||
+                                  interviewSession.assigned_mentor_ids?.includes(currentMentor.id);
+                                const mySlots = (interviewSession.student_slots || []).filter((s: any) => s.mentor_id === currentMentor.id);
+                                const myCandidateCount = mySlots.length > 0 ? mySlots.length : (interviewSession.allocated_students || interviewSession.student_count || 3);
+                                const meetLink = mySlots[0]?.gmeet_link || interviewSession.gmeet_link;
+
+                                return (
+                                  <div
+                                    onClick={() => setActiveTab("interviews")}
+                                    className={`h-full flex flex-col justify-between p-2 rounded-xl border text-xs shadow-xs transition-all cursor-pointer ${
+                                      isCompleted
+                                        ? "bg-emerald-50/80 border-emerald-300 text-emerald-950 hover:border-emerald-400"
+                                        : "bg-purple-50/80 border-purple-300 text-purple-950 hover:border-purple-400 hover:shadow-sm"
+                                    }`}
+                                  >
+                                    <div>
+                                      <div className="flex flex-wrap items-center gap-1 mb-1 max-w-full">
+                                        <span className="px-1.5 py-0.5 rounded bg-purple-200/80 border border-purple-300 text-[7.5px] font-black text-purple-800 uppercase tracking-wide">
+                                          🎤 INTERVIEW ({interviewSession.type?.toUpperCase() || "EXTERNAL"})
+                                        </span>
+                                        <span className="text-[7.5px] font-bold text-purple-600">
+                                          {isEvaluator ? `⭐ Evaluator` : `Host Raiser`}
+                                        </span>
+                                      </div>
+                                      <div className="font-extrabold text-[10.5px] leading-tight mb-1 text-purple-950 line-clamp-2" title={interviewSession.subject}>
+                                        {interviewSession.subject}
+                                      </div>
+                                      <div className="text-[8.5px] text-purple-700 font-semibold truncate leading-none">
+                                        {interviewSession.class_group || "Cohort"} • {myCandidateCount} Candidates
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-[8px] mt-1 pt-1.5 border-t border-purple-200/60 font-black uppercase">
+                                      {meetLink ? (
+                                        <a
+                                          href={meetLink}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="text-indigo-600 hover:underline inline-flex items-center gap-0.5 font-bold"
+                                        >
+                                          <Video className="w-2.5 h-2.5" /> GMeet
+                                        </a>
+                                      ) : (
+                                        <span className="text-purple-600">15m Slots</span>
+                                      )}
+                                      <span className={`px-1.5 py-0.5 rounded text-[7.5px] ${
+                                        isCompleted
+                                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                          : "bg-purple-100 text-purple-800 border border-purple-300"
+                                      }`}>
+                                        {isCompleted ? "Completed" : "Scheduled"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
                               const demoSession = demoSessions?.find(
                                 (ds) =>
                                   ds.mentorId === currentMentor.id &&
@@ -3815,6 +4011,102 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 </td>
                                 <td className="p-3 text-gray-500 font-medium whitespace-nowrap">
                                   {formatDate(req.timestamp)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Section 3: Student Leave & OD Requests (Class Teacher Review) */}
+                  <div className="space-y-3 pt-6 border-t border-slate-200">
+                    <div className="flex justify-between items-center flex-wrap gap-2">
+                      <div>
+                        <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                          <ClipboardList className="h-4 w-4 text-[#D528A2]" />
+                          Student Leave & OD Approvals (Class Teacher Review)
+                        </h3>
+                        <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
+                          Review Leave and On Duty (OD) applications submitted by your assigned students. Approving automatically updates their attendance grid status.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={fetchStudentLeaveRequests}
+                        disabled={isFetchingLeaveReqs}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                      >
+                        Refresh List
+                      </button>
+                    </div>
+
+                    {studentLeaveRequests.length === 0 ? (
+                      <div className="text-center py-6 border border-slate-200 rounded-xl bg-slate-50/50">
+                        <p className="text-xs text-slate-500 font-medium">No student leave or OD requests submitted yet.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs">
+                        <table className="w-full border-collapse text-left text-xs">
+                          <thead>
+                            <tr className="bg-slate-100 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                              <th className="p-3">Student Name</th>
+                              <th className="p-3">Class Group</th>
+                              <th className="p-3">Type</th>
+                              <th className="p-3">Leave Date</th>
+                              <th className="p-3">Reason</th>
+                              <th className="p-3">Status</th>
+                              <th className="p-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {studentLeaveRequests.map((req) => (
+                              <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="p-3 font-extrabold text-slate-900">
+                                  {req.studentName}
+                                  <span className="text-slate-400 block text-[10px] font-normal">{req.studentEmail}</span>
+                                </td>
+                                <td className="p-3 font-bold text-[#D528A2]">{req.classGroup}</td>
+                                <td className="p-3">
+                                  <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase border ${
+                                    req.type?.toLowerCase() === "od" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                                  }`}>
+                                    {req.type?.toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="p-3 font-bold text-slate-800">{req.dateStr}</td>
+                                <td className="p-3 text-slate-600 max-w-[200px] truncate" title={req.reason}>{req.reason}</td>
+                                <td className="p-3">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9.5px] font-black uppercase ${
+                                    req.status === "approved" ? "bg-emerald-100 text-emerald-800" :
+                                    req.status === "rejected" ? "bg-rose-100 text-rose-800" :
+                                    "bg-amber-100 text-amber-800"
+                                  }`}>
+                                    {req.status}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-right">
+                                  {req.status === "pending" ? (
+                                    <div className="flex justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleResolveStudentLeave(req.id, "approved")}
+                                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold shadow-xs transition-all cursor-pointer"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleResolveStudentLeave(req.id, "rejected")}
+                                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[10px] font-bold shadow-xs transition-all cursor-pointer"
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 font-semibold italic">Resolved ({req.approvedBy})</span>
+                                  )}
                                 </td>
                               </tr>
                             ))}
@@ -4311,1108 +4603,612 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         );
       })()}
 
-      {/* Modal / Slider Drawer */}
-      {isModalOpen && selectedCell && selectedCell.slot && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-sm p-0 sm:p-4">
-          <div className="relative w-full max-w-2xl h-[90vh] sm:h-[640px] bg-white border-t sm:border border-slate-205 rounded-t-3xl sm:rounded-xl shadow-2xl p-4 sm:p-5 flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200">
-            <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-indigo-500/5 blur-xl pointer-events-none"></div>
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* POPUP 1: COMPACT PERIOD ACTIONS (MARK ATTENDANCE VS HANDOVER)          */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {isModalOpen && !isAttendanceStudioOpen && selectedCell && selectedCell.slot && (() => {
+        const { name: deptShort, sem } = getShortClassGroup(selectedCell.slot.classGroup);
+        const yearStr = getYearForClass(selectedCell.slot.classGroup);
+        const shiftLabel = selectedCell.slot.shift === "shift_1" ? "Shift 1" : selectedCell.slot.shift === "shift_2" ? "Shift 2" : "General";
 
-            {/* Header */}
-            <div className="relative z-10 flex items-center justify-between mb-3.5 shrink-0">
-              <h3 className="text-lg font-bold text-gray-955">
-                Class Actions - {selectedCell.slot.course}
-              </h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-gray-400 hover:text-gray-655 transition-colors cursor-pointer"
-                type="button"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+        const classStudents = students.filter(
+          (student) => isClassGroupMatch(student.classGroup, selectedCell.slot!.classGroup)
+        );
 
-            {/* Sleek Segmented Switch for Tabs */}
-            <div className="flex bg-slate-100/60 p-1 rounded-xl border border-slate-200/50 mb-3.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setModalTab("attendance")}
-                className={`flex-1 py-2 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  modalTab === "attendance"
-                    ? "bg-white text-indigo-655 shadow-sm border border-slate-250/20"
-                    : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
-                }`}
-              >
-                <CheckCircle className="h-3.5 w-3.5" />
-                Mark Attendance
-              </button>
-              <button
-                type="button"
-                onClick={() => setModalTab("handover")}
-                className={`flex-1 py-2 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  modalTab === "handover"
-                    ? "bg-white text-indigo-655 shadow-sm border border-slate-250/20"
-                    : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
-                }`}
-              >
-                <Send className="h-3.5 w-3.5" />
-                Request Handover
-              </button>
-            </div>
+        const existingAttendance = studentAttendance.filter(
+          (a) => a.slotId === selectedCell.slot!.id && a.dateStr === selectedCell.dateStr
+        );
+        const alreadyMarked = existingAttendance.length > 0;
+        const prevPresent = existingAttendance.filter(a => a.status === "present").length;
+        const prevAbsent = existingAttendance.filter(a => a.status === "absent").length;
 
-            {/* Slot Info Card — Sleek horizontal glassmorphic ribbon */}
-            {(() => {
-              const { name: deptShort, sem } = getShortClassGroup(selectedCell.slot.classGroup);
-              const yearStr = getYearForClass(selectedCell.slot.classGroup);
-              const shiftLabel = selectedCell.slot.shift === "shift_1" ? "Shift 1" : selectedCell.slot.shift === "shift_2" ? "Shift 2" : "General";
-              return (
-                <div className="mb-3.5 p-3 rounded-xl bg-indigo-50/40 border border-indigo-100/55 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white text-[9.5px] font-black uppercase tracking-wider">{deptShort || "Class"}</span>
-                    {yearStr && <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-800 text-[9.5px] font-black uppercase border border-amber-200">{yearStr}</span>}
-                    {sem && <span className="px-2 py-0.5 rounded-lg bg-teal-100 text-teal-800 text-[9.5px] font-black uppercase border border-teal-200">{sem}</span>}
-                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 text-[9.5px] font-extrabold border border-slate-200">{shiftLabel}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-slate-655 text-[11px] font-bold">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                      {selectedCell.dateFormatted}
-                    </span>
-                    <span className="text-slate-300">|</span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                      {formatTimeLabel(selectedCell.time)}
-                    </span>
-                    {selectedCell.slot.location && (
-                      <>
-                        <span className="text-slate-300">|</span>
-                        <span className="flex items-center gap-1 truncate max-w-[120px]">
-                          <MapPin className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                          {selectedCell.slot.location}
-                        </span>
-                      </>
-                    )}
-                  </div>
+        const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
+        const isLocked = !windowCheck.open && windowCheck.reason === "expired";
+        const approvedReq = approvedHandovers.find(h => h.slotId === selectedCell.slot!.id && h.dateStr === selectedCell.dateStr);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+              
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3.5">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 leading-tight">Period Action</h3>
+                  <p className="text-xs text-slate-500 font-medium">Choose an action for this scheduled class</p>
                 </div>
-              );
-            })()}
-
-            {formError && (
-              <div className="mb-3.5 p-3 bg-red-50 border border-red-100 rounded-xl flex items-start gap-2 text-xs text-red-655 shrink-0 animate-in fade-in">
-                <AlertCircle className="h-4.5 w-4.5 shrink-0 mt-0.5" />
-                <span>{formError}</span>
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-            )}
 
-            {/* Attendance Tab */}
-            {modalTab === "attendance" && (() => {
-              const today = new Date();
-              const y = today.getFullYear();
-              const m = String(today.getMonth() + 1).padStart(2, '0');
-              const d = String(today.getDate()).padStart(2, '0');
-              const todayStr = `${y}-${m}-${d}`;
-
-              const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
-              const isLocked = !windowCheck.open && windowCheck.reason === "expired";
-              const isFuture = windowCheck.reason === "future";
-
-              const approvedReq = approvedHandovers.find(h => h.slotId === selectedCell.slot!.id && h.dateStr === selectedCell.dateStr);
-
-              // 1b. If the attendance window has expired (Locked)
-              if (isLocked) {
-                const prevExisting = studentAttendance.filter(
-                  (a) => a.slotId === selectedCell.slot!.id && a.dateStr === selectedCell.dateStr
-                );
-                const prevPresent = prevExisting.filter(a => a.status === "present").length;
-                const prevAbsent = prevExisting.filter(a => a.status === "absent").length;
-                const prevOD = prevExisting.filter(a => a.status === "od").length;
-
-                return (
-                  <div className="py-6 px-4 bg-red-50/50 border border-red-100 rounded-xl text-center text-xs text-red-800 space-y-3 shrink-0 overflow-y-auto">
-                    <Lock className="h-8 w-8 mx-auto text-red-500" />
-                    <p className="font-bold text-sm">Attendance Window Closed</p>
-                    <p className="text-gray-500 font-semibold">{windowCheck.message}</p>
-                    {prevExisting.length > 0 ? (
-                      <div className="mt-3 p-4 bg-white rounded-xl border border-red-150 text-left text-slate-700 space-y-2 shadow-sm">
-                        <p className="font-black text-xs text-slate-800 uppercase tracking-wider mb-2 border-b pb-1">Marked Summary:</p>
-                        <p className="flex justify-between"><span>Present:</span> <span className="font-black text-emerald-600">{prevPresent}</span></p>
-                        <p className="flex justify-between"><span>Absent:</span> <span className="font-black text-rose-600">{prevAbsent}</span></p>
-                        <p className="flex justify-between"><span>OD (On Duty):</span> <span className="font-black text-blue-600">{prevOD}</span></p>
-                      </div>
-                    ) : (
-                      <p className="text-[10px] text-slate-450 italic font-semibold">No attendance was marked for this slot before the window closed.</p>
-                    )}
-                    <button type="button" onClick={() => setIsModalOpen(false)} className="w-full bg-white border border-red-200 hover:bg-red-50 text-red-700 rounded-xl py-2.5 text-xs font-bold mt-2 transition-all cursor-pointer">Close</button>
-                  </div>
-                );
-              }
-
-              // 2. If it's their own class, but handed over to someone else (approved handover exists)
-              // and the logged in mentor is the original mentor
-              if (selectedCell.type === "own" && approvedReq) {
-                return (
-                  <div className="py-8 px-4 bg-blue-50 border border-blue-100 rounded-xl text-center text-xs text-blue-800 space-y-2 shrink-0">
-                    <CheckCircle className="h-8 w-8 mx-auto text-blue-500" />
-                    <p className="font-bold">Class Handed Over</p>
-                    <p className="text-gray-500 font-medium">This class has been handed over to <span className="font-bold">{approvedReq.coverStaffName}</span>. They are responsible for marking attendance.</p>
-                  </div>
-                );
-              }
-
-              // 3. Otherwise, they can mark attendance
-              const classStudents = students.filter(
-                (student) => isClassGroupMatch(student.classGroup, selectedCell.slot!.classGroup)
-              );
-
-              if (classStudents.length === 0) {
-                return (
-                  <div className="py-8 px-4 bg-gray-50 border border-gray-150 rounded-xl text-center text-xs text-gray-500 shrink-0">
-                    <p className="font-bold">No students registered</p>
-                    <p className="text-[10px] text-gray-400 mt-1">There are no students registered under the class group: <span className="font-semibold">{selectedCell.slot!.classGroup}</span>.</p>
-                  </div>
-                );
-              }
-
-              const isPastDay = selectedCell.dateStr < todayStr || isLocked;
-
-              // Bug #13 fix: check if attendance was already marked for this slot+date
-              const existingAttendance = studentAttendance.filter(
-                (a) => a.slotId === selectedCell.slot!.id && a.dateStr === selectedCell.dateStr
-              );
-              const alreadyMarked = existingAttendance.length > 0;
-              const prevPresent = existingAttendance.filter(a => a.status === "present").length;
-              const prevAbsent = existingAttendance.filter(a => a.status === "absent").length;
-
-              const presentCount = Object.values(localAttendance).filter(v => v === "present").length;
-              const absentCount = Object.values(localAttendance).filter(v => v === "absent").length;
-              const odCount = Object.values(localAttendance).filter(v => v === "od").length;
-              const notMarkedCount = classStudents.length - presentCount - absentCount - odCount;
-
-              const filteredStudents = classStudents.filter(s =>
-                s.name.toLowerCase().includes(attendanceSearchTerm.toLowerCase()) ||
-                s.id.toLowerCase().includes(attendanceSearchTerm.toLowerCase())
-              );
-
-              const handleToggleStudent = (studentId: string) => {
-                if (isPastDay) return;
-                setLocalAttendance(prev => {
-                  const current = prev[studentId] || "not_marked";
-                  let next: "present" | "absent" | "od" | "not_marked";
-                  if (current === "not_marked") next = "present";
-                  else if (current === "present") next = "absent";
-                  else if (current === "absent") next = "od";
-                  else next = "not_marked";
-                  return {
-                    ...prev,
-                    [studentId]: next
-                  };
-                });
-              };
-
-              const handleMarkAll = (status: "present" | "absent" | "od" | "not_marked") => {
-                if (isPastDay) return;
-                const updated: Record<string, "present" | "absent" | "od" | "not_marked"> = {};
-                classStudents.forEach(s => {
-                  updated[s.id] = status;
-                });
-                setLocalAttendance(updated);
-              };
-
-              const handleStudentCheckboxClick = (e: React.MouseEvent, studentId: string) => {
-                e.stopPropagation();
-                const isChecked = selectedStudentIds.includes(studentId);
-                let newSelected = [...selectedStudentIds];
-
-                if (e.shiftKey && lastCheckedId) {
-                  const startIdx = filteredStudents.findIndex(s => s.id === lastCheckedId);
-                  const endIdx = filteredStudents.findIndex(s => s.id === studentId);
-                  if (startIdx !== -1 && endIdx !== -1) {
-                    const minIdx = Math.min(startIdx, endIdx);
-                    const maxIdx = Math.max(startIdx, endIdx);
-                    const rangeIds = filteredStudents.slice(minIdx, maxIdx + 1).map(s => s.id);
-                    
-                    if (!isChecked) {
-                      newSelected = Array.from(new Set([...newSelected, ...rangeIds]));
-                    } else {
-                      newSelected = newSelected.filter(id => !rangeIds.includes(id));
-                    }
-                  }
-                } else {
-                  if (isChecked) {
-                    newSelected = newSelected.filter(id => id !== studentId);
-                  } else {
-                    newSelected.push(studentId);
-                  }
-                }
-
-                setSelectedStudentIds(newSelected);
-                setLastCheckedId(studentId);
-              };
-
-              const applyRangeSelection = () => {
-                if (!rangeStartId || !rangeEndId) return;
-                const startIdx = filteredStudents.findIndex(s => s.id === rangeStartId);
-                const endIdx = filteredStudents.findIndex(s => s.id === rangeEndId);
-                if (startIdx !== -1 && endIdx !== -1) {
-                  const minIdx = Math.min(startIdx, endIdx);
-                  const maxIdx = Math.max(startIdx, endIdx);
-                  const rangeIds = filteredStudents.slice(minIdx, maxIdx + 1).map(s => s.id);
-                  setSelectedStudentIds(prev => Array.from(new Set([...prev, ...rangeIds])));
-                }
-              };
-
-              const handleBulkMark = (status: "present" | "absent" | "od" | "not_marked") => {
-                setLocalAttendance(prev => {
-                  const updated = { ...prev };
-                  selectedStudentIds.forEach(id => {
-                    updated[id] = status;
-                  });
-                  return updated;
-                });
-                setSelectedStudentIds([]);
-              };
-
-              const handleSaveAttendance = async () => {
-                const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
-                if (!windowCheck.open && windowCheck.reason === "expired") {
-                  setFormError(windowCheck.message || "Attendance window is closed.");
-                  return;
-                }
-
-                setIsSubmittingAttendance(true);
-                setFormError("");
-                try {
-                  const attendancePayload = classStudents.map(s => ({
-                    studentId: s.id,
-                    status: localAttendance[s.id] || "not_marked"
-                  }));
-                  
-                  let finalSubject = selectedCell.slot!.course;
-                  if (selectedCell.type === "covering") {
-                    if (handoverSubject === "substitute_own") {
-                      if (!selectedSubjName) {
-                        setFormError("Please select the subject covered.");
-                        setIsSubmittingAttendance(false);
-                        return;
-                      }
-                      finalSubject = selectedSubjName;
-                    } else if (handoverSubject === "custom") {
-                      if (!customSubjName.trim()) {
-                        setFormError("Please enter the custom subject covered.");
-                        setIsSubmittingAttendance(false);
-                        return;
-                      }
-                      finalSubject = customSubjName.trim();
-                    }
-                  }
-
-                  const res = await markAttendance(
-                    selectedCell.slot!.id, 
-                    selectedCell.dateStr, 
-                    attendancePayload,
-                    selectedCell.type === "covering" ? finalSubject : undefined,
-                    attendanceType,
-                    attendanceMode,
-                    attendanceType === "Non-Regular" ? attendanceTypeSub : undefined
-                  );
-                  if (res.success) {
-                    setIsModalOpen(false);
-                  } else {
-                    setFormError(res.message || "Failed to mark attendance.");
-                  }
-                } catch (err: any) {
-                  setFormError(err.message || "Something went wrong.");
-                } finally {
-                  setIsSubmittingAttendance(false);
-                }
-              };
-
-              return (
-                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                  {!isDayConfigSet && (
-                    <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-bold flex items-center gap-2 shrink-0">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-                      <span>
-                        Type of Day has not been configured for {selectedCell?.dateStr || "today"} by the Campus Manager (CAM). Attendance marking is disabled.
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Step Tracker (Only shown if NOT past/locked) */}
-                  {!isPastDay && (
-                    <div className="flex items-center justify-between gap-2 p-1 border-b border-slate-100 pb-3 shrink-0 mb-3.5">
-                      {[
-                        { num: 1, label: "Setup" },
-                        { num: 2, label: "Roster Grid" },
-                        { num: 3, label: "Review & Save" }
-                      ].map((step, idx) => {
-                        const isActive = attendanceStep === step.num;
-                        const isCompleted = attendanceStep > step.num;
-                        return (
-                          <React.Fragment key={step.num}>
-                            <div className="flex items-center gap-2">
-                              <span className={`h-5 w-5 rounded-full text-[10px] font-semibold flex items-center justify-center border transition-all ${
-                                isActive ? "bg-slate-900 border-slate-900 text-white shadow-xs" :
-                                isCompleted ? "bg-emerald-500 border-emerald-500 text-white" :
-                                "bg-white border-slate-200 text-slate-400"
-                              }`}>
-                                {isCompleted ? <Check className="h-3 w-3" /> : step.num}
-                              </span>
-                              <span className={`text-xs font-medium ${
-                                isActive ? "text-slate-900 font-semibold" : "text-slate-400"
-                              }`}>
-                                {step.label}
-                              </span>
-                            </div>
-                            {idx < 2 && <div className="h-[1px] bg-slate-200 flex-1 mx-2" />}
-                          </React.Fragment>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Warning banner for past dates */}
-                  {isPastDay && !isLocked && (
-                    <div className="p-3 bg-amber-50/50 border border-amber-200 text-amber-800 text-xs rounded-lg flex items-center gap-1.5 font-medium shadow-xs shrink-0 mb-3">
-                      <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-                      <span>Warning: Attendance for past dates is in View-Only mode.</span>
-                    </div>
-                  )}
-
-                  {/* Informative banner for upcoming dates */}
-                  {isFuture && (
-                    <div className="p-3 bg-indigo-50/80 border border-indigo-200 text-indigo-900 text-xs rounded-xl flex items-center justify-between gap-2 font-medium shadow-xs shrink-0 mb-3">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-indigo-600 shrink-0" />
-                        <span><strong>Upcoming Session Roster:</strong> Viewing registered student roster for this class session.</span>
-                      </div>
-                      <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-extrabold rounded-md uppercase border border-indigo-200 shrink-0">
-                        Upcoming Class
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Step 1: Setup (Only shown if NOT past/locked) */}
-                  {attendanceStep === 1 && !isPastDay && (
-                    <div className="flex-1 min-h-0 flex flex-col overflow-hidden animate-in fade-in duration-150">
-                      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 py-1 pr-1 pb-1">
-                        {alreadyMarked && (
-                          <div className="p-3 bg-indigo-50 border border-indigo-200 text-indigo-850 text-xs rounded-lg flex items-center gap-2 font-medium shadow-xs">
-                            <CheckCircle className="h-4 w-4 shrink-0 text-indigo-655" />
-                            <span>
-                              Attendance already marked: {prevPresent} present, {prevAbsent} absent.
-                              Saving again will overwrite the previous record.
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {/* Type Selection */}
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium text-slate-500">Attendance Type</label>
-                            <div className="flex flex-col gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setAttendanceType("Regular")}
-                                className={`p-3 text-left rounded-lg border transition-all cursor-pointer flex flex-col gap-1 ${
-                                  attendanceType === "Regular"
-                                    ? "bg-slate-55 border-slate-900 ring-1 ring-slate-900"
-                                    : "bg-white border-slate-200 hover:bg-slate-50"
-                                }`}
-                              >
-                                <span className="font-semibold text-xs text-slate-900">Regular Class</span>
-                                <span className="text-[10px] text-slate-400 leading-tight">Standard syllabus session matching current timetable.</span>
-                              </button>
-                              
-                              <button
-                                type="button"
-                                onClick={() => setAttendanceType("Non-Regular")}
-                                className={`p-3 text-left rounded-lg border transition-all cursor-pointer flex flex-col gap-1 ${
-                                  attendanceType === "Non-Regular"
-                                    ? "bg-slate-55 border-slate-900 ring-1 ring-slate-900"
-                                    : "bg-white border-slate-200 hover:bg-slate-50"
-                                }`}
-                              >
-                                <span className="font-semibold text-xs text-slate-900">Non-Regular Session</span>
-                                <span className="text-[10px] text-slate-400 leading-tight">Special sessions like events, examinations, or guest lectures.</span>
-                              </button>
-                            </div>
-
-                            {attendanceType === "Non-Regular" && (
-                              <div className="pt-2 animate-in slide-in-from-top-1 duration-100">
-                                <label className="text-[10px] text-slate-450 uppercase tracking-wider font-semibold block mb-1">Select Sub-Category</label>
-                                <select
-                                  value={attendanceTypeSub}
-                                  onChange={(e) => setAttendanceTypeSub(e.target.value)}
-                                  className="w-full bg-white border border-slate-200 rounded-md px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none shadow-sm cursor-pointer focus:border-slate-400"
-                                >
-                                  <option value="Event">Event</option>
-                                  <option value="Exam">Exam</option>
-                                  <option value="Activity">Activity</option>
-                                  <option value="Others">Others</option>
-                                </select>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Mode Selection */}
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium text-slate-500">Session Mode</label>
-                            <div className="flex flex-col gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setAttendanceMode("Offline")}
-                                className={`p-3 text-left rounded-lg border transition-all cursor-pointer flex flex-col gap-1 ${
-                                  attendanceMode === "Offline"
-                                    ? "bg-slate-55 border-slate-900 ring-1 ring-slate-900"
-                                    : "bg-white border-slate-200 hover:bg-slate-50"
-                                }`}
-                              >
-                                <span className="font-semibold text-xs text-slate-900">Offline (In-Person)</span>
-                                <span className="text-[10px] text-slate-400 leading-tight">Class held physically on campus in designated classrooms.</span>
-                              </button>
-                              
-                              <button
-                                type="button"
-                                onClick={() => setAttendanceMode("Online")}
-                                className={`p-3 text-left rounded-lg border transition-all cursor-pointer flex flex-col gap-1 ${
-                                  attendanceMode === "Online"
-                                    ? "bg-slate-55 border-slate-900 ring-1 ring-slate-900"
-                                    : "bg-white border-slate-200 hover:bg-slate-50"
-                                }`}
-                              >
-                                <span className="font-semibold text-xs text-slate-900">Online (Remote)</span>
-                                <span className="text-[10px] text-slate-400 leading-tight">Virtual class held via Google Meet, Zoom, or Teams.</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Covered Subject Selection for Substitution Classes */}
-                        {selectedCell.type === "covering" && (
-                          <div className="p-3 bg-slate-50/50 border border-slate-200 rounded-lg space-y-2.5 mt-1 animate-in slide-in-from-top-1 duration-150">
-                            <p className="text-[10px] text-slate-450 uppercase tracking-wider font-semibold">Covered Subject for this Substitution</p>
-                            <div className="flex flex-col sm:flex-row gap-2">
-                              {["original", "substitute_own", "custom"].map(modeOpt => (
-                                <button
-                                  key={modeOpt}
-                                  type="button"
-                                  onClick={() => setHandoverSubject(modeOpt)}
-                                  className={`flex-1 px-3 py-1.5 text-center rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                                    handoverSubject === modeOpt
-                                      ? "bg-slate-900 text-white border-slate-900 shadow-sm"
-                                      : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
-                                  }`}
-                                >
-                                  {modeOpt === "original" ? `Original (${selectedCell.handover?.course || selectedCell.slot!.course})` :
-                                   modeOpt === "substitute_own" ? "My Own" : "Custom"}
-                                </button>
-                              ))}
-                            </div>
-                            {handoverSubject === "substitute_own" && (
-                              <select
-                                value={selectedSubjName}
-                                onChange={(e) => setSelectedSubjName(e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-md px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none cursor-pointer focus:border-slate-400"
-                              >
-                                <option value="">-- Choose Subject --</option>
-                                {(currentMentor?.subjects || "").split(/\n|,|;/).map(s => s.trim()).filter(Boolean).map((s, idx) => (
-                                  <option key={idx} value={s}>{s}</option>
-                                ))}
-                              </select>
-                            )}
-                            {handoverSubject === "custom" && (
-                              <input
-                                type="text"
-                                placeholder="e.g. Revision Class, Lab Session"
-                                value={customSubjName}
-                                onChange={(e) => setCustomSubjName(e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-md px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-slate-400"
-                              />
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex gap-3 pt-3 border-t border-slate-100 mt-3 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => setIsModalOpen(false)}
-                          className="flex-1 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-md py-2.5 text-xs border border-slate-200 transition-colors cursor-pointer text-center"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAttendanceStep(2)}
-                          className="flex-1 bg-slate-900 hover:bg-slate-900/90 text-white font-semibold rounded-md py-2.5 text-xs transition-colors cursor-pointer text-center shadow-xs"
-                        >
-                          Next: Mark Attendance
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 2: Roster Grid (Visual Tap Cards Grid with search) */}
-                  {attendanceStep === 2 && (
-                    <div className="flex-1 min-h-0 flex flex-col overflow-hidden animate-in fade-in duration-150">
-                      {/* Search Bar & Range Button */}
-                      <div className="flex gap-2 shrink-0 mb-3">
-                        <div className="relative flex-grow">
-                          <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none">
-                            <Search className="h-4 w-4 text-slate-400" />
-                          </span>
-                          <input
-                            type="text"
-                            placeholder="Search name or register ID..."
-                            value={attendanceSearchTerm}
-                            onChange={(e) => setAttendanceSearchTerm(e.target.value)}
-                            className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-450 focus:ring-1 focus:ring-slate-950 transition-all"
-                          />
-                          {attendanceSearchTerm && (
-                            <button
-                              type="button"
-                              onClick={() => setAttendanceSearchTerm("")}
-                              className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-655"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                        {!isPastDay && (
-                          <button
-                            type="button"
-                            onClick={() => setIsRangeOpen(!isRangeOpen)}
-                            className={`px-3 py-1.5 border rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0 ${
-                              isRangeOpen
-                                ? "bg-slate-100 border-slate-300 text-slate-955"
-                                : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                            }`}
-                          >
-                            <Filter className="h-4 w-4 text-slate-400" />
-                            Range
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Collapsible Range Selector */}
-                      {isRangeOpen && !isPastDay && (
-                        <div className="bg-slate-50/50 border border-slate-200 rounded-lg p-3 text-xs space-y-2.5 animate-fadeIn shrink-0 mb-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1">
-                              <label className="text-[10px] text-slate-450 font-bold uppercase tracking-wider">From Student</label>
-                              <select
-                                value={rangeStartId}
-                                onChange={(e) => setRangeStartId(e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-md px-2 py-1 text-xs focus:outline-none"
-                              >
-                                <option value="">Select start...</option>
-                                {filteredStudents.map(s => (
-                                  <option key={s.id} value={s.id}>{s.name} ({s.id.slice(-6)})</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[10px] text-slate-450 font-bold uppercase tracking-wider">To Student</label>
-                              <select
-                                value={rangeEndId}
-                                onChange={(e) => setRangeEndId(e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-md px-2 py-1 text-xs focus:outline-none"
-                              >
-                                <option value="">Select end...</option>
-                                {filteredStudents.map(s => (
-                                  <option key={s.id} value={s.id}>{s.name} ({s.id.slice(-6)})</option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={applyRangeSelection}
-                              className="flex-1 bg-slate-900 hover:bg-slate-900/90 text-white font-semibold rounded-md py-1.5 text-xs transition-colors cursor-pointer"
-                            >
-                              Select Range
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRangeStartId("");
-                                setRangeEndId("");
-                              }}
-                              className="px-3 bg-white hover:bg-slate-100 text-slate-700 font-semibold rounded-md py-1.5 text-xs border border-slate-200 transition-colors cursor-pointer"
-                            >
-                              Clear
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Header indicators */}
-                      <div className="flex items-center justify-between text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 font-medium text-slate-600 shrink-0 mb-3">
-                        <div>Students: <span className="text-slate-955 font-semibold">{classStudents.length}</span></div>
-                        <div className="flex gap-3">
-                          <span className="text-emerald-700 font-semibold">Present: {presentCount}</span>
-                          <span className="text-rose-700 font-semibold">Absent: {absentCount}</span>
-                          <span className="text-blue-700 font-semibold">OD: {odCount}</span>
-                        </div>
-                      </div>
-
-                      {/* Bulk Actions Panel (if selections are active) */}
-                      {selectedStudentIds.length > 0 && !isPastDay && (
-                        <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-3 animate-slideDown shadow-xs shrink-0 mb-3">
-                          <div className="flex items-center gap-1.5 text-xs">
-                            <span className="h-4.5 w-4.5 rounded-full bg-slate-900 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
-                              {selectedStudentIds.length}
-                            </span>
-                            <span className="font-semibold text-slate-900 text-xs">Selected</span>
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleBulkMark("present")}
-                              className="px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold text-[10px] cursor-pointer"
-                            >
-                              Present
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleBulkMark("absent")}
-                              className="px-2.5 py-1 rounded-md bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 font-semibold text-[10px] cursor-pointer"
-                            >
-                              Absent
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleBulkMark("od")}
-                              className="px-2.5 py-1 rounded-md bg-blue-55 hover:bg-blue-100 border border-blue-200 text-blue-800 font-semibold text-[10px] cursor-pointer"
-                            >
-                              OD
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedStudentIds([])}
-                              className="text-[10px] text-slate-400 hover:text-slate-600 font-semibold px-1 cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Header quick toggle */}
-                      {!isPastDay && (
-                        <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50/50 border border-slate-200 rounded-lg text-xs text-slate-550 font-medium shrink-0 mb-3">
-                          <label className="flex items-center gap-2 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.includes(s.id))}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  const allFilteredIds = filteredStudents.map(s => s.id);
-                                  setSelectedStudentIds(prev => Array.from(new Set([...prev, ...allFilteredIds])));
-                                } else {
-                                  const allFilteredIds = filteredStudents.map(s => s.id);
-                                  setSelectedStudentIds(prev => prev.filter(id => !allFilteredIds.includes(id)));
-                                }
-                              }}
-                              className="h-4 w-4 rounded border-slate-350 text-slate-900 focus:ring-slate-900 cursor-pointer"
-                            />
-                            <span className="font-semibold text-slate-700">Select All Shown ({filteredStudents.length})</span>
-                          </label>
-
-                          {selectedStudentIds.length === 0 && (
-                            <div className="flex items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={() => handleMarkAll("present")}
-                                className="text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer hover:underline"
-                              >
-                                All Present
-                              </button>
-                              <span className="text-slate-300">|</span>
-                              <button
-                                type="button"
-                                onClick={() => handleMarkAll("absent")}
-                                className="text-rose-700 hover:text-rose-800 font-semibold cursor-pointer hover:underline"
-                              >
-                                All Absent
-                              </button>
-                              <span className="text-slate-300">|</span>
-                              <button
-                                type="button"
-                                onClick={() => setLocalAttendance(originalAttendance)}
-                                className="text-slate-500 hover:text-slate-700 font-semibold cursor-pointer hover:underline"
-                              >
-                                Reset
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Visual Cards Grid */}
-                      <div className="flex-1 min-h-0 overflow-y-auto border border-slate-200 rounded-lg p-3 pr-1 bg-white mb-3">
-                        {filteredStudents.length === 0 ? (
-                          <div className="py-8 text-center text-xs text-slate-400 font-medium">
-                            No students match your search filter
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            {filteredStudents.map((student) => {
-                              const status = localAttendance[student.id] || "present";
-                              const isSelected = selectedStudentIds.includes(student.id);
-                              
-                              const statusConfig = 
-                                status === "present" ? { bg: "bg-emerald-50/20 border-emerald-250 text-emerald-850 hover:bg-emerald-50/40 hover:border-emerald-300", badge: "bg-emerald-100 border-emerald-250 text-emerald-805", label: "Present", icon: CheckCircle } :
-                                status === "absent" ? { bg: "bg-rose-50/25 border-rose-250 text-rose-850 hover:bg-rose-50/40 hover:border-rose-300", badge: "bg-rose-100 border-rose-250 text-rose-805", label: "Absent", icon: XCircle } :
-                                status === "od" ? { bg: "bg-blue-50/20 border-blue-250 text-blue-800 hover:bg-blue-50/40 hover:border-blue-300", badge: "bg-blue-100 border-blue-250 text-blue-855", label: "OD", icon: Sparkles } :
-                                { bg: "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100", badge: "bg-slate-100 border-slate-200 text-slate-600", label: "Not Marked", icon: AlertCircle };
-
-                              const StatusIcon = statusConfig.icon;
-
-                              return (
-                                <div
-                                  key={student.id}
-                                  onClick={() => {
-                                    if (!isPastDay) {
-                                      // Cycle status: present -> absent -> od -> present
-                                      setLocalAttendance(prev => {
-                                        const cur = prev[student.id] || "present";
-                                        const next = cur === "present" ? "absent" : cur === "absent" ? "od" : "present";
-                                        return { ...prev, [student.id]: next };
-                                      });
-                                    }
-                                  }}
-                                  className={`p-3 border rounded-lg flex items-center justify-between transition-all duration-150 ${
-                                    isPastDay ? "cursor-default opacity-85" : "cursor-pointer hover:scale-[1.005] hover:shadow-xs active:scale-[0.995]"
-                                  } ${isSelected ? "ring-1 ring-slate-900 border-slate-900" : ""} ${statusConfig.bg}`}
-                                >
-                                  <div className="flex items-center gap-2.5 pr-2">
-                                    {!isPastDay && (
-                                      <input
-                                        type="checkbox"
-                                        checked={isSelected}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleStudentCheckboxClick(e as any, student.id);
-                                        }}
-                                        onChange={() => {}}
-                                        className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer shrink-0"
-                                      />
-                                    )}
-                                    <div className="leading-tight">
-                                      <p className="font-semibold text-xs text-slate-900 tracking-tight">{student.name}</p>
-                                      <p className="text-[10px] font-mono text-slate-400 mt-0.5 uppercase">{student.id}</p>
-                                    </div>
-                                  </div>
-                                  <div className={`flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${statusConfig.badge}`}>
-                                    <StatusIcon className="h-3 w-3 shrink-0" />
-                                    <span className="tracking-wide">
-                                      {statusConfig.label}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Wizard Actions */}
-                      <div className="flex gap-3 pt-3 border-t border-slate-100 shrink-0 mt-auto">
-                        {isPastDay ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsModalOpen(false)}
-                            className="w-full bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-md py-2.5 text-xs border border-slate-200 transition-colors cursor-pointer text-center"
-                          >
-                            Close
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => setIsModalOpen(false)}
-                              className="flex-1 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-md py-2.5 text-xs border border-slate-200 transition-colors cursor-pointer text-center"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setAttendanceStep(3)}
-                              disabled={!isDayConfigSet}
-                              className="flex-1 bg-slate-900 hover:bg-slate-900/90 text-white font-semibold rounded-md py-2.5 text-xs transition-colors cursor-pointer text-center shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {!isDayConfigSet ? "Type of Day Not Set" : "Review & Save →"}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 3: Review & Save (Only shown if NOT past/locked) */}
-                  {attendanceStep === 3 && !isPastDay && (
-                    <div className="flex-1 min-h-0 flex flex-col overflow-hidden animate-in fade-in duration-150">
-                      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 py-1 pr-1 pb-1">
-                        <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3.5 shadow-xs">
-                          <h4 className="font-semibold text-xs text-slate-900 uppercase tracking-wider border-b pb-2 flex justify-between items-center">
-                            <span>Verification Summary</span>
-                            <span className="text-[10px] text-slate-400 font-medium lowercase">Please review before saving</span>
-                          </h4>
-                          
-                          <div className="grid grid-cols-3 gap-3 text-center">
-                            <div className="bg-emerald-50/50 border border-emerald-100 p-2 rounded-lg">
-                              <p className="text-[10px] text-emerald-805 uppercase font-semibold tracking-wide">Present</p>
-                              <p className="font-bold text-lg text-emerald-700 mt-0.5">{presentCount}</p>
-                            </div>
-                            <div className="bg-rose-50/50 border border-rose-100 p-2 rounded-lg">
-                              <p className="text-[10px] text-rose-805 uppercase font-semibold tracking-wide">Absent</p>
-                              <p className="font-bold text-lg text-rose-700 mt-0.5">{absentCount}</p>
-                            </div>
-                            <div className="bg-blue-50/50 border border-blue-100 p-2 rounded-lg">
-                              <p className="text-[10px] text-blue-805 uppercase font-semibold tracking-wide">OD</p>
-                              <p className="font-bold text-lg text-blue-700 mt-0.5">{odCount}</p>
-                            </div>
-                          </div>
-
-                          {/* List Exceptions */}
-                          {(absentCount > 0 || odCount > 0) ? (
-                            <div className="space-y-2.5 pt-1">
-                              {absentCount > 0 && (
-                                <div className="space-y-1">
-                                  <span className="text-[10px] text-rose-600 uppercase tracking-wider font-semibold">Absent ({absentCount}):</span>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {classStudents.filter(s => localAttendance[s.id] === "absent").map(s => (
-                                      <span key={s.id} className="px-2.5 py-0.5 bg-rose-50 border border-rose-200 text-rose-805 text-xs rounded-md font-medium">
-                                        {s.name}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {odCount > 0 && (
-                                <div className="space-y-1">
-                                  <span className="text-[10px] text-blue-600 uppercase tracking-wider font-semibold">On Duty ({odCount}):</span>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {classStudents.filter(s => localAttendance[s.id] === "od").map(s => (
-                                      <span key={s.id} className="px-2.5 py-0.5 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-md font-medium">
-                                        {s.name}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="p-3 bg-white border border-slate-200 rounded-lg text-center text-slate-500 font-medium text-xs flex items-center justify-center gap-1.5">
-                              <CheckCircle className="h-4 w-4 text-emerald-500" />
-                              <span>All {classStudents.length} students are Present. No exceptions marked.</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Step 3 Wizard Actions */}
-                      <div className="flex gap-3 pt-3 border-t border-slate-100 shrink-0 mt-3">
-                        <button
-                          type="button"
-                          onClick={() => setAttendanceStep(2)}
-                          className="flex-1 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-md py-2.5 text-xs border border-slate-200 transition-colors cursor-pointer text-center"
-                        >
-                          Back
-                        </button>
-                        
-                        <button
-                          type="button"
-                          onClick={handleSaveAttendance}
-                          disabled={isSubmittingAttendance || !isDayConfigSet}
-                          className="flex-1 bg-slate-900 hover:bg-slate-900/90 text-white font-semibold rounded-md py-2.5 text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isSubmittingAttendance ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin shrink-0 text-current" />
-                              <span>Saving...</span>
-                            </>
-                          ) : !isDayConfigSet ? (
-                            "Type of Day Not Set"
-                          ) : (
-                            "Confirm & Save"
-                          )}
-                        </button>
-                      </div>
-                    </div>
+              {/* Class Info Box - Minimal & Clean */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl mb-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-bold text-slate-900 truncate">{selectedCell.slot.course}</span>
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700 shrink-0">
+                    {deptShort || "Class"}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 font-medium">
+                  {yearStr && <span className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold">{yearStr}</span>}
+                  {sem && <span className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold">{sem}</span>}
+                  <span className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold">{shiftLabel}</span>
+                  <span>•</span>
+                  <span>{selectedCell.dateFormatted}</span>
+                  <span>•</span>
+                  <span>{formatTimeLabel(selectedCell.time)}</span>
+                  {selectedCell.slot.location && (
+                    <>
+                      <span>•</span>
+                      <span className="truncate max-w-[120px]">{selectedCell.slot.location}</span>
+                    </>
                   )}
                 </div>
-              );
-            })()}
+              </div>
 
-            {/* Handover Tab */}
-            {modalTab === "handover" && (() => {
-              const todayStr = new Date().toISOString().slice(0, 10);
-              const isFuture = selectedCell.dateStr > todayStr || (selectedCell.dateStr === todayStr && (() => {
-                const periodStart = parseSlotStartTime(selectedCell.time);
-                return periodStart ? new Date() < periodStart : false;
-              })());
-
-              // 1. Cannot request handover for coverage class
-              if (selectedCell.type === "covering") {
-                return (
-                  <div className="py-8 px-4 bg-rose-50 border border-rose-100 rounded-xl text-center text-xs text-rose-800 space-y-2 shrink-0">
-                    <AlertCircle className="h-8 w-8 mx-auto text-rose-500" />
-                    <p className="font-bold">Cannot Handover Coverage Class</p>
-                    <p className="text-gray-500 font-medium">You are covering this class for <span className="font-bold">{mentors.find(m => m.id === selectedCell.originalMentorId)?.name || "another staff member"}</span>. You cannot request handover for a class you are covering.</p>
-                  </div>
-                );
-              }
-
-              // 2. Prevent requesting handover if already pending or approved
-              const pendingReq = requests.find(r => r.slotId === selectedCell.slot!.id && r.dateStr === selectedCell.dateStr && (r.status === "pending" || r.status === "pending_cam"));
-              const approvedReq = approvedHandovers.find(h => h.slotId === selectedCell.slot!.id && h.dateStr === selectedCell.dateStr);
-
-              if (approvedReq) {
-                return (
-                  <div className="py-8 px-4 bg-teal-55 border border-teal-100 rounded-xl text-center text-xs text-teal-800 space-y-2 shrink-0">
-                    <CheckCircle className="h-8 w-8 mx-auto text-teal-500" />
-                    <p className="font-bold">Handover Approved</p>
-                    <p className="text-gray-500 font-medium">This class slot has already been approved for handover on this date to <span className="font-bold">{approvedReq.coverStaffName}</span>.</p>
-                  </div>
-                );
-              }
-
-              if (pendingReq) {
-                return (
-                  <div className="py-8 px-4 bg-amber-50 border border-amber-100 rounded-xl text-center text-xs text-amber-805 space-y-2 shrink-0">
-                    <AlertCircle className="h-8 w-8 mx-auto text-amber-500 animate-pulse" />
-                    <p className="font-bold">Handover Pending</p>
-                    <p className="text-gray-500 font-medium">A handover request for this class slot on this date is already pending approval (Sent to: <span className="font-bold text-amber-900">{pendingReq.targetStaffName}</span>).</p>
-                  </div>
-                );
-              }
-
-              // 3. Otherwise, render the form
-              return (
-                <form onSubmit={submitAction} className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                  <div className="flex-1 min-h-0 overflow-y-auto space-y-4 py-1 pr-1 pb-1">
-                    {!isFuture && (
-                      <div className="p-3 bg-indigo-50 border border-indigo-100 text-indigo-900 text-[11px] rounded-xl font-semibold flex gap-1.5 items-start">
-                        <AlertCircle className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
-                        <div>
-                          <span className="font-bold text-indigo-700">Emergency Request:</span> Since this class period has already passed, this request requires Campus Manager (CM) approval first. Once approved, the cover staff can accept it.
-                        </div>
+              {/* Locked Window / Handed Over Notifications */}
+              {isLocked ? (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-center text-xs text-red-800 space-y-2 mb-2">
+                  <Lock className="h-6 w-6 mx-auto text-red-500" />
+                  <p className="font-bold">Attendance Window Closed</p>
+                  <p className="text-slate-500">{windowCheck.message}</p>
+                </div>
+              ) : selectedCell.type === "own" && approvedReq ? (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-800 space-y-2 mb-2">
+                  <CheckCircle className="h-6 w-6 mx-auto text-slate-600" />
+                  <p className="font-bold">Class Handed Over</p>
+                  <p className="text-slate-500">This class has been handed over to <strong>{approvedReq.coverStaffName}</strong>.</p>
+                </div>
+              ) : modalTab === "attendance" ? (
+                /* Two Distinct Action Choices */
+                <div className="space-y-3">
+                  {/* Choice 1: Mark Attendance */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsModalOpen(false);
+                      setIsAttendanceStudioOpen(true);
+                    }}
+                    className="w-full text-left p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50 transition-all shadow-2xs cursor-pointer group flex items-start gap-3"
+                  >
+                    <div className="p-2 rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition-colors shrink-0 mt-0.5">
+                      <CheckCircle className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="font-bold text-sm text-slate-900">
+                          Mark Attendance
+                        </span>
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                          {classStudents.length} Students
+                        </span>
                       </div>
-                    )}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-gray-705">Select Semester</label>
-                      <select
-                        value={modalSemester}
-                        disabled={true}
-                        className="w-full bg-gray-50 border border-gray-205 rounded-xl px-3 py-2.5 text-xs text-gray-500 focus:outline-none cursor-not-allowed font-bold"
-                      >
-                        <option value="Semester 1">Semester 1</option>
-                        <option value="Semester 2">Semester 2</option>
-                        <option value="Semester 3">Semester 3</option>
-                        <option value="Semester 4">Semester 4</option>
-                        <option value="Semester 5">Semester 5</option>
-                        <option value="Semester 6">Semester 6</option>
-                      </select>
+                      <p className="text-xs text-slate-500 font-normal leading-relaxed">
+                        Open student roster to mark, edit, or verify attendance.
+                      </p>
+                      {alreadyMarked ? (
+                        <div className="text-[11px] font-medium text-emerald-700 mt-2 flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> Marked: {prevPresent} Present, {prevAbsent} Absent
+                        </div>
+                      ) : (
+                        <div className="text-[11px] font-medium text-slate-400 mt-2">
+                          Not marked yet
+                        </div>
+                      )}
                     </div>
+                  </button>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-gray-755 font-black">Select Covering Staff Member</label>
-                      <select
-                        value={targetStaffId}
-                        onChange={(e) => setTargetStaffId(e.target.value)}
-                        className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-xs text-gray-855 focus:outline-none focus:ring-1 focus:ring-indigo-650"
-                      >
-                        <option value="">-- Choose Covering Staff --</option>
-                        {(() => {
-                          const { sorted, classGroupMentorIds, classGroupMentorSubjects } = getCoveringStaffOptions(selectedCell.slot!);
-                          
-                          return sorted.map(m => {
-                            const isClassGroup = classGroupMentorIds.has(m.id);
-                            const isOccupied = isMentorOccupied(
-                              m.id,
-                              selectedCell.slot!.day,
-                              selectedCell.slot!.time,
-                              selectedCell.slot!.shift,
-                              selectedCell.dateStr
-                            );
-
-                            let badge = "";
-                            if (isClassGroup) {
-                              const subs = classGroupMentorSubjects.get(m.id) || [];
-                              badge = subs.length > 0 ? ` (${subs.join(", ")})` : "";
-                            }
-
-                            let label = m.name + badge;
-                            if (isOccupied) {
-                              label = `Warning: [Occupied] ${label}`;
-                            }
-                            
-                            return (
-                              <option key={m.id} value={m.id} disabled={isOccupied}>
-                                {label}
-                              </option>
-                            );
-                          });
-                        })()}
-                        {(() => {
-                          const { sorted } = getCoveringStaffOptions(selectedCell.slot!);
-                          return sorted.length === 0 && (
-                            <option value="">No other staff available to assign</option>
-                          );
-                        })()}
-                      </select>
+                  {/* Choice 2: Request Handover */}
+                  <button
+                    type="button"
+                    onClick={() => setModalTab("handover")}
+                    className="w-full text-left p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50 transition-all shadow-2xs cursor-pointer group flex items-start gap-3"
+                  >
+                    <div className="p-2 rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition-colors shrink-0 mt-0.5">
+                      <Send className="w-5 h-5" />
                     </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-gray-705">Reason for Class Handover</label>
-                      <textarea
-                        rows={3}
-                        placeholder="e.g. Attending a conference / Medical leaves. Need class coverage on this day."
-                        value={reasonText}
-                        onChange={(e) => setReasonText(e.target.value)}
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-650 focus:border-indigo-650"
-                      />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="font-bold text-sm text-slate-900">
+                          Request Handover
+                        </span>
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                          Substitution
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 font-normal leading-relaxed">
+                        Delegate this period to a peer faculty mentor in your department.
+                      </p>
                     </div>
-                  </div>
-
-                  <div className="flex gap-3 pt-3 border-t border-slate-100 mt-3 shrink-0">
+                  </button>
+                </div>
+              ) : (
+                /* Handover Submission Form */
+                <form onSubmit={submitAction} className="flex-1 flex flex-col min-h-0 space-y-3">
+                  <div className="flex items-center justify-between">
                     <button
                       type="button"
-                      onClick={() => setIsModalOpen(false)}
-                      className="flex-1 bg-gray-100 hover:bg-gray-150 text-gray-655 hover:text-gray-800 rounded-xl py-2.5 text-xs font-bold border border-gray-200 transition-colors cursor-pointer"
+                      onClick={() => setModalTab("attendance")}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-900 cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" /> Back to Actions
+                    </button>
+                    <span className="text-xs font-bold text-slate-800">Handover Request</span>
+                  </div>
+
+                  {formError && (
+                    <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 flex items-start gap-1.5">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{formError}</span>
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-700">Select Covering Staff</label>
+                    <select
+                      value={targetStaffId}
+                      onChange={(e) => setTargetStaffId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-medium focus:outline-none focus:border-slate-900"
+                    >
+                      <option value="">-- Choose Covering Staff --</option>
+                      {(() => {
+                        const { sorted, classGroupMentorIds, classGroupMentorSubjects } = getCoveringStaffOptions(selectedCell.slot!);
+                        return sorted.map(m => {
+                          const isClassGroup = classGroupMentorIds.has(m.id);
+                          const isOccupied = isMentorOccupied(
+                            m.id,
+                            selectedCell.slot!.day,
+                            selectedCell.slot!.time,
+                            selectedCell.slot!.shift,
+                            selectedCell.dateStr
+                          );
+                          let badge = "";
+                          if (isClassGroup) {
+                            const subs = classGroupMentorSubjects.get(m.id) || [];
+                            badge = subs.length > 0 ? ` (${subs.join(", ")})` : "";
+                          }
+                          return (
+                            <option key={m.id} value={m.id} disabled={isOccupied}>
+                              {isOccupied ? `[Occupied] ` : ""}{m.name}{badge}
+                            </option>
+                          );
+                        });
+                      })()}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-700">Reason for Handover</label>
+                    <textarea
+                      rows={3}
+                      placeholder="e.g. Attending conference / Medical leave..."
+                      value={reasonText}
+                      onChange={(e) => setReasonText(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 focus:outline-none focus:border-slate-900"
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setModalTab("attendance")}
+                      className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 rounded-xl text-xs transition-colors cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={swapSubmitting}
-                      className="flex-1 btn-gradient text-white font-extrabold rounded-xl py-2.5 text-xs flex items-center justify-center gap-1.5 shadow-md transition-colors cursor-pointer border-none disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-xl text-xs shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       {swapSubmitting ? (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin shrink-0 text-white" />
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           <span>Submitting...</span>
                         </>
                       ) : (
                         <>
-                          <Send className="h-3.5 w-3.5" />
-                          <span>Request Handover</span>
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Submit Request</span>
                         </>
                       )}
                     </button>
                   </div>
                 </form>
-              );
-            })()}
-          </div>
-        </div>
-      )}
+              )}
 
-      {(activeTab === "tracker" || activeTab === "interviews") && (() => {
+              {/* Close Button Footer */}
+              <div className="pt-3 border-t border-slate-100 mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* POPUP 2: DEDICATED FULL-SCREEN ATTENDANCE STUDIO                      */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {isAttendanceStudioOpen && selectedCell && selectedCell.slot && (() => {
+        const { name: deptShort, sem } = getShortClassGroup(selectedCell.slot.classGroup);
+        const yearStr = getYearForClass(selectedCell.slot.classGroup);
+
+        const classStudents = students.filter(
+          (student) => isClassGroupMatch(student.classGroup, selectedCell.slot!.classGroup)
+        );
+
+        const today = new Date();
+        const y = today.getFullYear();
+        const m = String(today.getMonth() + 1).padStart(2, '0');
+        const d = String(today.getDate()).padStart(2, '0');
+        const todayStr = `${y}-${m}-${d}`;
+
+        const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
+        const isLocked = !windowCheck.open && windowCheck.reason === "expired";
+        const isPastDay = selectedCell.dateStr < todayStr || isLocked;
+
+        const presentCount = Object.values(localAttendance).filter(v => v === "present").length;
+        const absentCount = Object.values(localAttendance).filter(v => v === "absent").length;
+        const odCount = Object.values(localAttendance).filter(v => v === "od").length;
+
+        const filteredStudents = classStudents.filter(s => {
+          const matchesSearch = !attendanceSearchTerm || 
+            s.name.toLowerCase().includes(attendanceSearchTerm.toLowerCase()) || 
+            s.id.toLowerCase().includes(attendanceSearchTerm.toLowerCase());
+          if (!matchesSearch) return false;
+          const stStatus = localAttendance[s.id] || "present";
+          if (attendanceFilterStatus !== "all" && stStatus !== attendanceFilterStatus) return false;
+          return true;
+        });
+
+        const setStudentStatus = (studentId: string, status: "present" | "absent" | "od") => {
+          if (isPastDay) return;
+          setLocalAttendance(prev => ({
+            ...prev,
+            [studentId]: status
+          }));
+        };
+
+        const handleToggleStudent = (studentId: string) => {
+          if (isPastDay) return;
+          setLocalAttendance(prev => {
+            const cur = prev[studentId] || "present";
+            let next: "present" | "absent" | "od" = "absent";
+            if (cur === "present") next = "absent";
+            else if (cur === "absent") next = "od";
+            else next = "present";
+            return { ...prev, [studentId]: next };
+          });
+        };
+
+        const handleMarkAll = (status: "present" | "absent" | "od") => {
+          if (isPastDay) return;
+          const updated: Record<string, "present" | "absent" | "od" | "not_marked"> = {};
+          classStudents.forEach(s => {
+            updated[s.id] = status;
+          });
+          setLocalAttendance(updated);
+        };
+
+        const handleSaveAttendance = async () => {
+          const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
+          if (!windowCheck.open && windowCheck.reason === "expired") {
+            setFormError(windowCheck.message || "Attendance window is closed.");
+            return;
+          }
+
+          setIsSubmittingAttendance(true);
+          setFormError("");
+          try {
+            const attendancePayload = classStudents.map(s => ({
+              studentId: s.id,
+              status: localAttendance[s.id] || "present"
+            }));
+            
+            let finalSubject = selectedCell.slot!.course;
+            if (selectedCell.type === "covering") {
+              if (handoverSubject === "substitute_own" && selectedSubjName) {
+                finalSubject = selectedSubjName;
+              } else if (handoverSubject === "custom" && customSubjName.trim()) {
+                finalSubject = customSubjName.trim();
+              }
+            }
+
+            const res = await markAttendance(
+              selectedCell.slot!.id, 
+              selectedCell.dateStr, 
+              attendancePayload,
+              selectedCell.type === "covering" ? finalSubject : undefined,
+              attendanceType,
+              attendanceMode,
+              attendanceType === "Non-Regular" ? attendanceTypeSub : undefined
+            );
+            if (res.success) {
+              setIsAttendanceStudioOpen(false);
+              toast("Attendance saved and verified successfully!", "success");
+            } else {
+              setFormError(res.message || "Failed to mark attendance.");
+            }
+          } catch (err: any) {
+            setFormError(err.message || "Something went wrong.");
+          } finally {
+            setIsSubmittingAttendance(false);
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+            <div className="relative w-full max-w-5xl h-[90vh] bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+              
+              {/* Studio Header - Sleek Minimalist */}
+              <div className="px-5 py-3.5 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base font-bold text-slate-900 leading-tight">
+                        Attendance — {selectedCell.slot.course}
+                      </h3>
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+                        {deptShort || "Class"}
+                      </span>
+                      {yearStr && <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-50 text-slate-600 border border-slate-200">{yearStr}</span>}
+                      {sem && <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-50 text-slate-600 border border-slate-200">{sem}</span>}
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-2">
+                      <span>{selectedCell.dateFormatted}</span>
+                      <span>•</span>
+                      <span>{formatTimeLabel(selectedCell.time)}</span>
+                      {selectedCell.slot.location && (
+                        <>
+                          <span>•</span>
+                          <span>{selectedCell.slot.location}</span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsAttendanceStudioOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Minimal Top Toolbar: Clean Segmented Filter & Search */}
+              <div className="px-5 py-2.5 bg-slate-50/70 border-b border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3 shrink-0">
+                {/* Segmented Filter Pills */}
+                <div className="flex items-center bg-slate-200/60 p-1 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setAttendanceFilterStatus("all")}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      attendanceFilterStatus === "all" ? "bg-white text-slate-900 shadow-xs font-bold" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    All ({classStudents.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAttendanceFilterStatus("present")}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      attendanceFilterStatus === "present" ? "bg-white text-slate-900 shadow-xs font-bold" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Present ({presentCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAttendanceFilterStatus("absent")}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      attendanceFilterStatus === "absent" ? "bg-white text-slate-900 shadow-xs font-bold" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Absent ({absentCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAttendanceFilterStatus("od")}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      attendanceFilterStatus === "od" ? "bg-white text-slate-900 shadow-xs font-bold" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    OD ({odCount})
+                  </button>
+                </div>
+
+                {/* Search & Actions */}
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <div className="relative flex-1 md:w-56">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Search student or roll..."
+                      value={attendanceSearchTerm}
+                      onChange={(e) => setAttendanceSearchTerm(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1 text-xs text-slate-800 focus:outline-none focus:border-slate-400"
+                    />
+                  </div>
+                  {!isPastDay && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleMarkAll("present")}
+                        className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors cursor-pointer whitespace-nowrap shadow-2xs"
+                      >
+                        All Present
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMarkAll("absent")}
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 font-semibold text-xs transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        All Absent
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLocalAttendance(originalAttendance)}
+                        className="px-2 py-1 text-slate-500 hover:text-slate-800 font-semibold text-xs cursor-pointer"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {formError && (
+                <div className="p-3 mx-4 mt-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-600 shrink-0">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              {/* Roster Cards Grid - Clean Neutral Cards */}
+              <div className="flex-1 overflow-y-auto p-4 bg-slate-50/40">
+                {filteredStudents.length === 0 ? (
+                  <div className="py-16 text-center text-slate-400 text-xs font-medium">
+                    No students match your search or filter.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {filteredStudents.map((st, idx) => {
+                      const status = localAttendance[st.id] || "present";
+                      return (
+                        <div
+                          key={st.id}
+                          onClick={() => handleToggleStudent(st.id)}
+                          className="px-3.5 py-2.5 rounded-xl border border-slate-200 hover:border-slate-300 bg-white transition-all flex items-center justify-between gap-3 cursor-pointer select-none shadow-2xs"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-6 h-6 rounded-md bg-slate-100 text-slate-600 font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-xs text-slate-900 truncate">{st.name}</p>
+                              <p className="font-mono text-[10px] text-slate-400">{st.id}</p>
+                            </div>
+                          </div>
+
+                          {/* 3 Status Switcher Pill */}
+                          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/70 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => setStudentStatus(st.id, "present")}
+                              className={`px-2.5 py-1 rounded-md text-xs transition-all cursor-pointer ${
+                                status === "present"
+                                  ? "bg-emerald-600 text-white font-bold shadow-xs"
+                                  : "text-slate-500 hover:text-slate-900 font-medium"
+                              }`}
+                            >
+                              Present
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setStudentStatus(st.id, "absent")}
+                              className={`px-2.5 py-1 rounded-md text-xs transition-all cursor-pointer ${
+                                status === "absent"
+                                  ? "bg-rose-600 text-white font-bold shadow-xs"
+                                  : "text-slate-500 hover:text-rose-700 font-medium"
+                              }`}
+                            >
+                              Absent
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setStudentStatus(st.id, "od")}
+                              className={`px-2.5 py-1 rounded-md text-xs transition-all cursor-pointer ${
+                                status === "od"
+                                  ? "bg-blue-600 text-white font-bold shadow-xs"
+                                  : "text-slate-500 hover:text-blue-700 font-medium"
+                              }`}
+                            >
+                              OD
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Studio Bottom Footer */}
+              <div className="px-5 py-3.5 bg-white border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAttendanceStudioOpen(false);
+                    setIsModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <ChevronLeft className="w-4 h-4" /> Back to Options
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAttendanceStudioOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveAttendance}
+                    disabled={isSubmittingAttendance || isPastDay}
+                    className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-all cursor-pointer flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isSubmittingAttendance ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        <span>Saving Attendance...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Save &amp; Submit Attendance ({classStudents.length} Students)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {(activeTab === "tracker") && (() => {
         const campusDepts = Array.from(new Set(
           coursesList
             .filter(c => !c.college_id || c.college_id === currentMentor?.college_id)
@@ -5514,39 +5310,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
         return (
         <div className="space-y-6 font-sans">
-          {/* Sub-tab Navigation */}
-          <div className="flex justify-end border-b border-slate-150 pb-4">
-
-            {/* Sub-tab Dual Buttons */}
-            <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
-              <button
-                onClick={() => setTrackerSubView("tracker")}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                  trackerSubView === "tracker"
-                    ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
-                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                }`}
-              >
-                Task Tracker
-              </button>
-              <button
-                onClick={() => setTrackerSubView("interviews")}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                  trackerSubView === "interviews"
-                    ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
-                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                }`}
-              >
-                Interview Module (Dual Mode)
-              </button>
-            </div>
-          </div>
-
-          {(activeTab === "interviews" || trackerSubView === "interviews") ? (
-            <InterviewModule currentUserRole="mentor" currentUserName={currentMentor?.name || "Mentor"} />
-          ) : (
-            <div className="space-y-6">
-
           {/* Interactive 4-Dropdown Selector Bar: Department -> Semester -> Subject -> Week */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs font-sans">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -6460,10 +6223,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             })()}
           </div>
         </div>
+      );
+    })()}
+
+      {/* Standalone Dedicated Interview Module Tab */}
+      {activeTab === "interviews" && (
+        <div className="space-y-6 font-sans">
+          <InterviewModule currentUserRole="mentor" currentUserName={currentMentor?.name || "Mentor"} />
+        </div>
       )}
-    </div>
-  );
-})()}
 
           {/* Tab: Demo Evaluations */}
           {((activeTab as string) === "demo_evaluations") && (() => {

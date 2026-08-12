@@ -15,14 +15,14 @@ export async function GET() {
         (SELECT COUNT(*) FROM mentors m WHERE m.college_id = c.id) as mentor_count,
         (SELECT COUNT(*) FROM slots s JOIN mentors m ON s.mentorId = m.id WHERE m.college_id = c.id) as slot_count
       FROM colleges c
-      JOIN kam_users k ON c.kam_id = k.id
+      LEFT JOIN kam_users k ON c.kam_id = k.id
       ORDER BY c.name
     `);
 
     const campusManagers = await db.all(`
       SELECT cm.*, c.name as college_name
       FROM campus_managers cm
-      JOIN colleges c ON cm.college_id = c.id
+      LEFT JOIN colleges c ON cm.college_id = c.id
       ORDER BY cm.name
     `);
 

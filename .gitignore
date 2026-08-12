@@ -10,30 +10,74 @@
 *.tsbuildinfo
 next-env.d.ts
 
-# Temporary & Debug
+# Temporary, Debug & Scratch
 .DS_Store
+Thumbs.db
+desktop.ini
 *.pem
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 /scratch/
+scratch/
+scratch*
+/tmp/
+/temp/
+
+# Scripts & Launchers
+*.ps1
+*.bat
+*.cmd
+launch_*
+launch_all_cams.*
+
+# Python Cache & Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
 
 # Environment Secret Files
 .env
 .env*.local
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# Local SQLite Databases
+# Databases & Local SQLite
 /database.sqlite
 /database.sqlite.bak
 *.sqlite
+*.sqlite3
 *.sqlite.bak
+*.db
+*.db-shm
+*.db-wal
+*.db.bak
+zentra_timetable.db
 
 # Large Data & Excel Files
 *.xlsx
 *.xls
 *.csv
+
+# IDE & Editor
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.gemini/
 
 # Vercel
 .vercel

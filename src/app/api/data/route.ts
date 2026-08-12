@@ -38,7 +38,10 @@ export async function GET(request: Request) {
       notifications, announcements, holidays, loginHistory, users,
       weeklyTasks, studentTracker, smes, demoSessions, subjectGroups, demoRules,
       signupRequests, demoSwapRequests, kamTasks, campusIssues, academicYears, academicEvents,
-      studentInterviews
+      studentInterviews,
+      interviewEvaluations,
+      approvals,
+      leaveBalances
     ] = await Promise.all([
       db.all("SELECT * FROM mentors"),
       db.all("SELECT * FROM slots"),
@@ -68,7 +71,10 @@ export async function GET(request: Request) {
       db.all("SELECT * FROM campus_issues ORDER BY created_at DESC").catch(() => []),
       db.all("SELECT * FROM academic_years").catch(() => []),
       db.all("SELECT * FROM academic_events ORDER BY date ASC").catch(() => []),
-      db.all("SELECT * FROM student_interviews ORDER BY created_at DESC").catch(() => [])
+      db.all("SELECT * FROM student_interviews ORDER BY created_at DESC").catch(() => []),
+      db.all("SELECT * FROM interview_evaluations ORDER BY created_at DESC").catch(() => []),
+      db.all("SELECT * FROM approvals ORDER BY created_at DESC").catch(() => []),
+      db.all("SELECT * FROM leave_balances").catch(() => [])
     ]);
 
     let filteredColleges = colleges;
@@ -166,7 +172,10 @@ export async function GET(request: Request) {
       campusIssues,
       academicYears: academicYears.map((ay: any) => typeof ay === "string" ? ay : ay.year || ay.year_name || ay.name || String(ay)),
       academicEvents,
-      interviews: studentInterviews || []
+      interviews: studentInterviews || [],
+      interviewEvaluations: interviewEvaluations || [],
+      approvals: approvals || [],
+      leaveBalances: leaveBalances || []
     }, {
       headers: {
         "Cache-Control": "private, max-age=3, stale-while-revalidate=15"

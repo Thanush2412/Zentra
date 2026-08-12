@@ -1789,13 +1789,85 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   // Daily Day Type & Day Order Config states
   const [dailyStartDateStr, setDailyStartDateStr] = useState(new Date().toISOString().split("T")[0]);
   const [dailyEndDateStr, setDailyEndDateStr] = useState(new Date().toISOString().split("T")[0]);
-  const [dailyDayType, setDailyDayType] = useState<"regular" | "special" | "holiday" | "event" | "exam_day">("regular");
+  const [dailyDayType, setDailyDayType] = useState<string>("working");
   const [dailyDayOrder, setDailyDayOrder] = useState("Day 1");
-  const [dailySessionMode, setDailySessionMode] = useState<"Online" | "Offline">("Offline");
+  const [dailySessionMode, setDailySessionMode] = useState<string>("Offline");
   const [dailyNotes, setDailyNotes] = useState("");
   const [dailyConfigsList, setDailyConfigsList] = useState<any[]>([]);
   const [isDailyLoading, setIsDailyLoading] = useState(false);
   const [isDailySaving, setIsDailySaving] = useState(false);
+  const [autoAdvanceDayOrder, setAutoAdvanceDayOrder] = useState<boolean>(true);
+  const [skipSundays, setSkipSundays] = useState<boolean>(true);
+  const [editingDailyId, setEditingDailyId] = useState<string | null>(null);
+  const [isDailyConfigModalOpen, setIsDailyConfigModalOpen] = useState<boolean>(false);
+  const [dailySearchFilter, setDailySearchFilter] = useState<string>("");
+
+  const [classTeacherAssignments, setClassTeacherAssignments] = useState<any[]>([]);
+  const [selectedAssignYear, setSelectedAssignYear] = useState("Year 1");
+  const [selectedAssignClassGroup, setSelectedAssignClassGroup] = useState("");
+  const [selectedAssignMentorId, setSelectedAssignMentorId] = useState("");
+  const [isAssigningClassTeacher, setIsAssigningClassTeacher] = useState(false);
+
+  const fetchClassTeacherAssignments = async () => {
+    if (!activeCollegeId) return;
+    try {
+      const res = await fetch(`/api/class-teachers?college_id=${encodeURIComponent(activeCollegeId)}`);
+      const data = await res.json();
+      if (data.success) {
+        setClassTeacherAssignments(data.assignments || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch class teacher assignments:", err);
+    }
+  };
+
+  const handleSaveClassTeacherAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeCollegeId || !selectedAssignYear || !selectedAssignClassGroup || !selectedAssignMentorId) {
+      toast("Please select Year, Class Group, and Mentor.", "warning");
+      return;
+    }
+    setIsAssigningClassTeacher(true);
+    try {
+      const res = await fetch("/api/class-teachers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          college_id: activeCollegeId,
+          year: selectedAssignYear,
+          department: "General",
+          classGroup: selectedAssignClassGroup,
+          mentor_id: selectedAssignMentorId
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(data.message || "Class Teacher assigned successfully!", "success");
+        await fetchClassTeacherAssignments();
+        setSelectedAssignClassGroup("");
+        setSelectedAssignMentorId("");
+      } else {
+        toast(data.message || "Failed to assign Class Teacher.", "error");
+      }
+    } catch (err: any) {
+      toast("Error: " + err.message, "error");
+    } finally {
+      setIsAssigningClassTeacher(false);
+    }
+  };
+
+  const handleDeleteClassTeacherAssignment = async (id: string) => {
+    try {
+      const res = await fetch(`/api/class-teachers?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        toast("Assignment removed successfully.", "success");
+        await fetchClassTeacherAssignments();
+      }
+    } catch (err: any) {
+      toast("Error removing assignment: " + err.message, "error");
+    }
+  };
 
   useEffect(() => {
     const daysLimit = workingDays.length > 0 ? workingDays.length : 5;
@@ -1860,6 +1932,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [deptDesc, setDeptDesc] = useState("");
   const [deptShift, setDeptShift] = useState("shift_1");
   const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
+
 
   // Inline Department Edit states
   const [editDeptName, setEditDeptName] = useState("");
@@ -2742,6 +2815,93 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   };
 
+  const handleStartDateChange = (val: string) => {
+    setDailyStartDateStr(val);
+    if (!dailyEndDateStr || dailyEndDateStr < val) {
+      setDailyEndDateStr(val);
+    }
+  };
+
+  const handleDeleteDailyConfig = async (id: string, dateStr: string) => {
+    if (await showConfirm({
+      title: "Delete Daily Schedule Config",
+      message: `Are you sure you want to delete the schedule configuration for date "${dateStr}"?`,
+      danger: true,
+      confirmLabel: "Delete Config"
+    })) {
+      try {
+        const res = await fetch(`/api/daily-configs?id=${encodeURIComponent(id)}&college_id=${encodeURIComponent(activeCollegeId)}&dateStr=${encodeURIComponent(dateStr)}`, {
+          method: "DELETE"
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast(`Daily schedule configuration for ${dateStr} deleted.`, "success");
+          await fetchDailyConfigs();
+        } else {
+          toast(data.message || "Failed to delete config.", "error");
+        }
+      } catch (err: any) {
+        toast("Error deleting daily config: " + err.message, "error");
+      }
+    }
+  };
+
+  const handleDeleteDailyConfigRange = async () => {
+    if (!activeCollegeId) {
+      toast("Please select a college first.", "error");
+      return;
+    }
+    if (!dailyStartDateStr || !dailyEndDateStr) {
+      toast("Please select both From Date and To Date for range deletion.", "warning");
+      return;
+    }
+    if (dailyStartDateStr > dailyEndDateStr) {
+      toast("From Date cannot be after To Date.", "error");
+      return;
+    }
+
+    const rangeLabel = dailyStartDateStr === dailyEndDateStr ? dailyStartDateStr : `${dailyStartDateStr} to ${dailyEndDateStr}`;
+    if (await showConfirm({
+      title: "Delete Date Range Day Orders",
+      message: `Are you sure you want to delete ALL daily schedule configurations for date range "${rangeLabel}"?\n\nThis action cannot be undone.`,
+      danger: true,
+      confirmLabel: "Delete Date Range"
+    })) {
+      try {
+        const res = await fetch(`/api/daily-configs?college_id=${encodeURIComponent(activeCollegeId)}&startDate=${encodeURIComponent(dailyStartDateStr)}&endDate=${encodeURIComponent(dailyEndDateStr)}`, {
+          method: "DELETE"
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast(`All daily schedule configurations between ${rangeLabel} deleted successfully.`, "success");
+          setEditingDailyId(null);
+          await fetchDailyConfigs();
+        } else {
+          toast(data.message || "Failed to delete date range configs.", "error");
+        }
+      } catch (err: any) {
+        toast("Error deleting date range configs: " + err.message, "error");
+      }
+    }
+  };
+
+  const handleStartEditDailyConfig = (cfg: any) => {
+    setEditingDailyId(cfg.id || cfg.dateStr);
+    setDailyStartDateStr(cfg.dateStr);
+    setDailyEndDateStr(cfg.dateStr);
+    setDailyDayType(cfg.day_type || "working");
+    setDailyDayOrder(cfg.day_order || "Day 1");
+    setDailySessionMode(cfg.session_mode || "Offline");
+    setDailyNotes(cfg.notes || "");
+    setIsDailyConfigModalOpen(true);
+    toast(`Editing Day Order schedule for ${cfg.dateStr}`, "info");
+  };
+
+  const handleCancelDailyEdit = () => {
+    setEditingDailyId(null);
+    setDailyNotes("");
+  };
+
   const handleSaveDailyConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCollegeId) {
@@ -2765,13 +2925,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           day_type: dailyDayType,
           day_order: dailyDayType === "holiday" ? "None" : dailyDayOrder,
           session_mode: dailySessionMode,
-          notes: dailyNotes
+          notes: dailyNotes,
+          auto_advance: autoAdvanceDayOrder,
+          skip_sundays: skipSundays
         })
       });
       const data = await res.json();
       if (data.success) {
-        toast("Daily day order configuration saved successfully.", "success");
+        toast(editingDailyId ? "Daily day order configuration updated successfully." : "Daily day order configuration saved successfully.", "success");
         setDailyNotes("");
+        setEditingDailyId(null);
         await fetchDailyConfigs();
       } else {
         toast(data.message || "Failed to save daily config.", "error");
@@ -3506,7 +3669,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
     const deptSubjects = getSubjectsForDepartment(collegeSubjects, collegeMentors, collegeSlots, targetDept);
     const semSubjects = deptSubjects.filter(
-      (s) => s.semester.toLowerCase().trim() === genSelectedSemester.toLowerCase().trim()
+      (s) => s && s.semester && (s.semester || "").toLowerCase().trim() === (genSelectedSemester || "").toLowerCase().trim()
     );
 
     const deptMentors = collegeMentors.filter((m) => isMentorInProgram(m, targetDept, collegeSlots, collegeSubjects));
@@ -4252,176 +4415,36 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   ))}
                 </div>
 
-              {/* Daily Day Order & Status Settings Banner & Quick Config Panel */}
-              <div className="bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-pink-500/10 border border-indigo-200/80 rounded-xl p-6 shadow-sm space-y-5 animate-gsap-card">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-indigo-100/80 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-black shadow-md shrink-0">
+              {/* Daily Day Order & Status Settings Banner - Opens All-in-One Popup Modal */}
+              <div className="bg-white border border-slate-200 shadow-xs rounded-2xl p-5 flex justify-between items-center flex-wrap gap-4 hover:border-slate-300 transition-all animate-gsap-card">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-slate-100 text-slate-800 rounded-xl border border-slate-200/80">
                       <Calendar className="h-5 w-5" />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-black text-slate-900 tracking-tight">Daily Day Order & Status Settings</h3>
-                      <p className="text-xs font-semibold text-slate-500 mt-0.5">
-                        Set working day order, holiday status, exam days, and session modes for active schedules.
-                      </p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">
+                        Daily Day Order & Status Settings
+                      </h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-600 border border-slate-200">
+                        {dailyConfigsList.length} Records Configured
+                      </span>
                     </div>
                   </div>
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-indigo-200/60 shadow-xs self-start sm:self-auto">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-xs font-bold text-slate-700">
-                      Today: <span className="text-indigo-600 font-extrabold">{dailyDayType === "holiday" ? "Holiday" : dailyDayOrder}</span> ({dailyDayType.toUpperCase()})
-                    </span>
-                  </div>
+                  <p className="text-xs text-slate-500 font-medium pl-10">
+                    Configure daily working days, holidays, campus events, exam days, session modes, and continuous day order cycles (Day 1 ➔ Day 6).
+                  </p>
                 </div>
 
-                <form onSubmit={handleSaveDailyConfig} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 items-end bg-white/80 p-4 rounded-xl border border-slate-200/80 shadow-xs">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">From Date</label>
-                    <input
-                      type="date"
-                      value={dailyStartDateStr}
-                      onChange={e => {
-                        setDailyStartDateStr(e.target.value);
-                        if (e.target.value > dailyEndDateStr) {
-                          setDailyEndDateStr(e.target.value);
-                        }
-                      }}
-                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none shadow-xs cursor-pointer text-slate-800"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">To Date</label>
-                    <input
-                      type="date"
-                      value={dailyEndDateStr}
-                      min={dailyStartDateStr}
-                      onChange={e => setDailyEndDateStr(e.target.value)}
-                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none shadow-xs cursor-pointer text-slate-800"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Day Type</label>
-                    <select
-                      value={dailyDayType}
-                      onChange={e => {
-                        const val = e.target.value as any;
-                        setDailyDayType(val);
-                        if (val === "holiday") {
-                          setDailyDayOrder("None");
-                        } else if (dailyDayOrder === "None") {
-                          setDailyDayOrder("Day 1");
-                        }
-                      }}
-                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none shadow-xs cursor-pointer text-slate-800"
-                    >
-                      <option value="regular">Working Day</option>
-                      <option value="holiday">Holiday</option>
-                      <option value="event">Event</option>
-                      <option value="exam_day">Exam Day</option>
-                      <option value="special">Special Day</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Day Order</label>
-                    <select
-                      value={dailyDayOrder}
-                      onChange={e => setDailyDayOrder(e.target.value)}
-                      disabled={dailyDayType === "holiday"}
-                      className={`w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none shadow-xs cursor-pointer text-slate-800 ${
-                        dailyDayType === "holiday" ? "bg-slate-100 text-slate-400 cursor-not-allowed" : ""
-                      }`}
-                    >
-                      {Array.from({ length: workingDays.length > 0 ? workingDays.length : 5 }).map((_, idx) => (
-                        <option key={idx} value={`Day ${idx + 1}`}>{`Day ${idx + 1}`}</option>
-                      ))}
-                      <option value="None">None</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Session Mode</label>
-                    <select
-                      value={dailySessionMode}
-                      onChange={e => setDailySessionMode(e.target.value as any)}
-                      disabled={dailyDayType === "holiday"}
-                      className={`w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none shadow-xs cursor-pointer text-slate-800 ${
-                        dailyDayType === "holiday" ? "bg-slate-100 text-slate-400 cursor-not-allowed" : ""
-                      }`}
-                    >
-                      <option value="Offline">Offline (In-Person)</option>
-                      <option value="Online">Online (Remote)</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Notes / Reason</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Day 1, Lab session..."
-                      value={dailyNotes}
-                      onChange={e => setDailyNotes(e.target.value)}
-                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none text-slate-800"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block opacity-0 pointer-events-none hidden lg:block">Action</label>
-                    <button
-                      type="submit"
-                      disabled={isDailySaving}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-extrabold text-xs rounded-xl shadow-md cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isDailySaving ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                          <span>Saving...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Save className="h-4 w-4 shrink-0" />
-                          <span>Save Settings</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </form>
-
-                {/* Recent Day Order Records Log */}
-                {dailyConfigsList.length > 0 && (
-                  <div className="bg-white/60 p-3 rounded-xl border border-indigo-100/60 space-y-2">
-                    <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Recent Day Order Records</h4>
-                    <div className="max-h-[140px] overflow-y-auto space-y-1 pr-1 divide-y divide-slate-100">
-                      {dailyConfigsList.slice(0, 5).map(log => (
-                        <div key={log.id} className="flex justify-between items-center py-1.5 first:pt-0 last:pb-0 text-xs font-medium">
-                          <div className="flex items-center gap-3">
-                            <span className="font-bold text-slate-800">{log.dateStr}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                              log.day_type === "holiday" 
-                                ? "bg-rose-100 text-rose-700" 
-                                : log.day_type === "special" 
-                                ? "bg-amber-100 text-amber-800" 
-                                : log.day_type === "event"
-                                ? "bg-blue-100 text-blue-800"
-                                : log.day_type === "exam_day"
-                                ? "bg-purple-100 text-purple-800"
-                                : "bg-emerald-100 text-emerald-800"
-                            }`}>
-                              {log.day_type}
-                            </span>
-                            <span className="font-bold text-indigo-600">{log.day_order}</span>
-                            <span className="text-slate-400 font-medium">({log.session_mode || "Offline"})</span>
-                          </div>
-                          {log.notes && <span className="text-[11px] text-slate-500 italic max-w-xs truncate">{log.notes}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={() => setIsDailyConfigModalOpen(true)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white shadow-sm font-extrabold"
+                  icon={<Calendar className="h-4 w-4" />}
+                >
+                  Open Daily Schedule Configurator
+                </Button>
               </div>
 
 
@@ -4584,174 +4607,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
                 </div>
 
-                {/* Daily Day Order & Day Type Setup */}
-                <div className="space-y-4 bg-slate-50/50 p-5 rounded-xl border border-slate-200 lg:col-span-2">
-                  <h3 className="text-xs font-black text-indigo-655 uppercase tracking-wider border-b border-slate-100 pb-2">Daily Day Order & Status Settings</h3>
-                  <form onSubmit={handleSaveDailyConfig} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 items-end">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 uppercase font-bold block">From Date</label>
-                      <input
-                        type="date"
-                        value={dailyStartDateStr}
-                        onChange={e => {
-                          setDailyStartDateStr(e.target.value);
-                          if (e.target.value > dailyEndDateStr) {
-                            setDailyEndDateStr(e.target.value);
-                          }
-                        }}
-                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer"
-                        required
-                      />
-                    </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 uppercase font-bold block">To Date</label>
-                      <input
-                        type="date"
-                        value={dailyEndDateStr}
-                        min={dailyStartDateStr}
-                        onChange={e => setDailyEndDateStr(e.target.value)}
-                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 uppercase font-bold block">Day Type</label>
-                      <select
-                        value={dailyDayType}
-                        onChange={e => {
-                          const val = e.target.value as any;
-                          setDailyDayType(val);
-                          if (val === "holiday") {
-                            setDailyDayOrder("None");
-                          } else if (dailyDayOrder === "None") {
-                            setDailyDayOrder("Day 1");
-                          }
-                        }}
-                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer"
-                      >
-                        <option value="regular">Working Day</option>
-                        <option value="holiday">Holiday</option>
-                        <option value="event">Event</option>
-                        <option value="exam_day">Exam Day</option>
-                        <option value="special">Special Day</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 uppercase font-bold block">Day Order</label>
-                      <select
-                        value={dailyDayOrder}
-                        onChange={e => setDailyDayOrder(e.target.value)}
-                        disabled={dailyDayType === "holiday"}
-                        className={`w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer ${
-                          dailyDayType === "holiday" ? "bg-slate-100 text-slate-400 cursor-not-allowed" : ""
-                        }`}
-                      >
-                        {Array.from({ length: workingDays.length > 0 ? workingDays.length : 5 }).map((_, idx) => (
-                          <option key={idx} value={`Day ${idx + 1}`}>{`Day ${idx + 1}`}</option>
-                        ))}
-                        <option value="None">None</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 uppercase font-bold block">Session Mode</label>
-                      <select
-                        value={dailySessionMode}
-                        onChange={e => setDailySessionMode(e.target.value as any)}
-                        disabled={dailyDayType === "holiday"}
-                        className={`w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer ${
-                          dailyDayType === "holiday" ? "bg-slate-100 text-slate-400 cursor-not-allowed" : ""
-                        }`}
-                      >
-                        <option value="Offline">Offline (In-Person)</option>
-                        <option value="Online">Online (Remote)</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 uppercase font-bold block">Notes / Description</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Day Order 1, Biometric down..."
-                        value={dailyNotes}
-                        onChange={e => setDailyNotes(e.target.value)}
-                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 uppercase font-bold block opacity-0 pointer-events-none hidden lg:block">Action</label>
-                      <button
-                        type="submit"
-                        disabled={isDailySaving}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-extrabold text-xs rounded-xl shadow-md cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isDailySaving ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                            <span>Saving...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Save className="h-4 w-4 shrink-0" />
-                            <span>Save Settings</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-
-                  {/* Logs list */}
-                  <div className="space-y-2 pt-2">
-                    <h4 className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Recent Day Order Records</h4>
-                    {isDailyLoading ? (
-                      <div className="text-center py-4 text-slate-400 italic text-xs">Loading records...</div>
-                    ) : dailyConfigsList.length === 0 ? (
-                      <div className="text-center py-4 text-slate-350 italic text-[11px] border border-dashed border-slate-200 rounded-xl bg-white">
-                        No day configurations saved yet. Use the form above to log daily statuses.
-                      </div>
-                    ) : (
-                      <div className="max-h-[200px] overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
-                        {dailyConfigsList.map(log => (
-                          <div key={log.id} className="flex justify-between items-center py-2 first:pt-0 last:pb-0 text-[11px]">
-                            <div className="flex items-center gap-3">
-                              <span className="font-extrabold text-slate-800">{log.dateStr}</span>
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                                log.day_type === "holiday" 
-                                  ? "bg-rose-100 text-rose-700" 
-                                  : log.day_type === "special" 
-                                  ? "bg-amber-100 text-amber-800" 
-                                  : log.day_type === "event"
-                                  ? "bg-blue-100 text-blue-800"
-                                  : log.day_type === "exam_day"
-                                  ? "bg-purple-100 text-purple-800"
-                                  : "bg-emerald-100 text-emerald-800"
-                              }`}>
-                                {log.day_type === "regular" ? "Working Day" : log.day_type === "exam_day" ? "Exam Day" : log.day_type}
-                              </span>
-                              <span className="font-black text-indigo-650 font-mono bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md text-[9.5px]">
-                                {log.day_order}
-                              </span>
-                              {log.day_type !== "holiday" && (
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                                  log.session_mode === "Online"
-                                    ? "bg-sky-100 text-sky-800"
-                                    : "bg-slate-100 text-slate-700"
-                                }`}>
-                                  {log.session_mode || "Offline"}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-slate-450 italic font-medium">{log.notes || "—"}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
 
                 {/* Academic Calendar Events CRUD */}
                 <div className="md:col-span-2 pt-6 border-t border-slate-200 space-y-4">
@@ -4842,6 +4698,165 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       })}
                   </div>
                 </div>
+
+                {/* Daily Day Order & Status Settings - Trigger Card & Popup Modal */}
+                <div className="md:col-span-2 pt-6 border-t border-slate-200">
+                  <div className="bg-white border border-slate-200 shadow-xs rounded-2xl p-5 flex justify-between items-center flex-wrap gap-4 hover:border-slate-300 transition-all">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 bg-slate-100 text-slate-800 rounded-xl border border-slate-200/80">
+                          <Calendar className="h-5 w-5" />
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">
+                            Daily Day Order & Status Settings
+                          </h3>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-600 border border-slate-200">
+                            {dailyConfigsList.length} Records Configured
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium pl-10">
+                        Configure daily working days, holidays, campus events, exam days, session modes, and continuous day order cycles (Day 1 ➔ Day 6).
+                      </p>
+                    </div>
+
+                    <Button
+                      variant="primary"
+                      size="md"
+                      onClick={() => setIsDailyConfigModalOpen(true)}
+                      className="bg-slate-900 hover:bg-slate-800 text-white shadow-sm font-extrabold"
+                      icon={<Calendar className="h-4 w-4" />}
+                    >
+                      Open Daily Schedule Configurator
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Class Teacher / Class Advisor Assignments Panel */}
+                <div className="md:col-span-2 pt-6 border-t border-slate-200 space-y-4">
+                  <div className="flex justify-between items-center flex-wrap gap-3 pb-2 border-b border-slate-100">
+                    <div>
+                      <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                        <Users className="h-4 w-4 text-[#D528A2]" />
+                        Class Teacher / Class Advisor Assignments
+                      </h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
+                        Assign a Class Teacher / Mentor for each Year & Class Group. Student Leave & OD requests will route directly to their assigned Class Teacher.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Form */}
+                  <form onSubmit={handleSaveClassTeacherAssignment} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50/80 p-5 border border-slate-200 rounded-2xl">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Academic Year</label>
+                      <select
+                        value={selectedAssignYear}
+                        onChange={e => setSelectedAssignYear(e.target.value)}
+                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
+                      >
+                        <option value="Year 1">Year 1</option>
+                        <option value="Year 2">Year 2</option>
+                        <option value="Year 3">Year 3</option>
+                        <option value="Year 4">Year 4</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Class Group / Cohort</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. CSE-A / Section A"
+                        value={selectedAssignClassGroup}
+                        onChange={e => setSelectedAssignClassGroup(e.target.value)}
+                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs text-slate-800"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Assigned Mentor / Class Teacher</label>
+                      <div className="flex gap-2">
+                        <select
+                          value={selectedAssignMentorId}
+                          onChange={e => setSelectedAssignMentorId(e.target.value)}
+                          className="flex-1 p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
+                          required
+                        >
+                          <option value="">Select Mentor...</option>
+                          {collegeMentors.map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} ({m.department}) - {m.email}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="submit"
+                          disabled={isAssigningClassTeacher}
+                          className="px-4 py-2.5 rounded-xl text-xs font-extrabold bg-[#D528A2] hover:bg-[#c02090] text-white shadow-sm transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                        >
+                          {isAssigningClassTeacher ? "Assigning..." : "Assign Teacher"}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+
+                  {/* Class Teacher Assignments Table */}
+                  <div className="border border-slate-200 rounded-2xl bg-white shadow-xs overflow-hidden">
+                    <div className="p-3 bg-slate-50/80 border-b border-slate-200 flex justify-between items-center">
+                      <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+                        Active Class Teacher Assignments ({classTeacherAssignments.length})
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto max-h-[220px] overflow-y-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="sticky top-0 bg-slate-100 z-10">
+                          <tr className="border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            <th className="p-3">Year</th>
+                            <th className="p-3">Class Group</th>
+                            <th className="p-3">Assigned Class Teacher</th>
+                            <th className="p-3">Department</th>
+                            <th className="p-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {classTeacherAssignments.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-6 text-center text-slate-400 italic text-xs">
+                                No Class Teachers assigned yet. Use the form above to assign mentors for each Year & Class Group.
+                              </td>
+                            </tr>
+                          ) : (
+                            classTeacherAssignments.map(a => (
+                              <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="p-3 font-extrabold text-slate-900">{a.year}</td>
+                                <td className="p-3 font-bold text-[#D528A2]">{a.classGroup}</td>
+                                <td className="p-3 font-semibold text-slate-800">
+                                  {a.mentor_name}
+                                  <span className="text-slate-400 block text-[10px] font-normal">{a.mentor_email}</span>
+                                </td>
+                                <td className="p-3 text-slate-600 font-medium">{a.mentor_department || a.department}</td>
+                                <td className="p-3 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteClassTeacherAssignment(a.id)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                    title="Remove Assignment"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+
 
                 {/* Student Profile Editing Permissions */}
                 <div className="md:col-span-2 pt-6 border-t border-slate-200 space-y-4">
@@ -6465,6 +6480,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     );
                   })()}
 
+                  {/* 5.5 INTERVIEW ALLOCATIONS & GMEET */}
+                  {activeTab === "interviews" && (
+                    <InterviewModule currentUserRole="cm" currentUserName={currentCAM?.name || "Campus Manager"} defaultCollegeId={activeCollegeId} />
+                  )}
+
                   {/* 6. ACADEMIC MONITORING */}
                   {activeTab === "monitoring" && (() => {
                     const analyzedStudents = collegeStudents.map(s => {
@@ -7456,8 +7476,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <CAMMentorAttendanceTab collegeId={activeCollegeId} camName={currentCAM?.name || "Campus Manager"} />
                   )}
 
-                  {/* Student Tracker Audit & Interview Module Tab */}
-                  {(activeTab === "tracker" || activeTab === "monitoring" || activeTab === "interviews") && (() => {
+                  {/* Student Tracker Audit Tab */}
+                  {(activeTab === "tracker" || activeTab === "monitoring") && (() => {
                     // ── DB-driven cascading filters ───────────────────────────────────────
                     // Helper: match college_id loosely (includes subjects with null college_id
                     // as well as those explicitly tied to this campus)
@@ -7528,48 +7548,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <GraduationCap className="h-5 w-5" />
                             </div>
                             <div>
-                              <h2 className="text-lg font-black text-slate-800 leading-tight">Student Tracker &amp; Interview Audit Console</h2>
+                              <h2 className="text-lg font-black text-slate-800 leading-tight">Student Task Tracker Audit Console</h2>
                               <p className="text-xs text-slate-455 font-medium mt-0.5">
-                                Audit student task submissions or evaluate internal &amp; external interviews.
+                                Audit student task submissions and progress across subjects and cohorts.
                               </p>
                             </div>
                           </div>
-
-                          {/* Sub-tab Dual Buttons */}
-                          <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
-                            <button
-                              onClick={() => {
-                                setCamTrackerSubView("tracker");
-                                setActiveTab("monitoring" as any);
-                              }}
-                              className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                                activeTab !== "interviews" && camTrackerSubView === "tracker"
-                                  ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
-                                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                              }`}
-                            >
-                              Task Tracker Audit
-                            </button>
-                            <button
-                              onClick={() => {
-                                setCamTrackerSubView("interviews");
-                                setActiveTab("interviews" as any);
-                              }}
-                              className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                                activeTab === "interviews" || camTrackerSubView === "interviews"
-                                  ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
-                                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                              }`}
-                            >
-                              Interview Module (Dual Mode)
-                            </button>
-                          </div>
                         </div>
-
-                        {(activeTab === "interviews" || camTrackerSubView === "interviews") ? (
-                          <InterviewModule currentUserRole="cm" currentUserName={currentCAM?.name || "Campus Manager"} defaultCollegeId={activeCollegeId} />
-                        ) : (
-                          <React.Fragment>
 
                         {/* Cascading Filters — all values come from DB */}
                         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
@@ -8005,11 +7990,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           );
                         })()}
                       </div>
-                    </React.Fragment>
-                  )}
-                </div>
-              );
-            })()}
+                    </div>
+                  );
+                })()}
 
                   {/* Tab: Student Directory & Bulk Import */}
                   {activeTab === "students_list" && (
@@ -8534,7 +8517,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 <span className="text-sm font-extrabold text-slate-800 block">
                                   {activeCollegeId === "college_1" ? "college_1 (Aided)" : "college_2 (Self-Financed)"}
                                 </span>
-                                <span className="text-[10px] text-slate-455 font-semibold block">SDNB Vaishnav College Ecosystem</span>
+                                <span className="text-[10px] text-slate-455 font-semibold block">{activeCollegeName || "Campus"} Ecosystem</span>
                               </div>
 
                               <div className="space-y-1">
@@ -9958,6 +9941,281 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             </div>
           </div>
         )}
+
+      {/* Global Daily Day Order Configurator Modal */}
+      {isDailyConfigModalOpen && (
+        <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto border border-slate-200 relative my-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100 sticky top-0 bg-white z-10 pt-1">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-[#D528A2]/10 text-[#D528A2] rounded-2xl border border-[#D528A2]/20">
+                  <Calendar className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                    Daily Day Order & Schedule Configurator
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Set up day types, day orders, online/offline session modes, and automated continuous cycles.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDailyConfigModalOpen(false);
+                  setEditingDailyId(null);
+                }}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form id="daily-config-form" onSubmit={handleSaveDailyConfig} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50/80 p-5 border border-slate-200 rounded-2xl">
+              <Input
+                label="From Date"
+                type="date"
+                value={dailyStartDateStr}
+                onChange={e => handleStartDateChange(e.target.value)}
+                required
+              />
+              <Input
+                label="To Date (Continuous)"
+                type="date"
+                value={dailyEndDateStr}
+                onChange={e => setDailyEndDateStr(e.target.value)}
+                required
+              />
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Day Type</label>
+                <select
+                  value={dailyDayType}
+                  onChange={e => setDailyDayType(e.target.value)}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
+                >
+                  <option value="working">Working Day</option>
+                  <option value="holiday">Holiday</option>
+                  <option value="event">Campus Event</option>
+                  <option value="exam_day">Exam Day</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Day Order</label>
+                <select
+                  value={dailyDayType === "holiday" ? "None" : dailyDayOrder}
+                  onChange={e => setDailyDayOrder(e.target.value)}
+                  disabled={dailyDayType === "holiday"}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800 disabled:opacity-50"
+                >
+                  <option value="Day 1">Day 1</option>
+                  <option value="Day 2">Day 2</option>
+                  <option value="Day 3">Day 3</option>
+                  <option value="Day 4">Day 4</option>
+                  <option value="Day 5">Day 5</option>
+                  <option value="Day 6">Day 6</option>
+                  <option value="None">None (No Day Order)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Session Mode</label>
+                <select
+                  value={dailySessionMode}
+                  onChange={e => setDailySessionMode(e.target.value)}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
+                >
+                  <option value="Offline">Offline (On-Campus)</option>
+                  <option value="Online">Online Sessions</option>
+                  <option value="Hybrid">Hybrid Mode</option>
+                </select>
+              </div>
+
+              <div className="space-y-1 sm:col-span-3">
+                <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Notes / Operational Instructions</label>
+                <input
+                  type="text"
+                  placeholder="e.g. CIA Exam Session / Cultural Fest / Regular Timetable..."
+                  value={dailyNotes}
+                  onChange={e => setDailyNotes(e.target.value)}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs text-slate-800"
+                />
+              </div>
+
+              <div className="flex items-center gap-4 pt-4 sm:col-span-2 flex-wrap">
+                <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={autoAdvanceDayOrder}
+                    onChange={e => setAutoAdvanceDayOrder(e.target.checked)}
+                    className="h-4 w-4 text-[#D528A2] rounded border-slate-300 focus:ring-[#D528A2] cursor-pointer"
+                  />
+                  <span>Auto-Advance Continuous Days</span>
+                </label>
+                <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={skipSundays}
+                    onChange={e => setSkipSundays(e.target.checked)}
+                    className="h-4 w-4 text-[#D528A2] rounded border-slate-300 focus:ring-[#D528A2] cursor-pointer"
+                  />
+                  <span>Skip Sundays (Auto-Holiday)</span>
+                </label>
+              </div>
+
+              <div className="flex items-end sm:col-span-2 justify-end gap-2 pt-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleDeleteDailyConfigRange}
+                  disabled={isDailySaving || isDailyLoading}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  title="Delete all records within selected From Date and To Date range"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete Range</span>
+                </button>
+                {editingDailyId && (
+                  <button
+                    type="button"
+                    onClick={handleCancelDailyEdit}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer"
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={isDailySaving}
+                  className="px-5 py-2 rounded-xl text-xs font-extrabold bg-[#D528A2] hover:bg-[#c02090] text-white shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isDailySaving
+                    ? "Saving..."
+                    : editingDailyId
+                    ? "Update Record"
+                    : "Save Day Order Schedule"}
+                </button>
+              </div>
+            </form>
+
+            {/* Modal Table */}
+            <div className="border border-slate-200 rounded-2xl bg-white shadow-xs overflow-hidden">
+              <div className="p-3.5 bg-slate-50/80 border-b border-slate-200 flex justify-between items-center flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+                    Configured Schedule Records ({dailyConfigsList.length})
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search date, day type, order..."
+                      value={dailySearchFilter}
+                      onChange={e => setDailySearchFilter(e.target.value)}
+                      className="pl-8 pr-3 py-1 text-xs border border-slate-200 rounded-lg bg-white outline-none focus:ring-1 focus:ring-[#D528A2] w-48 font-medium"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchDailyConfigs}
+                    disabled={isDailyLoading}
+                    className="px-3 py-1 text-xs font-bold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                  >
+                    Refresh
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto max-h-[260px] overflow-y-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="sticky top-0 bg-slate-100 z-10">
+                    <tr className="border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="p-3">Date</th>
+                      <th className="p-3">Day Type</th>
+                      <th className="p-3">Day Order</th>
+                      <th className="p-3">Session Mode</th>
+                      <th className="p-3">Campus Notes</th>
+                      <th className="p-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {dailyConfigsList.filter(cfg => {
+                      if (!dailySearchFilter.trim()) return true;
+                      const q = dailySearchFilter.toLowerCase();
+                      return (
+                        (cfg.dateStr || "").toLowerCase().includes(q) ||
+                        (cfg.day_type || "").toLowerCase().includes(q) ||
+                        (cfg.day_order || "").toLowerCase().includes(q) ||
+                        (cfg.session_mode || "").toLowerCase().includes(q) ||
+                        (cfg.notes || "").toLowerCase().includes(q)
+                      );
+                    }).length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-slate-400 italic text-xs">
+                          {dailyConfigsList.length === 0 ? "No custom day order configurations saved yet. Use the form above to add date ranges." : "No matching day order records found for search filter."}
+                        </td>
+                      </tr>
+                    ) : (
+                      dailyConfigsList
+                        .filter(cfg => {
+                          if (!dailySearchFilter.trim()) return true;
+                          const q = dailySearchFilter.toLowerCase();
+                          return (
+                            (cfg.dateStr || "").toLowerCase().includes(q) ||
+                            (cfg.day_type || "").toLowerCase().includes(q) ||
+                            (cfg.day_order || "").toLowerCase().includes(q) ||
+                            (cfg.session_mode || "").toLowerCase().includes(q) ||
+                            (cfg.notes || "").toLowerCase().includes(q)
+                          );
+                        })
+                        .map(cfg => (
+                        <tr key={cfg.id || cfg.dateStr} className={`transition-colors ${editingDailyId === cfg.id ? "bg-[#D528A2]/10" : "hover:bg-slate-50/50"}`}>
+                          <td className="p-3 font-extrabold text-slate-800">{cfg.dateStr}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase border ${
+                              cfg.day_type === "holiday" ? "bg-rose-50 text-rose-700 border-rose-200" :
+                              cfg.day_type === "event" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                              cfg.day_type === "exam_day" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                              "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            }`}>
+                              {cfg.day_type ? cfg.day_type.replace("_", " ") : "Working"}
+                            </span>
+                          </td>
+                          <td className="p-3 font-bold text-slate-900">{cfg.day_order || "None"}</td>
+                          <td className="p-3 font-semibold text-slate-600">{cfg.session_mode || "Offline"}</td>
+                          <td className="p-3 text-slate-500 max-w-[200px] truncate" title={cfg.notes}>{cfg.notes || "-"}</td>
+                          <td className="p-3 text-right flex justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditDailyConfig(cfg)}
+                              className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
+                              title="Edit Day Order Config"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDailyConfig(cfg.id, cfg.dateStr)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                              title="Delete Day Order Config"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
             </div>
           );
 };

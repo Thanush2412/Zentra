@@ -368,9 +368,16 @@ export async function sendMail({ to, subject, htmlBody }: { to: string; subject:
     }
 
     const auditBcc = process.env.ADMIN_AUDIT_EMAIL || "";
-    const recipients = [to.trim(), auditBcc].filter(Boolean);
+    const rawEmails = to.split(",").map((e) => e.trim()).filter((e) => e && e.includes("@"));
+    if (auditBcc && auditBcc.includes("@") && !rawEmails.includes(auditBcc.trim())) {
+      rawEmails.push(auditBcc.trim());
+    }
+    const recipients = Array.from(new Set(rawEmails));
+    if (recipients.length === 0) {
+      return { success: false, error: "No valid recipient email addresses provided" };
+    }
 
-    // 1. Primary: Direct Brevo Transactional Email REST API v3 (xkeysib Key)
+    // 1. PRIMARY: Brevo Transactional Email REST API v3 (xkeysib Key)
     const brevoApiKey = process.env.BREVO_API_KEY || "";
     const senderName = process.env.BREVO_SENDER_NAME || "FACE Prep E-Campus";
     const senderEmail = process.env.BREVO_SENDER_EMAIL || "thanush@faceprep.in";
@@ -405,46 +412,61 @@ export async function sendMail({ to, subject, htmlBody }: { to: string; subject:
       }
     }
 
-    // 2. Secondary: Brevo SMTP Delivery via nodemailer (xsmtpsib Key)
+    // 2. SECONDARY: Brevo SMTP Relay Delivery via nodemailer (smtp-relay.brevo.com)
     const host = process.env.SMTP_HOST || "smtp-relay.brevo.com";
     const port = parseInt(process.env.SMTP_PORT || "587", 10);
     const user = process.env.SMTP_USER || "";
     const pass = process.env.SMTP_PASS || "";
 
     if (user && pass) {
-      const transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: port === 465,
-        auth: { user, pass },
-      });
+      try {
+        const transporter = nodemailer.createTransport({
+          host,
+          port,
+          secure: port === 465,
+          auth: { user, pass },
+        });
 
-      const info = await transporter.sendMail({
-        from: `"${senderName}" <${senderEmail}>`,
-        to: recipients.join(", "),
-        subject,
-        html: htmlBody,
-      });
+        const info = await transporter.sendMail({
+          from: `"${senderName}" <${senderEmail}>`,
+          to: recipients.join(", "),
+          subject,
+          html: htmlBody,
+        });
 
-      console.log("Email dispatched via Brevo SMTP:", info.messageId);
-      return { success: true, messageId: info.messageId };
+        console.log("Email dispatched via Brevo SMTP:", info.messageId);
+        return { success: true, messageId: info.messageId };
+      } catch (smtpErr) {
+        console.error("Brevo SMTP failed:", smtpErr);
+      }
     }
 
-    // 3. Fallback: Google Apps Script Webhook
+    // 3. FALLBACK: Google Apps Script Webhook
     const gasUrl = process.env.NEXT_PUBLIC_GAS_MAIL_URL || "";
     if (gasUrl) {
-      const res = await fetch(gasUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: recipients.join(","),
-          subject,
-          htmlBody,
-        }),
-      });
-      if (!res.ok) throw new Error(`Google Apps Script responded with status: ${res.status}`);
-      return await res.json();
+      try {
+        const res = await fetch(gasUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: recipients.join(","),
+            subject,
+            htmlBody,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          console.log("Email dispatched via GAS Webhook Fallback:", data);
+          return { success: true, ...data };
+        }
+      } catch (gasErr) {
+        console.error("GAS Fallback error:", gasErr);
+      }
     }
+
+
+
+
 
     // 4. Fallback: Console Mock Log
     console.log("------------------- MOCK EMAIL TRIGGERED -------------------");

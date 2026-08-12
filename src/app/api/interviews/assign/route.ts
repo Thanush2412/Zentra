@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { sendMail, renderEmailShell } from "@/lib/mail";
+import { dispatchExternalInterviewNotifications } from "@/lib/interview-notifications";
+
 
 export async function POST(request: Request) {
   try {
@@ -12,7 +14,8 @@ export async function POST(request: Request) {
       mapped_mentor_ids = [],
       student_count,
       cm_name = "Campus Manager",
-      gmeet_link = ""
+      gmeet_link = "",
+      time_slot = ""
     } = body;
 
     if (!interview_id) {
@@ -24,17 +27,106 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Interview request not found" }, { status: 404 });
     }
 
-    const assignedIdsStr = JSON.stringify(mapped_mentor_ids);
-    const updatedCount = Number(student_count) || interview.student_count || 10;
     const now = new Date().toISOString();
+    const assignedTimeSlot = time_slot || interview.preferred_start_time || "09:00 AM";
+    const assigningStudentCount = Number(student_count) || 3;
+    const updatedCount = assigningStudentCount;
+
+    let combinedMentorIds = mapped_mentor_ids;
+    let finalStatus = "assigned";
+    let totalAccepted = assigningStudentCount;
+    let totalAllocated = assigningStudentCount;
+
+    if (interview.type === "external") {
+      const existingIds = interview.assigned_mentor_ids ? JSON.parse(interview.assigned_mentor_ids) : [];
+      combinedMentorIds = Array.from(new Set([...existingIds, ...mapped_mentor_ids]));
+      
+      const prevAccepted = Number(interview.accepted_capacity) || 0;
+      const prevAllocated = Number(interview.allocated_students) || 0;
+      totalAccepted = prevAccepted + assigningStudentCount;
+      totalAllocated = prevAllocated + assigningStudentCount;
+      
+      const requestedTotal = Number(interview.student_count) || 10;
+      finalStatus = totalAccepted >= requestedTotal ? "assigned" : "capacity_partially_accepted";
+    }
+
+    const assignedIdsStr = JSON.stringify(combinedMentorIds);
 
     await db.run(
       `UPDATE student_interviews 
-       SET assigned_mentor_ids = ?, student_count = ?, status = 'assigned', 
-           gmeet_link = ?, updated_at = ?
+       SET assigned_mentor_ids = ?, 
+           accepted_capacity = ?, 
+           allocated_students = ?,
+           remaining_students = MAX(0, student_count - ?),
+           status = ?, 
+           gmeet_link = COALESCE(?, gmeet_link), 
+           preferred_start_time = ?, 
+           updated_at = ?
        WHERE id = ?`,
-      [assignedIdsStr, updatedCount, gmeet_link || interview.gmeet_link || null, now, interview_id]
+      [
+        assignedIdsStr, 
+        totalAccepted, 
+        totalAllocated, 
+        totalAccepted, 
+        finalStatus, 
+        gmeet_link || interview.gmeet_link || null, 
+        assignedTimeSlot, 
+        now, 
+        interview_id
+      ]
     );
+
+    // Populate student-level slot records for individual student tracking
+    const mentorSchedule = Array.isArray(body.mentor_schedule) ? body.mentor_schedule : [];
+    if (mentorSchedule.length > 0) {
+      await db.run("DELETE FROM student_interview_slots WHERE interview_id = ?", [interview_id]);
+      const enrolledStudents = await db.all(
+        `SELECT id, name, email FROM students 
+         WHERE (LOWER(classGroup) = LOWER(?) OR LOWER(department) = LOWER(?))
+         ORDER BY id ASC`,
+        [interview.class_group || "", interview.class_group || ""]
+      );
+
+      let sIndex = 0;
+      for (const ms of mentorSchedule) {
+        const mObj = await db.get("SELECT name, college_id FROM mentors WHERE id = ?", [ms.mentor_id]);
+        const mName = mObj?.name || "Mentor";
+        const mCol = mObj?.college_id || interview.college_id || "campus";
+        const count = Number(ms.student_count) || 3;
+        const timeSlot = ms.time_slot || assignedTimeSlot;
+
+        for (let k = 0; k < count; k++) {
+          const slotId = `slot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          const st = enrolledStudents[sIndex] || { id: `std_${sIndex + 1}`, name: `Student #${sIndex + 1}` };
+          sIndex++;
+
+          await db.run(
+            `INSERT INTO student_interview_slots (
+              id, interview_id, allocation_id, student_id, student_name,
+              mentor_id, mentor_name, college_id, slot_start_time, slot_end_time,
+              gmeet_link, subject, target_date, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              slotId,
+              interview_id,
+              "alloc_direct",
+              st.id,
+              st.name,
+              ms.mentor_id,
+              mName,
+              mCol,
+              timeSlot,
+              timeSlot,
+              gmeet_link || interview.gmeet_link || null,
+              interview.subject,
+              interview.target_date,
+              "scheduled",
+              now
+            ]
+          );
+        }
+      }
+    }
 
     // Fetch mapped mentor details for email
     let mentorEmails: string[] = [];
@@ -79,36 +171,54 @@ export async function POST(request: Request) {
       }
     }
 
-    // Notify KAM
+    // Notify KAM & Regional Colleges
     try {
-      const kamRows = await db.all(`
-        SELECT k.email, k.name FROM kam_users k
-        INNER JOIN colleges c ON c.kam_id = k.id
-        WHERE c.id = ?
-      `, [interview.college_id || interview.origin_college_id]);
+      if (interview.type === "external") {
+        await dispatchExternalInterviewNotifications({
+          interviewId: interview.id,
+          subject: interview.subject,
+          classGroup: interview.class_group,
+          targetDate: interview.target_date,
+          type: "external",
+          topics: interview.topics,
+          studentCount: updatedCount,
+          mentorName: mentorNames.join(", ") || interview.mentor_name,
+          originCollegeId: interview.origin_college_id || interview.college_id,
+          targetCollegeId: interview.target_college_id,
+          actionType: "assigned",
+          gmeetLink: gmeet_link || interview.gmeet_link,
+          actorName: cm_name
+        });
+      } else {
+        const kamRows = await db.all(`
+          SELECT k.email, k.name FROM kam_users k
+          INNER JOIN colleges c ON c.kam_id = k.id
+          WHERE c.id = ?
+        `, [interview.college_id || interview.origin_college_id]);
 
-      if (kamRows && kamRows.length > 0) {
-        const kamEmail = kamRows[0].email;
-        const kamName = kamRows[0].name;
-        if (kamEmail) {
-          await sendMail({
-            to: kamEmail,
-            subject: `[Interview Assigned] ${interview.subject} — ${interview.college_id || interview.origin_college_id}`,
-            htmlBody: renderEmailShell({
-              title: "Interview Session Assigned & Scheduled",
-              badgeText: "KAM Notification",
-              badgeColor: "indigo",
-              description: `Dear <strong>${kamName}</strong>, Campus Manager <strong>${cm_name}</strong> has allocated mentors for a ${interview.type} interview session.`,
-              details: [
-                { label: "Subject", value: interview.subject, highlight: true },
-                { label: "Target Date", value: interview.target_date || "" },
-                { label: "Student Count", value: String(updatedCount) },
-                { label: "Mentors Assigned", value: mentorNames.join(", ") || "N/A" },
-                { label: "Campus Manager", value: cm_name },
-              ],
-              ctaText: "View Interview Dashboard →",
-            }),
-          });
+        if (kamRows && kamRows.length > 0) {
+          const kamEmail = kamRows[0].email;
+          const kamName = kamRows[0].name;
+          if (kamEmail) {
+            await sendMail({
+              to: kamEmail,
+              subject: `[Interview Assigned] ${interview.subject} — ${interview.college_id || interview.origin_college_id}`,
+              htmlBody: renderEmailShell({
+                title: "Interview Session Assigned & Scheduled",
+                badgeText: "KAM Notification",
+                badgeColor: "indigo",
+                description: `Dear <strong>${kamName}</strong>, Campus Manager <strong>${cm_name}</strong> has allocated mentors for an interview session.`,
+                details: [
+                  { label: "Subject", value: interview.subject, highlight: true },
+                  { label: "Target Date", value: interview.target_date || "" },
+                  { label: "Student Count", value: String(updatedCount) },
+                  { label: "Mentors Assigned", value: mentorNames.join(", ") || "N/A" },
+                  { label: "Campus Manager", value: cm_name },
+                ],
+                ctaText: "View Interview Dashboard →",
+              }),
+            });
+          }
         }
       }
     } catch (kamMailErr) {

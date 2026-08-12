@@ -7,15 +7,26 @@ export async function GET(request: Request) {
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const collegeId = searchParams.get("college_id");
+    const limit = searchParams.get("limit") ? parseInt(searchParams.get("limit")!) : 200;
+    const search = searchParams.get("search");
 
     if (!collegeId) {
       return NextResponse.json({ success: false, message: "college_id is required" }, { status: 400 });
     }
 
-    const configs = await db.all(
-      "SELECT * FROM campus_daily_configs WHERE college_id = ? ORDER BY dateStr DESC LIMIT 30",
-      collegeId
-    );
+    let query = "SELECT * FROM campus_daily_configs WHERE college_id = ?";
+    let params: any[] = [collegeId];
+
+    if (search) {
+      query += " AND (dateStr LIKE ? OR day_type LIKE ? OR day_order LIKE ? OR notes LIKE ?)";
+      const pattern = `%${search}%`;
+      params.push(pattern, pattern, pattern, pattern);
+    }
+
+    query += " ORDER BY dateStr DESC LIMIT ?";
+    params.push(limit);
+
+    const configs = await db.all(query, ...params);
 
     return NextResponse.json({ success: true, configs });
   } catch (error: any) {
@@ -27,9 +38,11 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { college_id, dateStr, startDate, endDate, day_type, day_order, notes, session_mode } = body;
+    const { college_id, dateStr, startDate, endDate, day_type, day_order, notes, session_mode, auto_advance } = body;
 
-    if (!college_id || (!dateStr && (!startDate || !endDate)) || !day_type || !day_order) {
+    const effectiveDayOrder = day_type === "holiday" ? "None" : (day_order || "None");
+
+    if (!college_id || (!dateStr && (!startDate || !endDate)) || !day_type) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
@@ -46,12 +59,40 @@ export async function POST(request: Request) {
       datesToProcess.push(dateStr);
     }
 
-    for (const dStr of datesToProcess) {
+    // Day order sequence cycle: Day 1 -> Day 2 -> Day 3 -> Day 4 -> Day 5 -> Day 6
+    const dayOrders = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6"];
+    let initialIndex = dayOrders.indexOf(effectiveDayOrder);
+
+    let dayOrderCounter = initialIndex !== -1 ? initialIndex : 0;
+
+    for (let i = 0; i < datesToProcess.length; i++) {
+      const dStr = datesToProcess[i];
       const id = `${college_id}_${dStr}`;
+      const dateObj = new Date(dStr + "T00:00:00");
+      const isSunday = dateObj.getDay() === 0;
+
+      let currentDayType = day_type;
+      let currentDayOrder = effectiveDayOrder;
+
+      if (effectiveDayOrder === "None" || effectiveDayOrder === "none") {
+        // If explicitly set to None, force None for all dates in range without cycling
+        currentDayOrder = "None";
+      } else if (day_type === "holiday" || day_type === "event" || (body.skip_sundays !== false && isSunday)) {
+        // Holidays, events, or auto-skipped Sundays get None and DO NOT advance the working day order counter!
+        if (isSunday && day_type === "working") {
+          currentDayType = "holiday";
+        }
+        currentDayOrder = "None";
+      } else if (auto_advance !== false && initialIndex !== -1) {
+        // Continuous next day sequence starting from chosen Day Order (e.g. Day 3 -> Day 4 -> Day 5 -> Day 6 -> Day 1 -> Day 2)
+        currentDayOrder = dayOrders[dayOrderCounter % 6];
+        dayOrderCounter++;
+      }
+
       await db.run(
         `INSERT OR REPLACE INTO campus_daily_configs (id, college_id, dateStr, day_type, day_order, session_mode, notes, updated_at) 
          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-        id, college_id, dStr, day_type, day_order, session_mode || "Offline", notes || ""
+        id, college_id, dStr, currentDayType, currentDayOrder, session_mode || "Offline", notes || ""
       );
 
       // 1. Insert Database Notifications for all Students & Mentors of this college
@@ -60,20 +101,20 @@ export async function POST(request: Request) {
           `SELECT id FROM users WHERE reference_id IN (SELECT id FROM mentors WHERE college_id = ?)
            UNION
            SELECT id FROM users WHERE reference_id IN (SELECT id FROM students WHERE college_id = ?)`,
-          college_id
+          college_id, college_id
         );
 
         for (const u of users) {
           const notifId = "n_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
-          const displayType = day_type === "holiday" ? "Holiday" : day_type === "event" ? "Event" : day_type === "exam_day" ? "Exam Day" : "Working Day";
+          const displayType = currentDayType === "holiday" ? "Holiday" : currentDayType === "event" ? "Event" : currentDayType === "exam_day" ? "Exam Day" : "Working Day";
           await db.run(
             `INSERT INTO notifications (id, user_id, title, message, type, is_read, created_at)
              VALUES (?, ?, ?, ?, ?, 0, datetime('now'))`,
             notifId,
             u.id,
             `Campus Schedule Update: ${dStr}`,
-            `The calendar schedule for ${dStr} has been configured as a ${displayType} (${day_order === "None" ? "No Day Order" : day_order}) operating in ${session_mode || "Offline"} mode. Notes: ${notes || "None"}`,
-            day_type === "holiday" ? "warning" : "info"
+            `The calendar schedule for ${dStr} has been configured as a ${displayType} (${currentDayOrder === "None" ? "No Day Order" : currentDayOrder}) operating in ${session_mode || "Offline"} mode. Notes: ${notes || "None"}`,
+            currentDayType === "holiday" ? "warning" : "info"
           );
         }
       } catch (errNotif) {
@@ -91,11 +132,11 @@ export async function POST(request: Request) {
             title: "Campus Schedule Update",
             badgeText: day_type.replace("_", " ").toUpperCase(),
             badgeColor: day_type === "holiday" ? "rose" : day_type === "event" ? "amber" : "indigo",
-            description: `Dear ${m.name}, this is an official campus update regarding the daily schedule configuration for ${dateStr}.`,
+            description: `Dear ${m.name}, this is an official campus update regarding the daily schedule configuration.`,
             details: [
-              { label: "Date", value: dateStr },
+              { label: "Date Range", value: datesToProcess.length > 1 ? `${startDate} to ${endDate}` : (dateStr || startDate) },
               { label: "Day Type", value: day_type.replace("_", " ").toUpperCase() },
-              { label: "Day Order", value: day_order },
+              { label: "Day Order", value: effectiveDayOrder },
               { label: "Session Mode", value: session_mode || "Offline" },
               { label: "Campus Notes", value: notes || "No operational notes provided." }
             ]
@@ -103,7 +144,7 @@ export async function POST(request: Request) {
 
           await sendMail({
             to: m.email,
-            subject: `[FACE Prep E-Campus] Campus Schedule Update - ${dateStr}`,
+            subject: `[FACE Prep E-Campus] Campus Schedule Update - ${startDate || dateStr}`,
             htmlBody: emailHtml
           });
         }
@@ -113,6 +154,38 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true, message: "Daily configuration saved successfully" });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    const collegeId = searchParams.get("college_id") || searchParams.get("collegeId");
+    const dateStr = searchParams.get("dateStr");
+    const startDate = searchParams.get("startDate");
+    const endDate = searchParams.get("endDate");
+
+    if (id) {
+      await db.run("DELETE FROM campus_daily_configs WHERE id = ?", id);
+      if (collegeId && dateStr) {
+        await db.run("DELETE FROM campus_daily_configs WHERE college_id = ? AND dateStr = ?", collegeId, dateStr);
+      }
+    } else if (collegeId && startDate && endDate) {
+      await db.run(
+        "DELETE FROM campus_daily_configs WHERE college_id = ? AND dateStr >= ? AND dateStr <= ?",
+        collegeId, startDate, endDate
+      );
+    } else if (collegeId && dateStr) {
+      await db.run("DELETE FROM campus_daily_configs WHERE college_id = ? AND dateStr = ?", collegeId, dateStr);
+    } else {
+      return NextResponse.json({ success: false, message: "Missing id, dateStr, or (startDate and endDate)" }, { status: 400 });
+    }
+
+    return NextResponse.json({ success: true, message: "Daily configuration deleted successfully" });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
