@@ -11,7 +11,6 @@ import {
   Sparkles, ArrowRight, Calendar, ShieldCheck, CheckCircle, ExternalLink, Plus, Trash2,
   ChevronsLeft, ChevronsRight
 } from "lucide-react";
-import * as XLSX from "xlsx";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -324,7 +323,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     }
   }, [availableYears, selectedTemplateYear]);
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = async () => {
     try {
       const headers = [
         "Registration Number",
@@ -390,6 +389,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
         });
       }
 
+      const XLSX = await import("xlsx");
       const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Fee Template");
@@ -401,7 +401,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     }
   };
 
-  const handleDownloadFilteredReport = () => {
+  const handleDownloadFilteredReport = async () => {
     try {
       const reportData = filteredStudents.map(s => {
         const studentFees = getStudentFees(s.id);
@@ -426,6 +426,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
         };
       });
 
+      const XLSX = await import("xlsx");
       const worksheet = XLSX.utils.json_to_sheet(reportData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Fee Directory Report");
@@ -493,8 +494,9 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     setUploadResult(null);
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
+        const XLSX = await import("xlsx");
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: "binary" });
         const wsname = wb.SheetNames[0];

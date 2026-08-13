@@ -32,6 +32,28 @@ export async function GET(request: Request) {
       }
     }
 
+    // Build SQL queries with filtering at the DB level when collegeId is known
+    const mentorSql = collegeId ? "SELECT * FROM mentors WHERE college_id = ?" : "SELECT * FROM mentors";
+    const mentorParams = collegeId ? [collegeId] : [];
+
+    const slotSql = collegeId ? "SELECT * FROM slots WHERE college_id = ?" : "SELECT * FROM slots";
+    const slotParams = collegeId ? [collegeId] : [];
+
+    const studentSql = collegeId ? "SELECT * FROM students WHERE college_id = ?" : "SELECT * FROM students";
+    const studentParams = collegeId ? [collegeId] : [];
+
+    const subjectSql = collegeId ? "SELECT * FROM subjects WHERE college_id = ? OR college_id IS NULL" : "SELECT * FROM subjects";
+    const subjectParams = collegeId ? [collegeId] : [];
+
+    const courseSql = collegeId ? "SELECT * FROM courses WHERE college_id = ? OR college_id IS NULL ORDER BY name" : "SELECT * FROM courses ORDER BY name";
+    const courseParams = collegeId ? [collegeId] : [];
+
+    const holidaySql = collegeId ? "SELECT * FROM holidays WHERE college_id = ? OR college_id IS NULL ORDER BY date" : "SELECT * FROM holidays ORDER BY date";
+    const holidayParams = collegeId ? [collegeId] : [];
+
+    const announcementSql = collegeId ? "SELECT * FROM announcements WHERE college_id = ? OR college_id IS NULL ORDER BY created_at DESC" : "SELECT * FROM announcements ORDER BY created_at DESC";
+    const announcementParams = collegeId ? [collegeId] : [];
+
     const [
       mentors, slots, requests, approvedHandovers, auditLogs, subjects,
       courses, students, studentAttendance, leaveRequests, colleges,
@@ -43,37 +65,37 @@ export async function GET(request: Request) {
       approvals,
       leaveBalances
     ] = await Promise.all([
-      db.all("SELECT * FROM mentors"),
-      db.all("SELECT * FROM slots"),
-      db.all("SELECT * FROM handover_requests ORDER BY timestamp DESC"),
+      db.all(mentorSql, ...mentorParams),
+      db.all(slotSql, ...slotParams),
+      db.all("SELECT * FROM handover_requests ORDER BY timestamp DESC LIMIT 300"),
       db.all("SELECT * FROM approved_handovers"),
-      db.all("SELECT * FROM audit_logs ORDER BY timestamp DESC"),
-      db.all("SELECT * FROM subjects"),
-      db.all("SELECT * FROM courses ORDER BY name"),
-      db.all("SELECT * FROM students"),
-      db.all("SELECT * FROM student_attendance"),
-      db.all("SELECT * FROM leave_requests ORDER BY timestamp DESC"),
+      db.all("SELECT id, type, description, actorName, actorRole, timestamp, old_status, new_status, reason, changed_by FROM audit_logs ORDER BY timestamp DESC LIMIT 100"),
+      db.all(subjectSql, ...subjectParams),
+      db.all(courseSql, ...courseParams),
+      db.all(studentSql, ...studentParams),
+      db.all("SELECT * FROM student_attendance ORDER BY dateStr DESC LIMIT 5000"),
+      db.all("SELECT * FROM leave_requests ORDER BY timestamp DESC LIMIT 200"),
       db.all("SELECT * FROM colleges"),
-      db.all("SELECT * FROM notifications ORDER BY created_at DESC"),
-      db.all("SELECT * FROM announcements ORDER BY created_at DESC"),
-      db.all("SELECT * FROM holidays ORDER BY date"),
-      db.all("SELECT * FROM login_history ORDER BY login_time DESC"),
-      db.all("SELECT * FROM users"),
-      db.all("SELECT * FROM weekly_tasks"),
-      db.all("SELECT * FROM student_tracker"),
+      db.all("SELECT id, user_id, title, message, is_read, link, type, created_at FROM notifications ORDER BY created_at DESC LIMIT 50"),
+      db.all(announcementSql, ...announcementParams),
+      db.all(holidaySql, ...holidayParams),
+      db.all("SELECT id, user_id, login_time, logout_time, ip, device FROM login_history ORDER BY login_time DESC LIMIT 50"),
+      db.all("SELECT id, email, role, reference_id, status, must_change_password, last_login, created_at, updated_at FROM users"),
+      db.all("SELECT * FROM weekly_tasks LIMIT 500"),
+      db.all("SELECT * FROM student_tracker ORDER BY updated_at DESC LIMIT 500"),
       db.all("SELECT * FROM sme_users"),
-      db.all("SELECT * FROM demo_sessions ORDER BY created_at DESC"),
+      db.all("SELECT * FROM demo_sessions ORDER BY created_at DESC LIMIT 200"),
       db.all("SELECT * FROM subject_groups ORDER BY name ASC"),
       db.all("SELECT * FROM demo_rules ORDER BY created_at DESC"),
-      db.all("SELECT * FROM signup_requests ORDER BY created_at DESC"),
-      db.all("SELECT * FROM demo_swap_requests ORDER BY created_at DESC").catch(() => []),
-      db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC").catch(() => []),
-      db.all("SELECT * FROM campus_issues ORDER BY created_at DESC").catch(() => []),
+      db.all("SELECT * FROM signup_requests ORDER BY created_at DESC LIMIT 100"),
+      db.all("SELECT * FROM demo_swap_requests ORDER BY created_at DESC LIMIT 100").catch(() => []),
+      db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC LIMIT 100").catch(() => []),
+      db.all("SELECT * FROM campus_issues ORDER BY created_at DESC LIMIT 100").catch(() => []),
       db.all("SELECT * FROM academic_years").catch(() => []),
       db.all("SELECT * FROM academic_events ORDER BY date ASC").catch(() => []),
-      db.all("SELECT * FROM student_interviews ORDER BY created_at DESC").catch(() => []),
-      db.all("SELECT * FROM interview_evaluations ORDER BY created_at DESC").catch(() => []),
-      db.all("SELECT * FROM approvals ORDER BY created_at DESC").catch(() => []),
+      db.all("SELECT * FROM student_interviews ORDER BY created_at DESC LIMIT 200").catch(() => []),
+      db.all("SELECT * FROM interview_evaluations ORDER BY created_at DESC LIMIT 300").catch(() => []),
+      db.all("SELECT * FROM approvals ORDER BY created_at DESC LIMIT 100").catch(() => []),
       db.all("SELECT * FROM leave_balances").catch(() => [])
     ]);
 
@@ -93,31 +115,15 @@ export async function GET(request: Request) {
     let filteredStudentTracker = studentTracker;
 
     if (collegeId) {
-      filteredColleges = colleges;
-      filteredCourses = courses.filter((c: any) => c.college_id === collegeId || !c.college_id);
-
-      filteredMentors = mentors.filter((m: any) => m.college_id === collegeId);
       const mentorIds = new Set(filteredMentors.map((m: any) => m.id));
-
-      filteredSlots = slots.filter((s: any) => s.college_id === collegeId || (s.mentorId && mentorIds.has(s.mentorId)));
-
-      filteredSubjects = subjects.filter((s: any) => s.college_id === collegeId || !s.college_id);
-
-      filteredStudents = students.filter((s: any) => s.college_id === collegeId);
-      
       const studentIds = new Set(filteredStudents.map((s: any) => s.id));
+
       filteredStudentAttendance = studentAttendance.filter((sa: any) => studentIds.has(sa.studentId || sa.student_id));
       filteredLeaveRequests = leaveRequests.filter((lr: any) => studentIds.has(lr.studentId || lr.student_id));
-      
-      // Scope weekly tasks and tracker entries to this college's students and mentors
       filteredWeeklyTasks = weeklyTasks.filter((t: any) => mentorIds.has(t.mentor_id));
       filteredStudentTracker = studentTracker.filter((e: any) => studentIds.has(e.student_id));
-
       filteredRequests = requests.filter((r: any) => mentorIds.has(r.requestorId) || mentorIds.has(r.targetStaffId));
       filteredApprovedHandovers = approvedHandovers.filter((h: any) => mentorIds.has(h.originalMentorId) || mentorIds.has(h.coverStaffId));
-
-      filteredHolidays = holidays.filter((h: any) => h.college_id === collegeId || !h.college_id);
-      filteredAnnouncements = announcements.filter((a: any) => a.college_id === collegeId || !a.college_id);
     }
 
     return NextResponse.json({

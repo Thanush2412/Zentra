@@ -4,8 +4,6 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useApp, Slot, Mentor, Student, Subject } from "../context/AppContext";
 import { useToast } from "../context/ToastContext";
 import { gsap } from "gsap";
-import * as XLSX from "xlsx";
-import ExcelJS from "exceljs";
 
 import { Button } from "./Button";
 import { Card } from "./Card";
@@ -24,17 +22,7 @@ import {
 } from "lucide-react";
 
 
-const FACULTY_DEPARTMENTS = [
-  "Computer Science",
-  "Information Technology",
-  "Data Science",
-  "Commerce",
-  "Management - Fashion",
-  "Management - Airline and Airport",
-  "Maths / Aptitude",
-  "English",
-  "Tamil"
-];
+
 
 const getCourseFromClassGroup = (cg: string): string => {
   if (!cg) return "";
@@ -1084,10 +1072,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [templateSem, setTemplateSem] = useState<string>("Semester 1");
 
   // Download Student Excel Template matching requested headers
-  const handleDownloadStudentTemplate = (classGroupOverride?: string) => {
-    const campusDepts = collegeCourses.map(c => c.name);
-    const deptList = campusDepts.length > 0 ? campusDepts : FACULTY_DEPARTMENTS;
-    const resolvedDept = templateDept || deptList[0] || "Computer Science";
+  const handleDownloadStudentTemplate = async (classGroupOverride?: string) => {
+    const campusDepts = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
+    const resolvedDept = templateDept || campusDepts[0] || "General";
     const resolvedShift = isCampusShiftBased ? (templateShift || "Shift 1") : "General";
     const resolvedSem = templateSem || "Semester 1";
     const resolvedClass = classGroupOverride || (isCampusShiftBased ? `${resolvedDept} - ${resolvedShift} - ${resolvedSem}` : `${resolvedDept} - ${resolvedSem}`);
@@ -1165,6 +1152,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       ]
     ];
 
+    const XLSX = await import("xlsx");
     const wsData = [headers, ...sampleRows];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
@@ -1180,65 +1168,43 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     Object.keys(row).forEach((colHeader) => {
       const norm = colHeader.toString().toLowerCase().replace(/[^a-z0-9]/g, "");
       const val = row[colHeader] !== undefined && row[colHeader] !== null ? row[colHeader].toString().trim() : "";
+      if (!val) return;
 
-      if (norm === "slno" || norm === "sno" || norm === "serialno" || norm === "sl") {
-        // Skip Serial No column
-      } else if (norm.includes("roll") || norm.includes("reg") || norm.includes("register") || norm.includes("studentid") || norm === "id") {
-        mapped.roll_number = val;
-        mapped.register_number = val;
-      } else if (norm === "department" || norm.includes("dept") || norm === "branch" || norm === "course") {
-        mapped.department = val;
-      } else if (norm.includes("name") || norm === "student" || norm === "studentname") {
-        mapped.name = val;
-      } else if (norm === "semester" || norm === "sem" || norm.includes("semester")) {
-        mapped.semester = val;
-      } else if (norm.includes("10th") || norm.includes("tenth")) {
-        mapped.tenth_mark = val;
-      } else if (norm.includes("11th") || norm.includes("eleventh")) {
-        mapped.eleventh_mark = val;
-      } else if (norm.includes("12th") || norm.includes("twelfth")) {
-        mapped.twelfth_mark = val;
-      } else if (norm === "group" || norm.includes("academicgroup")) {
-        mapped.academic_group = val;
-      } else if (norm === "medium") {
-        mapped.medium = val;
-      } else if (norm.includes("blood")) {
-        mapped.blood_group = val;
-      } else if (norm === "dob" || norm.includes("dateofbirth") || norm.includes("birth")) {
-        mapped.dob = val;
-      } else if (norm.includes("studentphone") || (norm.includes("phone") && !norm.includes("parent") && !norm.includes("father") && !norm.includes("mother"))) {
-        mapped.phone = val;
-      } else if (norm.includes("parent") || norm.includes("father") || norm.includes("mother") || norm.includes("whatsapp")) {
-        mapped.parent_phone = val;
-      } else if (norm.includes("aadhar")) {
-        mapped.aadhar_number = val;
-      } else if (norm.includes("email") || norm === "emailid") {
-        mapped.email = val;
-      } else if (norm.includes("linkedin")) {
-        mapped.linkedin_link = val;
-      } else if (norm.includes("github")) {
-        mapped.github_id = val;
-      } else if (norm.includes("hackerrank")) {
-        mapped.hackerrank_link = val;
-      } else if (norm.includes("leetcode")) {
-        mapped.leetcode_link = val;
-      } else if (norm.includes("figma")) {
-        mapped.figma_link = val;
-      } else if (norm === "shift" || norm.includes("shift")) {
-        mapped.shift = val;
-      } else if (norm.includes("class") || norm.includes("cohort")) {
-        mapped.classGroup = val;
-        mapped.hasCustomClassGroup = true;
-      }
+      if (norm === "slno" || norm === "sno" || norm === "serialnumber") return;
+      if (norm === "rollno" || norm === "rollnumber" || norm === "regno" || norm === "registernumber") mapped.roll_number = val;
+      else if (norm === "name" || norm === "studentname" || norm === "fullname") mapped.name = val;
+      else if (norm === "10thmark" || norm === "10th" || norm === "tenthmark") mapped.tenth_mark = val;
+      else if (norm === "11thmark" || norm === "11th" || norm === "eleventhmark") mapped.eleventh_mark = val;
+      else if (norm === "12thmark" || norm === "12th" || norm === "twelfthmark") mapped.twelfth_mark = val;
+      else if (norm === "group" || norm === "academicgroup") mapped.academic_group = val;
+      else if (norm === "medium") mapped.medium = val;
+      else if (norm === "bloodgroup" || norm === "bg") mapped.blood_group = val;
+      else if (norm === "dob" || norm === "dateofbirth") mapped.dob = parseDbDate(val);
+      else if (norm === "studentphonenumber" || norm === "phone" || norm === "studentphone" || norm === "mobile") mapped.phone = val;
+      else if (norm === "parentphonenumber" || norm === "parentphone" || norm === "parentphonenumberwhatsappnumber" || norm === "guardianphone") mapped.parent_phone = val;
+      else if (norm === "aadharcardnumber" || norm === "aadharnumber" || norm === "aadhar") mapped.aadhar_number = val;
+      else if (norm === "emailid" || norm === "email" || norm === "studentemail") mapped.email = val;
+      else if (norm === "linkedinlink" || norm === "linkedin") mapped.linkedin_link = val;
+      else if (norm === "githublink" || norm === "github") mapped.github_id = val;
+      else if (norm === "projectdrivelink" || norm === "projectdrive" || norm === "drive") mapped.project_drive_link = val;
+      else if (norm === "hackerrankprofilelink" || norm === "hackerrank") mapped.hackerrank_link = val;
+      else if (norm === "leetcodeprofilelink" || norm === "leetcode") mapped.leetcode_link = val;
+      else if (norm === "figmaprofile" || norm === "figma") mapped.figma_link = val;
+      else if (norm === "department" || norm === "dept" || norm === "course" || norm === "stream") mapped.department = val;
+      else if (norm === "shift") mapped.shift = val;
+      else if (norm === "semester" || norm === "sem") mapped.semester = val;
+      else if (norm === "classgroup" || norm === "class" || norm === "cohort") mapped.classGroup = val;
     });
 
-    const rollOrId = mapped.roll_number || mapped.register_number || (mapped.email ? mapped.email.split("@")[0] : "") || (mapped.name ? "STU_" + mapped.name.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10) + "_" + Math.floor(Math.random() * 1000) : "");
-    mapped.id = rollOrId;
-    mapped.college_id = activeCollegeId;
-
+    // Auto-standardize semester
     if (mapped.semester) {
-      if (!mapped.semester.toLowerCase().startsWith("semester")) {
-        const semNum = mapped.semester.replace(/[^0-9]/g, "");
+      const semMatch = mapped.semester.match(/\d+/);
+      if (semMatch) {
+        mapped.semester = `Semester ${semMatch[0]}`;
+      } else {
+        const romanMap: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6 };
+        const lower = mapped.semester.toLowerCase().replace(/[^a-z]/g, "");
+        const semNum = romanMap[lower];
         if (semNum) mapped.semester = `Semester ${semNum}`;
       }
     }
@@ -1278,8 +1244,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
+        const XLSX = await import("xlsx");
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: "binary" });
         const sheetName = wb.SheetNames[0];
@@ -1292,9 +1259,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         }
 
         const defaultCG = (() => {
-          const campusDepts = collegeCourses.map(c => c.name);
-          const deptList = campusDepts.length > 0 ? campusDepts : FACULTY_DEPARTMENTS;
-          const dept = templateDept || deptList[0] || "Computer Science";
+          const campusDepts = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
+          const dept = templateDept || campusDepts[0] || "General";
           const shift = isCampusShiftBased ? (templateShift || "Shift 1") : "";
           const sem = templateSem || "Semester 1";
           return shift ? `${dept} - ${shift} - ${sem}` : `${dept} - ${sem}`;
@@ -1507,7 +1473,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [facultyImportPreview, setFacultyImportPreview] = useState<{ parsed: any[]; warnings: string[] } | null>(null);
   const [isImportingFaculty, setIsImportingFaculty] = useState(false);
 
-  const handleDownloadFacultyTemplate = () => {
+  const handleDownloadFacultyTemplate = async () => {
     const sampleData = [
       {
         "Faculty Name": "Dr. Anitha Ramesh",
@@ -1527,6 +1493,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       }
     ];
 
+    const XLSX = await import("xlsx");
     const ws = XLSX.utils.json_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Faculty_Template");
@@ -1539,8 +1506,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
+        const XLSX = await import("xlsx");
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: "binary" });
         const sheetName = wb.SheetNames[0];
@@ -2268,11 +2236,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const getStudentAttendanceStats = (studentId: string) => {
     const records = (studentAttendance || []).filter(a => a.studentId === studentId);
     if (records.length === 0) {
-      const hash = studentId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const mockPct = 60 + (hash % 36);
-      return { percentage: mockPct, total: 24, attended: Math.round((24 * mockPct) / 100) };
+      return { percentage: 0, total: 0, attended: 0 };
     }
-    const attended = records.filter(r => r.status === "present").length;
+    const attended = records.filter(r => r.status === "present" || r.status === "od").length;
     const total = records.length;
     return { percentage: Math.round((attended / total) * 100), total, attended };
   };
@@ -3001,6 +2967,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const timeSlots = getTimeSlots(activeShift, activeSem);
 
     // Initialize Workbook
+    const ExcelJS = (await import("exceljs")).default;
     const workbook = new ExcelJS.Workbook();
 
     // 1. Create Sheet 2: Subjects first so other sheets can reference it!
@@ -3336,6 +3303,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
+        const XLSX = await import("xlsx");
         const data = new Uint8Array(evt.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: "array" });
         const gridSheet = workbook.Sheets["Timetable Grid"];
@@ -4351,7 +4319,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           {/* 1. OPERATIONS HUB */}
           {activeTab === "overview" && (() => {
             const collegeDepts = (departmentsList || []).filter(d => !d.college_id || d.college_id === activeCollegeId);
-            const deptsCount = collegeDepts.length > 0 ? collegeDepts.length : FACULTY_DEPARTMENTS.length;
+            const deptsCount = collegeDepts.length > 0 ? collegeDepts.length : collegeCourses.length;
 
             // Real Calculation 1: Student Attendance Avg from actual records & student database for active campus
             const calculatedStudentAttendancePct = (() => {
@@ -8016,10 +7984,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                           {/* Download Template: 3-part selector (Dept + Shift + Sem) + Download button */}
                           {(() => {
-                            const campusDeptNames = collegeCourses.map(c => c.name);
-                            const deptOptions = campusDeptNames.length > 0 ? campusDeptNames : FACULTY_DEPARTMENTS;
+                            const campusDeptNames = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
+                            const deptOptions = campusDeptNames;
                             const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
-                            const selectedDept = templateDept || deptOptions[0] || "Computer Science";
+                            const selectedDept = templateDept || deptOptions[0] || "General";
 
                             const selectedCourseObj = collegeCourses.find(
                               c => c.name.trim().toLowerCase() === selectedDept.trim().toLowerCase()
@@ -9225,11 +9193,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="p-3 bg-white border border-slate-200 rounded-xl flex flex-col justify-center gap-1.5 shadow-xs sm:col-span-1">
                           <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Target Class Cohort</label>
                           {(() => {
-                            const campusDeptNames = collegeCourses.map(c => c.name);
-                            const deptOptions = campusDeptNames.length > 0 ? campusDeptNames : FACULTY_DEPARTMENTS;
+                            const campusDeptNames = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
+                            const deptOptions = campusDeptNames;
                             const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
                             const current = studentImportPreview.targetClassGroup || "";
-                            const currentDept = deptOptions.find(d => current.startsWith(d)) || deptOptions[0] || "Computer Science";
+                            const currentDept = deptOptions.find(d => current.startsWith(d)) || deptOptions[0] || "General";
 
                             const selectedCourseObj = collegeCourses.find(
                               c => c.name.trim().toLowerCase() === currentDept.trim().toLowerCase()

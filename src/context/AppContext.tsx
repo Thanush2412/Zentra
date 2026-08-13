@@ -405,7 +405,7 @@ interface AppContextProps {
   updateCourse: (course: Course) => Promise<{ success: boolean; message: string }>;
   deleteDepartment: (id: string) => Promise<{ success: boolean; message: string; deletedCounts?: { slots: number; students: number; mentors: number; subjects: number } }>;
   deleteCourse: (id: string) => Promise<{ success: boolean; message: string; deletedCounts?: { slots: number; students: number; mentors: number; subjects: number } }>;
-  refreshData: () => Promise<any>;
+  refreshData: (silent?: boolean) => Promise<any>;
   students: Student[];
   studentAttendance: StudentAttendance[];
   currentStudent: Student | null;
@@ -647,9 +647,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [colleges, currentCAM, currentMentor, currentStudent, currentKAM, currentSME]);
 
   // ── Fetch all data from the database ──────────────────────────────────────
-  const refreshData = async () => {
+  const refreshData = async (silent: boolean = true) => {
     setIsDataLoading(true);
-    startLoading("Fetching live database data…");
+    if (!silent) {
+      startLoading("Fetching live database data…");
+    }
     try {
       const role = localStorage.getItem("fp_current_role") || "";
       let userId = "";
@@ -704,7 +706,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error("Error fetching data from API:", e);
     } finally {
       setIsDataLoading(false);
-      stopLoading();
+      if (!silent) {
+        stopLoading();
+      }
     }
     return { mentors: [] as Mentor[], hr: [] as HRUser[], students: [] as Student[], smes: [] as any[] };
   };

@@ -45,7 +45,6 @@ import {
   Video
 } from "lucide-react";
 import { InterviewModule } from "./InterviewModule";
-import * as XLSX from "xlsx";
 import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 
@@ -5220,7 +5219,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           ? campusDepts
           : Array.from(new Set(mentorClasses.map(c => getDeptFromClassGroup(c) || c))).filter(Boolean);
 
-        const activeDept = trackerDept || deptOptions[0] || currentMentor?.mentor_group || "Computer Science";
+        const activeDept = trackerDept || deptOptions[0] || currentMentor?.mentor_group || "";
 
         const semesterOptions = Array.from(new Set(
           subjectsList
@@ -5271,13 +5270,20 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           return sDept === activeDept.toLowerCase().trim() && sSem === activeSem.toLowerCase().trim();
         });
 
-        const exportTrackerData = () => {
+        const exportTrackerData = async () => {
           try {
+            const XLSX = await import("xlsx");
             const dataRows = classStudents.map((student, idx) => {
-              const rowObj: any = {
+              const rowObj: Record<string, any> = {
                 "S.No": idx + 1,
                 "Student ID": student.id,
                 "Student Name": student.name,
+                "Register No": student.register_number || "—",
+                "Email": student.email,
+                "Department": activeDept,
+                "Semester": activeSem,
+                "Subject": activeSubj,
+                "Class Group": student.classGroup || activeClassGroup
               };
 
               for (let wk = 1; wk <= 15; wk++) {

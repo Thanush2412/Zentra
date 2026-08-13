@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useApp, Slot, StudentAttendance } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { Button } from "./Button";
@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch } from "@/lib/utils";
 
-// Mock Library Books database for OPAC
+// Library Books Interface
 interface BookItem {
   id: string;
   title: string;
@@ -51,17 +51,6 @@ interface BookItem {
   status: "Available" | "Issued";
   expectedReturn?: string;
 }
-
-const MOCK_LIBRARY_BOOKS: BookItem[] = [
-  { id: "B001", title: "Introduction to Python Programming", author: "Dr. Rowan Atkinson", subject: "Python Programming", shelf: "Shelf A-1", status: "Available" },
-  { id: "B002", title: "Database Systems: Concepts and Design", author: "C. J. Date", subject: "Database Management Systems", shelf: "Shelf B-3", status: "Issued", expectedReturn: "2026-07-05" },
-  { id: "B003", title: "Artificial Intelligence: A Modern Approach", author: "Stuart Russell & Peter Norvig", subject: "Principles of Artificial Intelligence", shelf: "Shelf C-2", status: "Available" },
-  { id: "B004", title: "Statistics for Engineers and Scientists", author: "William Navidi", subject: "Descriptive Statistics", shelf: "Shelf D-1", status: "Available" },
-  { id: "B005", title: "Learning Web Development with React and Next.js", author: "Brad Traversy", subject: "Website Designing", shelf: "Shelf E-4", status: "Issued", expectedReturn: "2026-07-12" },
-  { id: "B006", title: "Digital Marketing Analytics & Strategy", author: "Chuck Hemann", subject: "Introduction to Digital Marketing", shelf: "Shelf F-2", status: "Available" },
-  { id: "B007", title: "Banking Law and Practice", author: "P. N. Varshney", subject: "Principles and Practice of Banking", shelf: "Shelf G-1", status: "Available" },
-  { id: "B008", title: "Pattern Making & Fashion Technology", author: "Helen Joseph Armstrong", subject: "Introduction to Fashion Industry & Terminology", shelf: "Shelf H-3", status: "Available" }
-];
 
 export interface StudentDashboardProps {
   activeTab?: "dashboard" | "schedule" | "marks" | "leave" | "exams" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu";
@@ -531,26 +520,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     }
   });
 
-  // Formulate static / realistic CIA marks based on course name
-  const getCIAMarks = (courseName: string) => {
-    // Generate deterministic mock marks based on student's name + course name length
-    const baseVal = (currentStudent.name.length + courseName.length) % 10;
-    
-    // Scale Test 1 & 2 marks with actual attendance percentage to make it dynamic
-    const attFactor = overallPercentage > 0 ? overallPercentage / 100 : 0.8;
-    const test1 = Math.round((38 + baseVal % 5) * attFactor);
-    const test2 = Math.round((40 + baseVal % 4) * attFactor);
-    const assignment = Math.round(15 + baseVal % 6);
-    const attendanceMark = Math.min(10, Math.ceil(overallPercentage / 10));
 
-    return {
-      test1: Math.min(50, test1),
-      test2: Math.min(50, test2),
-      assignment: Math.min(20, assignment),
-      attendance: attendanceMark,
-      total: Math.min(100, Math.round(((test1 + test2) / 100) * 80 + assignment + attendanceMark))
-    };
-  };
 
   // Helper to resolve the active day for a calendar date, accounting for CAM Day Order overrides
   const getMappedDayForDate = (dateStr: string, defaultDay: string) => {
@@ -718,8 +688,20 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     setSubmittingLeave(false);
   };
 
+  // Dynamically map library resources from active DB subjectsList
+  const libraryBooks: BookItem[] = useMemo(() => {
+    return (subjectsList || []).map((subj, idx) => ({
+      id: `BK-${subj.id || (idx + 1)}`,
+      title: `${subj.name} — Reference & Curriculum Textbook`,
+      author: "Department Curriculum Faculty",
+      subject: subj.name,
+      shelf: `Rack ${String.fromCharCode(65 + (idx % 8))}-${(idx % 4) + 1}`,
+      status: "Available" as const
+    }));
+  }, [subjectsList]);
+
   // Filter OPAC Books based on query
-  const filteredBooks = MOCK_LIBRARY_BOOKS.filter((book) => {
+  const filteredBooks = libraryBooks.filter((book) => {
     const q = librarySearch.toLowerCase();
     return (
       book.title.toLowerCase().includes(q) ||
@@ -728,22 +710,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       book.id.toLowerCase().includes(q)
     );
   });
-
-  // Handle Mock Fee Payment
-  const triggerPayFee = (feeId: string) => {
-    setPayingFeeId(feeId);
-    setTimeout(() => {
-      setPaidFees((prev) => ({ ...prev, [feeId]: true }));
-      setPayingFeeId(null);
-    }, 1200);
-  };
-
-  // Static/Deterministic mock fees list (kept for fallback)
-  const mockFees = [
-    { id: "fee_tuition", label: "Tuition Fees (Odd Semester)", amount: "₹45,000", dueDate: "2026-07-20" },
-    { id: "fee_exam", label: "Semester Examination Fees", amount: "₹2,500", dueDate: "2026-08-05" },
-    { id: "fee_library", label: "Library Resources Subscription Dues", amount: "₹1,200", dueDate: "2026-07-15" }
-  ];
 
   // Real fee state from /api/fees
   const [feeData, setFeeData] = useState<any>(null);
@@ -1669,12 +1635,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <table className="w-full border-collapse text-left text-xs min-w-[600px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
-                      <th className="p-3">Course Title</th>
-                      <th className="p-3 text-center">Test 1 (50)</th>
-                      <th className="p-3 text-center">Test 2 (50)</th>
-                      <th className="p-3 text-center">Assign. (20)</th>
-                      <th className="p-3 text-center">Att. (10)</th>
-                      <th className="p-3 text-center">CIA (100)</th>
+                      <th className="p-3">Course / Subject</th>
+                      <th className="p-3 text-center">Attendance</th>
+                      <th className="p-3 text-center">Weekly Tasks</th>
+                      <th className="p-3 text-center">Evaluations</th>
+                      <th className="p-3 text-center">Attendance Mark (10)</th>
+                      <th className="p-3 text-center">Avg Evaluation Score</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-150 bg-white font-medium">
@@ -1684,15 +1650,25 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       </tr>
                     ) : (
                       Object.keys(courseStats).map((courseName) => {
-                        const marks = getCIAMarks(courseName);
+                        const stats = courseStats[courseName] || { present: 0, absent: 0, total: 0 };
+                        const attPct = stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0;
+                        const trackerEntries = (studentTracker || []).filter(
+                          (t) => t.student_id === currentStudent?.id && isSubjectNameMatch(t.subject, courseName)
+                        );
+                        const evaluatedTasks = trackerEntries.filter((t) => t.marks !== undefined && t.marks !== null);
+                        const avgMarks = evaluatedTasks.length > 0
+                          ? Math.round(evaluatedTasks.reduce((sum, t) => sum + Number(t.marks), 0) / evaluatedTasks.length)
+                          : "—";
+                        const attScore = Math.min(10, Math.ceil(attPct / 10));
+
                         return (
                           <tr key={courseName} className="hover:bg-slate-50/50 transition-colors">
                             <td className="p-3 font-extrabold text-slate-900 truncate max-w-[160px]">{courseName}</td>
-                            <td className="p-3 text-center text-slate-700">{marks.test1}</td>
-                            <td className="p-3 text-center text-slate-700">{marks.test2}</td>
-                            <td className="p-3 text-center text-slate-700">{marks.assignment}</td>
-                            <td className="p-3 text-center text-slate-700">{marks.attendance}</td>
-                            <td className="p-3 text-center font-bold text-indigo-700">{marks.total}</td>
+                            <td className="p-3 text-center text-slate-700">{stats.present} / {stats.total} ({attPct}%)</td>
+                            <td className="p-3 text-center text-slate-700">{trackerEntries.length} Tasks</td>
+                            <td className="p-3 text-center text-slate-700">{evaluatedTasks.length} Evaluated</td>
+                            <td className="p-3 text-center text-slate-700">{attScore} / 10</td>
+                            <td className="p-3 text-center font-bold text-indigo-700">{avgMarks !== "—" ? `${avgMarks}%` : "Pending"}</td>
                           </tr>
                         );
                       })

@@ -43,7 +43,6 @@ import {
   AlertTriangle,
   Loader2
 } from "lucide-react";
-import * as XLSX from "xlsx";
 import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 import { LoadingButton } from "./ui/LoadingButton";
@@ -245,17 +244,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return relevantCourses.some(c => c.shift_based === 1 || (c.default_shift && c.default_shift !== "general"));
   }, [coursesList, templateCollegeId, colleges]);
 
-  const handleDownloadFacultyTemplate = () => {
+  const handleDownloadFacultyTemplate = async () => {
     const targetCol = colleges.find(c => c.id === templateCollegeId) || colleges[0];
     const targetCollegeId = targetCol?.id || "college_1";
     const targetCollegeName = targetCol?.name || "Selected College";
+    const campusCourses = coursesList.filter(c => !targetCollegeId || c.college_id === targetCollegeId);
+    const deptOptions = (campusCourses.length > 0 ? campusCourses : coursesList).map(c => c.name);
+    const primaryDept = deptOptions[0] || "Computer Science";
+    const secondaryDept = deptOptions[1] || primaryDept;
 
     // Sheet 1: Faculty Directory
     const facultyData = [
       {
         "Faculty Name": "Dr. Anitha Ramesh",
         "Email Address": "anitha.ramesh@zentra.edu",
-        "Department": "Computer Science",
+        "Department": primaryDept,
         "Shift": "Shift 1",
         "College ID": targetCollegeId,
         "College Name": targetCollegeName,
@@ -265,7 +268,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {
         "Faculty Name": "Prof. Rajesh Kumar",
         "Email Address": "rajesh.kumar@zentra.edu",
-        "Department": "Information Technology",
+        "Department": secondaryDept,
         "Shift": "General Shift",
         "College ID": targetCollegeId,
         "College Name": targetCollegeName,
@@ -278,7 +281,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const mappingGuide = [
       {
         "Guide": "Department Options",
-        "Allowed Values": "Computer Science, Information Technology, Data Science, Commerce, Management, Math, English, Tamil"
+        "Allowed Values": deptOptions.join(", ") || "General"
       },
       {
         "Guide": "Shift Options",
@@ -294,6 +297,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     ];
 
+    const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
     const ws1 = XLSX.utils.json_to_sheet(facultyData);
     const ws2 = XLSX.utils.json_to_sheet(mappingGuide);
@@ -311,8 +315,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
+        const XLSX = await import("xlsx");
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: "binary" });
         const sheetName = wb.SheetNames.includes("Faculty Directory") ? "Faculty Directory" : wb.SheetNames[0];
