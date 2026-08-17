@@ -2,6 +2,38 @@ import { NextResponse } from "next/server";
 import { getDb, syncMentorSubjectGroups } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 
+export async function GET(request: Request) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    const group = searchParams.get("group");
+    const collegeId = searchParams.get("collegeId");
+
+    if (group) {
+      const cleanGroup = group.toLowerCase().trim();
+      const countRes = await db.get(
+        `SELECT COUNT(*) as count FROM mentors 
+         WHERE LOWER(COALESCE(mentor_group, subject_group, department, '')) LIKE ?`,
+        [`%${cleanGroup}%`]
+      );
+      const mentorsInGroup = await db.all(
+        `SELECT * FROM mentors 
+         WHERE LOWER(COALESCE(mentor_group, subject_group, department, '')) LIKE ?`,
+        [`%${cleanGroup}%`]
+      );
+      return NextResponse.json({ success: true, group, count: countRes?.count || 0, mentors: mentorsInGroup });
+    }
+
+    const mentorSql = collegeId ? "SELECT * FROM mentors WHERE college_id = ?" : "SELECT * FROM mentors";
+    const mentorParams = collegeId ? [collegeId] : [];
+    const mentors = await db.all(mentorSql, ...mentorParams);
+
+    return NextResponse.json({ success: true, mentors });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const db = await getDb();

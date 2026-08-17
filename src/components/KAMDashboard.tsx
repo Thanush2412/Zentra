@@ -19,6 +19,7 @@ import { Card } from "./Card";
 import { Panel } from "./Panel";
 import { Input } from "./Input";
 import { Select } from "./Select";
+import { Pagination } from "./ui/Pagination";
 
 // Persistent global flag to prevent sidebar animating on every re-mount
 let isFirstSidebarAnimationDone = false;
@@ -48,6 +49,8 @@ const KAMMentorAttendanceTab: React.FC<{ kamId: string }> = ({ kamId }) => {
   const [search, setSearch] = useState("");
   const [selectedCollege, setSelectedCollege] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const fetchAttendance = async () => {
     setLoading(true);
@@ -68,15 +71,29 @@ const KAMMentorAttendanceTab: React.FC<{ kamId: string }> = ({ kamId }) => {
   };
 
   useEffect(() => {
-    fetchAttendance();
+    const handler = setTimeout(() => {
+      fetchAttendance();
+    }, 350);
+    return () => clearTimeout(handler);
   }, [kamId, dateStr]);
 
-  const filteredRecords = records.filter(r => {
-    const matchesSearch = !search || r.name.toLowerCase().includes(search.toLowerCase()) || (r.collegeName && r.collegeName.toLowerCase().includes(search.toLowerCase()));
-    const matchesCollege = selectedCollege === "all" || r.collegeId === selectedCollege;
-    const matchesStatus = selectedStatus === "all" || r.status === selectedStatus;
-    return matchesSearch && matchesCollege && matchesStatus;
-  });
+  useEffect(() => {
+    setPage(1);
+  }, [search, selectedCollege, selectedStatus, dateStr]);
+
+  const filteredRecords = useMemo(() => {
+    return records.filter(r => {
+      const matchesSearch = !search || r.name.toLowerCase().includes(search.toLowerCase()) || (r.collegeName && r.collegeName.toLowerCase().includes(search.toLowerCase()));
+      const matchesCollege = selectedCollege === "all" || r.collegeId === selectedCollege;
+      const matchesStatus = selectedStatus === "all" || r.status === selectedStatus;
+      return matchesSearch && matchesCollege && matchesStatus;
+    });
+  }, [records, search, selectedCollege, selectedStatus]);
+
+  const paginatedRecords = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredRecords.slice(start, start + pageSize);
+  }, [filteredRecords, page, pageSize]);
 
   const attendanceRate = summary.total > 0 ? Math.round(((summary.present + summary.od) / summary.total) * 100) : 0;
 
@@ -225,7 +242,7 @@ const KAMMentorAttendanceTab: React.FC<{ kamId: string }> = ({ kamId }) => {
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((m, idx) => (
+                paginatedRecords.map((m, idx) => (
                   <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
                     <td className="p-3">
                       <div className="font-extrabold text-indigo-600 dark:text-indigo-400">{m.collegeName}</div>
@@ -283,6 +300,13 @@ const KAMMentorAttendanceTab: React.FC<{ kamId: string }> = ({ kamId }) => {
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={page}
+            totalItems={filteredRecords.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
         </div>
       </div>
     </div>

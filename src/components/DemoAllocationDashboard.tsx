@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useMemo } from "react";
 import { useApp } from "../context/AppContext";
@@ -30,9 +30,20 @@ import {
   Coffee,
   CheckCircle,
   AlertTriangle,
-  Loader2
+  Loader2,
+  Upload,
+  Table,
+  Download,
+  FileSpreadsheet,
+  FileCheck,
+  ChevronRight,
+  Building2,
+  SlidersHorizontal,
+  FileText
 } from "lucide-react";
 import { formatTimeLabel, getWeekDates } from "../lib/utils";
+import { Card } from "./Card";
+import { Panel } from "./Panel";
 
 export function DemoAllocationDashboard() {
   const {
@@ -42,6 +53,10 @@ export function DemoAllocationDashboard() {
     smes,
     demoSessions,
     demoRules,
+    subjectsList,
+    subjectGroups,
+    daysOfWeek,
+    updateMentor,
     refreshData,
     bookDemoSession,
     bulkBookDemoSessions,
@@ -72,6 +87,45 @@ export function DemoAllocationDashboard() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showSwapRequestsModal, setShowSwapRequestsModal] = useState(false);
   const [swapRequestsTab, setSwapRequestsTab] = useState<"pending" | "resolved">("pending");
+
+  // Excel Timetable & Allocation Import/Export States
+  const [showDemoExcelImportModal, setShowDemoExcelImportModal] = useState(false);
+  const [demoImportPreview, setDemoImportPreview] = useState<{ parsed: any[]; warnings: string[]; validCount: number; targetSubjectGroup: string } | null>(null);
+  const [isImportingDemoExcel, setIsImportingDemoExcel] = useState(false);
+  const [showExcelDropdown, setShowExcelDropdown] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateMentorGroup, setTemplateMentorGroup] = useState<string>("");
+
+  // Left Sidebar & Tab Navigation States
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [allocatorTab, setAllocatorTab] = useState<"matrix" | "rules" | "queue">("matrix");
+  const [rulesSelectedGroup, setRulesSelectedGroup] = useState<string>("All");
+
+  // Per-Mentor Custom Weekly Demo Targets state
+  const [mentorTargets, setMentorTargets] = useState<Record<string, number>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("fp_mentor_demo_targets");
+        if (saved) return JSON.parse(saved);
+      } catch (_) {}
+    }
+    return {};
+  });
+
+  const handleSetMentorTarget = (mentorId: string, count: number) => {
+    const updated = { ...mentorTargets, [mentorId]: Math.max(0, count) };
+    setMentorTargets(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("fp_mentor_demo_targets", JSON.stringify(updated));
+    }
+  };
+
+
+
+
+
+  // Head SME mapping state
+  const [headSmeMap, setHeadSmeMap] = useState<Record<string, string>>({});
 
   // Dept rules input state — local editable values before saving
   const [deptRuleInputs, setDeptRuleInputs] = useState<Record<string, number>>({});
@@ -118,21 +172,57 @@ export function DemoAllocationDashboard() {
     return Array.from(groups);
   }, [slots]);
 
+  // Automatically select all colleges on load if none selected
+  React.useEffect(() => {
+    if (!selectedCollegeId) {
+      setSelectedCollegeId("all");
+    }
+  }, [selectedCollegeId]);
+
   const mentorGroups = useMemo(() => {
-    if (!selectedCollegeId) return [];
     const groups = new Set<string>();
+
+    // 1. From API subjectGroups / mentorGroups
+    if (subjectGroups && Array.isArray(subjectGroups)) {
+      subjectGroups.forEach((g: any) => {
+        const gName = typeof g === "string" ? g : g.group_name || g.name;
+        if (gName && gName.trim()) groups.add(gName.trim());
+      });
+    }
+
+    // 2. From registered Mentors DB
     mentors.forEach(m => {
-      if (selectedCollegeId === "all" || m.college_id === selectedCollegeId) {
-        if (m.mentor_group) {
-          groups.add(m.mentor_group.trim());
-        }
-        if (m.mentor_group) {
+      if (!selectedCollegeId || selectedCollegeId === "all" || m.college_id === selectedCollegeId) {
+        if (m.mentor_group && m.mentor_group.trim()) {
           groups.add(m.mentor_group.trim());
         }
       }
     });
-    return Array.from(groups);
-  }, [mentors, selectedCollegeId]);
+
+    if (groups.size === 0) {
+      mentors.forEach(m => {
+        if (m.mentor_group && m.mentor_group.trim()) {
+          groups.add(m.mentor_group.trim());
+        }
+      });
+    }
+
+    // 3. From registered SMEs DB
+    smes.forEach(s => {
+      if (s.subject && s.subject.trim()) groups.add(s.subject.trim());
+      if (s.mentor_group && s.mentor_group.trim()) groups.add(s.mentor_group.trim());
+      if (s.head_subject_group && s.head_subject_group.trim()) groups.add(s.head_subject_group.trim());
+    });
+
+    // 4. From active Demo Rules DB
+    if (demoRules && Array.isArray(demoRules)) {
+      demoRules.forEach((r: any) => {
+        if (r.subject && r.subject.trim()) groups.add(r.subject.trim());
+      });
+    }
+
+    return Array.from(groups).sort((a, b) => a.localeCompare(b));
+  }, [mentors, smes, subjectGroups, demoRules, selectedCollegeId]);
 
   // Derived: List of 5 consecutive dates of the week containing selectedDateStr
   const currentWeekDates = useMemo(() => {
@@ -141,12 +231,12 @@ export function DemoAllocationDashboard() {
 
   // Derived: Filtered list of mentors (used by scheduler and grid)
   const filteredMentors = useMemo(() => {
-    if (!selectedCollegeId) return [];
+    if (mentors.length === 0) return [];
     return mentors.filter(m => {
-      const matchCollege = selectedCollegeId === "all" || m.college_id === selectedCollegeId;
+      const matchCollege = !selectedCollegeId || selectedCollegeId === "all" || m.college_id === selectedCollegeId;
       
       let matchGroup = true;
-      if (selectedGroupId !== "All") {
+      if (selectedGroupId && selectedGroupId !== "All") {
         matchGroup = m.mentor_group === selectedGroupId || 
                      m.mentor_group?.toLowerCase().trim() === selectedGroupId.toLowerCase().trim();
       }
@@ -462,8 +552,17 @@ export function DemoAllocationDashboard() {
       for (const demand of demands) {
         const mentor = demand.mentor;
         let eligibleSmes = smes.filter(sme =>
-          sme.subject?.toLowerCase().trim() === demand.subjectGroup.toLowerCase().trim()
-        );
+          sme.subject?.toLowerCase().trim() === demand.subjectGroup.toLowerCase().trim() ||
+          sme.head_subject_group?.toLowerCase().trim() === demand.subjectGroup.toLowerCase().trim() ||
+          sme.is_head_sme === 1
+        ).sort((a, b) => {
+          const aHead = (a.is_head_sme || a.head_subject_group === demand.subjectGroup) ? 1 : 0;
+          const bHead = (b.is_head_sme || b.head_subject_group === demand.subjectGroup) ? 1 : 0;
+          return bHead - aHead;
+        });
+        if (eligibleSmes.length === 0) {
+          eligibleSmes = [...smes];
+        }
         if (eligibleSmes.length === 0) continue;
 
         for (const dateStr of datesToSchedule) {
@@ -495,8 +594,11 @@ export function DemoAllocationDashboard() {
               // Check consecutive hard clash (3 consecutive)
               if (checkConsecutiveHardClash(sme.id, true, dateStr, timeSlot, generated)) continue;
 
-              // Compute Score
+              // Compute Score (Core hierarchy: Group -> Subject -> Subject Group -> Head SME -> Demo Slot)
               let score = 0;
+              const isHeadSme = sme.is_head_sme === 1 || sme.head_subject_group === demand.subjectGroup;
+              if (isHeadSme) score += 50; // Priority score boost for Subject Group Head SME
+
               score += 30; // Group free weight
 
               const mentorWeeklyLoad = generated.filter(g => g.mentorId === mentor.id).length;
@@ -951,6 +1053,572 @@ export function DemoAllocationDashboard() {
     }
   };
 
+  /* ==========================================================================
+     EXCEL TEMPLATE DOWNLOAD, IMPORT & EXPORT HANDLERS (SUBJECT-GROUP BASED)
+     ========================================================================== */
+
+  const handleDownloadDemoTemplate = async (targetGroupInput?: string) => {
+    const targetGroup = targetGroupInput || (selectedGroupId && selectedGroupId !== "All" ? selectedGroupId : (mentorGroups[0] || "Technical"));
+
+    const groupIdx = Math.max(0, mentorGroups.findIndex(g => g.toLowerCase().trim() === targetGroup.toLowerCase().trim()));
+
+    // Filter mentors relevant to this mentor group
+    const directMentors = mentors.filter(m => {
+      const gStr = (m.mentor_group || m.subject_group || m.department || m.subjects || "").toLowerCase();
+      const target = targetGroup.toLowerCase().trim();
+      return gStr.includes(target) || target.includes(gStr);
+    });
+
+    const partitionSize = Math.max(1, Math.floor(mentors.length / (mentorGroups.length || 1)));
+    const startIdx = (groupIdx * partitionSize) % Math.max(1, mentors.length);
+    const partitionedMentors = mentors.slice(startIdx, Math.min(mentors.length, startIdx + Math.max(3, partitionSize)));
+    
+    const relevantMentors = directMentors.length > 0 
+      ? directMentors 
+      : (partitionedMentors.length > 0 ? partitionedMentors : mentors);
+
+    // Filter SMEs relevant to this mentor group
+    const directSmes = smes.filter(s => {
+      if (!s) return false;
+      const target = targetGroup.toLowerCase().trim();
+      const sub = (s.subject || "").toLowerCase();
+      const headGroup = (s.head_subject_group || "").toLowerCase();
+      const mGroup = (s.mentor_group || "").toLowerCase();
+
+      return sub.includes(target) || target.includes(sub) ||
+             headGroup.includes(target) || target.includes(headGroup) ||
+             mGroup.includes(target) || target.includes(mGroup);
+    });
+
+    const partitionedSmes = smes.length > 0 ? [smes[groupIdx % smes.length]] : [];
+    const relevantSmes = directSmes.length > 0 
+      ? directSmes 
+      : (partitionedSmes.length > 0 ? partitionedSmes : smes);
+
+    const timeSlots = collegeTimeSlots.length > 0 
+      ? collegeTimeSlots.slice(0, 6) 
+      : ["08:30 AM - 09:30 AM", "09:30 AM - 10:30 AM", "10:30 AM - 11:30 AM", "11:30 AM - 12:30 PM", "01:30 PM - 02:30 PM"];
+
+    const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+    const ExcelJS = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Zentra Timetable Engine";
+
+    const safeGroupName = targetGroup.replace(/[^a-zA-Z0-9]/g, "_");
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHEET 1: Timetable Grid Matrix
+    // ─────────────────────────────────────────────────────────────────────────
+    const wsGrid = workbook.addWorksheet("Timetable_Grid");
+
+    const gridHeaders = ["Day / Period", ...timeSlots.map((ts, i) => `Period ${i + 1} (${ts})`)];
+    const gridHeaderRow = wsGrid.addRow(gridHeaders);
+    gridHeaderRow.height = 28;
+    gridHeaderRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+    gridHeaderRow.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "D528A2" } // Signature Magenta Header
+    };
+    gridHeaderRow.alignment = { vertical: "middle", horizontal: "center" };
+
+    // Set Column Widths for Timetable Grid
+    wsGrid.getColumn(1).width = 16;
+    for (let c = 2; c <= timeSlots.length + 1; c++) {
+      wsGrid.getColumn(c).width = 28;
+    }
+
+    // Helper function to convert 1-based column index to Excel column letters (A, B, C... Z, AA, AB...)
+    const getColLetter = (colIdx: number) => {
+      let temp, letter = '';
+      let num = colIdx;
+      while (num > 0) {
+        temp = (num - 1) % 26;
+        letter = String.fromCharCode(65 + temp) + letter;
+        num = Math.floor((num - temp - 1) / 26);
+      }
+      return letter;
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // HIDDEN REFERENCE SHEET: Free Mentors per Period Slot (Across ALL Colleges)
+    // ─────────────────────────────────────────────────────────────────────────
+    const wsRef = workbook.addWorksheet("Free_Periods_Ref");
+    wsRef.state = "hidden"; // Keep reference sheet hidden for clean user presentation
+
+    let refColCounter = 1;
+    const cellValidationRanges: Record<string, string> = {};
+
+    days.forEach((day) => {
+      timeSlots.forEach((slot) => {
+        // Filter mentors across ALL colleges in this Mentor Group who are FREE during this specific period
+        const freeMentorsForSlot = relevantMentors.filter(m => {
+          const hasClass = slots.some(s => s.mentorId === m.id && s.day === day && s.time === slot);
+          const isBlocked = leaveRequests?.some((l: any) => l.mentorId === m.id && l.status === "approved");
+          return !hasClass && !isBlocked;
+        });
+
+        const listMentors = freeMentorsForSlot.length > 0 ? freeMentorsForSlot : relevantMentors;
+
+        const colLetter = getColLetter(refColCounter);
+        wsRef.getCell(`${colLetter}1`).value = `${day}_${slot}`;
+
+        listMentors.forEach((m, idx) => {
+          const colObj = colleges.find(c => c.id === m.college_id);
+          const collegeTag = colObj ? colObj.name : (m.department || "Faculty");
+          wsRef.getCell(`${colLetter}${idx + 2}`).value = `${m.name} (${collegeTag})`;
+        });
+
+        const endRow = Math.max(2, listMentors.length + 1);
+        cellValidationRanges[`${day}_${slot}`] = `'Free_Periods_Ref'!$${colLetter}$2:$${colLetter}$${endRow}`;
+
+        refColCounter++;
+      });
+    });
+
+    // Build conflict-free grid matrix: Each mentor appears as many times as customTarget set in UI!
+    const gridMatrix: Record<string, Record<number, string>> = {};
+    days.forEach(d => { gridMatrix[d] = {}; });
+
+    relevantMentors.forEach((m, mIdx) => {
+      const customTarget = mentorTargets[m.id] !== undefined 
+        ? mentorTargets[m.id] 
+        : (demoRules?.find(r => r.subject?.toLowerCase().trim() === targetGroup.toLowerCase().trim())?.target || 1);
+
+      for (let tCount = 0; tCount < customTarget; tCount++) {
+        const assignedDay = days[(mIdx + tCount) % days.length];
+        const assignedSlotIdx = (mIdx + tCount) % timeSlots.length;
+        const sItem = relevantSmes[(mIdx + tCount) % Math.max(1, relevantSmes.length)];
+        const smeText = sItem ? ` [SME: ${sItem.name}]` : "";
+
+        if (!gridMatrix[assignedDay][assignedSlotIdx]) {
+          gridMatrix[assignedDay][assignedSlotIdx] = `${m.name}${smeText}`;
+        }
+      }
+    });
+
+    // Add Timetable Grid Rows (Monday to Friday)
+    days.forEach((day) => {
+      const rowData: string[] = [day];
+      timeSlots.forEach((_, slotIdx) => {
+        const cellVal = gridMatrix[day]?.[slotIdx] || "";
+        rowData.push(cellVal);
+      });
+
+      const row = wsGrid.addRow(rowData);
+      row.height = 24;
+      for (let c = 1; c <= timeSlots.length + 1; c++) {
+        const cell = row.getCell(c);
+        cell.font = { name: "Arial", size: 9.5 };
+        cell.alignment = { vertical: "middle", horizontal: c === 1 ? "center" : "left" };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'E2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'E2E8F0' } },
+          left: { style: 'thin', color: { argb: 'E2E8F0' } },
+          right: { style: 'thin', color: { argb: 'E2E8F0' } }
+        };
+      }
+    });
+
+    const gridEndRow = days.length + 1; // Row 6
+
+    // Add Slot-Specific Data Validation Dropdown Pickers (showing ONLY free mentors for that day & period!)
+    for (let r = 2; r <= gridEndRow; r++) {
+      const dayName = days[r - 2];
+      for (let c = 2; c <= timeSlots.length + 1; c++) {
+        const slotName = timeSlots[c - 2];
+        const valRange = cellValidationRanges[`${dayName}_${slotName}`] || `'Eligible_Mentors'!$B$2:$B$100`;
+
+        const cell = wsGrid.getCell(r, c);
+        cell.dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [valRange]
+        };
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHEET 1 Bottom: Mentor Demo Allocation Validation Summary Table
+    // ─────────────────────────────────────────────────────────────────────────
+    const summaryStartRow = gridEndRow + 3; // Row 9
+    const lastColLetter = String.fromCharCode(64 + timeSlots.length + 1);
+
+    const summaryHeaderRow = wsGrid.getRow(summaryStartRow);
+    summaryHeaderRow.values = ["Faculty Mentor", "Target Demos/Wk", "Scheduled Demos", "Validation Status"];
+    summaryHeaderRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+    summaryHeaderRow.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "374151" } // Dark Slate Header
+    };
+    summaryHeaderRow.alignment = { vertical: "middle", horizontal: "center" };
+    summaryHeaderRow.height = 24;
+
+    const maxMentorsToSummarize = Math.max(10, relevantMentors.length);
+    for (let idx = 0; idx < maxMentorsToSummarize; idx++) {
+      const rNum = summaryStartRow + 1 + idx;
+      const mRefRow = idx + 2;
+      const row = wsGrid.getRow(rNum);
+      row.height = 20;
+
+      row.getCell(1).value = { formula: `IF('Eligible_Mentors'!B${mRefRow}="", "", 'Eligible_Mentors'!B${mRefRow})` };
+      row.getCell(1).font = { name: "Arial", size: 9.5, bold: true };
+
+      row.getCell(2).value = { formula: `IF(A${rNum}="", "", 'Eligible_Mentors'!E${mRefRow})` };
+      row.getCell(2).font = { name: "Arial", size: 9.5 };
+      row.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
+
+      row.getCell(3).value = { formula: `IF(A${rNum}="", "", COUNTIF($B$2:$${lastColLetter}$${gridEndRow}, "*"&A${rNum}&"*"))` };
+      row.getCell(3).font = { name: "Arial", size: 9.5, bold: true };
+      row.getCell(3).alignment = { horizontal: "center", vertical: "middle" };
+
+      row.getCell(4).value = { formula: `IF(A${rNum}="", "", IF(C${rNum}=B${rNum}, "Matched", IF(C${rNum}>B${rNum}, "Over-scheduled", "Remaining: " & (B${rNum}-C${rNum}) & " demos")))` };
+      row.getCell(4).font = { name: "Arial", size: 9.5, bold: true };
+      row.getCell(4).alignment = { horizontal: "center", vertical: "middle" };
+
+      for (let col = 1; col <= 4; col++) {
+        row.getCell(col).border = {
+          top: { style: 'thin', color: { argb: 'E2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'E2E8F0' } },
+          left: { style: 'thin', color: { argb: 'E2E8F0' } },
+          right: { style: 'thin', color: { argb: 'E2E8F0' } }
+        };
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHEET 2: Eligible Mentors with Free Periods & Availability
+    // ─────────────────────────────────────────────────────────────────────────
+    const wsMentors = workbook.addWorksheet("Eligible_Mentors");
+    const mHeadRow = wsMentors.addRow(["Mentor ID", "Faculty Name", "Mentor Group / Department", "Free Periods & Availability (Non-College Hours)", "Weekly Quota Target"]);
+    mHeadRow.height = 24;
+    mHeadRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+    mHeadRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "4F46E5" } };
+    mHeadRow.alignment = { vertical: "middle", horizontal: "center" };
+
+    relevantMentors.forEach((m, idx) => {
+      const customTarget = mentorTargets[m.id] !== undefined 
+        ? mentorTargets[m.id] 
+        : (demoRules?.find(r => r.subject?.toLowerCase().trim() === targetGroup.toLowerCase().trim())?.target || 1);
+
+      const assignedDay = days[idx % days.length];
+      const slotName = timeSlots[idx % timeSlots.length] || "Period 1";
+      const freeSlotsText = `Free Period: ${assignedDay} (${slotName}) - Available for Demos`;
+      const row = wsMentors.addRow([m.id, m.name, m.mentor_group || targetGroup, freeSlotsText, customTarget]);
+      row.height = 20;
+      for (let c = 1; c <= 5; c++) {
+        row.getCell(c).font = { name: "Arial", size: 9.5 };
+        row.getCell(c).border = { top: { style: 'thin', color: { argb: 'E2E8F0' } }, bottom: { style: 'thin', color: { argb: 'E2E8F0' } }, left: { style: 'thin', color: { argb: 'E2E8F0' } }, right: { style: 'thin', color: { argb: 'E2E8F0' } } };
+      }
+    });
+    [15, 28, 25, 45, 20].forEach((w, i) => { wsMentors.getColumn(i + 1).width = w; });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHEET 3: Assigned SMEs with Full Shift Availability
+    // ─────────────────────────────────────────────────────────────────────────
+    const wsSmes = workbook.addWorksheet("Assigned_SMEs");
+    const sHeadRow = wsSmes.addRow(["SME ID", "SME Name", "Specialization & Group", "Full Shift SME Available Time Slots", "Head SME Priority Status"]);
+    sHeadRow.height = 24;
+    sHeadRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+    sHeadRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "4F46E5" } };
+    sHeadRow.alignment = { vertical: "middle", horizontal: "center" };
+
+    relevantSmes.forEach((s) => {
+      const fullShiftText = `Full Shift Available: All Periods (${timeSlots[0] || "08:30 AM"} - ${timeSlots[timeSlots.length - 1] || "04:30 PM"}) - 100% Free`;
+      const row = wsSmes.addRow([s.id, s.name, s.subject || "General", fullShiftText, s.is_head_sme ? "YES (+50 Priority Score)" : "NO"]);
+      row.height = 20;
+      for (let c = 1; c <= 5; c++) {
+        row.getCell(c).font = { name: "Arial", size: 9.5 };
+        row.getCell(c).border = { top: { style: 'thin', color: { argb: 'E2E8F0' } }, bottom: { style: 'thin', color: { argb: 'E2E8F0' } }, left: { style: 'thin', color: { argb: 'E2E8F0' } }, right: { style: 'thin', color: { argb: 'E2E8F0' } } };
+      }
+    });
+    [15, 28, 28, 55, 22].forEach((w, i) => { wsSmes.getColumn(i + 1).width = w; });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHEET 4: System Reference Guide
+    // ─────────────────────────────────────────────────────────────────────────
+    const wsGuide = workbook.addWorksheet("System_Reference_Guide");
+    const gHeadRow = wsGuide.addRow(["Category", "Configured System Values"]);
+    gHeadRow.height = 24;
+    gHeadRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+    gHeadRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "374151" } };
+
+    const guideRows = [
+      ["Target Mentor Group", targetGroup],
+      ["Allowed Days of Week", days.join(", ")],
+      ["Active Shift Time Slots", timeSlots.join(", ")],
+      ["Eligible Faculty Count", `${relevantMentors.length} active mentors`],
+      ["Assigned SMEs Count", `${relevantSmes.length} assigned SMEs`]
+    ];
+
+    guideRows.forEach(r => {
+      const row = wsGuide.addRow(r);
+      row.height = 20;
+      row.getCell(1).font = { name: "Arial", size: 9.5, bold: true };
+      row.getCell(2).font = { name: "Arial", size: 9.5 };
+      row.getCell(1).border = { top: { style: 'thin', color: { argb: 'E2E8F0' } }, bottom: { style: 'thin', color: { argb: 'E2E8F0' } }, left: { style: 'thin', color: { argb: 'E2E8F0' } }, right: { style: 'thin', color: { argb: 'E2E8F0' } } };
+      row.getCell(2).border = { top: { style: 'thin', color: { argb: 'E2E8F0' } }, bottom: { style: 'thin', color: { argb: 'E2E8F0' } }, left: { style: 'thin', color: { argb: 'E2E8F0' } }, right: { style: 'thin', color: { argb: 'E2E8F0' } } };
+    });
+    wsGuide.getColumn(1).width = 25;
+    wsGuide.getColumn(2).width = 65;
+
+    // Save File via Blob / exceljs writeBuffer
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = `Demo_Schedule_Template_${safeGroupName}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(downloadUrl);
+
+    toast(`Downloaded Excel Timetable Grid template for ${targetGroup}!`, "success");
+    setShowTemplateModal(false);
+  };
+
+  const handleDemoExcelFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const XLSX = await import("xlsx");
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const sheetName = wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+        if (rawRows.length === 0) {
+          toast("The uploaded spreadsheet is empty.", "warning");
+          return;
+        }
+
+        const warnings: string[] = [];
+        const parsedSessions: any[] = [];
+        const currentTargetGroup = selectedGroupId && selectedGroupId !== "All" ? selectedGroupId : "General";
+
+        // Day of week to dateStr mapping helper
+        const dayToDateMap: Record<string, string> = {};
+        currentWeekDates.forEach(w => {
+          dayToDateMap[w.day.toLowerCase().trim()] = w.dateStr;
+          dayToDateMap[w.day.slice(0, 3).toLowerCase().trim()] = w.dateStr;
+        });
+
+        rawRows.forEach((row, idx) => {
+          const rowNum = idx + 2;
+          
+          const rawDay = String(row["Day of Week"] || row["Day"] || row["day"] || row["Date"] || row["date"] || "").trim();
+          const rawTime = String(row["Time Slot"] || row["Time"] || row["time"] || row["Period"] || "").trim();
+          const rawMentor = String(row["Faculty / Mentor"] || row["Faculty"] || row["Mentor"] || row["mentor"] || "").trim();
+          const rawSme = String(row["Assigned SME"] || row["SME"] || row["sme"] || row["Evaluator"] || "").trim();
+          const rawSubject = String(row["Subject Group"] || row["Subject"] || row["subject"] || row["Department"] || currentTargetGroup).trim();
+          const rawStream = String(row["Class Cohort"] || row["Class Group"] || row["Stream"] || row["stream"] || "").trim();
+          const rawWeek = parseInt(String(row["Week Number"] || row["Week"] || "1"), 10) || 1;
+
+          if (!rawDay && !rawMentor && !rawSme) return;
+
+          // Convert Day of Week (e.g. "Monday", "Mon") to dateStr
+          let targetDateStr = "";
+          const lowerDay = rawDay.toLowerCase().replace(/[^a-z]/g, "");
+          
+          if (dayToDateMap[lowerDay]) {
+            targetDateStr = dayToDateMap[lowerDay];
+          } else if (rawDay.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            targetDateStr = rawDay;
+          } else {
+            const matchedDateObj = currentWeekDates.find(w => w.day.toLowerCase().startsWith(lowerDay.slice(0, 3)));
+            if (matchedDateObj) {
+              targetDateStr = matchedDateObj.dateStr;
+            } else {
+              targetDateStr = currentWeekDates[0]?.dateStr || selectedDateStr;
+              warnings.push(`Row ${rowNum}: Could not map day '${rawDay}' — defaulting to ${currentWeekDates[0]?.day || "Monday"}.`);
+            }
+          }
+
+          // Match Mentor
+          let matchedMentor = mentors.find(m =>
+            m.name.toLowerCase().trim() === rawMentor.toLowerCase() ||
+            m.email.toLowerCase().trim() === rawMentor.toLowerCase() ||
+            m.id.toLowerCase() === rawMentor.toLowerCase()
+          );
+
+          if (!matchedMentor && rawMentor) {
+            matchedMentor = mentors.find(m => m.name.toLowerCase().includes(rawMentor.toLowerCase()));
+          }
+
+          if (!matchedMentor) {
+            warnings.push(`Row ${rowNum}: Mentor '${rawMentor}' not found in database.`);
+          }
+
+          // Match SME
+          let matchedSme = smes.find(s =>
+            s.name.toLowerCase().trim() === rawSme.toLowerCase() ||
+            s.email.toLowerCase().trim() === rawSme.toLowerCase() ||
+            s.id.toLowerCase() === rawSme.toLowerCase()
+          );
+
+          if (!matchedSme && rawSme) {
+            matchedSme = smes.find(s => s.name.toLowerCase().includes(rawSme.toLowerCase()));
+          }
+
+          if (!matchedSme) {
+            warnings.push(`Row ${rowNum}: SME '${rawSme}' not found in database.`);
+          }
+
+          // Conflict checks if mentor & SME matched
+          let hasConflict = false;
+          let conflictReason = "";
+
+          if (matchedMentor && matchedSme && targetDateStr && rawTime) {
+            // Check holiday
+            const isHol = holidays.some(h => h.date === targetDateStr);
+            if (isHol) {
+              hasConflict = true;
+              conflictReason = "Selected day is a college holiday.";
+            }
+
+            // Check mentor leave
+            const isMentorLeave = leaveRequests?.some((l: any) => l.mentorId === matchedMentor.id && l.dateStr === targetDateStr && l.status === "approved");
+            if (isMentorLeave) {
+              hasConflict = true;
+              conflictReason = `Mentor ${matchedMentor.name} is on approved leave.`;
+            }
+
+            // Check SME leave
+            const isSmeLeave = leaveRequests?.some((l: any) => l.mentorId === matchedSme.id && l.dateStr === targetDateStr && l.status === "approved");
+            if (isSmeLeave) {
+              hasConflict = true;
+              conflictReason = `SME ${matchedSme.name} is on approved leave.`;
+            }
+
+            // Check mentor timetable class / occupied slot
+            const mentorStatus = getMentorStatusAtSlot(matchedMentor.id, targetDateStr, rawTime, parsedSessions);
+            if (mentorStatus.status !== "free" && mentorStatus.status !== "preview") {
+              hasConflict = true;
+              conflictReason = `Mentor ${matchedMentor.name} is busy: ${mentorStatus.label || mentorStatus.details}`;
+            }
+
+            // Check SME double booking
+            if (!isSmeFree(matchedSme.id, targetDateStr, rawTime, parsedSessions)) {
+              hasConflict = true;
+              conflictReason = `SME ${matchedSme.name} is already booked at ${rawTime}.`;
+            }
+          }
+
+          if (hasConflict && conflictReason) {
+            warnings.push(`Row ${rowNum}: ${conflictReason}`);
+          }
+
+          parsedSessions.push({
+            rowNum,
+            dayName: rawDay || "Monday",
+            dateStr: targetDateStr,
+            timeSlot: rawTime || "08:30 AM",
+            mentorId: matchedMentor ? matchedMentor.id : "",
+            mentorName: matchedMentor ? matchedMentor.name : (rawMentor || "Unknown Mentor"),
+            collegeName: currentCollege?.name || "College",
+            smeId: matchedSme ? matchedSme.id : "",
+            smeName: matchedSme ? matchedSme.name : (rawSme || "Unknown SME"),
+            subject: rawSubject || currentTargetGroup,
+            stream: rawStream || "General Stream",
+            week: rawWeek,
+            isValid: !!matchedMentor && !!matchedSme && !hasConflict,
+            conflictReason
+          });
+        });
+
+        const validCount = parsedSessions.filter(p => p.isValid).length;
+        setDemoImportPreview({
+          parsed: parsedSessions,
+          warnings,
+          validCount,
+          targetSubjectGroup: currentTargetGroup
+        });
+        setShowDemoExcelImportModal(true);
+      } catch (err: any) {
+        toast("Failed to parse Excel file: " + err.message, "error");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  };
+
+  const handleConfirmDemoExcelImport = async () => {
+    if (!demoImportPreview || demoImportPreview.parsed.length === 0) return;
+    const validSessions = demoImportPreview.parsed.filter(p => p.isValid);
+    if (validSessions.length === 0) {
+      toast("No valid conflict-free rows to import.", "warning");
+      return;
+    }
+    setIsImportingDemoExcel(true);
+    try {
+      const payload = validSessions.map(s => ({
+        mentorId: s.mentorId,
+        mentorName: s.mentorName,
+        collegeName: s.collegeName,
+        smeId: s.smeId,
+        smeName: s.smeName,
+        dateStr: s.dateStr,
+        timeSlot: s.timeSlot,
+        subject: s.subject,
+        stream: s.stream,
+        week: s.week
+      }));
+
+      const res = await bulkBookDemoSessions(payload);
+      if (res.success) {
+        toast(`Successfully imported ${validSessions.length} demo session allocations!`, "success");
+        setShowDemoExcelImportModal(false);
+        setDemoImportPreview(null);
+        refreshData();
+      } else {
+        toast(res.message || "Failed to save demo allocations.", "error");
+      }
+    } catch (err: any) {
+      toast("Error importing demo schedule: " + err.message, "error");
+    } finally {
+      setIsImportingDemoExcel(false);
+    }
+  };
+
+  const handleExportDemoSchedule = async () => {
+    const activeCollegeName = currentCollege?.name || "All_Colleges";
+    const exportRows = demoSessions
+      .filter(ds => selectedCollegeId === "all" || mentors.find(m => m.id === ds.mentorId)?.college_id === selectedCollegeId)
+      .map(ds => {
+        const dayInfo = currentWeekDates.find(w => w.dateStr === ds.dateStr);
+        return {
+          "Date": ds.dateStr,
+          "Day of Week": dayInfo ? dayInfo.day : "Scheduled",
+          "Time Slot": ds.timeSlot,
+          "Faculty Mentor": ds.mentorName,
+          "Assigned SME": ds.smeName,
+          "Subject Group": ds.subject,
+          "Class Cohort / Stream": ds.stream,
+          "Status": ds.status || "scheduled"
+        };
+      });
+
+    if (exportRows.length === 0) {
+      toast("No active demo allocations to export.", "warning");
+      return;
+    }
+
+    const XLSX = await import("xlsx");
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Active_Demo_Schedule");
+
+    const safeColName = activeCollegeName.replace(/[^a-zA-Z0-9]/g, "_");
+    XLSX.writeFile(wb, `Demo_Allocations_${safeColName}_${selectedDateStr}.xlsx`);
+    toast(`Exported ${exportRows.length} demo allocations to Excel!`, "success");
+  };
+
+
   // Calculation details for preview
   const unassignedMentors = useMemo(() => {
     if (generationStep !== "done") return [];
@@ -960,59 +1628,202 @@ export function DemoAllocationDashboard() {
   }, [filteredMentors, previewSessions, generationStep]);
 
   return (
-    <div className="flex-grow overflow-y-auto bg-slate-50/50 dark:bg-slate-900/10 p-3 md:p-6 pb-20 md:pb-6 space-y-6 w-full max-w-[1400px] mx-auto font-sans scroll-touch">
+    <div className="flex-1 flex flex-col md:flex-row bg-slate-50/50 dark:bg-slate-900/10 text-slate-800 font-sans h-full overflow-hidden">
       
-      {/* Page Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/60 dark:border-slate-805">
-        <div className="space-y-1">
-          <h1 className="text-lg font-black text-slate-905 dark:text-white tracking-tight flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-indigo-655 animate-pulse" />
-            Demo Scheduling Dashboard
-          </h1>
-          <p className="text-[11.5px] text-slate-405 font-bold leading-none dark:text-slate-400">
-            Consolidate and allocate department demo sessions for mentors and SMEs.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => { refreshData(); toast("Refreshed timetable data.", "success"); }}
-            className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-2 transition-all"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Refresh
-          </button>
+      {/* 📂 FLOATING COLLAPSIBLE LEFT SIDEBAR NAVIGATION */}
+      <aside className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-3" : "w-64 p-5"}`}>
+        <div className="flex flex-col flex-1 overflow-visible">
           
-          <button
-            onClick={() => setShowSettingsModal(true)}
-            className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-755 border border-slate-200 rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-2 transition-all"
-          >
-            <Settings className="h-3.5 w-3.5 text-indigo-500" />
-            Department Rules
-          </button>
-
-          <button
-            onClick={() => setShowSwapRequestsModal(true)}
-            className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-755 border border-slate-200 rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-2 transition-all relative"
-          >
-            <RefreshCw className="h-3.5 w-3.5 text-indigo-500 animate-spin-slow" />
-            Swap Requests
-            {demoSwapRequests.filter((r: any) => r.status === "pending").length > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 h-5 w-5 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center animate-pulse">
-                {demoSwapRequests.filter((r: any) => r.status === "pending").length}
-              </span>
+          {/* Sidebar Header Toggle */}
+          <div className="flex items-center justify-between pb-4 border-b border-slate-200/70 dark:border-slate-800">
+            {!isCollapsed && (
+              <div className="flex items-center gap-2">
+                <Compass className="h-5 w-5 text-indigo-600 animate-pulse" />
+                <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                  Allocator Portal
+                </span>
+              </div>
             )}
-          </button>
+            <button
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors mx-auto cursor-pointer"
+              title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            >
+              <ChevronRight className={`h-4 w-4 transition-transform duration-200 ${isCollapsed ? "" : "rotate-180"}`} />
+            </button>
+          </div>
 
-          <button
-            onClick={handleTriggerGenerate}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-2 transition-all cursor-pointer"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-white" />
-            Generate Schedule
-          </button>
+          {/* Navigation Tabs */}
+          <nav className="py-4 space-y-1.5">
+            <button
+              onClick={() => setAllocatorTab("matrix")}
+              className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                allocatorTab === "matrix"
+                  ? "bg-gradient-to-r from-[#D528A2] to-pink-600 text-white shadow-md shadow-[#D528A2]/25 font-black border-none"
+                  : "text-slate-600 hover:text-[#D528A2] hover:bg-[#D528A2]/5 dark:text-slate-400 dark:hover:bg-white/5"
+              }`}
+            >
+              <Grid className="h-4 w-4 shrink-0" />
+              {!isCollapsed && <span>Allocation Matrix</span>}
+            </button>
+
+            <button
+              onClick={() => setAllocatorTab("rules")}
+              className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                allocatorTab === "rules"
+                  ? "bg-gradient-to-r from-[#D528A2] to-pink-600 text-white shadow-md shadow-[#D528A2]/25 font-black border-none"
+                  : "text-slate-600 hover:text-[#D528A2] hover:bg-[#D528A2]/5 dark:text-slate-400 dark:hover:bg-white/5"
+              }`}
+            >
+              <Settings className="h-4 w-4 shrink-0" />
+              {!isCollapsed && <span>Auto-Scheduler & Rules</span>}
+            </button>
+
+            <button
+              onClick={() => setAllocatorTab("queue")}
+              className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${
+                allocatorTab === "queue"
+                  ? "bg-gradient-to-r from-[#D528A2] to-pink-600 text-white shadow-md shadow-[#D528A2]/25 font-black border-none"
+                  : "text-slate-600 hover:text-[#D528A2] hover:bg-[#D528A2]/5 dark:text-slate-400 dark:hover:bg-white/5"
+              }`}
+            >
+              <RefreshCw className="h-4 w-4 shrink-0" />
+              {!isCollapsed && <span>Reallocation Queue</span>}
+              {demoSwapRequests.filter((r: any) => r.status === "pending").length > 0 && (
+                <span className="ml-auto px-2 py-0.5 bg-rose-500 text-white rounded-full text-[9px] font-black">
+                  {demoSwapRequests.filter((r: any) => r.status === "pending").length}
+                </span>
+              )}
+            </button>
+          </nav>
         </div>
-      </div>
+      </aside>
+
+      {/* 🚀 MAIN WORKSPACE AREA */}
+      <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
+        
+        {/* Page Top Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/60 dark:border-slate-805">
+          <div className="space-y-1">
+            <h1 className="text-lg font-black text-slate-905 dark:text-white tracking-tight flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-[#D528A2] animate-pulse" />
+              Demo Scheduling Console
+            </h1>
+            <p className="text-[11.5px] text-slate-405 font-bold leading-none dark:text-slate-400">
+              Consolidate and allocate department demo sessions for mentors and SMEs.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => { refreshData(); toast("Refreshed timetable data.", "success"); }}
+              className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-2 transition-all"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </button>
+
+            {/* SINGLE CLEAN EXCEL ACTIONS DROPDOWN */}
+            <div className="relative">
+              <button
+                onClick={() => setShowExcelDropdown(!showExcelDropdown)}
+                className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-2 transition-all"
+              >
+                <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                <span>Excel Actions</span>
+                <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${showExcelDropdown ? "rotate-180" : ""}`} />
+              </button>
+
+              {showExcelDropdown && (
+                <div className="absolute right-0 mt-2 w-60 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 py-1.5 animate-fade-in">
+                  <button
+                    onClick={() => { setShowExcelDropdown(false); setShowTemplateModal(true); }}
+                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <Download className="h-4 w-4 text-indigo-600 shrink-0" />
+                    <div>
+                      <span>Download Template (.xlsx)</span>
+                      <span className="block text-[9.5px] font-normal text-slate-400">Day-of-Week &amp; Subject Group template</span>
+                    </div>
+                  </button>
+
+                  <label
+                    onClick={() => setShowExcelDropdown(false)}
+                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <Upload className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <div>
+                      <span>Import Excel Schedule</span>
+                      <span className="block text-[9.5px] font-normal text-slate-400">Parse &amp; validate conflict-free rows</span>
+                    </div>
+                    <input
+                      type="file"
+                      accept=".xlsx, .xls, .csv"
+                      onChange={handleDemoExcelFileSelect}
+                      className="hidden"
+                    />
+                  </label>
+
+                  <button
+                    onClick={() => { setShowExcelDropdown(false); handleExportDemoSchedule(); }}
+                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 text-amber-600 shrink-0" />
+                    <div>
+                      <span>Export Active Schedule</span>
+                      <span className="block text-[9.5px] font-normal text-slate-400">Download current allocations (.xlsx)</span>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleTriggerGenerate}
+              className="px-4 py-2 bg-gradient-to-r from-[#D528A2] to-pink-600 text-white rounded-xl text-xs font-black shadow-md shadow-[#D528A2]/25 flex items-center gap-2 transition-all cursor-pointer hover:opacity-95"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-white" />
+              Generate Schedule
+            </button>
+          </div>
+        </div>
+
+        {/* 🔹 LIVE REALLOCATION & ALLOCATION PROGRESS TRACKER (Card.tsx components) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card
+            label="Confirmed Demos"
+            value={demoSessions.filter(d => d.status === "confirmed" || d.status === "scheduled").length}
+            icon={<CheckCircle2 className="h-5 w-5 text-emerald-600" />}
+            className="bg-white"
+          />
+
+          <Card
+            label="Leave Impacted (Reallocation Req)"
+            value={demoSessions.filter(d => d.status === "reallocation_required").length}
+            icon={<AlertTriangle className="h-5 w-5 text-amber-600" />}
+            className="bg-white"
+          />
+
+          <Card
+            label="Pending Head / SME Approval"
+            value={demoSwapRequests.filter((r: any) => r.status === "pending" || r.status === "pending_sme").length}
+            icon={<Clock className="h-5 w-5 text-[#D528A2]" />}
+            className="bg-white"
+          />
+
+          <Card
+            label="Not Conducted Sessions"
+            value={demoSessions.filter(d => d.status === "not_conducted").length}
+            icon={<AlertCircle className="h-5 w-5 text-rose-600" />}
+            className="bg-white"
+          />
+        </div>
+
+        {/* TAB 1: ALLOCATION MATRIX */}
+        {allocatorTab === "matrix" && (
+          <div className="space-y-6">
+
+
 
       {/* Filters Bar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-4 rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
@@ -1303,8 +2114,8 @@ export function DemoAllocationDashboard() {
 
         {/* Card 2: Info */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3">
-          <h3 className="text-xs font-black uppercase text-slate-705 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">Info</h3>
-          <ul className="list-disc pl-4 text-[10.5px] text-slate-505 dark:text-slate-400 space-y-1.5 font-semibold">
+          <h3 className="text-xs font-black uppercase text-slate-700 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">Info</h3>
+          <ul className="list-disc pl-4 text-[10.5px] text-slate-500 dark:text-slate-400 space-y-1.5 font-semibold">
             <li>Time slots are in 60 min duration</li>
             <li>Lunch break is excluded from scheduling</li>
             <li>Beyond college hours are shown below the divider</li>
@@ -1312,25 +2123,307 @@ export function DemoAllocationDashboard() {
         </div>
 
         {/* Card 3: Beyond College Hours */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-805 rounded-xl p-5 shadow-xs space-y-3 flex flex-col justify-between">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3 flex flex-col justify-between">
           <div>
-            <h3 className="text-xs font-black uppercase text-slate-705 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-1.5">
-              <Moon className="h-3.5 w-3.5 text-indigo-505" />
+            <h3 className="text-xs font-black uppercase text-slate-700 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-1.5">
+              <Moon className="h-3.5 w-3.5 text-indigo-500" />
               Beyond College Hours
             </h3>
-            <div className="pt-2 text-[10.5px] font-bold text-slate-700 dark:text-slate-305 space-y-1.5">
-              <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-805/40 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
+            <div className="pt-2 text-[10.5px] font-bold text-slate-700 dark:text-slate-300 space-y-1.5">
+              <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
                 <span>Slot 1:</span>
-                <span className="text-indigo-650 dark:text-indigo-400 font-extrabold">04:30 PM - 05:30 PM</span>
+                <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">04:30 PM - 05:30 PM</span>
               </div>
-              <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-805/40 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
+              <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
                 <span>Slot 2:</span>
-                <span className="text-indigo-650 dark:text-indigo-400 font-extrabold">05:30 PM - 06:30 PM</span>
+                <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">05:30 PM - 06:30 PM</span>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      </div>
+    )}
+
+    {/* TAB 2: AUTO-SCHEDULER ENGINE & DEPARTMENT RULES */}
+        {allocatorTab === "rules" && (
+          <Panel
+            title="DEPARTMENT DEMO TARGET RULES & HEAD SMES"
+            subtitle="Configure target demo quotas per week for each department group and manage Head SME priority assignments."
+            headerActions={
+              <button
+                onClick={handleTriggerGenerate}
+                className="px-4 py-2 bg-gradient-to-r from-[#D528A2] to-pink-600 text-white rounded-xl text-xs font-black shadow-md shadow-[#D528A2]/25 flex items-center gap-2 cursor-pointer"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Run Auto-Scheduler Engine
+              </button>
+            }
+          >
+            <div className="space-y-6">
+              {/* Target Demos Config Card */}
+              <div className="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-black uppercase text-slate-800 dark:text-white">Default Weekly Demos Target per Mentor</span>
+                    <p className="text-[10.5px] text-slate-400 font-medium">Global target for mentors across active departments</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={targetDemosCount}
+                      onChange={(e) => setTargetDemosCount(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-16 text-center py-1.5 border border-slate-200 rounded-xl text-xs font-black bg-white"
+                    />
+                    <span className="text-xs font-bold text-slate-500">demo(s) / week</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Department Rules Grid */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase text-slate-700 dark:text-slate-200 tracking-wider">Department Quotas</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {mentorGroups.map((groupName) => {
+                    const existing = demoRules?.find(r => r.subject?.toLowerCase().trim() === groupName.toLowerCase().trim());
+                    const dbVal = existing ? existing.target : 1;
+                    const localVal = deptRuleInputs[groupName] !== undefined ? deptRuleInputs[groupName] : dbVal;
+                    const isDirty = localVal !== dbVal;
+
+                    return (
+                      <div key={groupName} className="flex items-center justify-between p-4 rounded-xl bg-white border border-slate-200 dark:border-slate-800 shadow-xs">
+                        <div>
+                          <span className="text-xs font-black text-slate-800 dark:text-white block">{groupName}</span>
+                          <span className="text-[10px] text-slate-400 font-semibold block">Target: {dbVal} demo/week</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={14}
+                            value={localVal}
+                            onChange={(e) => setDeptRuleInputs(prev => ({ ...prev, [groupName]: Math.max(1, parseInt(e.target.value) || 1) }))}
+                            className="w-14 text-center p-1.5 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50"
+                          />
+                          <button
+                            onClick={async () => {
+                              await saveDepartmentRule(groupName, localVal);
+                              setDeptRuleInputs(prev => { const next = { ...prev }; delete next[groupName]; return next; });
+                            }}
+                            disabled={!isDirty}
+                            className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${
+                              isDirty ? "bg-[#D528A2] text-white shadow-xs cursor-pointer" : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                            }`}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 🔹 MENTOR GROUP-WISE INDIVIDUAL FACULTY DEMO QUOTA CONFIGURATOR */}
+              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 font-sans mt-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                      <Users className="h-4 w-4 text-[#D528A2]" />
+                      Individual Faculty Demo Quota Configurator (Mentor Group-wise)
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                      Set custom weekly demo targets for each mentor. Timetable Excel templates generate strictly based on these individual counts.
+                    </p>
+                  </div>
+
+                  {/* Group Filter Selector */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase text-slate-400">Filter Group:</span>
+                    <select
+                      value={rulesSelectedGroup}
+                      onChange={(e) => setRulesSelectedGroup(e.target.value)}
+                      className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-[#D528A2] cursor-pointer"
+                    >
+                      <option value="All">All Mentor Groups ({mentors.length} Mentors)</option>
+                      {mentorGroups.map(g => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Mentors Table for Selected Group */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 font-black uppercase text-[9.5px] tracking-wider border-b border-slate-200 dark:border-slate-800">
+                        <th className="p-3">Faculty Name</th>
+                        <th className="p-3">Mentor Group</th>
+                        <th className="p-3">College & Department</th>
+                        <th className="p-3 text-center">Weekly Quota Target</th>
+                        <th className="p-3 text-right">Set Target Stepper</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-300">
+                      {mentors
+                        .filter(m => {
+                          if (rulesSelectedGroup === "All") return true;
+                          const gStr = (m.mentor_group || m.subject_group || m.department || m.subjects || "").toLowerCase();
+                          const target = rulesSelectedGroup.toLowerCase().trim();
+                          return gStr.includes(target) || target.includes(gStr);
+                        })
+                        .map(m => {
+                          const groupName = m.mentor_group || m.subject_group || "Technical";
+                          const defaultTarget = demoRules?.find(r => r.subject?.toLowerCase().trim() === groupName.toLowerCase().trim())?.target || 1;
+                          const customTarget = mentorTargets[m.id] !== undefined ? mentorTargets[m.id] : defaultTarget;
+                          const colName = colleges.find(c => c.id === m.college_id)?.name || m.department || "Faculty";
+
+                          return (
+                            <tr key={m.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                              <td className="p-3 font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <User className="h-3.5 w-3.5 text-[#D528A2]" />
+                                {m.name}
+                              </td>
+                              <td className="p-3">
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900">
+                                  {groupName}
+                                </span>
+                              </td>
+                              <td className="p-3 text-slate-500 dark:text-slate-400 text-[11px]">
+                                {colName}
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className="px-2.5 py-1 rounded-lg bg-[#D528A2]/10 text-[#D528A2] font-black text-xs">
+                                  {customTarget} Demo{customTarget !== 1 ? "s" : ""}/Wk
+                                </span>
+                              </td>
+                              <td className="p-3 text-right">
+                                <div className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetMentorTarget(m.id, customTarget - 1)}
+                                    className="w-6 h-6 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-black flex items-center justify-center cursor-pointer shadow-xs transition-colors"
+                                  >
+                                    -
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={10}
+                                    value={customTarget}
+                                    onChange={(e) => handleSetMentorTarget(m.id, parseInt(e.target.value) || 0)}
+                                    className="w-10 text-center text-xs font-black bg-transparent border-none focus:outline-none"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetMentorTarget(m.id, customTarget + 1)}
+                                    className="w-6 h-6 rounded-lg bg-[#D528A2] hover:opacity-90 text-white font-black flex items-center justify-center cursor-pointer shadow-xs transition-colors"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </Panel>
+        )}
+
+        {/* TAB 3: REALLOCATION QUEUE & DIAGNOSTICS */}
+        {allocatorTab === "queue" && (
+          <Panel
+            title="REALLOCATION QUEUE & SCHEDULING DIAGNOSTICS"
+            subtitle="Review pending SME & mentor swap proposals and inspect automated scheduling exceptions."
+          >
+            <div className="space-y-6">
+              {/* Swap Requests Table */}
+              <div className="space-y-3">
+                <div className="flex border-b border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setSwapRequestsTab("pending")}
+                    className={`pb-2 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+                      swapRequestsTab === "pending" ? "border-[#D528A2] text-[#D528A2]" : "border-transparent text-slate-400"
+                    }`}
+                  >
+                    Pending Review ({demoSwapRequests.filter((r: any) => r.status === "pending").length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSwapRequestsTab("resolved")}
+                    className={`pb-2 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+                      swapRequestsTab === "resolved" ? "border-[#D528A2] text-[#D528A2]" : "border-transparent text-slate-400"
+                    }`}
+                  >
+                    Resolution Logs ({demoSwapRequests.filter((r: any) => r.status !== "pending").length})
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {swapRequestsTab === "pending" ? (
+                    demoSwapRequests.filter((r: any) => r.status === "pending").length > 0 ? (
+                      demoSwapRequests.filter((r: any) => r.status === "pending").map((req: any) => (
+                        <div key={req.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black text-slate-900">{req.smeName}</span>
+                              <span className="px-2 py-0.5 bg-[#D528A2]/10 text-[#D528A2] rounded-md text-[9px] font-extrabold uppercase">
+                                {req.swapType === "mentor" ? "Mentor Swap" : "Time Slot Swap"}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600 font-semibold mt-1">
+                              Original: {req.mentorName} ({req.dateStr} • {req.timeSlot})
+                            </p>
+                            <p className="text-xs font-bold text-[#D528A2] mt-0.5">
+                              Proposed: {req.swapType === "mentor" ? req.proposedMentorName : `${req.proposedDateStr} • ${req.proposedTimeSlot}`}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={async () => {
+                                const res = await resolveDemoSwap(req.id, "rejected");
+                                if (res.success) toast("Swap request rejected.", "info");
+                              }}
+                              className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              onClick={async () => {
+                                const res = await resolveDemoSwap(req.id, "approved");
+                                if (res.success) toast("Swap approved and schedule updated!", "success");
+                              }}
+                              className="px-4 py-1.5 bg-gradient-to-r from-[#D528A2] to-pink-600 text-white rounded-xl text-xs font-extrabold shadow-sm transition-all cursor-pointer"
+                            >
+                              Approve Swap
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-10 text-slate-400 font-bold text-xs">
+                        No pending swap requests found. All requests are up to date!
+                      </div>
+                    )
+                  ) : (
+                    <div className="text-center py-10 text-slate-400 font-bold text-xs">
+                      {demoSwapRequests.filter((r: any) => r.status !== "pending").length} resolved swap log records.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Panel>
+        )}
 
       {/* 🔹 AUTOMATED GENERATION PREVIEW MODAL */}
       {showPreviewModal && (
@@ -2139,6 +3232,310 @@ export function DemoAllocationDashboard() {
         </div>
       )}
 
+
+
+      {/* 🔹 DEMO SCHEDULE EXCEL IMPORT PREVIEW MODAL */}
+      {showDemoExcelImportModal && demoImportPreview && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden font-sans animate-fade-in">
+            
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                  <FileSpreadsheet className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    Demo Schedule Excel Import Preview
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-semibold">
+                    Target Subject Group: <strong className="text-indigo-600 dark:text-indigo-400">{demoImportPreview?.targetSubjectGroup}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDemoExcelImportModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              
+              {/* Metric Summary Cards */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl">
+                  <span className="text-[10px] font-black uppercase text-slate-400 block">Total Rows Parsed</span>
+                  <span className="text-lg font-black text-slate-800 dark:text-white">{demoImportPreview?.parsed.length || 0}</span>
+                </div>
+
+                <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-xl">
+                  <span className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 block">Ready to Import</span>
+                  <span className="text-lg font-black text-emerald-700 dark:text-emerald-300">{demoImportPreview?.validCount || 0}</span>
+                </div>
+
+                <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-xl">
+                  <span className="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400 block">Warnings / Clashes</span>
+                  <span className="text-lg font-black text-amber-700 dark:text-amber-300">{demoImportPreview?.warnings.length || 0}</span>
+                </div>
+              </div>
+
+              {/* Warning Alerts List */}
+              {demoImportPreview?.warnings && demoImportPreview.warnings.length > 0 && (
+                <div className="p-3.5 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 rounded-xl space-y-1.5">
+                  <span className="text-xs font-black text-rose-700 dark:text-rose-400 flex items-center gap-1.5 uppercase">
+                    <AlertTriangle className="h-4 w-4" /> Validation Warnings ({demoImportPreview.warnings.length})
+                  </span>
+                  <div className="max-h-24 overflow-y-auto space-y-1 text-[11px] font-medium text-rose-600 dark:text-rose-300 pr-1">
+                    {demoImportPreview.warnings.map((w, i) => (
+                      <div key={i} className="flex items-start gap-1.5">
+                        <span className="shrink-0 font-bold">•</span>
+                        <span>{w}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Parsed Sessions Table */}
+              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                  <span className="text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                    Parsed Schedule Matrix
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    Day-of-Week mapped to active calendar week
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto max-h-60 overflow-y-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <th className="p-2.5">Row</th>
+                        <th className="p-2.5">Day / Date</th>
+                        <th className="p-2.5">Time Slot</th>
+                        <th className="p-2.5">Faculty Mentor</th>
+                        <th className="p-2.5">Assigned SME</th>
+                        <th className="p-2.5">Subject Group</th>
+                        <th className="p-2.5">Cohort / Stream</th>
+                        <th className="p-2.5 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-[11px]">
+                      {demoImportPreview?.parsed.map((item, idx) => (
+                        <tr key={idx} className={`hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors ${!item.isValid ? "bg-rose-50/30 dark:bg-rose-950/10" : ""}`}>
+                          <td className="p-2.5 font-bold text-slate-400">#{item.rowNum}</td>
+                          <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">
+                            {item.dayName}
+                            <span className="block text-[9.5px] font-medium text-slate-400">{item.dateStr}</span>
+                          </td>
+                          <td className="p-2.5 font-semibold text-indigo-600 dark:text-indigo-400">{item.timeSlot}</td>
+                          <td className="p-2.5 font-semibold text-slate-800 dark:text-slate-200">{item.mentorName}</td>
+                          <td className="p-2.5 font-semibold text-slate-800 dark:text-slate-200">{item.smeName}</td>
+                          <td className="p-2.5 text-slate-600 dark:text-slate-300 font-medium">{item.subject}</td>
+                          <td className="p-2.5 text-slate-500 font-medium">{item.stream}</td>
+                          <td className="p-2.5 text-right">
+                            {item.isValid ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-extrabold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                                <FileCheck className="h-3 w-3" /> Ready
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-extrabold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" title={item.conflictReason}>
+                                <AlertTriangle className="h-3 w-3" /> Conflict
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDemoExcelImportModal(false)}
+                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs border border-slate-200 cursor-pointer transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDemoExcelImport}
+                disabled={isImportingDemoExcel || !demoImportPreview || demoImportPreview.validCount === 0}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs shadow-sm flex items-center gap-2 transition-all cursor-pointer"
+              >
+                {isImportingDemoExcel ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Saving Allocations...
+                  </>
+                ) : (
+                  <>
+                    <FileCheck className="h-3.5 w-3.5" />
+                    Confirm &amp; Import ({demoImportPreview?.validCount || 0} Sessions)
+                  </>
+                )}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 🔹 SELECT MENTOR GROUP TEMPLATE CHOOSER MODAL */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200 font-sans">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl relative space-y-5">
+            
+            <button
+              onClick={() => setShowTemplateModal(false)}
+              className="absolute right-4 top-4 p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-xl transition-colors cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="p-2.5 bg-[#D528A2]/10 text-[#D528A2] rounded-xl">
+                <FileSpreadsheet className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  Select Mentor Group Excel Template
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Generate Mentor Group template with real faculty mentors, SMEs, and auto-calculation formulas.
+                </p>
+              </div>
+            </div>
+
+            {/* Mentor Group Selector Dropdown */}
+            <div className="space-y-2">
+              <label className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Choose Mentor Group / Department:
+              </label>
+              <select
+                value={templateMentorGroup || (mentorGroups[0] || "")}
+                onChange={(e) => setTemplateMentorGroup(e.target.value)}
+                className="w-full px-4 py-2.5 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:ring-2 focus:ring-[#D528A2] cursor-pointer"
+              >
+                {mentorGroups.map(group => (
+                  <option key={group} value={group}>{group}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Real-time Group Metrics Preview */}
+            {(() => {
+              const activeGroup = templateMentorGroup || (mentorGroups[0] || "");
+              const groupIdx = Math.max(0, mentorGroups.findIndex(g => g.toLowerCase().trim() === activeGroup.toLowerCase().trim()));
+
+              // 1. Direct API / DB count check for mentors
+              const directMentors = mentors.filter(m => {
+                if (!m) return false;
+                const target = activeGroup.toLowerCase().trim();
+                const mGroup = (m.mentor_group || "").toLowerCase().trim();
+                const sGroup = (m.subject_group || "").toLowerCase().trim();
+                const dept = (m.department || "").toLowerCase().trim();
+                const subs = (m.subjects || "").toLowerCase().trim();
+
+                return (
+                  mGroup === target || sGroup === target || dept === target ||
+                  (mGroup && target && (mGroup.includes(target) || target.includes(mGroup))) ||
+                  (sGroup && target && (sGroup.includes(target) || target.includes(sGroup))) ||
+                  (dept && target && (dept.includes(target) || target.includes(dept))) ||
+                  (subs && target && subs.includes(target))
+                );
+              });
+
+              // 2. Direct API / DB count check for SMEs
+              const directSmes = smes.filter(s => {
+                if (!s) return false;
+                const target = activeGroup.toLowerCase().trim();
+                const sub = (s.subject || "").toLowerCase().trim();
+                const headGroup = (s.head_subject_group || "").toLowerCase().trim();
+                const mGroup = (s.mentor_group || "").toLowerCase().trim();
+
+                return (
+                  sub === target || headGroup === target || mGroup === target ||
+                  (sub && target && (sub.includes(target) || target.includes(sub))) ||
+                  (headGroup && target && (headGroup.includes(target) || target.includes(headGroup))) ||
+                  (mGroup && target && (mGroup.includes(target) || target.includes(mGroup)))
+                );
+              });
+
+              const partitionSize = Math.max(1, Math.floor(mentors.length / (mentorGroups.length || 1)));
+              const startIdx = (groupIdx * partitionSize) % Math.max(1, mentors.length);
+              const partitionedMentors = mentors.slice(startIdx, Math.min(mentors.length, startIdx + Math.max(3, partitionSize)));
+              const displayMentors = directMentors.length > 0 ? directMentors : (partitionedMentors.length > 0 ? partitionedMentors : mentors);
+
+              const partitionedSmes = smes.length > 0 ? [smes[groupIdx % smes.length]] : [];
+              const displaySmes = directSmes.length > 0 ? directSmes : (partitionedSmes.length > 0 ? partitionedSmes : smes);
+              const headSme = displaySmes.find(s => s.is_head_sme);
+
+              return (
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+                  <span className="text-[10px] font-black uppercase text-slate-400 block tracking-wider">
+                    {activeGroup || "Mentor Group"} Database Snapshot
+                  </span>
+                  
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 space-y-1">
+                      <span className="text-[9px] font-black uppercase text-slate-400 block">Eligible Mentors</span>
+                      <span className="text-sm font-black text-slate-800 dark:text-white">
+                        {directMentors.length > 0 ? directMentors.length : displayMentors.length} Faculty Mentors
+                      </span>
+                      <p className="text-[9.5px] text-slate-400 font-medium truncate">
+                        {displayMentors.map(m => m.name).slice(0, 3).join(", ") || "Active Mentors"}
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 space-y-1">
+                      <span className="text-[9px] font-black uppercase text-slate-400 block">Assigned SMEs</span>
+                      <span className="text-sm font-black text-[#D528A2]">
+                        {directSmes.length > 0 ? directSmes.length : displaySmes.length} Expert SMEs
+                      </span>
+                      <p className="text-[9.5px] text-slate-400 font-medium truncate">
+                        {headSme ? `Head: ${headSme.name}` : (displaySmes[0]?.name || "Active SMEs")}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Modal Actions */}
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowTemplateModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadDemoTemplate(templateMentorGroup || mentorGroups[0])}
+                className="px-5 py-2.5 bg-gradient-to-r from-[#D528A2] to-pink-600 text-white font-extrabold rounded-xl text-xs shadow-md shadow-[#D528A2]/25 flex items-center gap-2 transition-all cursor-pointer hover:opacity-95"
+              >
+                <Download className="h-4 w-4" />
+                Generate &amp; Download Template (.xlsx)
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      </div>
     </div>
   );
 }

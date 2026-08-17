@@ -178,20 +178,29 @@ export async function POST(request: Request) {
       );
 
       let count = 0;
-      for (const m of mentors) {
-        const id = `att_${m.id}_${dateStr}`;
-        await db.run(
-          `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, punch_in_time, marked_by, marked_by_id, updated_at)
-           VALUES (?, ?, ?, ?, 'Present', ?, ?, ?, datetime('now'))
-           ON CONFLICT(mentor_id, date_str) DO UPDATE SET
-           status = excluded.status,
-           punch_in_time = COALESCE(mentor_attendance.punch_in_time, excluded.punch_in_time),
-           marked_by = excluded.marked_by,
-           marked_by_id = excluded.marked_by_id,
-           updated_at = datetime('now')`,
-          [id, m.id, collegeId, dateStr, currentTime, markedBy || "cam", markedById || "cam"]
-        );
-        count++;
+      if (mentors.length > 0) {
+        try {
+          await db.run("BEGIN TRANSACTION");
+          for (const m of mentors) {
+            const id = `att_${m.id}_${dateStr}`;
+            await db.run(
+              `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, punch_in_time, marked_by, marked_by_id, updated_at)
+               VALUES (?, ?, ?, ?, 'Present', ?, ?, ?, datetime('now'))
+               ON CONFLICT(mentor_id, date_str) DO UPDATE SET
+               status = excluded.status,
+               punch_in_time = COALESCE(mentor_attendance.punch_in_time, excluded.punch_in_time),
+               marked_by = excluded.marked_by,
+               marked_by_id = excluded.marked_by_id,
+               updated_at = datetime('now')`,
+              [id, m.id, collegeId, dateStr, currentTime, markedBy || "cam", markedById || "cam"]
+            );
+            count++;
+          }
+          await db.run("COMMIT");
+        } catch (txErr) {
+          try { await db.run("ROLLBACK"); } catch (_) {}
+          throw txErr;
+        }
       }
 
       return NextResponse.json({

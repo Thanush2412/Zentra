@@ -40,6 +40,7 @@ import {
   Video
 } from "lucide-react";
 import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch } from "@/lib/utils";
+import { Pagination } from "@/components/ui/Pagination";
 
 // Library Books Interface
 interface BookItem {
@@ -186,6 +187,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskSubject, setNewTaskSubject] = useState("General");
   const [newTaskDate, setNewTaskDate] = useState("Jul 1");
+
+  // Pagination states
+  const [booksPage, setBooksPage] = useState(1);
+  const [booksPageSize, setBooksPageSize] = useState(25);
+  const [leavePage, setLeavePage] = useState(1);
+  const [leavePageSize, setLeavePageSize] = useState(25);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -1910,50 +1917,60 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <div className="text-center py-12 text-slate-400 italic text-xs">
                   No submitted leave or OD applications found.
                 </div>
-              ) : (
-                <div className="overflow-x-auto rounded-xl border border-slate-150 scroll-touch">
-                  <table className="w-full border-collapse text-left text-xs min-w-[600px]">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
-                        <th className="p-3">Date</th>
-                        <th className="p-3">Type</th>
-                        <th className="p-3">Reason</th>
-                        <th className="p-3">Status</th>
-                        <th className="p-3">Action By</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                      {myLeaveRequests.map((req) => (
-                        <tr key={req.id} className="hover:bg-slate-50/30 transition-colors">
-                          <td className="p-3 text-slate-700">{req.dateStr}</td>
-                          <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase ${
-                              req.type === "od" ? "bg-sky-50 text-sky-700 border border-sky-200" : "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                            }`}>
-                              {req.type === "od" ? "On-Duty" : "Leave"}
-                            </span>
-                          </td>
-                          <td className="p-3 text-slate-650 max-w-[200px] truncate" title={req.reason}>
-                            {req.reason}
-                          </td>
-                          <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
-                              req.status === "approved"
-                                ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                                : req.status === "rejected"
-                                ? "bg-rose-50 border border-rose-200 text-rose-700"
-                                : "bg-amber-50 border border-amber-200 text-amber-700"
-                            }`}>
-                              {req.status}
-                            </span>
-                          </td>
-                          <td className="p-3 text-slate-450 font-mono text-[9px]">{req.approvedBy || "—"}</td>
+              ) : (() => {
+                const paginatedLeaveRequests = myLeaveRequests.slice((leavePage - 1) * leavePageSize, leavePage * leavePageSize);
+                return (
+                  <div className="overflow-x-auto rounded-xl border border-slate-150 scroll-touch">
+                    <table className="w-full border-collapse text-left text-xs min-w-[600px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
+                          <th className="p-3">Date</th>
+                          <th className="p-3">Type</th>
+                          <th className="p-3">Reason</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3">Action By</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+                      <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                        {paginatedLeaveRequests.map((req) => (
+                          <tr key={req.id} className="hover:bg-slate-50/30 transition-colors">
+                            <td className="p-3 text-slate-700">{req.dateStr}</td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase ${
+                                req.type === "od" ? "bg-sky-50 text-sky-700 border border-sky-200" : "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                              }`}>
+                                {req.type === "od" ? "On-Duty" : "Leave"}
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-650 max-w-[200px] truncate" title={req.reason}>
+                              {req.reason}
+                            </td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
+                                req.status === "approved"
+                                  ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                                  : req.status === "rejected"
+                                  ? "bg-rose-50 border border-rose-200 text-rose-700"
+                                  : "bg-amber-50 border border-amber-200 text-amber-700"
+                              }`}>
+                                {req.status}
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-450 font-mono text-[9px]">{req.approvedBy || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <Pagination
+                      currentPage={leavePage}
+                      totalItems={myLeaveRequests.length}
+                      pageSize={leavePageSize}
+                      onPageChange={setLeavePage}
+                      onPageSizeChange={setLeavePageSize}
+                    />
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -2045,55 +2062,67 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-slate-250 scroll-touch">
-              <table className="w-full border-collapse text-left text-xs min-w-[650px]">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
-                    <th className="p-3">Book ID</th>
-                    <th className="p-3">Title</th>
-                    <th className="p-3">Author</th>
-                    <th className="p-3">Subject area</th>
-                    <th className="p-3">Shelf Code</th>
-                    <th className="p-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                  {filteredBooks.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-400">
-                        <div className="flex flex-col items-center justify-center gap-1.5 py-4">
-                          <Book className="h-7 w-7 text-slate-300" />
-                          <p className="font-bold text-slate-600 text-xs">No Matching Books Found</p>
-                          <p className="text-[11px] text-slate-400">Try searching with a different book title, author, or subject area.</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredBooks.map((book) => (
-                      <tr key={book.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="p-3 text-slate-400 font-mono">{book.id}</td>
-                        <td className="p-3 font-extrabold text-slate-900">{book.title}</td>
-                        <td className="p-3 text-slate-650">{book.author}</td>
-                        <td className="p-3 text-slate-450">{book.subject}</td>
-                        <td className="p-3 text-slate-700 font-bold">{book.shelf}</td>
-                        <td className="p-3">
-                          {book.status === "Available" ? (
-                            <span className="px-2 py-0.5 rounded bg-emerald-50 border border-emerald-100 text-emerald-700 text-[8.5px] font-black uppercase">
-                              Available
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded bg-rose-50 border border-rose-100 text-rose-700 text-[8.5px] font-black uppercase flex flex-col items-start leading-none gap-0.5">
-                              <span>Issued</span>
-                              <span className="text-[7px] font-normal text-rose-500 font-mono">Due: {book.expectedReturn}</span>
-                            </span>
-                          )}
-                        </td>
+            {(() => {
+              const paginatedBooks = filteredBooks.slice((booksPage - 1) * booksPageSize, booksPage * booksPageSize);
+              return (
+                <div className="overflow-x-auto rounded-xl border border-slate-250 scroll-touch">
+                  <table className="w-full border-collapse text-left text-xs min-w-[650px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
+                        <th className="p-3">Book ID</th>
+                        <th className="p-3">Title</th>
+                        <th className="p-3">Author</th>
+                        <th className="p-3">Subject area</th>
+                        <th className="p-3">Shelf Code</th>
+                        <th className="p-3">Status</th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                      {filteredBooks.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-8 text-center text-slate-400">
+                            <div className="flex flex-col items-center justify-center gap-1.5 py-4">
+                              <Book className="h-7 w-7 text-slate-300" />
+                              <p className="font-bold text-slate-600 text-xs">No Matching Books Found</p>
+                              <p className="text-[11px] text-slate-400">Try searching with a different book title, author, or subject area.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedBooks.map((book) => (
+                          <tr key={book.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="p-3 text-slate-400 font-mono">{book.id}</td>
+                            <td className="p-3 font-extrabold text-slate-900">{book.title}</td>
+                            <td className="p-3 text-slate-650">{book.author}</td>
+                            <td className="p-3 text-slate-450">{book.subject}</td>
+                            <td className="p-3 text-slate-700 font-bold">{book.shelf}</td>
+                            <td className="p-3">
+                              {book.status === "Available" ? (
+                                <span className="px-2 py-0.5 rounded bg-emerald-50 border border-emerald-100 text-emerald-700 text-[8.5px] font-black uppercase">
+                                  Available
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded bg-rose-50 border border-rose-100 text-rose-700 text-[8.5px] font-black uppercase flex flex-col items-start leading-none gap-0.5">
+                                  <span>Issued</span>
+                                  <span className="text-[7px] font-normal text-rose-500 font-mono">Due: {book.expectedReturn}</span>
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                  <Pagination
+                    currentPage={booksPage}
+                    totalItems={filteredBooks.length}
+                    pageSize={booksPageSize}
+                    onPageChange={setBooksPage}
+                    onPageSizeChange={setBooksPageSize}
+                  />
+                </div>
+              );
+            })()}
           </div>
         )}
 

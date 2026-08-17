@@ -54,15 +54,17 @@ export async function POST(request: Request) {
     }
 
     // 3. Check Collision: Is this room already in use by anyone at this day and time?
-    const allSlots = await db.all("SELECT * FROM slots WHERE day = ? AND time = ? AND shift = ?", day, time, activeShift);
-    const roomCollision = allSlots.find(
-      (s) => s.location.toLowerCase() === cleanLocation.toLowerCase()
+    const roomCollision = await db.get(
+      "SELECT s.*, m.name as mentorName FROM slots s LEFT JOIN mentors m ON s.mentorId = m.id WHERE LOWER(s.location) = LOWER(?) AND s.day = ? AND s.time = ? AND s.shift = ? LIMIT 1",
+      cleanLocation,
+      day,
+      time,
+      activeShift
     );
     if (roomCollision) {
-      const mentorObj = await db.get("SELECT name FROM mentors WHERE id = ?", roomCollision.mentorId);
       return NextResponse.json({
         success: false,
-        message: `Conflict: Room "${cleanLocation}" is already booked by ${mentorObj?.name || "another mentor"} for "${roomCollision.course}" at [${day}, ${time}] in ${activeShift.replace("_", " ")}.`
+        message: `Conflict: Room "${cleanLocation}" is already booked by ${roomCollision.mentorName || "another mentor"} for "${roomCollision.course}" at [${day}, ${time}] in ${activeShift.replace("_", " ")}.`
       });
     }
 
@@ -237,15 +239,18 @@ export async function PUT(request: Request) {
     }
 
     // 3. Check Collision: Is this room already in use by anyone at this day and time? (excluding the current slot itself)
-    const allSlots = await db.all("SELECT * FROM slots WHERE day = ? AND time = ? AND shift = ? AND id != ?", day, time, activeShift, id);
-    const roomCollision = allSlots.find(
-      (s) => s.location.toLowerCase() === cleanLocation.toLowerCase()
+    const roomCollision = await db.get(
+      "SELECT s.*, m.name as mentorName FROM slots s LEFT JOIN mentors m ON s.mentorId = m.id WHERE LOWER(s.location) = LOWER(?) AND s.day = ? AND s.time = ? AND s.shift = ? AND s.id != ? LIMIT 1",
+      cleanLocation,
+      day,
+      time,
+      activeShift,
+      id
     );
     if (roomCollision) {
-      const mentorObj = await db.get("SELECT name FROM mentors WHERE id = ?", roomCollision.mentorId);
       return NextResponse.json({
         success: false,
-        message: `Conflict: Room "${cleanLocation}" is already booked by ${mentorObj?.name || "another mentor"} for "${roomCollision.course}" at [${day}, ${time}] in ${activeShift.replace("_", " ")}.`
+        message: `Conflict: Room "${cleanLocation}" is already booked by ${roomCollision.mentorName || "another mentor"} for "${roomCollision.course}" at [${day}, ${time}] in ${activeShift.replace("_", " ")}.`
       });
     }
 

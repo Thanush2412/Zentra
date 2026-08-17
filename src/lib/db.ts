@@ -581,7 +581,9 @@ export function getDb(): Promise<TursoDbAdapter> {
       name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL DEFAULT 'password123',
-      subject TEXT
+      subject TEXT,
+      is_head_sme INTEGER DEFAULT 0,
+      head_subject_group TEXT
     );
 
     CREATE TABLE IF NOT EXISTS demo_sessions (
@@ -636,7 +638,9 @@ export function getDb(): Promise<TursoDbAdapter> {
     CREATE TABLE IF NOT EXISTS subject_groups (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,
-      description TEXT
+      description TEXT,
+      lead_sme_id TEXT,
+      lead_sme_name TEXT
     );
 
     CREATE TABLE IF NOT EXISTS demo_rules (
@@ -773,6 +777,15 @@ export function getDb(): Promise<TursoDbAdapter> {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_by TEXT
+    );
+    INSERT OR IGNORE INTO system_settings (key, value) VALUES ('mailing_enabled', 'true');
+
       CREATE INDEX IF NOT EXISTS idx_slots_mentorId ON slots(mentorId);
       CREATE INDEX IF NOT EXISTS idx_slots_collegeId ON slots(college_id);
       CREATE INDEX IF NOT EXISTS idx_slots_day_time_shift ON slots(day, time, shift);
@@ -791,6 +804,13 @@ export function getDb(): Promise<TursoDbAdapter> {
       CREATE INDEX IF NOT EXISTS idx_student_fees_student ON student_fees(student_id);
       CREATE INDEX IF NOT EXISTS idx_fee_payments_student ON fee_payments(student_id);
       CREATE INDEX IF NOT EXISTS idx_fee_payments_fee ON fee_payments(fee_id);
+      CREATE INDEX IF NOT EXISTS idx_mentor_attendance_college_date ON mentor_attendance(college_id, date_str);
+      CREATE INDEX IF NOT EXISTS idx_slots_location ON slots(location);
+      CREATE INDEX IF NOT EXISTS idx_faculty_leave_college ON faculty_leave_requests(college_id);
+      CREATE INDEX IF NOT EXISTS idx_faculty_leave_mentor ON faculty_leave_requests(mentor_id);
+      CREATE INDEX IF NOT EXISTS idx_student_interviews_college_status ON student_interviews(college_id, status);
+      CREATE INDEX IF NOT EXISTS idx_handover_requests_status ON handover_requests(status);
+      CREATE INDEX IF NOT EXISTS idx_approved_handovers_slot_date ON approved_handovers(slotId, dateStr);
     `);
 
       await dbInstance.exec(`
@@ -802,7 +822,7 @@ export function getDb(): Promise<TursoDbAdapter> {
       const versionRow = await dbInstance.get("SELECT version FROM schema_migrations LIMIT 1");
       const currentVersion = versionRow ? versionRow.version : 0;
 
-      if (currentVersion < 4) {
+      if (currentVersion < 5) {
         // 1. Column additions for student_interviews
         try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN mentor_id TEXT;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE student_interviews ADD COLUMN mentor_name TEXT;`); } catch (_) { }
@@ -838,6 +858,10 @@ export function getDb(): Promise<TursoDbAdapter> {
         try { await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN subject_group TEXT;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE mentors ADD COLUMN mentor_group TEXT;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE sme_users ADD COLUMN mentor_group TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE sme_users ADD COLUMN is_head_sme INTEGER DEFAULT 0;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE sme_users ADD COLUMN head_subject_group TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE subject_groups ADD COLUMN lead_sme_id TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE subject_groups ADD COLUMN lead_sme_name TEXT;`); } catch (_) { }
 
         // Populate mentor_groups table from subject_groups if empty
         try {
@@ -981,7 +1005,13 @@ export function getDb(): Promise<TursoDbAdapter> {
           await dbInstance.exec(`UPDATE slots SET college_id = 'college_1' WHERE college_id IS NULL;`);
         } catch (_) { }
 
-        await dbInstance.run("INSERT OR REPLACE INTO schema_migrations (version) VALUES (4);");
+        try {
+          await syncMentorSubjectGroups(dbInstance);
+        } catch (syncErr) {
+          console.error("Error during syncMentorSubjectGroups:", syncErr);
+        }
+
+        await dbInstance.run("INSERT OR REPLACE INTO schema_migrations (version) VALUES (5);");
       }
 
       return dbInstance;
@@ -1183,10 +1213,59 @@ export function parseClassGroupDetails(classGroup: string) {
 }
 
 export async function syncMentorSubjectGroups(db: any) {
-  // Fetch all mentors
-  const mentors = await db.all("SELECT id, subjects, department FROM mentors");
-  // Fetch all subjects that are mapped to a mentor_group or subject_group
-  const subjects = await db.all("SELECT name, COALESCE(mentor_group, subject_group) as group_name FROM subjects WHERE (mentor_group IS NOT NULL AND mentor_group != '') OR (subject_group IS NOT NULL AND subject_group != '')");
+  // 1. Fetch all configured subject groups
+  const groupRows = await db.all("SELECT * FROM subject_groups");
+  const groupNames = groupRows.map((g: any) => g.name);
+
+  // 2. Fetch all subjects
+  const allSubjects = await db.all("SELECT id, name, subject_group, mentor_group FROM subjects");
+
+  for (const sub of allSubjects) {
+    let matchedGroup: string | null = sub.subject_group || sub.mentor_group || null;
+
+    if (!matchedGroup || matchedGroup.toLowerCase() === "general") {
+      const subNameLower = (sub.name || "").toLowerCase();
+
+      // Check direct group name match
+      for (const gName of groupNames) {
+        if (subNameLower.includes(gName.toLowerCase())) {
+          matchedGroup = gName;
+          break;
+        }
+      }
+
+      // Keyword fallback matching
+      if (!matchedGroup || matchedGroup.toLowerCase() === "general") {
+        if (subNameLower.includes("english") || subNameLower.includes("verbal") || subNameLower.includes("communi")) {
+          matchedGroup = groupNames.find((g: string) => g.toLowerCase().includes("english")) || "English";
+        } else if (subNameLower.includes("aptitude") || subNameLower.includes("quant") || subNameLower.includes("reasoning") || subNameLower.includes("math")) {
+          matchedGroup = groupNames.find((g: string) => g.toLowerCase().includes("aptitude") || g.toLowerCase().includes("quant")) || "Aptitude";
+        } else if (subNameLower.includes("python") || subNameLower.includes("java") || subNameLower.includes("c++") || subNameLower.includes("code") || subNameLower.includes("tech") || subNameLower.includes("data structure") || subNameLower.includes("algorithm")) {
+          matchedGroup = groupNames.find((g: string) => g.toLowerCase().includes("technical") || g.toLowerCase().includes("tech")) || "Technical";
+        } else if (subNameLower.includes("soft skill") || subNameLower.includes("personality") || subNameLower.includes("interview")) {
+          matchedGroup = groupNames.find((g: string) => g.toLowerCase().includes("soft")) || "Soft Skills";
+        }
+      }
+
+      if (matchedGroup) {
+        // Ensure the subject_group exists in subject_groups table
+        const groupExists = groupRows.some((g: any) => g.name.toLowerCase() === matchedGroup!.toLowerCase());
+        if (!groupExists) {
+          const newGroupId = "g_" + matchedGroup.toLowerCase().replace(/[^a-z0-9]/g, "");
+          await db.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES (?, ?, ?)", [newGroupId, matchedGroup, `${matchedGroup} Group`]);
+        }
+
+        await db.run(
+          "UPDATE subjects SET subject_group = ?, mentor_group = ? WHERE id = ?",
+          [matchedGroup, matchedGroup, sub.id]
+        );
+      }
+    }
+  }
+
+  // 3. Fetch all mentors and map to updated subject groups
+  const mentors = await db.all("SELECT id, subjects, department, mentor_group, subject_group FROM mentors");
+  const updatedSubjects = await db.all("SELECT name, COALESCE(subject_group, mentor_group) as group_name FROM subjects WHERE subject_group IS NOT NULL AND subject_group != '' AND subject_group != 'General'");
 
   for (const mentor of mentors) {
     const mentorSubjects = (mentor.subjects || "")
@@ -1194,8 +1273,8 @@ export async function syncMentorSubjectGroups(db: any) {
       .map((s: string) => s.trim().toLowerCase())
       .filter((s: string) => s.length > 0);
 
-    let matchedGroup = null;
-    for (const sub of subjects) {
+    let matchedGroup: string | null = null;
+    for (const sub of updatedSubjects) {
       if (
         mentorSubjects.some(
           (ms: string) =>
@@ -1210,15 +1289,7 @@ export async function syncMentorSubjectGroups(db: any) {
     }
 
     if (matchedGroup) {
-      // Ensure the mentor group exists in the mentor_groups table
-      const groupExists = await db.get("SELECT name FROM mentor_groups WHERE LOWER(name) = ?", matchedGroup.toLowerCase());
-      if (!groupExists) {
-        const newGroupId = "mg_" + matchedGroup.toLowerCase().replace(/[^a-z0-9]/g, "");
-        await db.run("INSERT OR IGNORE INTO mentor_groups (id, name, description) VALUES (?, ?, ?)", [newGroupId, matchedGroup, `${matchedGroup} Mentor Group`]);
-        await db.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES (?, ?, ?)", [newGroupId, matchedGroup, `${matchedGroup} Group`]);
-      }
-
-      await db.run("UPDATE mentors SET mentor_group = ? WHERE id = ? AND (mentor_group IS NULL OR mentor_group = '')", [matchedGroup, mentor.id]);
+      await db.run("UPDATE mentors SET mentor_group = ?, subject_group = ? WHERE id = ? AND (mentor_group IS NULL OR mentor_group = '' OR mentor_group = 'General')", [matchedGroup, matchedGroup, mentor.id]);
     }
   }
 }

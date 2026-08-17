@@ -11,6 +11,7 @@ import { Panel } from "./Panel";
 import { Input } from "./Input";
 import { Select } from "./Select";
 import { LoadingButton } from "./ui/LoadingButton";
+import { Pagination } from "./ui/Pagination";
 import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList } from "../lib/utils";
 import { InterviewModule } from "./InterviewModule";
 import {
@@ -326,7 +327,6 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
       if (json.success) {
         toast(json.message, "success");
         await fetchFacultyLeaveRequests();
-        await fetchAttendance();
       } else {
         toast(json.message || "Failed to process leave request", "error");
       }
@@ -337,13 +337,27 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
     }
   };
 
-  const departments = Array.from(new Set(records.map(r => r.department).filter(Boolean)));
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
-  const filteredRecords = records.filter(r => {
-    const matchesSearch = !search || (r.name && r.name.toLowerCase().includes(search.toLowerCase())) || (r.email && r.email.toLowerCase().includes(search.toLowerCase()));
-    const matchesDept = selectedDept === "all" || r.department === selectedDept;
-    return matchesSearch && matchesDept;
-  });
+  const departments = useMemo(() => Array.from(new Set(records.map(r => r.department).filter(Boolean))), [records]);
+
+  const filteredRecords = useMemo(() => {
+    return records.filter(r => {
+      const matchesSearch = !search || (r.name && r.name.toLowerCase().includes(search.toLowerCase())) || (r.email && r.email.toLowerCase().includes(search.toLowerCase()));
+      const matchesDept = selectedDept === "all" || r.department === selectedDept;
+      return matchesSearch && matchesDept;
+    });
+  }, [records, search, selectedDept]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, selectedDept, dateStr]);
+
+  const paginatedRecords = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredRecords.slice(start, start + pageSize);
+  }, [filteredRecords, page, pageSize]);
 
   return (
     <div className="space-y-6">
@@ -595,7 +609,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((m) => {
+                paginatedRecords.map((m) => {
                   const isMarking = markingMentorId === m.mentorId;
                   return (
                     <tr key={m.mentorId} className="hover:bg-slate-50/80 transition-colors">
@@ -712,6 +726,13 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={page}
+            totalItems={filteredRecords.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
         </div>
       </div>
 

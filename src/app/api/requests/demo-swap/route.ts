@@ -110,15 +110,24 @@ export async function POST(request: Request) {
       if (status === "rejected") {
         await db.run("UPDATE demo_swap_requests SET status = 'rejected' WHERE id = ?", [requestId]);
 
+        // Keep the demo session in 'reallocation_required' state so allocator/system can find another valid SME or slot
+        const session = await db.get("SELECT * FROM demo_sessions WHERE id = ?", [req.sessionId]);
+        if (session && session.status !== "completed") {
+          await db.run(
+            "UPDATE demo_sessions SET status = 'reallocation_required' WHERE id = ?",
+            [req.sessionId]
+          );
+        }
+
         // Audit Log
         const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
         await db.run(
           `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
            VALUES (?, 'swap_resolve', ?, 'System', 'Demo Ecosystem', ?)`,
-          [auditId, `Demo swap request ${requestId} rejected`, resolvedAt]
+          [auditId, `Demo reallocation request ${requestId} rejected by SME. Session remains in reallocation_required.`, resolvedAt]
         );
 
-        return NextResponse.json({ success: true, message: "Swap request rejected successfully." });
+        return NextResponse.json({ success: true, message: "Reallocation request rejected. Session remains in reallocation_required." });
       }
 
       if (status === "pending_sme") {
@@ -137,7 +146,7 @@ export async function POST(request: Request) {
       }
 
       if (status === "approved") {
-        // Update the main demo session with proposed values
+        // Update the main demo session with proposed values and set status to 'confirmed'
         await db.run(
           `UPDATE demo_sessions 
            SET mentorId = COALESCE(?, mentorId),
@@ -145,7 +154,8 @@ export async function POST(request: Request) {
                smeId = COALESCE(?, smeId),
                smeName = COALESCE(?, smeName),
                dateStr = COALESCE(?, dateStr),
-               timeSlot = COALESCE(?, timeSlot)
+               timeSlot = COALESCE(?, timeSlot),
+               status = 'confirmed'
            WHERE id = ?`,
           [
             req.proposedMentorId,
@@ -168,12 +178,12 @@ export async function POST(request: Request) {
            VALUES (?, 'swap_resolve', ?, 'System', 'Demo System', ?)`,
           [
             auditId,
-            `Demo swap request approved. Session ${req.sessionId} updated (Mentor: ${req.proposedMentorName || req.mentorName}, SME: ${req.proposedSmeName || req.smeName}, Date: ${req.proposedDateStr || req.dateStr}, Slot: ${req.proposedTimeSlot || req.timeSlot})`,
+            `Demo swap request approved. Session ${req.sessionId} updated to confirmed (Mentor: ${req.proposedMentorName || req.mentorName}, SME: ${req.proposedSmeName || req.smeName}, Date: ${req.proposedDateStr || req.dateStr}, Slot: ${req.proposedTimeSlot || req.timeSlot})`,
             resolvedAt
           ]
         );
 
-        return NextResponse.json({ success: true, message: "Swap request approved and schedule updated!" });
+        return NextResponse.json({ success: true, message: "Swap request approved and demo confirmed!" });
       }
 
       return NextResponse.json({ success: false, message: "Invalid resolution status" }, { status: 400 });

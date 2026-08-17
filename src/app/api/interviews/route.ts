@@ -65,24 +65,48 @@ export async function GET(request: Request) {
 
     const interviews = await db.all(query, params);
 
-    const interviewsWithDetails = await Promise.all(
-      interviews.map(async (inv: any) => {
-        const allocs = await db.all(
-          "SELECT * FROM interview_allocations WHERE interview_id = ? ORDER BY start_time ASC",
-          [inv.id]
-        );
-        const camResponses = await db.all(
-          "SELECT * FROM cam_capacity_responses WHERE interview_id = ? ORDER BY created_at ASC",
-          [inv.id]
-        );
-        const studentSlots = await db.all(
-          "SELECT * FROM student_interview_slots WHERE interview_id = ? ORDER BY slot_start_time ASC",
-          [inv.id]
-        );
-        const evalsForThis = await db.all(
-          "SELECT id, student_id, student_name, attendance, total_score, status, remarks FROM interview_evaluations WHERE interview_id = ?",
-          [inv.id]
-        );
+    let interviewsWithDetails: any[] = [];
+
+    if (interviews.length > 0) {
+      const interviewIds = interviews.map((i: any) => i.id);
+      const placeholders = interviewIds.map(() => "?").join(",");
+
+      const [allAllocs, allCamResponses, allStudentSlots, allEvals] = await Promise.all([
+        db.all(`SELECT * FROM interview_allocations WHERE interview_id IN (${placeholders}) ORDER BY start_time ASC`, ...interviewIds),
+        db.all(`SELECT * FROM cam_capacity_responses WHERE interview_id IN (${placeholders}) ORDER BY created_at ASC`, ...interviewIds),
+        db.all(`SELECT * FROM student_interview_slots WHERE interview_id IN (${placeholders}) ORDER BY slot_start_time ASC`, ...interviewIds),
+        db.all(`SELECT id, interview_id, student_id, student_name, attendance, total_score, status, remarks FROM interview_evaluations WHERE interview_id IN (${placeholders})`, ...interviewIds)
+      ]);
+
+      const allocsMap = new Map<string, any[]>();
+      for (const a of allAllocs) {
+        if (!allocsMap.has(a.interview_id)) allocsMap.set(a.interview_id, []);
+        allocsMap.get(a.interview_id)!.push(a);
+      }
+
+      const camResponsesMap = new Map<string, any[]>();
+      for (const c of allCamResponses) {
+        if (!camResponsesMap.has(c.interview_id)) camResponsesMap.set(c.interview_id, []);
+        camResponsesMap.get(c.interview_id)!.push(c);
+      }
+
+      const studentSlotsMap = new Map<string, any[]>();
+      for (const s of allStudentSlots) {
+        if (!studentSlotsMap.has(s.interview_id)) studentSlotsMap.set(s.interview_id, []);
+        studentSlotsMap.get(s.interview_id)!.push(s);
+      }
+
+      const evalsMap = new Map<string, any[]>();
+      for (const e of allEvals) {
+        if (!evalsMap.has(e.interview_id)) evalsMap.set(e.interview_id, []);
+        evalsMap.get(e.interview_id)!.push(e);
+      }
+
+      interviewsWithDetails = interviews.map((inv: any) => {
+        const allocs = allocsMap.get(inv.id) || [];
+        const camResponses = camResponsesMap.get(inv.id) || [];
+        const studentSlots = studentSlotsMap.get(inv.id) || [];
+        const evalsForThis = evalsMap.get(inv.id) || [];
 
         const reqCount = Number(inv.student_count) || Number(inv.requested_students) || 10;
         const accCap = (camResponses || [])
@@ -121,19 +145,14 @@ export async function GET(request: Request) {
         }
 
         let effectiveGmeet = inv.gmeet_link;
-        if (!effectiveGmeet && (inv.status === "assigned" || inv.status === "completed" || inv.status === "confirmed" || inv.status === "accepted" || allocCount > 0)) {
-          const fromSlot = (studentSlots || []).find((s: any) => s.gmeet_link)?.gmeet_link;
-          const fromAlloc = (allocs || []).find((a: any) => a.gmeet_link)?.gmeet_link;
-          if (fromSlot || fromAlloc) {
-            effectiveGmeet = fromSlot || fromAlloc;
+        if (!effectiveGmeet && inv.type === "external") {
+          const matchFromSlot = studentSlots.find((s: any) => s.gmeet_link);
+          if (matchFromSlot && matchFromSlot.gmeet_link) {
+            effectiveGmeet = matchFromSlot.gmeet_link;
           } else {
-            const rawId = (inv.id || "eval").replace(/[^a-z0-9]/gi, "").toLowerCase();
-            const code1 = rawId.slice(0, 3) || "fpz";
-            const code2 = rawId.slice(3, 7) || "meet";
-            const code3 = rawId.slice(7, 10) || "eval";
-            effectiveGmeet = `https://meet.google.com/${code1}-${code2}-${code3}`;
+            const safeCode = (inv.subject || "tech").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 3) || "fpz";
+            effectiveGmeet = `https://meet.google.com/${safeCode}-${inv.id.slice(0, 4)}-${inv.id.slice(4, 7)}`;
           }
-          // Self-heal DB
           db.run("UPDATE student_interviews SET gmeet_link = ? WHERE id = ? AND (gmeet_link IS NULL OR gmeet_link = '')", [effectiveGmeet, inv.id]).catch(() => {});
         }
 
@@ -157,8 +176,8 @@ export async function GET(request: Request) {
           remaining_to_evaluate: remToEval,
           conducted_status: conductedStatus
         };
-      })
-    );
+      });
+    }
 
     // Fetch evaluations — scoped if mentor
     let evaluations: any[] = [];

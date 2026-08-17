@@ -825,7 +825,9 @@ export async function seedDatabase() {
       CREATE TABLE IF NOT EXISTS subject_groups (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
-        description TEXT
+        description TEXT,
+        lead_sme_id TEXT,
+        lead_sme_name TEXT
       );
 
       CREATE TABLE IF NOT EXISTS demo_rules (
@@ -964,7 +966,9 @@ export async function seedDatabase() {
       name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL DEFAULT 'password123',
-      subject TEXT
+      subject TEXT,
+      is_head_sme INTEGER DEFAULT 0,
+      head_subject_group TEXT
     );
 
     CREATE TABLE IF NOT EXISTS demo_sessions (

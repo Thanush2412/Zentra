@@ -86,6 +86,35 @@ export async function POST(request: Request) {
       const rawName = body.name || body.userName || cleanEmail.split("@")[0];
       const displayName = rawName.replace(/[._]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
 
+      // Safely resolve valid foreign keys for college_id and kam_id
+      let safeColId = body.college_id;
+      if (safeColId) {
+        const validCol = await db.get("SELECT id FROM colleges WHERE id = ?", safeColId);
+        if (!validCol) safeColId = null;
+      }
+      if (!safeColId) {
+        const firstCol = await db.get("SELECT id FROM colleges ORDER BY rowid ASC LIMIT 1");
+        safeColId = firstCol ? firstCol.id : null;
+      }
+
+      let safeKamId = body.kam_id;
+      if (safeKamId) {
+        const validKam = await db.get("SELECT id FROM kam_users WHERE id = ?", safeKamId);
+        if (!validKam) safeKamId = null;
+      }
+      if (!safeKamId) {
+        const firstKam = await db.get("SELECT id FROM kam_users ORDER BY rowid ASC LIMIT 1");
+        if (!firstKam) {
+          await db.run(
+            "INSERT INTO kam_users (id, name, email, title) VALUES (?, ?, ?, ?)",
+            ["kam_default", "Default Key Account Manager", "kam.default@faceprep.in", "Key Account Manager"]
+          );
+          safeKamId = "kam_default";
+        } else {
+          safeKamId = firstKam.id;
+        }
+      }
+
       if (userRole === "kam") {
         const existingKam = await db.get("SELECT id FROM kam_users WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
         if (!existingKam) {
@@ -96,18 +125,15 @@ export async function POST(request: Request) {
         }
       } else if (userRole === "cam") {
         const existingCam = await db.get("SELECT id FROM campus_managers WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
-        if (!existingCam) {
-          const colId = body.college_id || "college_sdnb";
-          const kamId = body.kam_id || "kam_1";
+        if (!existingCam && safeColId && safeKamId) {
           await db.run(
             "INSERT INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)",
-            [refId, displayName + " (CM)", cleanEmail, colId, kamId]
+            [refId, displayName + " (CM)", cleanEmail, safeColId, safeKamId]
           );
         }
       } else if (userRole === "mentor") {
         const existingMentor = await db.get("SELECT id FROM mentors WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
-        if (!existingMentor) {
-          const colId = body.college_id || "college_sdnb";
+        if (!existingMentor && safeColId) {
           await db.run(
             `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, college_id, status, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -119,7 +145,7 @@ export async function POST(request: Request) {
               "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
               body.subjects || "General Subjects",
               body.classes || "All Classes",
-              colId,
+              safeColId,
               userStatus,
               nowStr,
               nowStr
@@ -136,10 +162,10 @@ export async function POST(request: Request) {
         }
       } else if (userRole === "student") {
         const existingStudent = await db.get("SELECT id FROM students WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
-        if (!existingStudent) {
+        if (!existingStudent && safeColId) {
           await db.run(
             "INSERT INTO students (id, name, email, classGroup, college_id) VALUES (?, ?, ?, ?, ?)",
-            [refId, displayName, cleanEmail, body.classGroup || "General", body.college_id || "college_sdnb"]
+            [refId, displayName, cleanEmail, body.classGroup || "General", safeColId]
           );
         }
       }

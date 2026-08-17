@@ -41,11 +41,17 @@ import {
   Download,
   FileSpreadsheet,
   AlertTriangle,
-  Loader2
+  Loader2,
+  Mail,
+  Send,
+  Sliders,
+  Power,
+  CheckCircle2
 } from "lucide-react";
 import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 import { LoadingButton } from "./ui/LoadingButton";
+import { Pagination } from "@/components/ui/Pagination";
 
 const generateCodeFromName = (name: string): string => {
   const words = name.replace(/with|and|for/gi, "").split(/\s+/).filter(Boolean);
@@ -91,8 +97,8 @@ interface KAMUserFromDB {
 
 
 export interface AdminDashboardProps {
-  activeTab?: "overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "hierarchy" | "logs" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "more_menu";
-  onTabChange?: (tab: "overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "hierarchy" | "logs" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "more_menu") => void;
+  activeTab?: "overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "hierarchy" | "logs" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu";
+  onTabChange?: (tab: "overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "hierarchy" | "logs" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu") => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -184,15 +190,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       title: "System",
       icon: History,
       items: [
+        { id: "settings", label: "Email Controls & Settings", icon: Sliders },
         { id: "sessions", label: "Login Sessions", icon: History },
         { id: "logs", label: "Audit Logs", icon: History }
       ]
     }
   ];
 
-  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "hierarchy" | "logs" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "more_menu">("overview");
+  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "hierarchy" | "logs" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu">("overview");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
+
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   useEffect(() => {
@@ -213,6 +221,56 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [loginHistory, setLoginHistory] = useState<any[]>([]);
   const [usersList, setUsersList] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
+
+  // Global System Settings & Mailing Control State
+  const [systemSettings, setSystemSettings] = useState<{ mailing_enabled: boolean; [key: string]: any }>({ mailing_enabled: true });
+  const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
+
+  const fetchSystemSettings = async () => {
+    try {
+      const res = await fetch("/api/settings");
+      const data = await res.json();
+      if (data.success && data.settings) {
+        setSystemSettings(data.settings);
+      }
+    } catch (err) {
+      console.error("Error fetching system settings:", err);
+    }
+  };
+
+  const handleToggleMailing = async (newValue: boolean) => {
+    setIsUpdatingSettings(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "mailing_enabled",
+          value: newValue,
+          updatedBy: currentAdmin?.name || "Admin"
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSystemSettings(prev => ({ ...prev, mailing_enabled: newValue }));
+        toast(
+          newValue
+            ? "Global Email Delivery ENABLED (Active). Outbound transactional emails active."
+            : "Global Email Delivery DISABLED (OFF). Outbound emails are paused.",
+          newValue ? "success" : "warning"
+        );
+        fetchAdminDetails();
+      } else {
+        toast(data.message || "Failed to update setting.", "error");
+      }
+    } catch (err: any) {
+      toast(err.message || "Error updating setting.", "error");
+    } finally {
+      setIsUpdatingSettings(false);
+    }
+  };
+
+
 
   // User tab sub-navigation & Signup approval modal states
   const [userSubTab, setUserSubTab] = useState<"directory" | "signups">("directory");
@@ -597,10 +655,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [lockDeptAndYear, setLockDeptAndYear] = useState(false);
   const [subjectsSubTab, setSubjectsSubTab] = useState<"catalog" | "groups">("catalog");
   const [showGroupModal, setShowGroupModal] = useState(false);
-  const [groupForm, setGroupForm] = useState<{ id: string; name: string; description: string; subjectIds: string[]; mentorIds: string[] }>({
+  const [groupForm, setGroupForm] = useState<{ id: string; name: string; description: string; lead_sme_id: string; lead_sme_name: string; subjectIds: string[]; mentorIds: string[] }>({
     id: "",
     name: "",
     description: "",
+    lead_sme_id: "",
+    lead_sme_name: "",
     subjectIds: [],
     mentorIds: []
   });
@@ -623,6 +683,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [collegeFilter, setCollegeFilter] = useState("all");
   const [dayFilter, setDayFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState("all");
+
+  // Pagination States
+  const [mentorsPage, setMentorsPage] = useState(1);
+  const [mentorsPageSize, setMentorsPageSize] = useState(25);
+  const [logsPage, setLogsPage] = useState(1);
+  const [logsPageSize, setLogsPageSize] = useState(25);
+  const [subjectsPage, setSubjectsPage] = useState(1);
+  const [subjectsPageSize, setSubjectsPageSize] = useState(25);
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersPageSize, setUsersPageSize] = useState(25);
 
   // Hierarchy expansion state
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({
@@ -947,10 +1017,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Fetch campus draft from database on mount
+  // Fetch campus draft and system settings from database on mount
   useEffect(() => {
     refreshData();
     fetchAdminDetails();
+    fetchSystemSettings();
     fetchCampusDraftFromDb();
   }, []);
 
@@ -1924,6 +1995,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         id: g.id,
         name: g.name,
         description: g.description || "",
+        lead_sme_id: g.lead_sme_id || "",
+        lead_sme_name: g.lead_sme_name || "",
         subjectIds: associatedSubjectIds,
         mentorIds: associatedMentorIds
       });
@@ -1933,6 +2006,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         id: "",
         name: "",
         description: "",
+        lead_sme_id: "",
+        lead_sme_name: "",
         subjectIds: [],
         mentorIds: []
       });
@@ -1951,10 +2026,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     try {
       let res;
+      const selectedSme = smes.find(s => s.id === groupForm.lead_sme_id);
+      const leadSmeName = selectedSme ? selectedSme.name : groupForm.lead_sme_name;
+
       if (editingGroup) {
-        res = await updateSubjectGroup(editingGroup.id, groupForm.name.trim(), groupForm.description.trim(), groupForm.subjectIds, groupForm.mentorIds);
+        res = await updateSubjectGroup(
+          editingGroup.id,
+          groupForm.name.trim(),
+          groupForm.description.trim(),
+          groupForm.subjectIds,
+          groupForm.mentorIds,
+          groupForm.lead_sme_id,
+          leadSmeName
+        );
       } else {
-        res = await createSubjectGroup(groupForm.name.trim(), groupForm.description.trim(), groupForm.subjectIds, groupForm.mentorIds);
+        res = await createSubjectGroup(
+          groupForm.name.trim(),
+          groupForm.description.trim(),
+          groupForm.subjectIds,
+          groupForm.mentorIds,
+          groupForm.lead_sme_id,
+          leadSmeName
+        );
       }
       if (res.success) {
         setShowGroupModal(false);
@@ -2193,6 +2286,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const matchesSemester = subjectSemesterFilter === "all" || s.semester === subjectSemesterFilter;
     return matchesSearch && matchesCollege && matchesSemester;
   });
+
+  // Reset page when search or filters change
+  useEffect(() => {
+    setMentorsPage(1);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setLogsPage(1);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setSubjectsPage(1);
+  }, [searchQuery, subjectCollegeFilter, subjectSemesterFilter]);
+
+  useEffect(() => {
+    setUsersPage(1);
+  }, [usersRoleFilter, usersSearchQuery]);
+
+  // Paginated slices for efficient DOM rendering
+  const paginatedMentors = useMemo(() => {
+    const start = (mentorsPage - 1) * mentorsPageSize;
+    return filteredMentors.slice(start, start + mentorsPageSize);
+  }, [filteredMentors, mentorsPage, mentorsPageSize]);
+
+  const paginatedLogs = useMemo(() => {
+    const start = (logsPage - 1) * logsPageSize;
+    return filteredLogs.slice(start, start + logsPageSize);
+  }, [filteredLogs, logsPage, logsPageSize]);
+
+  const paginatedSubjects = useMemo(() => {
+    const start = (subjectsPage - 1) * subjectsPageSize;
+    return filteredSubjects.slice(start, start + subjectsPageSize);
+  }, [filteredSubjects, subjectsPage, subjectsPageSize]);
 
   return (
     <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 font-sans h-full overflow-hidden">
@@ -3231,7 +3357,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-150">
-                    {filteredMentors.map((m) => {
+                    {paginatedMentors.map((m) => {
                       const col = colleges.find(c => c.id === m.college_id);
                       const mentorSubjectsList = m.subjects ? m.subjects.split("\n").map(s => s.trim()).filter(Boolean) : [];
                       const mentorGrp = m.mentor_group || m.mentor_group || "General";
@@ -3318,6 +3444,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     )}
                   </tbody>
                 </table>
+                <Pagination
+                  currentPage={mentorsPage}
+                  totalItems={filteredMentors.length}
+                  pageSize={mentorsPageSize}
+                  onPageChange={setMentorsPage}
+                  onPageSizeChange={setMentorsPageSize}
+                />
               </div>
             </div>
           )}
@@ -4007,16 +4140,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <table className="w-full border-collapse text-left text-xs min-w-[600px]">
                       <thead>
                         <tr className="bg-gray-55 border-b border-gray-200 text-gray-555 font-bold uppercase text-[9px] tracking-wider">
-                          <th className="p-4 w-[15%]">ID</th>
-                          <th className="p-4 w-[25%]">Group Name</th>
-                          <th className="p-4 w-[40%]">Description</th>
-                          <th className="p-4 w-[12%] text-center">Mentors Count</th>
-                          <th className="p-4 w-[10%] text-right">Actions</th>
+                          <th className="p-4 w-[12%]">ID</th>
+                          <th className="p-4 w-[20%]">Group Name</th>
+                          <th className="p-4 w-[22%]">Lead / Head SME</th>
+                          <th className="p-4 w-[30%]">Description</th>
+                          <th className="p-4 w-[10%] text-center">Mentors Count</th>
+                          <th className="p-4 w-[6%] text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-150 bg-white">
                         {(subjectGroups || []).map((g) => {
                           const count = (mentors || []).filter(m => (m.mentor_group || m.subject_group || m.department || "").trim().toLowerCase() === (g.name || "").trim().toLowerCase()).length;
+                          const leadSme = smes.find(s => s.id === g.lead_sme_id) || (g.lead_sme_name ? { name: g.lead_sme_name } : null);
                           return (
                             <tr key={g.id} className="hover:bg-gray-55/30 transition-colors">
                               <td className="p-4 font-mono text-[10px] text-gray-400 font-semibold">{g.id}</td>
@@ -4024,6 +4159,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-bold">
                                   {g.name}
                                 </span>
+                              </td>
+                              <td className="p-4">
+                                {leadSme ? (
+                                  <span className="px-2.5 py-0.5 rounded-md bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-black flex items-center gap-1 w-fit">
+                                    <BookOpen className="h-3 w-3 shrink-0" />
+                                    {leadSme.name}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-gray-400 italic">Unassigned</span>
+                                )}
                               </td>
                               <td className="p-4 text-gray-600 font-semibold">{g.description || "—"}</td>
                               <td className="p-4 text-center font-bold text-gray-700">{count}</td>
@@ -4336,7 +4481,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-150 bg-white">
-                      {filteredLogs.map((log) => {
+                      {paginatedLogs.map((log) => {
                         // Determine badge color for logs
                         const isHandover = log.type.includes("handover");
                         const isCsv = log.type.includes("csv");
@@ -4366,6 +4511,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       })}
                     </tbody>
                   </table>
+                  <Pagination
+                    currentPage={logsPage}
+                    totalItems={filteredLogs.length}
+                    pageSize={logsPageSize}
+                    onPageChange={setLogsPage}
+                    onPageSizeChange={setLogsPageSize}
+                  />
                 </div>
               )}
             </div>
@@ -4632,6 +4784,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         );
                       }
 
+                      const paginatedUsers = filteredUsers.slice((usersPage - 1) * usersPageSize, usersPage * usersPageSize);
+
                       return (
                         <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm bg-white">
                           <table className="w-full border-collapse text-left text-xs min-w-[700px]">
@@ -4646,7 +4800,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-150 bg-white">
-                              {filteredUsers.map((user) => {
+                              {paginatedUsers.map((user) => {
                                 const roleColor =
                                   user.role === "admin"
                                     ? "bg-purple-50 text-purple-700 border-purple-100"
@@ -4740,6 +4894,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               })}
                             </tbody>
                           </table>
+                          <Pagination
+                            currentPage={usersPage}
+                            totalItems={filteredUsers.length}
+                            pageSize={usersPageSize}
+                            onPageChange={setUsersPage}
+                            onPageSizeChange={setUsersPageSize}
+                          />
                         </div>
                       );
                     })()}
@@ -5179,6 +5340,129 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Tab: System Settings & Mail Controls ── */}
+          {activeTab === "settings" && (
+            <div className="space-y-6 animate-fadeIn font-sans text-xs">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-gray-150 pb-4 flex-wrap gap-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0 text-indigo-600">
+                    <Sliders className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900 font-sans">System Settings &amp; Global Switches</h2>
+                    <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Manage global system switches, transactional mailing dispatches, and infrastructure controls</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid Layout for Settings Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                {/* Master Email Control Card */}
+                <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-5">
+                  <div>
+                    <div className="flex items-start justify-between gap-4 mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 ${systemSettings.mailing_enabled ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-rose-50 text-rose-600 border border-rose-200"}`}>
+                          <Mail className="h-6 w-6" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-extrabold text-gray-900">Global Email &amp; Mailing System</h3>
+                          <span className="text-[10px] text-gray-400 font-medium block">Controls Brevo REST API, SMTP Relay &amp; GAS Webhooks</span>
+                        </div>
+                      </div>
+
+                      {/* Live Status Badge */}
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black border ${systemSettings.mailing_enabled ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"}`}>
+                        <span className={`h-2 w-2 rounded-full ${systemSettings.mailing_enabled ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}`} />
+                        {systemSettings.mailing_enabled ? "MAILING ACTIVE" : "MAILING OFF"}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-gray-600 font-medium leading-relaxed mt-2 bg-gray-50/80 p-3.5 rounded-xl border border-gray-150">
+                      When turned <strong className="text-gray-900 font-bold">OFF</strong>, all outgoing transactional emails (leave alerts, handover requests, demo swap proposals, interview notifications) are gracefully bypassed. <span className="text-indigo-600 font-semibold">Web application workflows will continue functioning normally without errors.</span>
+                    </p>
+                  </div>
+
+                  {/* Action Row */}
+                  <div className="pt-4 border-t border-gray-150 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleMailing(!systemSettings.mailing_enabled)}
+                        disabled={isUpdatingSettings}
+                        className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-sm border ${
+                          systemSettings.mailing_enabled
+                            ? "bg-rose-600 hover:bg-rose-700 text-white border-rose-700"
+                            : "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700"
+                        } disabled:opacity-50`}
+                      >
+                        {isUpdatingSettings ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Power className="h-4 w-4" />
+                        )}
+                        {systemSettings.mailing_enabled ? "Turn Mailing OFF" : "Turn Mailing ON"}
+                      </button>
+                    </div>
+
+                    <span className="text-[10px] text-gray-400 font-semibold">
+                      Status: {systemSettings.mailing_enabled ? "Enabled" : "Paused"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Email Service Diagnostic Card */}
+                <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-4">
+                  <div>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="h-10 w-10 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                        <CheckCircle2 className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-extrabold text-gray-900">Email Infrastructure Status</h3>
+                        <span className="text-[10px] text-gray-400 font-medium block">Configured Relay &amp; Webhook Providers</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5 mt-4">
+                      <div className="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl border border-gray-150">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                          <span className="text-xs font-bold text-gray-800">Primary Provider</span>
+                        </div>
+                        <span className="text-[11px] font-mono font-extrabold text-indigo-600">Brevo REST API v3</span>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl border border-gray-150">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                          <span className="text-xs font-bold text-gray-800">Secondary Relay</span>
+                        </div>
+                        <span className="text-[11px] font-mono font-extrabold text-indigo-600">Brevo SMTP (Port 587)</span>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl border border-gray-150">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-amber-500" />
+                          <span className="text-xs font-bold text-gray-800">Webhook Fallback</span>
+                        </div>
+                        <span className="text-[11px] font-mono font-extrabold text-slate-600">Google Apps Script</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl flex items-center gap-2 text-amber-800 text-[10px] font-medium">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                    <span>Audit logs automatically record whenever mailing preferences are toggled by an administrator.</span>
+                  </div>
+                </div>
+
+              </div>
             </div>
           )}
         </div>
@@ -7655,147 +7939,190 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {/* ── Mentor Group Modal ── */}
         {showGroupModal && (
-          <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl border border-gray-150 shadow-xl max-w-md w-full overflow-hidden animate-slideUp">
-              <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
-                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5 font-sans">
-                  <Layers className="h-5 w-5 text-indigo-650" />
-                  {editingGroup ? "Edit Mentor Group" : "Create Mentor Group"}
-                </h3>
-                <button onClick={() => setShowGroupModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                  <X className="h-4 w-4" />
-                </button>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-lg shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4 max-h-[85vh] flex flex-col">
+              
+              <button
+                onClick={() => setShowGroupModal(false)}
+                className="absolute right-4 top-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              {/* Modal Header */}
+              <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
+                <Layers className="h-5 w-5 text-indigo-600" />
+                <div>
+                  <h3 className="text-sm font-black uppercase text-slate-800 dark:text-white tracking-wider">
+                    {editingGroup ? "Edit Mentor Group / Domain" : "Create Mentor Group / Domain"}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
+                    Configure group domain, assign lead sme, and map faculty mentors
+                  </p>
+                </div>
               </div>
 
-              <form onSubmit={handleGroupSubmit} className="p-6 space-y-4 text-xs font-semibold">
-                {modalError && (
-                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
-                    <ShieldAlert className="h-4 w-4 shrink-0" />
-                    {modalError}
-                  </div>
-                )}
+              {/* Scrollable Form Body */}
+              <form onSubmit={handleGroupSubmit} className="flex-1 flex flex-col overflow-hidden text-xs space-y-4">
+                <div className="flex-1 overflow-y-auto pr-1 space-y-4">
+                  {modalError && (
+                    <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl text-rose-700 dark:text-rose-300 font-bold flex items-center gap-1.5 text-xs">
+                      <ShieldAlert className="h-4 w-4 shrink-0" />
+                      {modalError}
+                    </div>
+                  )}
 
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Mentor Group Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Computer Science, Management, Mathematics, English"
-                    value={groupForm.name}
-                    onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Description</label>
-                  <textarea
-                    placeholder="Provide a brief description for this mentor group domain..."
-                    value={groupForm.description}
-                    onChange={(e) => setGroupForm({ ...groupForm, description: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 h-20 resize-none"
-                  />
-                </div>
-
-                {/* Map Faculty Mentors checklist */}
-                <div className="space-y-1">
-                  <div className="flex justify-between items-center">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Map Faculty Mentors to Group</label>
-                    <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-                      {groupForm.mentorIds.length} Mentors Mapped
-                    </span>
-                  </div>
-                  <p className="text-[9.5px] text-gray-400 font-medium">Select faculty mentors to assign to this mentor group domain.</p>
-
-                  <div className="relative mt-1 mb-1.5">
-                    <Search className="absolute left-2.5 top-1.5 h-3.5 w-3.5 text-gray-400" />
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-500 block">Mentor Group Name *</label>
                     <input
                       type="text"
-                      placeholder="Search faculty mentors by name or email..."
-                      value={groupMentorSearch}
-                      onChange={(e) => setGroupMentorSearch(e.target.value)}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-650 font-bold"
+                      required
+                      placeholder="e.g. Computer Science, Management, Mathematics, English"
+                      value={groupForm.name}
+                      onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })}
+                      className="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
 
-                  <div className="border border-gray-150 rounded-xl bg-gray-55 p-3.5 max-h-44 overflow-y-auto space-y-1.5 text-[11px] font-bold">
-                    {(() => {
-                      const searchedMentors = (mentors || []).filter(m =>
-                        (m.name || "").toLowerCase().includes(groupMentorSearch.toLowerCase()) ||
-                        (m.email || "").toLowerCase().includes(groupMentorSearch.toLowerCase()) ||
-                        (m.mentor_group || "").toLowerCase().includes(groupMentorSearch.toLowerCase())
-                      );
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-500 block">Assigned Lead / Head SME</label>
+                    <select
+                      value={groupForm.lead_sme_id}
+                      onChange={(e) => setGroupForm({ ...groupForm, lead_sme_id: e.target.value })}
+                      className="w-full text-xs font-bold p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="">Select Lead SME (Optional)...</option>
+                      {smes.map(sme => (
+                        <option key={sme.id} value={sme.id}>
+                          {sme.name} ({sme.subject || "General"})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                      return (
-                        <>
-                          {searchedMentors.map(m => {
-                            const isChecked = groupForm.mentorIds.includes(m.id);
-                            return (
-                              <label key={m.id} className="flex items-start gap-2 py-1 px-1.5 hover:bg-white rounded cursor-pointer transition-colors text-gray-700">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={(e) => {
-                                    let next;
-                                    if (e.target.checked) {
-                                      next = [...groupForm.mentorIds, m.id];
-                                    } else {
-                                      next = groupForm.mentorIds.filter(id => id !== m.id);
-                                    }
-                                    setGroupForm({ ...groupForm, mentorIds: next });
-                                  }}
-                                  className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer mt-0.5"
-                                />
-                                <div className="leading-tight flex-1">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-bold text-gray-800">{m.name}</span>
-                                    <span className="text-[9px] text-gray-400 font-normal">({m.email})</span>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-500 block">Description</label>
+                    <textarea
+                      rows={2}
+                      placeholder="Provide a brief description for this mentor group domain..."
+                      value={groupForm.description}
+                      onChange={(e) => setGroupForm({ ...groupForm, description: e.target.value })}
+                      className="w-full text-xs font-medium p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                    />
+                  </div>
+
+                  {/* Map Faculty Mentors checklist */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-black uppercase text-slate-500 block">Map Faculty Mentors to Group</label>
+                      <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-full border border-indigo-100 dark:border-indigo-800">
+                        {groupForm.mentorIds.length} Mentors Mapped
+                      </span>
+                    </div>
+
+                    <div className="relative">
+                      <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search faculty mentors by name, email, or college..."
+                        value={groupMentorSearch}
+                        onChange={(e) => setGroupMentorSearch(e.target.value)}
+                        className="w-full text-xs font-bold pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-900/50 p-3 max-h-48 overflow-y-auto space-y-2 text-xs font-semibold">
+                      {(() => {
+                        const searchedMentors = (mentors || []).filter(m => {
+                          const cName = (colleges.find(c => c.id === m.college_id)?.name || "").toLowerCase();
+                          const query = groupMentorSearch.toLowerCase();
+                          return (
+                            (m.name || "").toLowerCase().includes(query) ||
+                            (m.email || "").toLowerCase().includes(query) ||
+                            (m.mentor_group || "").toLowerCase().includes(query) ||
+                            cName.includes(query)
+                          );
+                        });
+
+                        return (
+                          <>
+                            {searchedMentors.map(m => {
+                              const isChecked = groupForm.mentorIds.includes(m.id);
+                              const mentorCollegeName = colleges.find(c => c.id === m.college_id)?.name || "";
+                              return (
+                                <label key={m.id} className="flex items-start gap-2.5 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 dark:border-slate-800 hover:border-indigo-300 cursor-pointer transition-all text-slate-700 dark:text-slate-200 shadow-2xs">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      let next;
+                                      if (e.target.checked) {
+                                        next = [...groupForm.mentorIds, m.id];
+                                      } else {
+                                        next = groupForm.mentorIds.filter(id => id !== m.id);
+                                      }
+                                      setGroupForm({ ...groupForm, mentorIds: next });
+                                    }}
+                                    className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer mt-0.5 shrink-0"
+                                  />
+                                  <div className="leading-tight flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-1 flex-wrap">
+                                      <span className="font-black text-slate-850 dark:text-white truncate">{m.name}</span>
+                                      {mentorCollegeName && (
+                                        <span className="text-[8.5px] font-black px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800 shrink-0">
+                                          {mentorCollegeName}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[9.5px] text-slate-400 font-normal block truncate mt-0.5">{m.email}</span>
+                                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                      {m.mentor_group ? (
+                                        <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-black ${(m.mentor_group || "").trim().toLowerCase() === (editingGroup?.name || "").trim().toLowerCase()
+                                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                                            : "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                                          }`}>
+                                          Group: {m.mentor_group}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[8.5px] px-1.5 py-0.5 rounded font-semibold text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                          Unassigned
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                    {m.mentor_group ? (
-                                      <span className={`text-[8.5px] px-1 py-0.2 rounded font-black ${(m.mentor_group || "").trim().toLowerCase() === (editingGroup?.name || "").trim().toLowerCase()
-                                          ? "bg-indigo-55 text-indigo-700 border border-indigo-100"
-                                          : "bg-amber-50 text-amber-700 border border-amber-100"
-                                        }`}>
-                                        Group: {m.mentor_group}
-                                      </span>
-                                    ) : (
-                                      <span className="text-[8.5px] px-1 py-0.2 rounded font-semibold text-gray-400 bg-gray-100">
-                                        Unassigned
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </label>
-                            );
-                          })}
-                          {searchedMentors.length === 0 && (
-                            <div className="text-center text-gray-400 italic py-2 text-[10px]">
-                              No mentors found matching "{groupMentorSearch}".
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
+                                </label>
+                              );
+                            })}
+                            {searchedMentors.length === 0 && (
+                              <div className="text-center text-slate-400 italic py-3 text-[10px]">
+                                No mentors found matching "{groupMentorSearch}".
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                {/* Footer Action Buttons */}
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
                   <button
                     type="button"
                     onClick={() => setShowGroupModal(false)}
-                    className="px-4 py-2 hover:bg-gray-100 text-gray-555 rounded-xl transition-all font-bold cursor-pointer"
+                    className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer"
                   >
                     {editingGroup ? "Save Mentor Group" : "Create Mentor Group"}
                   </button>
                 </div>
               </form>
+
             </div>
           </div>
         )}

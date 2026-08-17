@@ -47,6 +47,8 @@ export async function GET(request: Request) {
         success: true,
         colleges, students, fees, payments, cams,
         stats: { totalFees, totalPaid, totalOutstanding, paidCount, partialCount, unpaidCount, totalStudents: students.length }
+      }, {
+        headers: { "Cache-Control": "private, max-age=15, stale-while-revalidate=45" }
       });
     }
 
@@ -86,6 +88,8 @@ export async function GET(request: Request) {
           totalStudents: students.length,
           collectionRate: totalFees > 0 ? Math.min(Math.round((totalPaid / totalFees) * 100), 100) : 0
         }
+      }, {
+        headers: { "Cache-Control": "private, max-age=15, stale-while-revalidate=45" }
       });
     }
 
@@ -110,6 +114,8 @@ export async function GET(request: Request) {
           partialCount: fees.filter((f: any) => f.status === 'partial').length,
           unpaidCount: fees.filter((f: any) => f.status === 'unpaid').length
         }
+      }, {
+        headers: { "Cache-Control": "private, max-age=15, stale-while-revalidate=45" }
       });
     }
 

@@ -54,6 +54,16 @@ export async function GET(request: Request) {
     const announcementSql = collegeId ? "SELECT * FROM announcements WHERE college_id = ? OR college_id IS NULL ORDER BY created_at DESC" : "SELECT * FROM announcements ORDER BY created_at DESC";
     const announcementParams = collegeId ? [collegeId] : [];
 
+    const attendanceSql = (role === "student" && userId)
+      ? "SELECT * FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 500"
+      : collegeId
+        ? "SELECT sa.* FROM student_attendance sa JOIN students s ON (sa.studentId = s.id OR sa.student_id = s.id) WHERE s.college_id = ? ORDER BY sa.dateStr DESC LIMIT 2000"
+        : "SELECT * FROM student_attendance ORDER BY dateStr DESC LIMIT 1000";
+    const attendanceParams = (role === "student" && userId) ? [userId] : collegeId ? [collegeId] : [];
+
+    const isStudentOrMentor = role === "student" || role === "mentor";
+    const isAdminOrKAM = role === "admin" || role === "kam";
+
     const [
       mentors, slots, requests, approvedHandovers, auditLogs, subjects,
       courses, students, studentAttendance, leaveRequests, colleges,
@@ -73,7 +83,7 @@ export async function GET(request: Request) {
       db.all(subjectSql, ...subjectParams),
       db.all(courseSql, ...courseParams),
       db.all(studentSql, ...studentParams),
-      db.all("SELECT * FROM student_attendance ORDER BY dateStr DESC LIMIT 5000"),
+      db.all(attendanceSql, ...attendanceParams),
       db.all("SELECT * FROM leave_requests ORDER BY timestamp DESC LIMIT 200"),
       db.all("SELECT * FROM colleges"),
       db.all("SELECT id, user_id, title, message, is_read, link, type, created_at FROM notifications ORDER BY created_at DESC LIMIT 50"),
@@ -83,14 +93,14 @@ export async function GET(request: Request) {
       db.all("SELECT id, email, role, reference_id, status, must_change_password, last_login, created_at, updated_at FROM users"),
       db.all("SELECT * FROM weekly_tasks LIMIT 500"),
       db.all("SELECT * FROM student_tracker ORDER BY updated_at DESC LIMIT 500"),
-      db.all("SELECT * FROM sme_users"),
-      db.all("SELECT * FROM demo_sessions ORDER BY created_at DESC LIMIT 200"),
+      !isStudentOrMentor ? db.all("SELECT * FROM sme_users") : Promise.resolve([]),
+      !isStudentOrMentor ? db.all("SELECT * FROM demo_sessions ORDER BY created_at DESC LIMIT 200") : Promise.resolve([]),
       db.all("SELECT * FROM subject_groups ORDER BY name ASC"),
-      db.all("SELECT * FROM demo_rules ORDER BY created_at DESC"),
-      db.all("SELECT * FROM signup_requests ORDER BY created_at DESC LIMIT 100"),
-      db.all("SELECT * FROM demo_swap_requests ORDER BY created_at DESC LIMIT 100").catch(() => []),
-      db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC LIMIT 100").catch(() => []),
-      db.all("SELECT * FROM campus_issues ORDER BY created_at DESC LIMIT 100").catch(() => []),
+      !isStudentOrMentor ? db.all("SELECT * FROM demo_rules ORDER BY created_at DESC") : Promise.resolve([]),
+      role === "admin" ? db.all("SELECT * FROM signup_requests ORDER BY created_at DESC LIMIT 100") : Promise.resolve([]),
+      !isStudentOrMentor ? db.all("SELECT * FROM demo_swap_requests ORDER BY created_at DESC LIMIT 100").catch(() => []) : Promise.resolve([]),
+      isAdminOrKAM ? db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC LIMIT 100").catch(() => []) : Promise.resolve([]),
+      isAdminOrKAM ? db.all("SELECT * FROM campus_issues ORDER BY created_at DESC LIMIT 100").catch(() => []) : Promise.resolve([]),
       db.all("SELECT * FROM academic_years").catch(() => []),
       db.all("SELECT * FROM academic_events ORDER BY date ASC").catch(() => []),
       db.all("SELECT * FROM student_interviews ORDER BY created_at DESC LIMIT 200").catch(() => []),
@@ -184,7 +194,7 @@ export async function GET(request: Request) {
       leaveBalances: leaveBalances || []
     }, {
       headers: {
-        "Cache-Control": "private, max-age=3, stale-while-revalidate=15"
+        "Cache-Control": "private, max-age=30, stale-while-revalidate=60"
       }
     });
   } catch (error: any) {

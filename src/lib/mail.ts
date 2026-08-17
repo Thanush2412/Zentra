@@ -363,9 +363,23 @@ export function renderAnnouncementEmail(data: {
  */
 export async function sendMail({ to, subject, htmlBody }: { to: string; subject: string; htmlBody: string }) {
   try {
+    // 0. GLOBAL ADMIN TOGGLE CHECK
+    try {
+      const { getDb } = await import("@/lib/db");
+      const db = await getDb();
+      const setting = await db.get("SELECT value FROM system_settings WHERE key = 'mailing_enabled'");
+      if (setting && (setting.value === "false" || setting.value === "0")) {
+        console.log("🛑 [Mail Utility] Email dispatch skipped — Global Mailing is toggled OFF by Admin.");
+        return { success: true, disabled: true, message: "Email delivery disabled by Admin toggle" };
+      }
+    } catch (checkErr) {
+      console.warn("Mailing setting check failed, proceeding with default dispatch...", checkErr);
+    }
+
     if (!to || !to.includes("@")) {
       return { success: false, error: "Invalid recipient email address" };
     }
+
 
     const auditBcc = process.env.ADMIN_AUDIT_EMAIL || "";
     const rawEmails = to.split(",").map((e) => e.trim()).filter((e) => e && e.includes("@"));

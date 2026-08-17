@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { Dialog, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Pagination } from "@/components/ui/Pagination";
 
 interface StudentFee {
   id: string;
@@ -150,6 +151,12 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [selectedReportYear, setSelectedReportYear] = useState("2025-2027");
 
+  // Pagination States
+  const [studentsPage, setStudentsPage] = useState(1);
+  const [studentsPageSize, setStudentsPageSize] = useState(25);
+  const [paymentsPage, setPaymentsPage] = useState(1);
+  const [paymentsPageSize, setPaymentsPageSize] = useState(25);
+
   // Sidebar Collapse State
   const [isCollapsed, setIsCollapsed] = useState(false);
   useEffect(() => {
@@ -194,10 +201,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   const fetchData = async () => {
     setLoading(true);
     try {
-      let url = "/api/fees?role=fee_manager";
-      if (filterFromDate) url += `&from=${filterFromDate}`;
-      if (filterToDate) url += `&to=${filterToDate}`;
-      const res = await fetch(url);
+      const res = await fetch("/api/fees?role=fee_manager");
       const json = await res.json();
       if (json.success) setData(json);
     } catch (e) {
@@ -209,8 +213,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
 
   useEffect(() => {
     fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterFromDate, filterToDate]);
+  }, []);
 
   useEffect(() => {
     if (data?.colleges?.length && !selectedTemplateCollege) {
@@ -729,6 +732,17 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     return Array.from(years).sort();
   }, [data?.students, filterCollege]);
 
+  const studentFeesMap = useMemo(() => {
+    const map = new Map<string, any[]>();
+    if (data?.fees) {
+      for (const f of data.fees) {
+        if (!map.has(f.student_id)) map.set(f.student_id, []);
+        map.get(f.student_id)!.push(f);
+      }
+    }
+    return map;
+  }, [data?.fees]);
+
   const filteredStudents = useMemo(() => {
     if (!data) return [];
     return data.students.filter((s) => {
@@ -754,7 +768,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
 
       let matchStatus = true;
       if (filterFeeStatus !== "all") {
-        const studentFees = data.fees.filter((f) => f.student_id === s.id);
+        const studentFees = studentFeesMap.get(s.id) || [];
         const totalFees = studentFees.reduce((sum, f) => sum + f.amount, 0);
         const totalPaid = studentFees.reduce((sum, f) => sum + f.paid_amount, 0);
         const overallStatus =
@@ -766,7 +780,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
 
       return matchSearch && matchCollege && matchDept && matchYear && matchStatus;
     });
-  }, [data, searchQuery, filterCollege, filterDept, filterYear, filterFeeStatus]);
+  }, [data, searchQuery, filterCollege, filterDept, filterYear, filterFeeStatus, studentFeesMap]);
 
   const filteredPayments = useMemo(() => {
     if (!data) return [];
@@ -775,6 +789,13 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
     );
     if (filterCollege !== "all") {
       pays = pays.filter((p) => p.college_id === filterCollege);
+    }
+    if (filterFromDate) {
+      pays = pays.filter((p) => p.payment_date && p.payment_date >= filterFromDate);
+    }
+    if (filterToDate) {
+      const toStr = filterToDate.includes("T") ? filterToDate : `${filterToDate}T23:59:59.999Z`;
+      pays = pays.filter((p) => p.payment_date && p.payment_date <= toStr);
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -786,7 +807,27 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
       );
     }
     return pays;
-  }, [data, searchQuery, filterCollege]);
+  }, [data, searchQuery, filterCollege, filterFromDate, filterToDate]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setStudentsPage(1);
+  }, [searchQuery, filterCollege, filterDept, filterYear, filterFeeStatus]);
+
+  useEffect(() => {
+    setPaymentsPage(1);
+  }, [searchQuery, filterCollege, filterFromDate, filterToDate]);
+
+  // Paginated Slices for optimal DOM rendering performance
+  const paginatedStudents = useMemo(() => {
+    const start = (studentsPage - 1) * studentsPageSize;
+    return filteredStudents.slice(start, start + studentsPageSize);
+  }, [filteredStudents, studentsPage, studentsPageSize]);
+
+  const paginatedPayments = useMemo(() => {
+    const start = (paymentsPage - 1) * paymentsPageSize;
+    return filteredPayments.slice(start, start + paymentsPageSize);
+  }, [filteredPayments, paymentsPage, paymentsPageSize]);
 
   const reportsData = useMemo(() => {
     if (!data) return null;
@@ -1520,325 +1561,313 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                     </Button>
                   </Card>
                 ) : (
-                  filteredStudents.map((student) => {
-                    const studentFees = getStudentFees(student.id);
-                    const totalFees = studentFees.reduce((sum, f) => sum + f.amount, 0);
-                    const totalPaid = studentFees.reduce((sum, f) => sum + f.paid_amount, 0);
-                    const overallStatus =
-                      totalPaid >= totalFees && totalFees > 0 ? "paid"
-                      : totalPaid > 0 ? "partial"
-                      : "unpaid";
-                    const isExpanded = expandedStudentId === student.id;
+                  <>
+                    {paginatedStudents.map((student) => {
+                      const studentFees = getStudentFees(student.id);
+                      const totalFees = studentFees.reduce((sum, f) => sum + f.amount, 0);
+                      const totalPaid = studentFees.reduce((sum, f) => sum + f.paid_amount, 0);
+                      const overallStatus =
+                        totalPaid >= totalFees && totalFees > 0 ? "paid"
+                        : totalPaid > 0 ? "partial"
+                        : "unpaid";
+                      const isExpanded = expandedStudentId === student.id;
 
-                    return (
-                      <Card key={student.id} className="overflow-hidden hover:border-[#D528A2]/40">
-                        <button
-                          onClick={() => setExpandedStudentId(isExpanded ? null : student.id)}
-                          className="w-full p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 text-left cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
-                        >
-                          <div className="flex items-center gap-4 min-w-[260px]">
-                            <div className="h-11 w-11 rounded-xl btn-gradient flex items-center justify-center font-black text-white text-sm shadow-md shrink-0">
-                              {student.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
-                            </div>
-                            <div>
-                              <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                                <span>{student.name}</span>
-                                {student.register_number && (
-                                  <Badge variant="default" className="font-mono text-[10px]">
-                                    {student.register_number}
-                                  </Badge>
-                                )}
+                      return (
+                        <Card key={student.id} className="overflow-hidden hover:border-[#D528A2]/40">
+                          <button
+                            onClick={() => setExpandedStudentId(isExpanded ? null : student.id)}
+                            className="w-full p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 text-left cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
+                          >
+                            <div className="flex items-center gap-4 min-w-[260px]">
+                              <div className="h-11 w-11 rounded-xl btn-gradient flex items-center justify-center font-black text-white text-sm shadow-md shrink-0">
+                                {student.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
                               </div>
-                              <p className="text-[10px] font-semibold text-slate-400 mt-0.5">
-                                {student.department || "General"} · {student.year || "Year I"} · {getCollegeName(student.college_id)}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-6 justify-between md:justify-end">
-                            <div className="text-right">
-                              <span className="text-[9px] font-black text-slate-400 uppercase block">Total Target</span>
-                              <span className="text-xs font-black text-slate-800 dark:text-slate-200">{fmt(totalFees)}</span>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-[9px] font-black text-slate-400 uppercase block">Collected</span>
-                              <span className="text-xs font-black text-[#D528A2]">{fmt(totalPaid)}</span>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-[9px] font-black text-slate-400 uppercase block">Remaining</span>
-                              <span className={`text-xs font-black ${totalFees - totalPaid > 0 ? "text-[#F4A863]" : "text-emerald-500"}`}>
-                                {fmt(totalFees - totalPaid)}
-                              </span>
-                            </div>
-                            <StatusBadge status={overallStatus} />
-                            <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                          </div>
-                        </button>
-
-                        {/* Accordion Semester-Wise Fee Detail View & CRUD */}
-                        {isExpanded && (
-                          <div className="border-t border-slate-100 dark:border-slate-800 p-6 bg-slate-50/40 dark:bg-black/20 space-y-5">
-                            <div className="flex items-center justify-between">
-                              <h4 className="text-[11px] font-black text-[#D528A2] uppercase tracking-widest flex items-center gap-2">
-                                <Receipt className="h-3.5 w-3.5" />
-                                Semester-Wise Fee Structure &amp; Status CRUD
-                              </h4>
-                              
-                              <Button
-                                onClick={() => {
-                                  if (addingStudentFeeId === student.id) {
-                                    setAddingStudentFeeId(null);
-                                  } else {
-                                    setAddingStudentFeeId(student.id);
-                                    setNewTermName("Semester 1 Tuition Fee");
-                                    setNewAmount("25000");
-                                    setNewPaidAmount("0");
-                                    setNewProofLink("");
-                                  }
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="border-[#D528A2]/30 text-[#D528A2] hover:bg-[#D528A2]/10 text-[10px] font-black"
-                              >
-                                <Plus className="h-3.5 w-3.5" /> Add Semester Fee
-                              </Button>
-                            </div>
-
-                            {/* Form to Add New Semester Fee */}
-                            {addingStudentFeeId === student.id && (
-                              <div className="p-4 bg-white dark:bg-[#181820] rounded-xl border border-[#D528A2]/30 space-y-3 animate-in fade-in duration-150">
-                                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                                  <span className="text-[10px] font-black text-[#D528A2] uppercase tracking-wider">New Semester Fee Entry</span>
-                                  <button onClick={() => setAddingStudentFeeId(null)} className="text-slate-400 hover:text-slate-600">
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
+                              <div>
+                                <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                                  <span>{student.name}</span>
+                                  {student.register_number && (
+                                    <Badge variant="default" className="font-mono text-[10px]">
+                                      {student.register_number}
+                                    </Badge>
+                                  )}
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-semibold">
-                                  <div>
-                                    <label className="text-[9px] text-slate-400 font-bold block mb-1">Term / Semester Name</label>
-                                    <Input
-                                      value={newTermName}
-                                      onChange={(e) => setNewTermName(e.target.value)}
-                                      placeholder="e.g. Semester 1 Fee"
-                                      className="h-8 text-xs font-bold"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-[9px] text-slate-400 font-bold block mb-1">Target Amount (₹)</label>
-                                    <Input
-                                      type="number"
-                                      value={newAmount}
-                                      onChange={(e) => setNewAmount(e.target.value)}
-                                      placeholder="25000"
-                                      className="h-8 text-xs font-bold"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-[9px] text-slate-400 font-bold block mb-1">Paid Amount (₹)</label>
-                                    <Input
-                                      type="number"
-                                      value={newPaidAmount}
-                                      onChange={(e) => setNewPaidAmount(e.target.value)}
-                                      placeholder="0"
-                                      className="h-8 text-xs font-bold"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-[9px] text-slate-400 font-bold block mb-1">Status</label>
-                                    <select
-                                      value={newStatus}
-                                      onChange={(e) => setNewStatus(e.target.value)}
-                                      className="w-full h-8 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131317] text-xs font-bold"
-                                    >
-                                      <option value="paid">Paid</option>
-                                      <option value="partial">Partial</option>
-                                      <option value="unpaid">Unpaid</option>
-                                    </select>
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="text-[9px] text-slate-400 font-bold block mb-1">Payment Proof / Receipt Link URL</label>
-                                  <Input
-                                    value={newProofLink}
-                                    onChange={(e) => setNewProofLink(e.target.value)}
-                                    placeholder="https://drive.google.com/proof-receipt.pdf"
-                                    className="h-8 text-xs font-mono"
-                                  />
-                                </div>
-                                <div className="flex justify-end gap-2 pt-1">
-                                  <Button onClick={() => setAddingStudentFeeId(null)} variant="outline" size="sm">Cancel</Button>
-                                  <Button onClick={() => handleCreateFee(student.id)} disabled={savingFeeId === student.id} size="sm">
-                                    {savingFeeId === student.id ? "Saving…" : "Save Record"}
-                                  </Button>
-                                </div>
+                                <p className="text-[10px] font-semibold text-slate-400 mt-0.5">
+                                  {student.department || "General"} · {student.year || "Year I"} · {getCollegeName(student.college_id)}
+                                </p>
                               </div>
-                            )}
+                            </div>
 
-                            {/* Semester Fee Records List */}
-                            {studentFees.length === 0 ? (
-                              <div className="p-6 bg-white dark:bg-[#181820] rounded-xl border border-slate-200/60 dark:border-slate-800/80 text-center space-y-2">
-                                <p className="text-xs text-slate-400 font-semibold italic">No explicit fee invoices recorded for this student yet.</p>
+                            <div className="flex items-center gap-6 justify-between md:justify-end">
+                              <div className="text-right">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Total Fees</span>
+                                <span className="text-xs font-black text-slate-800 dark:text-slate-200">{fmt(totalFees)}</span>
+                              </div>
+
+                              <div className="text-right">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Paid</span>
+                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">{fmt(totalPaid)}</span>
+                              </div>
+
+                              <div className="text-right min-w-[80px]">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Balance</span>
+                                <span className={`text-xs font-black ${totalFees - totalPaid > 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-400"}`}>
+                                  {fmt(Math.max(totalFees - totalPaid, 0))}
+                                </span>
+                              </div>
+
+                              <div>
+                                <StatusBadge status={overallStatus} />
+                              </div>
+
+                              <div className="text-slate-400">
+                                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Expanded Student Fee Ledger Details */}
+                          {isExpanded && (
+                            <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-[#181820]/50 space-y-4 animate-in fade-in duration-200">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                  <Receipt className="h-3.5 w-3.5 text-[#D528A2]" />
+                                  Semester Fee Breakdown &amp; Payment Links
+                                </h4>
                                 <Button
-                                  onClick={() => {
-                                    setAddingStudentFeeId(student.id);
-                                    setNewTermName("Semester 1 Tuition Fee");
-                                    setNewAmount("25000");
-                                    setNewPaidAmount("0");
-                                    setNewProofLink("");
-                                  }}
-                                  variant="outline"
+                                  onClick={() => setAddingStudentFeeId(student.id)}
                                   size="sm"
-                                  className="text-[10px] border-[#D528A2]/30 text-[#D528A2]"
+                                  className="h-7 text-xs font-black bg-[#D528A2] hover:bg-[#D528A2]/90 text-white"
                                 >
-                                  + Create First Semester Fee
+                                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Semester Fee
                                 </Button>
                               </div>
-                            ) : (
-                              <div className="space-y-3">
-                                {studentFees.map((fee) => {
-                                  const proofUrl = fee.payment_proof || fee.pay_link || "";
-                                  const isEditingThis = editingFeeId === fee.id;
 
-                                  return (
-                                    <div key={fee.id} className="p-4 bg-white dark:bg-[#181820] rounded-xl border border-slate-200/60 dark:border-slate-800/80 space-y-3">
-                                      <div className="flex flex-wrap items-center justify-between gap-4">
-                                        <div>
-                                          <div className="flex items-center gap-2">
-                                            <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">{fee.term_name}</p>
-                                            {proofUrl && (
+                              {/* Create New Fee Form */}
+                              {addingStudentFeeId === student.id && (
+                                <Card className="p-4 border-[#D528A2]/30 bg-white dark:bg-[#131317] space-y-3">
+                                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                                    <span className="text-xs font-black text-[#D528A2]">Add New Semester Fee Record</span>
+                                    <button onClick={() => setAddingStudentFeeId(null)} className="text-slate-400 hover:text-slate-600">
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-semibold">
+                                    <div>
+                                      <label className="text-[9px] text-slate-400 font-bold block mb-1">Term / Description</label>
+                                      <Input
+                                        value={newTermName}
+                                        onChange={(e) => setNewTermName(e.target.value)}
+                                        placeholder="e.g. Semester 2 Fee"
+                                        className="h-8 text-xs font-bold"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[9px] text-slate-400 font-bold block mb-1">Target Amount (₹)</label>
+                                      <Input
+                                        type="number"
+                                        value={newAmount}
+                                        onChange={(e) => setNewAmount(e.target.value)}
+                                        className="h-8 text-xs font-bold"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[9px] text-slate-400 font-bold block mb-1">Paid Amount (₹)</label>
+                                      <Input
+                                        type="number"
+                                        value={newPaidAmount}
+                                        onChange={(e) => setNewPaidAmount(e.target.value)}
+                                        className="h-8 text-xs font-bold"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[9px] text-slate-400 font-bold block mb-1">Status</label>
+                                      <select
+                                        value={newStatus}
+                                        onChange={(e) => setNewStatus(e.target.value)}
+                                        className="w-full h-8 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131317] text-xs font-bold"
+                                      >
+                                        <option value="paid">Paid</option>
+                                        <option value="partial">Partial</option>
+                                        <option value="unpaid">Unpaid</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] text-slate-400 font-bold block mb-1">Online Payment Link / Proof URL (Optional)</label>
+                                    <Input
+                                      value={newProofLink}
+                                      onChange={(e) => setNewProofLink(e.target.value)}
+                                      placeholder="https://rzp.io/l/sample or https://drive.google.com/..."
+                                      className="h-8 text-xs font-mono"
+                                    />
+                                  </div>
+                                  <div className="flex justify-end gap-2 pt-1">
+                                    <Button onClick={() => setAddingStudentFeeId(null)} variant="outline" size="sm">Cancel</Button>
+                                    <Button
+                                      onClick={() => handleCreateFee(student.id)}
+                                      disabled={savingFeeId === student.id}
+                                      size="sm"
+                                      className="bg-[#D528A2] hover:bg-[#D528A2]/90 text-white"
+                                    >
+                                      {savingFeeId === student.id ? "Creating…" : "Save Record"}
+                                    </Button>
+                                  </div>
+                                </Card>
+                              )}
+
+                              {studentFees.length === 0 ? (
+                                <p className="text-xs text-slate-400 font-bold italic py-2">No fee records found for this student.</p>
+                              ) : (
+                                <div className="space-y-3">
+                                  {studentFees.map((fee) => {
+                                    const isEditingThis = editingFeeId === fee.id;
+                                    return (
+                                      <div key={fee.id} className="p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#131317] space-y-3">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                          <div className="flex items-center gap-3">
+                                            <div className="h-8 w-8 rounded-lg bg-[#D528A2]/10 flex items-center justify-center text-[#D528A2] font-black text-xs">
+                                              ₹
+                                            </div>
+                                            <div>
+                                              <span className="text-xs font-black text-slate-800 dark:text-slate-100 block">{fee.term_name}</span>
+                                              <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                                <span>Target: <strong className="text-slate-600 dark:text-slate-300 font-bold">{fmt(fee.amount)}</strong></span>
+                                                <span>·</span>
+                                                <span>Paid: <strong className="text-emerald-600 dark:text-emerald-400 font-bold">{fmt(fee.paid_amount)}</strong></span>
+                                                <span>·</span>
+                                                <span>Balance: <strong className="text-rose-600 dark:text-rose-400 font-bold">{fmt(Math.max(fee.amount - fee.paid_amount, 0))}</strong></span>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center gap-3 justify-between sm:justify-end">
+                                            <StatusBadge status={fee.status} />
+
+                                            {fee.pay_link && (
                                               <a
-                                                href={proofUrl}
+                                                href={fee.pay_link}
                                                 target="_blank"
                                                 rel="noreferrer"
-                                                className="inline-flex items-center gap-1 text-[10px] font-bold text-[#D528A2] hover:underline bg-[#D528A2]/10 px-2 py-0.5 rounded-full"
-                                                title="View Proof of Payment"
+                                                className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-[#D528A2]/10 text-[#D528A2] hover:bg-[#D528A2]/20 flex items-center gap-1 transition-all"
                                               >
-                                                <ExternalLink className="h-3 w-3" /> Proof Link
+                                                <ExternalLink className="h-3 w-3" /> Pay Link
                                               </a>
                                             )}
+
+                                            {!isEditingThis && (
+                                              <div className="flex items-center gap-2">
+                                                <Button
+                                                  onClick={() => {
+                                                    setEditingFeeId(fee.id);
+                                                    setEditTermName(fee.term_name);
+                                                    setEditTotalAmount(String(fee.amount));
+                                                    setEditPaidAmount(String(fee.paid_amount));
+                                                    setEditStatus(fee.status);
+                                                    setEditProofLink(fee.payment_proof || fee.pay_link || "");
+                                                  }}
+                                                  variant="outline"
+                                                  size="sm"
+                                                  className="border-[#D528A2]/20 text-[#D528A2] hover:bg-[#D528A2]/10"
+                                                >
+                                                  Edit Record
+                                                </Button>
+                                                <button
+                                                  onClick={() => handleDeleteFee(fee.id)}
+                                                  className="text-slate-400 hover:text-rose-500 p-1 transition-colors"
+                                                  title="Delete Fee Record"
+                                                >
+                                                  <Trash2 className="h-4 w-4" />
+                                                </button>
+                                              </div>
+                                            )}
                                           </div>
-                                          <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                                            {fee.due_date ? `Due Date: ${fee.due_date}` : "Semester Fee Ledger Record"}
-                                          </p>
                                         </div>
 
-                                        <div className="flex items-center gap-6">
-                                          <div className="text-right">
-                                            <span className="text-[9px] text-slate-400 uppercase block font-black">Fee Target</span>
-                                            <span className="text-xs font-extrabold">{fmt(fee.amount)}</span>
-                                          </div>
-                                          <div className="text-right">
-                                            <span className="text-[9px] text-slate-400 uppercase block font-black">Paid</span>
-                                            <span className="text-xs font-extrabold text-[#D528A2]">{fmt(fee.paid_amount)}</span>
-                                          </div>
-                                          <StatusBadge status={fee.status} />
-
-                                          {!isEditingThis && (
-                                            <div className="flex items-center gap-2">
+                                        {/* Inline Fee Edit Form */}
+                                        {isEditingThis && (
+                                          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3 animate-in fade-in duration-150">
+                                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-semibold">
+                                              <div>
+                                                <label className="text-[9px] text-slate-400 font-bold block mb-1">Term Name</label>
+                                                <Input
+                                                  value={editTermName}
+                                                  onChange={(e) => setEditTermName(e.target.value)}
+                                                  className="h-8 text-xs font-bold"
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="text-[9px] text-slate-400 font-bold block mb-1">Target Amount (₹)</label>
+                                                <Input
+                                                  type="number"
+                                                  value={editTotalAmount}
+                                                  onChange={(e) => setEditTotalAmount(e.target.value)}
+                                                  className="h-8 text-xs font-bold"
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="text-[9px] text-slate-400 font-bold block mb-1">Paid Amount (₹)</label>
+                                                <Input
+                                                  type="number"
+                                                  value={editPaidAmount}
+                                                  onChange={(e) => setEditPaidAmount(e.target.value)}
+                                                  className="h-8 text-xs font-bold"
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="text-[9px] text-slate-400 font-bold block mb-1">Status</label>
+                                                <select
+                                                  value={editStatus}
+                                                  onChange={(e) => setEditStatus(e.target.value)}
+                                                  className="w-full h-8 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131317] text-xs font-bold"
+                                                >
+                                                  <option value="paid">Paid</option>
+                                                  <option value="partial">Partial</option>
+                                                  <option value="unpaid">Unpaid</option>
+                                                </select>
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <label className="text-[9px] text-slate-400 font-bold block mb-1">Proof of Payment Link URL</label>
+                                              <Input
+                                                value={editProofLink}
+                                                onChange={(e) => setEditProofLink(e.target.value)}
+                                                placeholder="https://drive.google.com/proof-receipt.pdf"
+                                                className="h-8 text-xs font-mono"
+                                              />
+                                            </div>
+                                            <div className="flex justify-end gap-2">
+                                              <Button onClick={() => setEditingFeeId(null)} variant="outline" size="sm">Cancel</Button>
                                               <Button
-                                                onClick={() => {
-                                                  setEditingFeeId(fee.id);
-                                                  setEditTermName(fee.term_name);
-                                                  setEditTotalAmount(String(fee.amount));
-                                                  setEditPaidAmount(String(fee.paid_amount));
-                                                  setEditStatus(fee.status);
-                                                  setEditProofLink(fee.payment_proof || fee.pay_link || "");
-                                                }}
-                                                variant="outline"
+                                                onClick={() => handleUpdateFeeStatus(fee.id, student.id)}
+                                                disabled={savingFeeId === fee.id}
                                                 size="sm"
-                                                className="border-[#D528A2]/20 text-[#D528A2] hover:bg-[#D528A2]/10"
                                               >
-                                                Edit Record
+                                                {savingFeeId === fee.id ? "Saving…" : "Save Changes"}
                                               </Button>
-                                              <button
-                                                onClick={() => handleDeleteFee(fee.id)}
-                                                className="text-slate-400 hover:text-rose-500 p-1 transition-colors"
-                                                title="Delete Fee Record"
-                                              >
-                                                <Trash2 className="h-4 w-4" />
-                                              </button>
                                             </div>
-                                          )}
-                                        </div>
+                                          </div>
+                                        )}
                                       </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
 
-                                      {/* Inline Fee Edit Form */}
-                                      {isEditingThis && (
-                                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3 animate-in fade-in duration-150">
-                                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-semibold">
-                                            <div>
-                                              <label className="text-[9px] text-slate-400 font-bold block mb-1">Term Name</label>
-                                              <Input
-                                                value={editTermName}
-                                                onChange={(e) => setEditTermName(e.target.value)}
-                                                className="h-8 text-xs font-bold"
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="text-[9px] text-slate-400 font-bold block mb-1">Target Amount (₹)</label>
-                                              <Input
-                                                type="number"
-                                                value={editTotalAmount}
-                                                onChange={(e) => setEditTotalAmount(e.target.value)}
-                                                className="h-8 text-xs font-bold"
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="text-[9px] text-slate-400 font-bold block mb-1">Paid Amount (₹)</label>
-                                              <Input
-                                                type="number"
-                                                value={editPaidAmount}
-                                                onChange={(e) => setEditPaidAmount(e.target.value)}
-                                                className="h-8 text-xs font-bold"
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="text-[9px] text-slate-400 font-bold block mb-1">Status</label>
-                                              <select
-                                                value={editStatus}
-                                                onChange={(e) => setEditStatus(e.target.value)}
-                                                className="w-full h-8 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131317] text-xs font-bold"
-                                              >
-                                                <option value="paid">Paid</option>
-                                                <option value="partial">Partial</option>
-                                                <option value="unpaid">Unpaid</option>
-                                              </select>
-                                            </div>
-                                          </div>
-                                          <div>
-                                            <label className="text-[9px] text-slate-400 font-bold block mb-1">Proof of Payment Link URL</label>
-                                            <Input
-                                              value={editProofLink}
-                                              onChange={(e) => setEditProofLink(e.target.value)}
-                                              placeholder="https://drive.google.com/proof-receipt.pdf"
-                                              className="h-8 text-xs font-mono"
-                                            />
-                                          </div>
-                                          <div className="flex justify-end gap-2">
-                                            <Button onClick={() => setEditingFeeId(null)} variant="outline" size="sm">Cancel</Button>
-                                            <Button
-                                              onClick={() => handleUpdateFeeStatus(fee.id, student.id)}
-                                              disabled={savingFeeId === fee.id}
-                                              size="sm"
-                                            >
-                                              {savingFeeId === fee.id ? "Saving…" : "Save Changes"}
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </Card>
-                    );
-                  })
+                    <Pagination
+                      currentPage={studentsPage}
+                      totalItems={filteredStudents.length}
+                      pageSize={studentsPageSize}
+                      onPageChange={setStudentsPage}
+                      onPageSizeChange={setStudentsPageSize}
+                    />
+                  </>
                 )}
               </div>
-
             </div>
           )}
 
@@ -1859,7 +1888,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredPayments.map((p) => (
+                    {paginatedPayments.map((p) => (
                       <TableRow key={p.id}>
                         <TableCell className="pl-6 font-mono text-[#D528A2] font-extrabold">{p.receipt_no}</TableCell>
                         <TableCell>
@@ -1879,10 +1908,18 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                     ))}
                   </TableBody>
                 </Table>
-                {filteredPayments.length === 0 && (
+                {filteredPayments.length === 0 ? (
                   <div className="p-12 text-center text-slate-400 text-xs font-bold uppercase tracking-wider">
                     No payment transactions found.
                   </div>
+                ) : (
+                  <Pagination
+                    currentPage={paymentsPage}
+                    totalItems={filteredPayments.length}
+                    pageSize={paymentsPageSize}
+                    onPageChange={setPaymentsPage}
+                    onPageSizeChange={setPaymentsPageSize}
+                  />
                 )}
               </Card>
             </div>

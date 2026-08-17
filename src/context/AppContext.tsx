@@ -437,9 +437,9 @@ interface AppContextProps {
   assignWeeklyTask: (taskData: { classGroup: string; subject: string; weekNumber: number; taskName: string; taskPdfUrl?: string; mentorId: string }) => Promise<{ success: boolean; task?: WeeklyTask; message?: string }>;
   gradeStudentTask: (entryData: { studentId: string; classGroup: string; subject: string; weekNumber: number; submissionUrl?: string; vivaAssessment?: string; marks?: number; gradedBy?: string }) => Promise<{ success: boolean; entry?: StudentTrackerEntry; message?: string }>;
   deleteWeeklyTask: (classGroup: string, subject: string, weekNumber: number) => Promise<{ success: boolean; message?: string }>;
-  subjectGroups: Array<{ id: string; name: string; description: string }>;
-  createSubjectGroup: (name: string, description: string, subjectIds?: string[], mentorIds?: string[]) => Promise<{ success: boolean; message: string }>;
-  updateSubjectGroup: (id: string, name: string, description: string, subjectIds?: string[], mentorIds?: string[]) => Promise<{ success: boolean; message: string }>;
+  subjectGroups: Array<{ id: string; name: string; description: string; lead_sme_id?: string; lead_sme_name?: string }>;
+  createSubjectGroup: (name: string, description: string, subjectIds?: string[], mentorIds?: string[], lead_sme_id?: string, lead_sme_name?: string) => Promise<{ success: boolean; message: string }>;
+  updateSubjectGroup: (id: string, name: string, description: string, subjectIds?: string[], mentorIds?: string[], lead_sme_id?: string, lead_sme_name?: string) => Promise<{ success: boolean; message: string }>;
   deleteSubjectGroup: (id: string) => Promise<{ success: boolean; message: string }>;
   updateSmeSubjectGroup: (id: string, subject: string | null) => Promise<{ success: boolean; message: string }>;
   createSmeUser: (id: string, name: string, email: string, subject?: string) => Promise<{ success: boolean; message: string }>;
@@ -1313,12 +1313,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const createSubjectGroup = async (name: string, description: string, subjectIds?: string[], mentorIds?: string[]): Promise<{ success: boolean; message: string }> => {
+  const createSubjectGroup = async (name: string, description: string, subjectIds?: string[], mentorIds?: string[], lead_sme_id?: string, lead_sme_name?: string): Promise<{ success: boolean; message: string }> => {
     try {
       const res = await fetch("/api/subject-groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description, subjectIds, mentorIds })
+        body: JSON.stringify({ name, description, subjectIds, mentorIds, lead_sme_id, lead_sme_name })
       });
       const data = await res.json();
       if (data.success) {
@@ -1331,12 +1331,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const updateSubjectGroup = async (id: string, name: string, description: string, subjectIds?: string[], mentorIds?: string[]): Promise<{ success: boolean; message: string }> => {
+  const updateSubjectGroup = async (id: string, name: string, description: string, subjectIds?: string[], mentorIds?: string[], lead_sme_id?: string, lead_sme_name?: string): Promise<{ success: boolean; message: string }> => {
     try {
       const res = await fetch("/api/subject-groups", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, name, description, subjectIds, mentorIds })
+        body: JSON.stringify({ id, name, description, subjectIds, mentorIds, lead_sme_id, lead_sme_name })
       });
       const data = await res.json();
       if (data.success) {

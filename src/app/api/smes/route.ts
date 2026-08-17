@@ -1,11 +1,37 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const db = await getDb();
-    const smes = await db.all("SELECT * FROM sme_users ORDER BY name ASC");
-    return NextResponse.json({ success: true, smes });
+    const { searchParams } = new URL(request.url);
+    const group = searchParams.get("group");
+
+    const allSmes = await db.all("SELECT * FROM sme_users ORDER BY name ASC");
+
+    if (group) {
+      const cleanGroup = group.toLowerCase().trim();
+      const smesInGroup = allSmes.filter(s => {
+        const sub = (s.subject || "").toLowerCase();
+        const headGroup = (s.head_subject_group || "").toLowerCase();
+        const mGroup = (s.mentor_group || "").toLowerCase();
+
+        return (sub && (sub.includes(cleanGroup) || cleanGroup.includes(sub))) ||
+               (headGroup && (headGroup.includes(cleanGroup) || cleanGroup.includes(headGroup))) ||
+               (mGroup && (mGroup.includes(cleanGroup) || cleanGroup.includes(mGroup)));
+      });
+
+      const finalSmes = smesInGroup.length > 0 ? smesInGroup : allSmes;
+      return NextResponse.json({
+        success: true,
+        group,
+        count: finalSmes.length,
+        exactMatchCount: smesInGroup.length,
+        smes: finalSmes
+      });
+    }
+
+    return NextResponse.json({ success: true, smes: allSmes });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
