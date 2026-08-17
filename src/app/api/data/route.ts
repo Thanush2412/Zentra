@@ -48,6 +48,9 @@ export async function GET(request: Request) {
     const courseSql = collegeId ? "SELECT * FROM courses WHERE college_id = ? OR college_id IS NULL ORDER BY name" : "SELECT * FROM courses ORDER BY name";
     const courseParams = collegeId ? [collegeId] : [];
 
+    const departmentSql = collegeId ? "SELECT * FROM departments WHERE college_id = ? OR college_id IS NULL ORDER BY name" : "SELECT * FROM departments ORDER BY name";
+    const departmentParams = collegeId ? [collegeId] : [];
+
     const holidaySql = collegeId ? "SELECT * FROM holidays WHERE college_id = ? OR college_id IS NULL ORDER BY date" : "SELECT * FROM holidays ORDER BY date";
     const holidayParams = collegeId ? [collegeId] : [];
 
@@ -57,7 +60,7 @@ export async function GET(request: Request) {
     const attendanceSql = (role === "student" && userId)
       ? "SELECT * FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 500"
       : collegeId
-        ? "SELECT sa.* FROM student_attendance sa JOIN students s ON (sa.studentId = s.id OR sa.student_id = s.id) WHERE s.college_id = ? ORDER BY sa.dateStr DESC LIMIT 2000"
+        ? "SELECT sa.* FROM student_attendance sa JOIN students s ON sa.studentId = s.id WHERE s.college_id = ? ORDER BY sa.dateStr DESC LIMIT 2000"
         : "SELECT * FROM student_attendance ORDER BY dateStr DESC LIMIT 1000";
     const attendanceParams = (role === "student" && userId) ? [userId] : collegeId ? [collegeId] : [];
 
@@ -73,7 +76,8 @@ export async function GET(request: Request) {
       studentInterviews,
       interviewEvaluations,
       approvals,
-      leaveBalances
+      leaveBalances,
+      departmentsData
     ] = await Promise.all([
       db.all(mentorSql, ...mentorParams),
       db.all(slotSql, ...slotParams),
@@ -106,7 +110,8 @@ export async function GET(request: Request) {
       db.all("SELECT * FROM student_interviews ORDER BY created_at DESC LIMIT 200").catch(() => []),
       db.all("SELECT * FROM interview_evaluations ORDER BY created_at DESC LIMIT 300").catch(() => []),
       db.all("SELECT * FROM approvals ORDER BY created_at DESC LIMIT 100").catch(() => []),
-      db.all("SELECT * FROM leave_balances").catch(() => [])
+      db.all("SELECT * FROM leave_balances").catch(() => []),
+      db.all(departmentSql, ...departmentParams).catch(() => [])
     ]);
 
     let filteredColleges = colleges;
@@ -128,8 +133,8 @@ export async function GET(request: Request) {
       const mentorIds = new Set(filteredMentors.map((m: any) => m.id));
       const studentIds = new Set(filteredStudents.map((s: any) => s.id));
 
-      filteredStudentAttendance = studentAttendance.filter((sa: any) => studentIds.has(sa.studentId || sa.student_id));
-      filteredLeaveRequests = leaveRequests.filter((lr: any) => studentIds.has(lr.studentId || lr.student_id));
+      filteredStudentAttendance = studentAttendance.filter((sa: any) => studentIds.has(sa.studentId));
+      filteredLeaveRequests = leaveRequests.filter((lr: any) => studentIds.has(lr.studentId));
       filteredWeeklyTasks = weeklyTasks.filter((t: any) => mentorIds.has(t.mentor_id));
       filteredStudentTracker = studentTracker.filter((e: any) => studentIds.has(e.student_id));
       filteredRequests = requests.filter((r: any) => mentorIds.has(r.requestorId) || mentorIds.has(r.targetStaffId));
@@ -165,8 +170,8 @@ export async function GET(request: Request) {
       approvedHandovers: filteredApprovedHandovers,
       auditLogs,
       subjects: filteredSubjects,
-      departments: filteredCourses,
-      courses: filteredCourses,
+      departments: (departmentsData && departmentsData.length > 0) ? departmentsData : filteredCourses,
+      courses: (filteredCourses && filteredCourses.length > 0) ? filteredCourses : departmentsData,
       students: filteredStudents,
       studentAttendance: filteredStudentAttendance,
       leaveRequests: filteredLeaveRequests,

@@ -12,7 +12,7 @@ import { Input } from "./Input";
 import { Select } from "./Select";
 import { LoadingButton } from "./ui/LoadingButton";
 import { Pagination } from "./ui/Pagination";
-import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList } from "../lib/utils";
+import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList } from "../lib/utils";
 import { InterviewModule } from "./InterviewModule";
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
@@ -1729,9 +1729,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const dbSemesterOptions = useMemo(() => {
     const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
     const fromStudents = collegeStudents
-      .map(s => s.semester?.trim() || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : null))
+      .map(s => {
+        const raw = s.semester?.trim() || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : null);
+        if (!raw) return null;
+        const match = raw.match(/\d+/);
+        return match ? `Semester ${match[0]}` : raw.trim();
+      })
       .filter(Boolean) as string[];
-    return Array.from(new Set([...defaultSems, ...fromStudents])).sort((a, b) => {
+
+    const uniqueMap = new Map<string, string>();
+    [...defaultSems, ...fromStudents].forEach(s => {
+      const clean = s.trim();
+      if (clean) {
+        uniqueMap.set(clean.toLowerCase(), clean);
+      }
+    });
+
+    return Array.from(uniqueMap.values()).sort((a, b) => {
       const numA = parseInt(a.replace(/\D/g, "") || "0");
       const numB = parseInt(b.replace(/\D/g, "") || "0");
       return numA - numB;
@@ -5453,16 +5467,19 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       return slot?.department || getCourseFromClassGroup(cg);
                     }).filter(Boolean)));
 
-                    const cohortSemesters = activeBatches
-                      .filter(cg => {
-                        const slot = collegeSlots.find(s => s.classGroup === cg);
-                        const c = slot?.department || getCourseFromClassGroup(cg);
-                        return c === selectedCohortCourse;
-                      })
-                      .map(cg => {
-                        const slot = collegeSlots.find(s => s.classGroup === cg);
-                        return slot?.semester || getSemesterFromClassGroup(cg);
-                      });
+                    const cohortSemesters = Array.from(new Set(
+                      activeBatches
+                        .filter(cg => {
+                          const slot = collegeSlots.find(s => s.classGroup === cg);
+                          const c = slot?.department || getCourseFromClassGroup(cg);
+                          return c === selectedCohortCourse;
+                        })
+                        .map(cg => {
+                          const slot = collegeSlots.find(s => s.classGroup === cg);
+                          return slot?.semester || getSemesterFromClassGroup(cg);
+                        })
+                        .filter(Boolean)
+                    ));
 
                     const previewTimeSlots = getTimeSlots(
                       hasShifts ? (timetableSubTab === "view" ? viewerShift : genShift) : "general",
@@ -5591,8 +5608,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer shadow-sm focus:ring-1 focus:ring-indigo-500"
                                   >
                                     {cohortCourses.length === 0 && <option value="">No courses</option>}
-                                    {cohortCourses.map(c => (
-                                      <option key={c} value={c}>{c}</option>
+                                    {cohortCourses.map((c, idx) => (
+                                      <option key={`c_crs_${c}_${idx}`} value={c}>{c}</option>
                                     ))}
                                   </select>
                                 </div>
@@ -5606,8 +5623,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer shadow-sm focus:ring-1 focus:ring-indigo-500"
                                   >
                                     {cohortSemesters.length === 0 && <option value="">No semesters</option>}
-                                    {cohortSemesters.map(s => (
-                                      <option key={s} value={s}>{s}</option>
+                                    {cohortSemesters.map((s, idx) => (
+                                      <option key={`c_sem_${s}_${idx}`} value={s}>{s}</option>
                                     ))}
                                   </select>
                                 </div>
@@ -5809,8 +5826,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                               const slot = collegeSlots.find(
                                                 s =>
                                                   s.day === day &&
-                                                  s.time === time &&
-                                                  s.classGroup === viewerClassGroup &&
+                                                  (s.time === time || isTimeSlotMatch(s.time, time)) &&
+                                                  (s.classGroup === viewerClassGroup || isCohortMatch(s.classGroup, viewerClassGroup)) &&
                                                   s.shift === (hasShifts ? viewerShift : "general")
                                               );
                                               const mentor = slot ? collegeMentors.find(m => m.id === slot.mentorId) : null;
@@ -8172,8 +8189,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               className="text-xs font-bold bg-transparent cursor-pointer outline-none text-slate-800"
                             >
                               <option value="all">All Semesters</option>
-                              {dbSemesterOptions.map(sem => (
-                                <option key={sem} value={sem}>{sem}</option>
+                              {dbSemesterOptions.map((sem, idx) => (
+                                <option key={`sem_${sem}_${idx}`} value={sem}>{sem}</option>
                               ))}
                             </select>
                           </div>

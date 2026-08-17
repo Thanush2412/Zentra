@@ -1,6 +1,26 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
+export async function GET(request: Request) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    const collegeId = searchParams.get("collegeId") || searchParams.get("college_id");
+
+    const sql = collegeId 
+      ? "SELECT * FROM subjects WHERE college_id = ? OR college_id IS NULL ORDER BY department, name" 
+      : "SELECT * FROM subjects ORDER BY department, name";
+    const args = collegeId ? [collegeId] : [];
+
+    const subjects = await db.all(sql, ...args);
+
+    return NextResponse.json({ success: true, count: subjects.length, subjects });
+  } catch (error: any) {
+    console.error("API GET Subjects error:", error);
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const db = await getDb();

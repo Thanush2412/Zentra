@@ -181,12 +181,12 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, message: "Missing course id." }, { status: 400 });
     }
 
-    const course = await db.get("SELECT * FROM courses WHERE id = ?", id);
+    let course = await db.get("SELECT * FROM courses WHERE id = ? OR name = ?", id, id);
     if (!course) {
-      return NextResponse.json({ success: false, message: "Course not found." }, { status: 404 });
+      course = await db.get("SELECT * FROM departments WHERE id = ? OR name = ?", id, id);
     }
-
-    const courseName = course.name;
+    const courseName = course ? course.name : id;
+    const courseId = course ? course.id : id;
     const isMatch = (deptOrGroup: string) => {
       return isDeptMatch(deptOrGroup || "", courseName, id);
     };

@@ -1,6 +1,30 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+export function isTimeSlotMatch(t1?: string, t2?: string): boolean {
+  if (!t1 || !t2) return false;
+  if (t1 === t2) return true;
+
+  const norm = (s: string) => {
+    return s
+      .toLowerCase()
+      .replace(/\./g, ":")
+      .replace(/\s+/g, "")
+      .replace(/(\D)0(\d)/g, "$1$2")
+      .replace(/^0(\d)/, "$1");
+  };
+
+  return norm(t1) === norm(t2);
+}
+
+export function isCohortMatch(c1?: string, c2?: string): boolean {
+  if (!c1 || !c2) return false;
+  if (c1 === c2) return true;
+  const norm1 = c1.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const norm2 = c2.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return norm1 === norm2 || norm1.includes(norm2) || norm2.includes(norm1);
+}
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }

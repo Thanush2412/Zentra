@@ -25,7 +25,8 @@ import {
   Award,
   Calendar,
   Globe,
-  Check
+  Check,
+  RefreshCw
 } from "lucide-react";
 
 interface DashboardLayoutProps {
@@ -48,7 +49,10 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     colleges,
     isLoading,
     isDataLoading,
+    refreshData
   } = useApp();
+
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
   const storedUserEmail = typeof window !== "undefined" ? (localStorage.getItem("fp_user_email") || "") : "";
   const isSuperAdminEmail = storedUserEmail.toLowerCase().trim() === "thanush@faceprep.in";
@@ -259,11 +263,29 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
         <div className="flex items-center gap-3">
 
           {/* Profile Dropdown trigger */}
-          {/* Last Refreshed Badge */}
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Refreshed at {refreshedAtTime || "Just now"}</span>
-          </div>
+          {/* Interactive Refresh Loader Button */}
+          <button
+            type="button"
+            onClick={async () => {
+              setIsManualRefreshing(true);
+              try {
+                await refreshData();
+              } catch (_) {}
+              finally {
+                setIsManualRefreshing(false);
+              }
+            }}
+            disabled={isManualRefreshing || isDataLoading}
+            className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-indigo-600 transition-all cursor-pointer shadow-xs disabled:opacity-70"
+            title="Click to reload latest data from server"
+          >
+            {isManualRefreshing || isDataLoading ? (
+              <RefreshCw className="h-3 w-3 text-indigo-600 animate-spin" />
+            ) : (
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            )}
+            <span>{isManualRefreshing || isDataLoading ? "Syncing data..." : `Refreshed at ${refreshedAtTime || "Just now"}`}</span>
+          </button>
 
           {/* Master Multi-Role Switcher (Restricted to thanush@faceprep.in) */}
           {isSuperAdminEmail && (
