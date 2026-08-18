@@ -13,8 +13,27 @@ export async function GET(request: Request) {
     const slotId = searchParams.get("slotId");
     const dateStr = searchParams.get("dateStr");
     const studentId = searchParams.get("studentId");
+    const collegeId = searchParams.get("college_id") || searchParams.get("collegeId");
+    const startDate = searchParams.get("startDate");
+    const endDate = searchParams.get("endDate");
 
-    // 1. Fetch student historical logs (for CAM correction modal)
+    // ── 0. Campus-wide bulk fetch for CAM monitoring tab ──────────────────
+    // GET /api/attendance?college_id=xxx[&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD]
+    if (collegeId && !slotId && !studentId) {
+      let sql = `
+        SELECT sa.*
+        FROM student_attendance sa
+        JOIN students st ON sa.studentId = st.id
+        WHERE st.college_id = ?`;
+      const args: any[] = [collegeId];
+      if (startDate) { sql += " AND sa.dateStr >= ?"; args.push(startDate); }
+      if (endDate)   { sql += " AND sa.dateStr <= ?"; args.push(endDate); }
+      sql += " ORDER BY sa.dateStr DESC";
+      const records = await db.all(sql, args);
+      return NextResponse.json({ success: true, records, count: records.length });
+    }
+
+    // ── 1. Student historical logs (for CAM correction modal) ─────────────
     if (studentId && !slotId && !dateStr) {
       const records = await db.all(
         `SELECT sa.*, s.time as timeSlot, s.course as subject, s.classGroup
@@ -32,6 +51,7 @@ export async function GET(request: Request) {
       });
     }
 
+    // ── 2. Single slot + date lookup ──────────────────────────────────────
     if (!slotId || !dateStr) {
       return NextResponse.json({ success: false, message: "Missing slotId or dateStr" }, { status: 400 });
     }
