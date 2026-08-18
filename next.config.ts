@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   allowedDevOrigins: [
     '192.168.77.47',
     '192.168.77.133',
@@ -13,6 +12,15 @@ const nextConfig: NextConfig = {
     '*.local',
     '*'
   ],
+  // Raise API route body size limit to 50MB for bulk attendance imports
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "50mb",
+    },
+  },
+  // Next.js 15+ API route body limit
+  // @ts-ignore — valid in Next 16
+  middlewareClientMaxBodySize: "50mb",
 };
 
 export default nextConfig;

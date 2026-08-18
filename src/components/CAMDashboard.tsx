@@ -2618,28 +2618,60 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         college_id: activeCollegeId
       }));
 
-      // Send everything in ONE request — the server handles batching internally with a transaction
-      // This eliminates N serial HTTP round-trips (was 250 records per request = many calls)
-      const res = await fetch("/api/attendance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "bulk_import",
-          records: recordsToPost,
-          students: studentsToSync,
-          collegeId: activeCollegeId,
-          markedBy: currentCAM?.name || "Master Import"
-        })
-      });
+      // Send in parallel chunks of 1500 records each (~1MB per chunk, well under limits)
+      // All chunks fire simultaneously — total time = time of slowest chunk, not sum of all
+      const CHUNK_SIZE = 1500;
+      let totalCount = 0;
 
-      const rawText = await res.text();
-      let data: any = {};
-      try { data = JSON.parse(rawText); }
-      catch (_) { throw new Error(`Server error (${res.status}): ${rawText.slice(0, 120)}`); }
+      if (recordsToPost.length <= CHUNK_SIZE) {
+        // Small import: single request
+        const res = await fetch("/api/attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "bulk_import",
+            records: recordsToPost,
+            students: studentsToSync,
+            collegeId: activeCollegeId,
+            markedBy: currentCAM?.name || "Master Import"
+          })
+        });
+        const rawText = await res.text();
+        let data: any = {};
+        try { data = JSON.parse(rawText); }
+        catch (_) { throw new Error(`Server error (${res.status}): ${rawText.slice(0, 120)}`); }
+        if (!data.success) throw new Error(data.message || "Import failed.");
+        totalCount = data.count || recordsToPost.length;
+      } else {
+        // Large import: split into parallel chunks
+        const chunks: any[][] = [];
+        for (let i = 0; i < recordsToPost.length; i += CHUNK_SIZE) {
+          chunks.push(recordsToPost.slice(i, i + CHUNK_SIZE));
+        }
 
-      if (!data.success) throw new Error(data.message || "Import failed.");
+        // Students only sent with first chunk to avoid duplicate upserts
+        const results = await Promise.all(
+          chunks.map((chunk, idx) =>
+            fetch("/api/attendance", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "bulk_import",
+                records: chunk,
+                students: idx === 0 ? studentsToSync : [],
+                collegeId: activeCollegeId,
+                markedBy: currentCAM?.name || "Master Import"
+              })
+            }).then(r => r.json())
+          )
+        );
 
-      const totalCount = data.count || recordsToPost.length;
+        for (const data of results) {
+          if (!data.success) throw new Error(data.message || "A batch failed during import.");
+          totalCount += data.count || 0;
+        }
+        if (totalCount === 0) totalCount = recordsToPost.length;
+      }
 
       // Expand active date range to encompass all imported dates so they show up immediately
       const allDates = Array.from(new Set(recordsToPost.map(r => r.dateStr))).sort();

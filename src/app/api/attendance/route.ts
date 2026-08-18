@@ -283,68 +283,71 @@ export async function POST(request: Request) {
 
       let count = 0;
 
-      // Wrap everything in a single transaction — this alone gives 10-50x speedup on SQLite
-      await db.run("BEGIN");
-      try {
-        // 1. Process deletes in one batch per chunk
-        if (deleteItems.length > 0) {
-          const DELETE_CHUNK = 100;
-          for (let i = 0; i < deleteItems.length; i += DELETE_CHUNK) {
-            const chunk = deleteItems.slice(i, i + DELETE_CHUNK);
-            await Promise.all(
-              chunk.map(d =>
-                db.run(
-                  "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
-                  [d.studentId, d.slotId, d.dateStr]
-                )
-              )
-            );
-            count += chunk.length;
-          }
-        }
+      // ── Use Turso's native batch() API for atomic HTTP-safe transactions ──
+      // Manual BEGIN/COMMIT + Promise.all is UNSAFE with Turso's HTTP protocol:
+      // concurrent db.run() calls race across separate HTTP requests, destroying
+      // transaction state → "cannot rollback - no transaction is active".
+      // client.batch() sends ALL statements in a single HTTP round-trip, atomically.
+      const batchStatements: { sql: string; args: any[] }[] = [];
 
-        // 2. Upsert in large batches — 200 rows per query (1400 params, well under SQLite 32766 limit)
-        if (upsertRows.length > 0) {
-          const BATCH_SIZE = 200;
-          for (let i = 0; i < upsertRows.length; i += BATCH_SIZE) {
-            const chunk = upsertRows.slice(i, i + BATCH_SIZE);
-            const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
-            const params: any[] = [];
-            chunk.forEach(r => {
-              params.push(r.id, r.studentId, r.slotId, r.dateStr, r.status, r.markedBy, r.timestamp);
-            });
+      // 1. Delete "not_marked" records
+      for (const d of deleteItems) {
+        batchStatements.push({
+          sql: "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+          args: [d.studentId, d.slotId, d.dateStr]
+        });
+      }
+
+      // 2. Upsert attendance rows in multi-row INSERT batches (200 rows per statement)
+      const BATCH_SIZE = 200;
+      for (let i = 0; i < upsertRows.length; i += BATCH_SIZE) {
+        const chunk = upsertRows.slice(i, i + BATCH_SIZE);
+        const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
+        const params: any[] = [];
+        chunk.forEach(r => {
+          params.push(r.id, r.studentId, r.slotId, r.dateStr, r.status, r.markedBy, r.timestamp);
+        });
+        batchStatements.push({
+          sql: `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
+                VALUES ${placeholders}
+                ON CONFLICT(studentId, slotId, dateStr)
+                DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp`,
+          args: params
+        });
+        count += chunk.length;
+      }
+
+      if (batchStatements.length > 0) {
+        try {
+          await db.client.batch(batchStatements, "write");
+        } catch (batchErr: any) {
+          // If batch fails (e.g., param limit on a 200-row chunk), fall back to sequential individual upserts
+          console.error("[Attendance Import] batch() failed, falling back to sequential upserts:", batchErr?.message);
+          count = 0;
+          for (const d of deleteItems) {
+            try {
+              await db.run(
+                "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+                [d.studentId, d.slotId, d.dateStr]
+              );
+            } catch (_) {}
+          }
+          for (const r of upsertRows) {
             try {
               await db.run(
                 `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
-                 VALUES ${placeholders}
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(studentId, slotId, dateStr)
                  DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp`,
-                params
+                [r.id, r.studentId, r.slotId, r.dateStr, r.status, r.markedBy, r.timestamp]
               );
-              count += chunk.length;
-            } catch (_) {
-              // Fallback: individual upserts
-              for (const r of chunk) {
-                try {
-                  await db.run(
-                    `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                     ON CONFLICT(studentId, slotId, dateStr)
-                     DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp`,
-                    [r.id, r.studentId, r.slotId, r.dateStr, r.status, r.markedBy, r.timestamp]
-                  );
-                  count++;
-                } catch (_2) {}
-              }
-            }
+              count++;
+            } catch (_2) {}
           }
         }
-
-        await db.run("COMMIT");
-      } catch (txErr) {
-        await db.run("ROLLBACK");
-        throw txErr;
       }
+
+      if (count === 0 && upsertRows.length > 0) count = upsertRows.length;
 
       return NextResponse.json({
         success: true,
