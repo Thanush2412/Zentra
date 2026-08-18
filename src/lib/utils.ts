@@ -33,11 +33,16 @@ export function isDeptSubjectMatch(subDept?: string, dName?: string, dCode?: str
   const norm = (str: string) => (str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
   const nSub = norm(subDept);
   const nName = norm(dName);
+  const nCode = dCode ? norm(dCode) : "";
+
   if (nSub === nName) return true;
-  if (dCode && nSub === norm(dCode)) return true;
+  if (nCode && nSub === nCode) return true;
+  if (nSub && nName && (nSub.includes(nName) || nName.includes(nSub))) return true;
+  if (nCode && nSub && (nSub.includes(nCode) || nCode.includes(nSub))) return true;
+
   const baseSub = norm(subDept.replace(/\s*-\s*(Semester|Sem|Year|Yr|Shift|Batch)\s*\d+/gi, ""));
   const baseName = norm(dName.replace(/\s*-\s*(Semester|Sem|Year|Yr|Shift|Batch)\s*\d+/gi, ""));
-  return baseSub === baseName || (nSub.length > 3 && nName.length > 3 && (nSub.includes(nName) || nName.includes(nSub)));
+  return baseSub === baseName || (baseSub.length > 0 && baseName.length > 0 && (baseSub.includes(baseName) || baseName.includes(baseSub)));
 }
 
 export function isSameYear(sYear?: string | number, targetYrStr?: string, sSem?: string): boolean {

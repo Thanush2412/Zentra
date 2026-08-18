@@ -5948,26 +5948,51 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           if (!subDept || !dName) return false;
                           const nSub = norm(subDept);
                           const nName = norm(dName);
+                          const nCode = dCode ? norm(dCode) : "";
                           if (nSub === nName) return true;
-                          if (dCode && nSub === norm(dCode)) return true;
+                          if (nCode && nSub === nCode) return true;
+                          if (nSub && nName && (nSub.includes(nName) || nName.includes(nSub))) return true;
+                          if (nCode && nSub && (nSub.includes(nCode) || nCode.includes(nSub))) return true;
                           const baseSub = norm(subDept.replace(/\s*-\s*(Semester|Sem|Year|Yr|Shift|Batch)\s*\d+/gi, ""));
                           const baseName = norm(dName.replace(/\s*-\s*(Semester|Sem|Year|Yr|Shift|Batch)\s*\d+/gi, ""));
-                          return baseSub === baseName || (nSub.length > 4 && nName.length > 4 && (nSub.includes(nName) || nName.includes(nSub)));
+                          return baseSub === baseName || (baseSub.length > 0 && baseName.length > 0 && (baseSub.includes(baseName) || baseName.includes(baseSub)));
                         };
 
                         const deptSubjects = filteredSubs.filter(s => isDeptSubjectMatch(s.department, deptName, registeredDept?.code));
                         const isEditingDept = editingDeptId === registeredDept?.id;
                         const isDeptExpanded = !!expandedDepts[deptName];
 
+                        const getSemNum = (semStr?: string) => {
+                          if (!semStr) return 0;
+                          const num = parseInt(semStr.replace(/\D/g, ""), 10);
+                          if (num) return num;
+                          const lower = semStr.toLowerCase();
+                          if (lower.includes("viii") || lower.includes("8")) return 8;
+                          if (lower.includes("vii") || lower.includes("7")) return 7;
+                          if (lower.includes("vi") || lower.includes("6")) return 6;
+                          if (lower.includes("v") || lower.includes("5")) return 5;
+                          if (lower.includes("iv") || lower.includes("4")) return 4;
+                          if (lower.includes("iii") || lower.includes("3")) return 3;
+                          if (lower.includes("ii") || lower.includes("2")) return 2;
+                          if (lower.includes("i") || lower.includes("1")) return 1;
+                          return 0;
+                        };
+
                         const yearGroups = YEARS.map(yr => ({
                           yr,
-                          sems: YEAR_SEM_MAP[yr].map(sem => ({
-                            sem,
-                            subjects: deptSubjects.filter(s => s.semester === sem)
-                          })).filter(sg => sg.subjects.length > 0)
+                          sems: YEAR_SEM_MAP[yr].map(sem => {
+                            const semTargetNum = parseInt(sem.replace(/\D/g, "") || "0", 10);
+                            return {
+                              sem,
+                              subjects: deptSubjects.filter(s => s.semester === sem || getSemNum(s.semester) === semTargetNum)
+                            };
+                          }).filter(sg => sg.subjects.length > 0)
                         })).filter(yg => yg.sems.length > 0);
 
-                        const ungrouped = deptSubjects.filter(s => !ALL_KNOWN_SEMS.includes(s.semester || ""));
+                        const ungrouped = deptSubjects.filter(s => {
+                          const sNum = getSemNum(s.semester);
+                          return !ALL_KNOWN_SEMS.includes(s.semester || "") && (sNum < 1 || sNum > 8);
+                        });
 
                         return (
                           <div key={deptName} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden transition-all duration-200">
@@ -6051,7 +6076,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <div>
                                       <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Course Duration</span>
                                       <span className="text-slate-900 font-black">
-                                        {registeredDept?.years || 4} Year(s) ({Number(registeredDept?.years || 4) * 2} Semesters)
+                                        {registeredDept?.years || 3} Year(s) ({Number(registeredDept?.years || 3) * 2} Semesters)
                                       </span>
                                     </div>
                                     <div>
@@ -6073,12 +6098,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                                 {/* 4 Year Cards Grid (Year 1, Year 2, Year 3, Year 4) */}
                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                  {Array.from({ length: registeredDept?.years ? Number(registeredDept.years) : 4 }, (_, i) => `Year ${i + 1}`).map((yr, i) => {
-                                    const yrSubjects = deptSubjects.filter(s => s.year === yr || s.semester === `Semester ${2 * (i + 1) - 1}` || s.semester === `Semester ${2 * (i + 1)}`);
-                                    const semOdd = `Semester ${2 * (i + 1) - 1}`;
-                                    const semEven = `Semester ${2 * (i + 1)}`;
-                                    const oddSubjects = yrSubjects.filter(s => s.semester === semOdd);
-                                    const evenSubjects = yrSubjects.filter(s => s.semester === semEven);
+                                  {Array.from({ length: registeredDept?.years ? Number(registeredDept.years) : 3 }, (_, i) => `Year ${i + 1}`).map((yr, i) => {
+                                    const oddNum = 2 * (i + 1) - 1;
+                                    const evenNum = 2 * (i + 1);
+                                    const semOdd = `Semester ${oddNum}`;
+                                    const semEven = `Semester ${evenNum}`;
+                                    const yrSubjects = deptSubjects.filter(s => s.year === yr || s.year === `Year ${i + 1}` || s.year === `${i + 1}rd Year` || s.year === `${i + 1}nd Year` || s.year === `${i + 1}st Year` || getSemNum(s.semester) === oddNum || getSemNum(s.semester) === evenNum);
+                                    const oddSubjects = yrSubjects.filter(s => s.semester === semOdd || getSemNum(s.semester) === oddNum);
+                                    const evenSubjects = yrSubjects.filter(s => s.semester === semEven || getSemNum(s.semester) === evenNum);
 
                                     return (
                                       <div key={yr} className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs flex flex-col">
