@@ -255,49 +255,89 @@ export async function POST(request: Request) {
         }
       }
 
-      // Fetch valid slot IDs — runs in parallel with the student statement building above (pure JS, no await needed there)
+      // Fetch slots with day + classGroup for compact record expansion on server
+      // Compact records have no slotId — server looks up all slots for (classGroup, dayOfWeek)
       const validSlots = importCollegeId
-        ? await db.all("SELECT id FROM slots WHERE college_id = ?", importCollegeId)
-        : await db.all("SELECT id FROM slots");
+        ? await db.all("SELECT id, day, classGroup FROM slots WHERE college_id = ?", importCollegeId)
+        : await db.all("SELECT id, day, classGroup FROM slots");
       const validSlotIds = new Set(validSlots.map((s: any) => s.id));
       const fallbackSlotId = validSlots.length > 0 ? validSlots[0].id : null;
+
+      // Expansion cache: "dayName||classGroup" → slotId[] (avoids repeated filter scans)
+      const expansionCache = new Map<string, string[]>();
+      const getExpansionSlotIds = (dayName: string, classGroup: string): string[] => {
+        const key = `${dayName}||${(classGroup || "").toLowerCase()}`;
+        if (expansionCache.has(key)) return expansionCache.get(key)!;
+        const cg = (classGroup || "").toLowerCase().trim();
+        const matched = (validSlots as any[]).filter(s => {
+          if (dayName && s.day !== dayName) return false;
+          if (!s.classGroup) return true; // global slot — applies to all cohorts
+          const sg = s.classGroup.toLowerCase().trim();
+          return sg === cg || sg.includes(cg) || cg.includes(sg);
+        }).map((s: any) => s.id);
+        const result = matched.length > 0 ? matched : (fallbackSlotId ? [fallbackSlotId] : []);
+        expansionCache.set(key, result);
+        return result;
+      };
 
       const deleteItems: Array<{ studentId: string; slotId: string; dateStr: string }> = [];
       const upsertRows: any[] = [];
 
       for (const item of records) {
-        const { studentId, slotId, dateStr, status } = item;
+        const { studentId, slotId, dateStr, status, classGroup } = item;
         if (!studentId || !dateStr || !status) continue;
 
-        const effectiveSlotId = validSlotIds.has(slotId) ? slotId : fallbackSlotId;
-        if (!effectiveSlotId) continue;
-
-        if (status === "not_marked") {
-          deleteItems.push({ studentId, slotId: effectiveSlotId, dateStr });
+        if (slotId) {
+          // Explicit slotId format (period-specific marks from client-side resolution)
+          const effectiveSlotId = validSlotIds.has(slotId) ? slotId : fallbackSlotId;
+          if (!effectiveSlotId) continue;
+          if (status === "not_marked") {
+            deleteItems.push({ studentId, slotId: effectiveSlotId, dateStr });
+          } else {
+            upsertRows.push({
+              id: `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+              studentId, slotId: effectiveSlotId, dateStr, status,
+              markedBy: markedBy || "Master Import", timestamp: nowStr
+            });
+          }
         } else {
-          const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-          upsertRows.push({
-            id: recordId,
-            studentId,
-            slotId: effectiveSlotId,
-            dateStr,
-            status,
-            markedBy: markedBy || "Master Import",
-            timestamp: nowStr
-          });
+          // Compact format: classGroup + dateStr, no slotId
+          // Server expands to ALL matching slots for this cohort on this day of week
+          const dateObj = new Date(dateStr + "T00:00:00");
+          const dayName = !isNaN(dateObj.getTime())
+            ? new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(dateObj)
+            : "";
+          const matchedSlotIds = getExpansionSlotIds(dayName, classGroup || "");
+          for (const sId of matchedSlotIds) {
+            if (status === "not_marked") {
+              deleteItems.push({ studentId, slotId: sId, dateStr });
+            } else {
+              upsertRows.push({
+                id: `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                studentId, slotId: sId, dateStr, status,
+                markedBy: markedBy || "Master Import", timestamp: nowStr
+              });
+            }
+          }
         }
       }
 
-
+      // ── Student upserts first (FK order), then attendance writes ──
+      // Chunked into separate batch() calls to stay well under Turso's HTTP body limit
       let count = 0;
 
-      // ── ONE atomic HTTP write: student upserts + deletes + attendance upserts ──
-      // All go in a SINGLE client.batch() call → 1 HTTP round-trip total for writes.
-      const batchStatements: { sql: string; args: any[] }[] = [
-        ...studentBatchStatements // student upserts first (must exist before attendance FK refs)
-      ];
+      // 1. Student upserts (separate batch to ensure they exist before FK attendance rows)
+      if (studentBatchStatements.length > 0) {
+        try {
+          await db.client.batch(studentBatchStatements, "write");
+        } catch (e: any) {
+          console.warn("[Import] Student upsert batch failed (non-fatal):", e?.message);
+        }
+      }
 
-      // 1. Delete "not_marked" records
+      // 2. Build attendance write statements
+      const batchStatements: { sql: string; args: any[] }[] = [];
+
       for (const d of deleteItems) {
         batchStatements.push({
           sql: "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
@@ -305,10 +345,9 @@ export async function POST(request: Request) {
         });
       }
 
-      // 2. Upsert attendance rows in multi-row INSERT batches (200 rows per statement)
-      const BATCH_SIZE = 200;
-      for (let i = 0; i < upsertRows.length; i += BATCH_SIZE) {
-        const chunk = upsertRows.slice(i, i + BATCH_SIZE);
+      const ROWS_PER_INSERT = 200; // 200 rows × 7 params = 1400 params, under SQLite limit
+      for (let i = 0; i < upsertRows.length; i += ROWS_PER_INSERT) {
+        const chunk = upsertRows.slice(i, i + ROWS_PER_INSERT);
         const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
         const params: any[] = [];
         chunk.forEach(r => {
@@ -324,37 +363,24 @@ export async function POST(request: Request) {
         count += chunk.length;
       }
 
-      if (batchStatements.length > 0) {
+      // 3. Execute attendance writes in chunks of 100 statements per batch()
+      // 100 stmts × ~28KB each = ~2.8MB per HTTP call — well under Turso's limit
+      const STMTS_PER_BATCH = 100;
+      for (let i = 0; i < batchStatements.length; i += STMTS_PER_BATCH) {
+        const batchChunk = batchStatements.slice(i, i + STMTS_PER_BATCH);
         try {
-          await db.client.batch(batchStatements, "write");
+          await db.client.batch(batchChunk, "write");
         } catch (batchErr: any) {
-          // If batch fails (e.g., param limit on a 200-row chunk), fall back to sequential individual upserts
-          console.error("[Attendance Import] batch() failed, falling back to sequential upserts:", batchErr?.message);
-          count = 0;
-          for (const d of deleteItems) {
-            try {
-              await db.run(
-                "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
-                [d.studentId, d.slotId, d.dateStr]
-              );
-            } catch (_) {}
-          }
-          for (const r of upsertRows) {
-            try {
-              await db.run(
-                `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT(studentId, slotId, dateStr)
-                 DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp`,
-                [r.id, r.studentId, r.slotId, r.dateStr, r.status, r.markedBy, r.timestamp]
-              );
-              count++;
-            } catch (_2) {}
+          console.error(`[Import] batch chunk ${Math.floor(i/STMTS_PER_BATCH)+1} failed, falling back:`, batchErr?.message);
+          // Fallback: run each statement individually (still uses multi-row INSERT, just 1 per HTTP call)
+          for (const stmt of batchChunk) {
+            try { await db.run(stmt.sql, stmt.args); } catch (_) {}
           }
         }
       }
 
       if (count === 0 && upsertRows.length > 0) count = upsertRows.length;
+
 
       return NextResponse.json({
         success: true,

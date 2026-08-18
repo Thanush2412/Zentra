@@ -2547,41 +2547,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     try {
       const recordsToPost: any[] = [];
 
-      // Pre-build slot lookup cache: classGroup → dayName → slot[]
-      // Avoids calling collegeSlots.filter() + isCohortMatch() in a hot nested loop
-      const slotCache = new Map<string, any[]>();
-      const getSlots = (dayName: string, classGroup: string): any[] => {
-        const key = `${dayName}||${classGroup}`;
-        if (slotCache.has(key)) return slotCache.get(key)!;
-        let result = collegeSlots.filter(s => s.day === dayName && isCohortMatch(s.classGroup, classGroup));
-        if (result.length === 0) result = collegeSlots.filter(s => isCohortMatch(s.classGroup, classGroup));
-        if (result.length === 0) result = slots.filter(s => s.day === dayName && isCohortMatch(s.classGroup, classGroup));
-        if (result.length === 0) result = slots.filter(s => isCohortMatch(s.classGroup, classGroup));
-        slotCache.set(key, result);
-        return result;
-      };
-
       attendanceImportPreview.parsed.forEach(item => {
         if (item.dateMarks && Object.keys(item.dateMarks).length > 0) {
+          // Date-wise import: send ONE compact record per (student, date) — no slotId.
+          // Server expands to slot-level writes using classGroup + dayOfWeek.
+          // 300 students x 60 dates x 7 slots = 126,000 -> 18,000 records (7x smaller payload)
           Object.keys(item.dateMarks).forEach(dStr => {
             const status = item.dateMarks[dStr];
             if (!status || status === "not_marked") return;
             const standardDateStr = parseDateToYMD(dStr) || dStr;
-            const dateObj = new Date(standardDateStr + "T00:00:00");
-            const dayName = !isNaN(dateObj.getTime())
-              ? dateObj.toLocaleDateString("en-US", { weekday: "long" }) : "";
-            const daySlots = getSlots(dayName, item.classGroup);
-            daySlots.forEach(slot => {
-              recordsToPost.push({
-                studentId: item.studentId,
-                slotId: slot.id,
-                dateStr: standardDateStr,
-                status,
-                markedBy: currentCAM?.name || "Master Import"
-              });
+            recordsToPost.push({
+              studentId: item.studentId,
+              classGroup: item.classGroup,
+              dateStr: standardDateStr,
+              status,
+              markedBy: currentCAM?.name || "Master Import"
             });
           });
         } else if (item.periodMarks && Object.keys(item.periodMarks).length > 0) {
+          // Period-specific import: resolve slot by period index on client side
           const dateObj = new Date(attendanceImportPreview.targetDate + "T00:00:00");
           const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
           const daySlots = sortSlotsByTime(
@@ -2604,7 +2588,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       });
 
       if (recordsToPost.length === 0) {
-        toast("No scheduled slots matched for the imported attendance records.", "warning");
+        toast("No valid attendance records found in the uploaded file.", "warning");
         setIsAttendanceImportSubmitting(false);
         return;
       }
@@ -2618,20 +2602,24 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         college_id: activeCollegeId
       }));
 
-      // Send in parallel chunks of 1500 records each (~1MB per chunk, well under limits)
-      // All chunks fire simultaneously — total time = time of slowest chunk, not sum of all
-      const CHUNK_SIZE = 1500;
+      // Sequential chunks of 500 compact records each (~50KB per request)
+      // Sequential not parallel: avoids write races on shared student rows
+      const CHUNK_SIZE = 500;
       let totalCount = 0;
+      const chunks: any[][] = [];
+      for (let i = 0; i < recordsToPost.length; i += CHUNK_SIZE) {
+        chunks.push(recordsToPost.slice(i, i + CHUNK_SIZE));
+      }
 
-      if (recordsToPost.length <= CHUNK_SIZE) {
-        // Small import: single request
+      for (let idx = 0; idx < chunks.length; idx++) {
+        const chunk = chunks[idx];
         const res = await fetch("/api/attendance", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "bulk_import",
-            records: recordsToPost,
-            students: studentsToSync,
+            records: chunk,
+            students: idx === 0 ? studentsToSync : [],
             collegeId: activeCollegeId,
             markedBy: currentCAM?.name || "Master Import"
           })
@@ -2640,72 +2628,24 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         let data: any = {};
         try { data = JSON.parse(rawText); }
         catch (_) { throw new Error(`Server error (${res.status}): ${rawText.slice(0, 120)}`); }
-        if (!data.success) throw new Error(data.message || "Import failed.");
-        totalCount = data.count || recordsToPost.length;
-      } else {
-        // Large import: split into parallel chunks
-        const chunks: any[][] = [];
-        for (let i = 0; i < recordsToPost.length; i += CHUNK_SIZE) {
-          chunks.push(recordsToPost.slice(i, i + CHUNK_SIZE));
-        }
-
-        // Students only sent with first chunk to avoid duplicate upserts
-        const results = await Promise.all(
-          chunks.map((chunk, idx) =>
-            fetch("/api/attendance", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "bulk_import",
-                records: chunk,
-                students: idx === 0 ? studentsToSync : [],
-                collegeId: activeCollegeId,
-                markedBy: currentCAM?.name || "Master Import"
-              })
-            }).then(r => r.json())
-          )
-        );
-
-        for (const data of results) {
-          if (!data.success) throw new Error(data.message || "A batch failed during import.");
-          totalCount += data.count || 0;
-        }
-        if (totalCount === 0) totalCount = recordsToPost.length;
+        if (!data.success) throw new Error(data.message || `Chunk ${idx + 1}/${chunks.length} failed.`);
+        totalCount += data.count || chunk.length;
       }
 
-      // Expand active date range to encompass all imported dates so they show up immediately
+      // Expand active date range so imported dates show in the matrix immediately
       const allDates = Array.from(new Set(recordsToPost.map(r => r.dateStr))).sort();
       if (allDates.length > 0) {
-        const minD = allDates[0];
-        const maxD = allDates[allDates.length - 1];
-        if (minD < attendanceStartDate) setAttendanceStartDate(minD);
-        if (maxD > attendanceEndDate) setAttendanceEndDate(maxD);
+        if (allDates[0] < attendanceStartDate) setAttendanceStartDate(allDates[0]);
+        if (allDates[allDates.length - 1] > attendanceEndDate) setAttendanceEndDate(allDates[allDates.length - 1]);
       }
 
-      toast(`Successfully imported ${totalCount} attendance entries across ${attendanceImportPreview.parsed.length} students in real-time!`, "success");
+      toast(`Successfully imported ${totalCount} attendance entries across ${attendanceImportPreview.parsed.length} students!`, "success");
       setShowAttendanceImportModal(false);
       setAttendanceImportPreview(null);
 
-      // Immediately update local state so matrix shows new data right away
-      // (before the async refreshAttendance completes)
-      setStudentAttendance(prev => {
-        const incoming = recordsToPost.map(r => ({
-          id: `att_import_${r.studentId}_${r.slotId}_${r.dateStr}`,
-          studentId: r.studentId,
-          slotId: r.slotId,
-          dateStr: r.dateStr,
-          status: r.status,
-          markedBy: r.markedBy,
-          timestamp: new Date().toISOString()
-        }));
-        // Build a set of keys to overwrite
-        const incomingKeys = new Set(incoming.map(r => `${r.studentId}|${r.slotId}|${r.dateStr}`));
-        const filtered = prev.filter(a => !incomingKeys.has(`${a.studentId}|${a.slotId}|${a.dateStr}`));
-        return [...filtered, ...incoming];
-      });
+      // Non-blocking background refresh — do NOT await, user sees success immediately
+      refreshAttendance(activeCollegeId).catch(() => {});
 
-      // Then also refresh from server to get authoritative data
-      await refreshAttendance(activeCollegeId);
     } catch (err: any) {
       toast("Error submitting attendance import: " + err.message, "error");
     } finally {
