@@ -3583,6 +3583,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const handleOpenDeptModal = (dept?: any) => {
     setModalError(null);
     if (dept) {
+      const initialShift = dept.default_shift || (dept.shift_based === 1 ? "both" : "general");
+      const isShiftSplit = initialShift === "both" || initialShift === "all";
       setDeptForm({
         id: dept.id,
         name: dept.name,
@@ -3596,8 +3598,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         start_year: dept.start_year || "",
         end_year: dept.end_year || "",
         default_room: dept.default_room || "",
-        default_shift: dept.default_shift || (dept.shift_based ? "both" : "shift_1"),
-        shift_based: dept.shift_based !== undefined ? Number(dept.shift_based) : (dept.default_shift === "both" || dept.default_shift === "general" ? 1 : 0)
+        default_shift: initialShift,
+        shift_based: isShiftSplit ? 1 : 0
       });
       setEditingDept(true);
     } else {
@@ -3614,7 +3616,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         start_year: "",
         end_year: "",
         default_room: "",
-        default_shift: "shift_1",
+        default_shift: "general",
         shift_based: 0
       });
       setEditingDept(false);
@@ -3706,13 +3708,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         return clean[0].toUpperCase();
       }).filter(Boolean).join("-");
 
+      const isShiftSplit = deptForm.default_shift === "both" || deptForm.default_shift === "all";
+
       const payload = {
         ...deptForm,
         name: deptForm.name.trim(),
         code: autoCode,
         description: deptForm.description.trim(),
         college_id: deptForm.college_id || activeCollegeId,
-        shift_based: deptForm.default_shift === "both" || deptForm.default_shift === "general" ? 1 : 0
+        default_shift: deptForm.default_shift || "general",
+        shift_based: isShiftSplit ? 1 : 0
       };
 
       if (editingDept && deptForm.id) {
@@ -6085,25 +6090,42 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         {registeredDept.start_year}–{registeredDept.end_year}
                                       </span>
                                     )}
-                                    {registeredDept && (
-                                      <span className={`text-[9px] px-2 py-0.5 border rounded font-bold uppercase ${
-                                        registeredDept.default_shift === "both" || registeredDept.shift_based === 1
-                                          ? "bg-purple-50 border-purple-200 text-purple-700"
-                                          : registeredDept.default_shift === "shift_1"
-                                          ? "bg-teal-50 border-teal-200 text-teal-700"
-                                          : registeredDept.default_shift === "shift_2"
-                                          ? "bg-amber-50 border-amber-200 text-amber-700"
-                                          : "bg-slate-100 border-slate-200 text-slate-700"
-                                      }`}>
-                                        {registeredDept.default_shift === "both" || registeredDept.shift_based === 1
-                                          ? "Shift 1 & 2 (Both Shifts)"
-                                          : registeredDept.default_shift === "shift_1"
-                                          ? "Shift 1 (Day)"
-                                          : registeredDept.default_shift === "shift_2"
-                                          ? "Shift 2 (Eve)"
-                                          : "General (Full Day)"}
-                                      </span>
-                                    )}
+                                    {registeredDept && (() => {
+                                      const s = (registeredDept.default_shift || (registeredDept.shift_based === 1 ? "both" : "general")).toLowerCase();
+                                      if (s === "both") {
+                                        return (
+                                          <span className="text-[9px] px-2 py-0.5 border rounded font-bold uppercase bg-purple-50 border-purple-200 text-purple-700">
+                                            Shift 1 & 2 (Both Shifts)
+                                          </span>
+                                        );
+                                      }
+                                      if (s === "all") {
+                                        return (
+                                          <span className="text-[9px] px-2 py-0.5 border rounded font-bold uppercase bg-purple-50 border-purple-200 text-purple-700">
+                                            Shift 1, 2 & General
+                                          </span>
+                                        );
+                                      }
+                                      if (s === "shift_1") {
+                                        return (
+                                          <span className="text-[9px] px-2 py-0.5 border rounded font-bold uppercase bg-teal-50 border-teal-200 text-teal-700">
+                                            Shift 1 (Day)
+                                          </span>
+                                        );
+                                      }
+                                      if (s === "shift_2") {
+                                        return (
+                                          <span className="text-[9px] px-2 py-0.5 border rounded font-bold uppercase bg-amber-50 border-amber-200 text-amber-700">
+                                            Shift 2 (Eve)
+                                          </span>
+                                        );
+                                      }
+                                      return (
+                                        <span className="text-[9px] px-2 py-0.5 border rounded font-bold uppercase bg-slate-100 border-slate-200 text-slate-700">
+                                          General Shift
+                                        </span>
+                                      );
+                                    })()}
                                   </div>
                                   {registeredDept?.description && <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{registeredDept.description}</p>}
                                 </div>
