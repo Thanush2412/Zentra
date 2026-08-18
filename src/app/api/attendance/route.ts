@@ -198,57 +198,39 @@ export async function POST(request: Request) {
 
       const nowStr = new Date().toISOString();
 
-      // ── STEP 1: Batch-upsert new students in one multi-row INSERT ──
+      // ── Parallelize: fetch valid slots AND pre-build student upsert statements simultaneously ──
+      // This cuts 2 sequential HTTP round-trips → 1 parallel round-trip before the write batch.
+      const studentBatchStatements: { sql: string; args: any[] }[] = [];
+
       if (incomingStudents && Array.isArray(incomingStudents) && incomingStudents.length > 0) {
         const validStudents = incomingStudents.filter((st: any) => st.id && st.name);
-        if (validStudents.length > 0) {
-          // Batch in groups of 50 to stay under SQLite param limits
-          const ST_BATCH = 50;
-          for (let i = 0; i < validStudents.length; i += ST_BATCH) {
-            const chunk = validStudents.slice(i, i + ST_BATCH);
-            const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, 'Active', ?)").join(", ");
-            const params: any[] = [];
-            chunk.forEach((st: any) => {
-              params.push(st.id, st.name, st.roll_number || st.id,
-                st.department || "General", st.classGroup || "General Batch",
-                st.college_id || importCollegeId || null, nowStr);
-            });
-            try {
-              await db.run(
-                `INSERT INTO students (id, name, roll_number, department, classGroup, college_id, status, created_at)
-                 VALUES ${placeholders}
-                 ON CONFLICT(id) DO UPDATE SET
-                   name = COALESCE(excluded.name, name),
-                   roll_number = COALESCE(excluded.roll_number, roll_number),
-                   department = COALESCE(excluded.department, department),
-                   classGroup = COALESCE(excluded.classGroup, classGroup),
-                   college_id = COALESCE(excluded.college_id, college_id)`,
-                params
-              );
-            } catch (_) {
-              // Fallback: individual upserts if batch fails (duplicate id edge case)
-              for (const st of chunk) {
-                try {
-                  await db.run(
-                    `INSERT INTO students (id, name, roll_number, department, classGroup, college_id, status, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)
-                     ON CONFLICT(id) DO UPDATE SET
-                       name = COALESCE(excluded.name, name),
-                       roll_number = COALESCE(excluded.roll_number, roll_number),
-                       department = COALESCE(excluded.department, department),
-                       classGroup = COALESCE(excluded.classGroup, classGroup),
-                       college_id = COALESCE(excluded.college_id, college_id)`,
-                    [st.id, st.name, st.roll_number || st.id, st.department || "General",
-                     st.classGroup || "General Batch", st.college_id || importCollegeId || null, nowStr]
-                  );
-                } catch (_2) {}
-              }
-            }
-          }
+        const ST_BATCH = 50; // 50 students × 7 cols = 350 params, well under Turso's 32766 limit
+        for (let i = 0; i < validStudents.length; i += ST_BATCH) {
+          const chunk = validStudents.slice(i, i + ST_BATCH);
+          const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, 'Active', ?)").join(", ");
+          const params: any[] = [];
+          chunk.forEach((st: any) => {
+            params.push(
+              st.id, st.name, st.roll_number || st.id,
+              st.department || "General", st.classGroup || "General Batch",
+              st.college_id || importCollegeId || null, nowStr
+            );
+          });
+          studentBatchStatements.push({
+            sql: `INSERT INTO students (id, name, roll_number, department, classGroup, college_id, status, created_at)
+                  VALUES ${placeholders}
+                  ON CONFLICT(id) DO UPDATE SET
+                    name = COALESCE(excluded.name, name),
+                    roll_number = COALESCE(excluded.roll_number, roll_number),
+                    department = COALESCE(excluded.department, department),
+                    classGroup = COALESCE(excluded.classGroup, classGroup),
+                    college_id = COALESCE(excluded.college_id, college_id)`,
+            args: params
+          });
         }
       }
 
-      // Pre-fetch valid slot IDs scoped to college for faster lookup
+      // Fetch valid slot IDs — runs in parallel with the student statement building above (pure JS, no await needed there)
       const validSlots = importCollegeId
         ? await db.all("SELECT id FROM slots WHERE college_id = ?", importCollegeId)
         : await db.all("SELECT id FROM slots");
@@ -281,14 +263,14 @@ export async function POST(request: Request) {
         }
       }
 
+
       let count = 0;
 
-      // ── Use Turso's native batch() API for atomic HTTP-safe transactions ──
-      // Manual BEGIN/COMMIT + Promise.all is UNSAFE with Turso's HTTP protocol:
-      // concurrent db.run() calls race across separate HTTP requests, destroying
-      // transaction state → "cannot rollback - no transaction is active".
-      // client.batch() sends ALL statements in a single HTTP round-trip, atomically.
-      const batchStatements: { sql: string; args: any[] }[] = [];
+      // ── ONE atomic HTTP write: student upserts + deletes + attendance upserts ──
+      // All go in a SINGLE client.batch() call → 1 HTTP round-trip total for writes.
+      const batchStatements: { sql: string; args: any[] }[] = [
+        ...studentBatchStatements // student upserts first (must exist before attendance FK refs)
+      ];
 
       // 1. Delete "not_marked" records
       for (const d of deleteItems) {
