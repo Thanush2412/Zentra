@@ -10,7 +10,7 @@ import {
   ArrowRightLeft, TrendingUp, Clock, XCircle, ChevronRight,
   GraduationCap, BookOpen, Eye, CheckCircle, Calendar,
   ChevronDown, ChevronUp, Search, Activity, Layers,
-  IndianRupee, BarChart2, BookMarked, AlertCircle, UserCheck, Loader2, Award
+  IndianRupee, BarChart2, BookMarked, AlertCircle, UserCheck, Loader2, Award, Download
 } from "lucide-react";
 import { InterviewModule } from "./InterviewModule";
 import { LoadingButton } from "./ui/LoadingButton";
@@ -1479,6 +1479,39 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap shrink-0 self-start sm:self-center">
+              <Button variant="secondary" size="md" icon={<Download className="h-4 w-4" />}
+                onClick={async () => {
+                  try {
+                    const XLSX = await import("xlsx");
+                    const headers = ["Campus", "Campus Manager", "Faculty Count", "Students Count", "Slots Scheduled", "Attendance Rate", "Fee Collection Rate", "Open Issues", "Pending Tasks"];
+                    const rows = activeColleges.map(college => {
+                      const cam = camDataMap[college.id];
+                      const cMentors = mentors.filter(m => m.college_id === college.id);
+                      const cStudents = students.filter(s => s.college_id === college.id);
+                      const cSlots = slots.filter(s => cMentors.some(m => m.id === s.mentorId));
+                      const feeStat = feeStatsMap[college.id];
+                      const collegeStudentIds = new Set(cStudents.map(s => s.id));
+                      const collegeAtt = studentAttendance.filter((a: any) => collegeStudentIds.has(a.studentId));
+                      const presentCount = collegeAtt.filter((a: any) => a.status === "present" || a.status === "od").length;
+                      const attRate = collegeAtt.length > 0 ? `${Math.round((presentCount / collegeAtt.length) * 100)}%` : "N/A";
+                      const feeRate = feeStat ? `${feeStat.collectionRate}%` : "N/A";
+                      const cIssues = escalations.filter(e => e.collegeId === college.id && (e.status === "pending" || e.status === "open")).length;
+                      const cTasks = tasks.filter(t => t.collegeId === college.id && t.status === "pending").length;
+
+                      return [college.name, cam?.name || "Unassigned", cMentors.length, cStudents.length, cSlots.length, attRate, feeRate, cIssues, cTasks];
+                    });
+
+                    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Portfolio_Audit");
+                    XLSX.writeFile(wb, `KAM_Portfolio_Executive_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                    toast("Portfolio report exported as Excel (.xlsx).", "success");
+                  } catch (e: any) {
+                    toast("Export failed: " + e.message, "error");
+                  }
+                }}>
+                Export Report
+              </Button>
               <Button variant="secondary" size="md" icon={<BookMarked className="h-4 w-4" />}
                 onClick={() => setShowAnnouncementModal(true)}>
                 Announce
@@ -1493,65 +1526,69 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
           {/* ══ TAB: OVERVIEW ══ */}
           {activeTab === "overview" && (
             <div className="space-y-6">
-              {/* ⚡ Urgent Emergency Approvals Banner */}
+              {/* ⚡ CM Operational Bottlenecks & SLA Backlog Alert */}
               {(() => {
-                const emergencyReqs = requests.filter(r => r.status === "pending_cam" && portfolioMentorIds.has(r.requestorId));
-                if (emergencyReqs.length === 0) return null;
+                const pendingByColleges = activeColleges.map(college => {
+                  const cMentors = mentors.filter(m => m.college_id === college.id);
+                  const cMentorIds = new Set(cMentors.map(m => m.id));
+                  const cPendingHandovers = requests.filter(r => (r.status === "pending" || r.status === "pending_cam") && cMentorIds.has(r.requestorId));
+                  const cOpenIssues = escalations.filter(e => e.collegeId === college.id && (e.status === "pending" || e.status === "open"));
+                  const cPendingTasks = tasks.filter(t => t.collegeId === college.id && t.status === "pending");
+                  const cam = camDataMap[college.id];
+                  return { college, cam, pendingHandovers: cPendingHandovers.length, openIssues: cOpenIssues.length, pendingTasks: cPendingTasks.length };
+                }).filter(item => item.pendingHandovers > 0 || item.openIssues > 0 || item.pendingTasks > 0);
+
+                if (pendingByColleges.length === 0) return null;
+
                 return (
-                  <div className="bg-gradient-to-r from-rose-500 to-amber-500 p-0.5 rounded-xl shadow-md">
-                    <div className="bg-white dark:bg-slate-900 rounded-[23px] p-4 sm:p-5 space-y-3">
+                  <div className="bg-gradient-to-r from-amber-500 to-rose-500 p-0.5 rounded-2xl shadow-md">
+                    <div className="bg-white dark:bg-slate-900 rounded-[22px] p-4 sm:p-5 space-y-3">
                       <div className="flex items-center justify-between gap-3 flex-wrap">
                         <div className="flex items-center gap-2">
-                          <span className="h-3 w-3 rounded-full bg-rose-500 animate-ping inline-block" />
-                          <h3 className="text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
-                            <ShieldAlert className="h-4 w-4" /> ⚡ Urgent Emergency Approvals Required ({emergencyReqs.length})
+                          <span className="h-3 w-3 rounded-full bg-amber-500 animate-ping inline-block" />
+                          <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                            <ShieldAlert className="h-4 w-4 text-amber-500" /> Campus Manager SLA &amp; Action Bottlenecks ({pendingByColleges.length} Campuses Affected)
                           </h3>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-bold">Action required by Key Account Manager</span>
+                        <span className="text-[10px] text-slate-400 font-bold">CM Intervention Required</span>
                       </div>
-                      <div className="space-y-2">
-                        {emergencyReqs.map(r => (
-                          <div key={r.id} className="p-3 rounded-xl bg-rose-50/50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 flex items-center justify-between gap-3 flex-wrap">
-                            <div className="space-y-0.5">
-                              <p className="text-xs font-black text-slate-800 dark:text-white">
-                                {r.requestorName} → <span className="text-indigo-600 dark:text-indigo-400">{r.targetStaffName}</span>
-                              </p>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                                <span className="font-bold">{r.course}</span> · {r.dateFormatted || r.dateStr} · "{r.reason}"
-                              </p>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {pendingByColleges.map(({ college, cam, pendingHandovers, openIssues, pendingTasks }) => (
+                          <div key={college.id} className="p-3.5 rounded-xl bg-amber-50/50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 flex flex-col justify-between gap-2">
+                            <div>
+                              <div className="flex items-center justify-between">
+                                <span className="font-extrabold text-xs text-slate-900 dark:text-white truncate">{college.name}</span>
+                                <span className="text-[9.5px] font-bold text-indigo-600 dark:text-indigo-400">CM: {cam?.name || "Unassigned"}</span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-2 flex-wrap text-[10px] font-bold">
+                                {pendingHandovers > 0 && (
+                                  <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
+                                    {pendingHandovers} Handover{pendingHandovers > 1 ? "s" : ""} Pending
+                                  </span>
+                                )}
+                                {openIssues > 0 && (
+                                  <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300">
+                                    {openIssues} Open Issue{openIssues > 1 ? "s" : ""}
+                                  </span>
+                                )}
+                                {pendingTasks > 0 && (
+                                  <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                    {pendingTasks} Task{pendingTasks > 1 ? "s" : ""}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  await fetch("/api/requests/review", {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ requestId: r.id, status: "approved", reviewerRole: "Key Account Manager", reviewNotes: "Approved by KAM" })
-                                  });
-                                  refreshData();
-                                  toast("Emergency handover approved.", "success");
-                                }}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all flex items-center gap-1 shadow-xs"
-                              >
-                                <CheckCircle className="h-3.5 w-3.5" /> Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  await fetch("/api/requests/review", {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ requestId: r.id, status: "rejected", reviewerRole: "Key Account Manager", reviewNotes: "Rejected by KAM" })
-                                  });
-                                  refreshData();
-                                  toast("Emergency handover rejected.", "info");
-                                }}
-                                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all flex items-center gap-1 shadow-xs"
-                              >
-                                <XCircle className="h-3.5 w-3.5" /> Reject
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTaskCollegeId(college.id);
+                                setActiveTab("tasks");
+                              }}
+                              className="w-full py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                            >
+                              <ClipboardList className="h-3.5 w-3.5" /> Direct Task to CM →
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -1652,158 +1689,143 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 })}
               </div>
 
-              {/* ── Infographics Row ── */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* ── Rich Infographics & Visual Data Analytics Grid ── */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                {/* Campus Comparison Bar Chart */}
-                <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-5 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
+                {/* 1. Cross-Campus Faculty Workload Balance (16h Limit) */}
+                <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
-                      <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Campus Comparison</h3>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Faculty & students per campus</p>
+                      <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                        <Users className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                        Faculty Workload Distribution (16h Institutional Target)
+                      </h3>
+                      <p className="text-[10.5px] text-slate-400 font-medium mt-0.5">
+                        Cross-campus comparison of assigned weekly slots vs optimal 16h teaching load
+                      </p>
                     </div>
                     <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-wider">
-                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-indigo-500 inline-block" />Faculty</span>
-                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-500 inline-block" />Students</span>
+                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500 inline-block" />Optimal (14-16h)</span>
+                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500 inline-block" />Overloaded (&gt;16h)</span>
+                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-indigo-300 inline-block" />Underloaded (&lt;14h)</span>
                     </div>
                   </div>
-                  {activeColleges.length === 0 ? (
-                    <div className="h-36 flex items-center justify-center text-xs text-slate-400 italic">No campuses assigned.</div>
-                  ) : (() => {
-                    const barData = activeColleges.map(c => ({
-                      name: c.name.length > 18 ? c.name.substring(0, 16) + "…" : c.name,
-                      faculty: mentors.filter(m => m.college_id === c.id).length,
-                      students: students.filter(s => s.college_id === c.id).length,
-                    }));
-                    const maxVal = Math.max(...barData.flatMap(d => [d.faculty, d.students]), 1);
-                    const chartH = 140;
-                    const barGroupW = Math.max(40, Math.floor(560 / Math.max(barData.length, 1)));
-                    const barW = Math.max(10, Math.floor(barGroupW * 0.35));
-                    const gap = 4;
-                    const totalW = barData.length * barGroupW;
 
-                    return (
-                      <div className="overflow-x-auto">
-                        <svg width={Math.max(totalW, 300)} height={chartH + 32} className="block mx-auto" style={{ minWidth: "100%" }}>
-                          {/* Gridlines */}
-                          {[0.25, 0.5, 0.75, 1].map(f => {
-                            const y = chartH - Math.round(f * chartH);
-                            return (
-                              <g key={f}>
-                                <line x1={0} y1={y} x2={Math.max(totalW, 300)} y2={y}
-                                  stroke="currentColor" strokeOpacity={0.06} strokeWidth={1} strokeDasharray="4 3" className="text-slate-400 dark:text-slate-600" />
-                                <text x={2} y={y - 2} fontSize={7} fill="currentColor" fillOpacity={0.35} className="text-slate-500">
-                                  {Math.round(f * maxVal)}
-                                </text>
-                              </g>
-                            );
-                          })}
-                          {barData.map((d, i) => {
-                            const x = i * barGroupW + barGroupW / 2;
-                            const fH = Math.max(3, Math.round((d.faculty / maxVal) * chartH));
-                            const sH = Math.max(3, Math.round((d.students / maxVal) * chartH));
-                            return (
-                              <g key={d.name}>
-                                {/* Faculty bar */}
-                                <rect
-                                  x={x - barW - gap / 2}
-                                  y={chartH - fH}
-                                  width={barW}
-                                  height={fH}
-                                  rx={3}
-                                  className="fill-indigo-500 dark:fill-indigo-400"
-                                  opacity={0.85}
-                                />
-                                {/* Students bar */}
-                                <rect
-                                  x={x + gap / 2}
-                                  y={chartH - sH}
-                                  width={barW}
-                                  height={sH}
-                                  rx={3}
-                                  className="fill-emerald-500 dark:fill-emerald-400"
-                                  opacity={0.85}
-                                />
-                                {/* Values */}
-                                {fH > 12 && (
-                                  <text x={x - barW / 2 - gap / 2} y={chartH - fH + 9} textAnchor="middle" fontSize={7} fill="white" fontWeight="700">{d.faculty}</text>
-                                )}
-                                {sH > 12 && (
-                                  <text x={x + barW / 2 + gap / 2} y={chartH - sH + 9} textAnchor="middle" fontSize={7} fill="white" fontWeight="700">{d.students}</text>
-                                )}
-                                {/* Campus label */}
-                                <text x={x} y={chartH + 14} textAnchor="middle" fontSize={8} fill="currentColor" fillOpacity={0.55} className="text-slate-500" fontWeight="600">
-                                  {d.name}
-                                </text>
-                              </g>
-                            );
-                          })}
-                        </svg>
-                      </div>
-                    );
-                  })()}
+                  <div className="space-y-3 pt-2">
+                    {activeColleges.map(college => {
+                      const cMentors = mentors.filter(m => m.college_id === college.id);
+                      if (cMentors.length === 0) return null;
+                      const optimalCount = cMentors.filter(m => {
+                        const count = slots.filter(s => s.mentorId === m.id).length;
+                        return count >= 14 && count <= 16;
+                      }).length;
+                      const overloadCount = cMentors.filter(m => slots.filter(s => s.mentorId === m.id).length > 16).length;
+                      const underloadCount = cMentors.filter(m => slots.filter(s => s.mentorId === m.id).length < 14).length;
+                      const total = cMentors.length;
+
+                      const optPct = Math.round((optimalCount / total) * 100);
+                      const overPct = Math.round((overloadCount / total) * 100);
+                      const underPct = Math.round((underloadCount / total) * 100);
+
+                      return (
+                        <div key={college.id} className="space-y-1.5 p-3 rounded-xl bg-slate-50/60 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                          <div className="flex items-center justify-between text-xs font-bold">
+                            <span className="text-slate-800 dark:text-white">{college.name}</span>
+                            <span className="text-slate-500 dark:text-slate-400 text-[11px] font-mono font-semibold">
+                              {total} Faculty · {overloadCount > 0 ? <strong className="text-amber-600">{overloadCount} Overloaded</strong> : <strong className="text-emerald-600">Balanced</strong>}
+                            </span>
+                          </div>
+                          {/* Multi-segmented workload bar */}
+                          <div className="h-3 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden flex">
+                            <div style={{ width: `${optPct}%` }} className="bg-emerald-500 h-full transition-all" title={`Optimal: ${optimalCount} (${optPct}%)`} />
+                            <div style={{ width: `${overPct}%` }} className="bg-amber-500 h-full transition-all" title={`Overloaded: ${overloadCount} (${overPct}%)`} />
+                            <div style={{ width: `${underPct}%` }} className="bg-indigo-300 dark:bg-indigo-500/40 h-full transition-all" title={`Underloaded: ${underloadCount} (${underPct}%)`} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                {/* Request Pipeline Donut */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-5 shadow-sm flex flex-col">
-                  <div className="mb-4">
-                    <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Request Pipeline</h3>
-                    <p className="text-[10px] text-slate-400 mt-0.5">All handover requests status</p>
+                {/* 2. Student Attendance Shortage Risk Donut */}
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-xs flex flex-col justify-between space-y-4">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                      <GraduationCap className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      Student Attendance Risk Radar
+                    </h3>
+                    <p className="text-[10.5px] text-slate-400 font-medium mt-0.5">Threshold compliance across entire portfolio</p>
                   </div>
+
                   {(() => {
-                    const portfolioReqs = requests.filter(r => portfolioMentorIds.has(r.requestorId));
-                    const approved = portfolioReqs.filter(r => r.status === "approved").length;
-                    const pending = portfolioReqs.filter(r => r.status === "pending" || r.status === "pending_cam").length;
-                    const rejected = portfolioReqs.filter(r => r.status === "rejected").length;
-                    const total = portfolioReqs.length;
-                    if (total === 0) return (
-                      <div className="flex-1 flex items-center justify-center text-xs text-slate-400 italic">No requests yet.</div>
-                    );
-                    const segments = [
-                      { label: "Approved", value: approved, color: "#10b981" },
-                      { label: "Pending", value: pending, color: "#f59e0b" },
-                      { label: "Rejected", value: rejected, color: "#ef4444" },
-                    ].filter(s => s.value > 0);
-                    const r = 44, cx = 70, cy = 70, strokeW = 18;
-                    const circumference = 2 * Math.PI * r;
-                    let offset = 0;
-                    const arcs = segments.map(s => {
-                      const dash = (s.value / total) * circumference;
-                      const arc = { ...s, dash, offset };
-                      offset += dash;
-                      return arc;
+                    const collegeStudentIds = new Set(students.filter(s => activeColleges.some(c => c.id === s.college_id)).map(s => s.id));
+                    let safeCount = 0;
+                    let warningCount = 0;
+                    let criticalCount = 0;
+
+                    students.filter(s => collegeStudentIds.has(s.id)).forEach(st => {
+                      const records = studentAttendance.filter((a: any) => a.studentId === st.id);
+                      if (records.length === 0) return;
+                      const present = records.filter((a: any) => a.status === "present" || a.status === "od").length;
+                      const pct = (present / records.length) * 100;
+                      if (pct >= 75) safeCount++;
+                      else if (pct >= 65) warningCount++;
+                      else criticalCount++;
                     });
+
+                    const totalMarked = safeCount + warningCount + criticalCount || 1;
+                    const r = 44, cx = 70, cy = 70, strokeW = 16;
+                    const circumference = 2 * Math.PI * r;
+
+                    const safeDash = (safeCount / totalMarked) * circumference;
+                    const warnDash = (warningCount / totalMarked) * circumference;
+                    const critDash = (criticalCount / totalMarked) * circumference;
+
                     return (
-                      <div className="flex flex-col items-center gap-4 flex-1 justify-center">
+                      <div className="flex flex-col items-center gap-4 my-auto">
                         <div className="relative">
                           <svg width={140} height={140} viewBox="0 0 140 140">
                             <circle cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" strokeWidth={strokeW} className="text-slate-100 dark:text-slate-800" />
-                            {arcs.map(arc => (
-                              <circle key={arc.label} cx={cx} cy={cy} r={r} fill="none"
-                                stroke={arc.color} strokeWidth={strokeW}
-                                strokeDasharray={`${arc.dash} ${circumference - arc.dash}`}
-                                strokeDashoffset={circumference / 4 - arc.offset}
-                                strokeLinecap="butt"
-                                style={{ transition: "stroke-dasharray 0.5s ease" }}
-                              />
-                            ))}
-                            <text x={cx} y={cy - 6} textAnchor="middle" fontSize={20} fontWeight="900" fill="currentColor" className="text-slate-800 dark:text-white">{total}</text>
-                            <text x={cx} y={cy + 10} textAnchor="middle" fontSize={8} fill="currentColor" fillOpacity={0.5} className="text-slate-500" fontWeight="700" letterSpacing="1">TOTAL</text>
+                            {/* Safe arc */}
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#10b981" strokeWidth={strokeW}
+                              strokeDasharray={`${safeDash} ${circumference - safeDash}`} strokeDashoffset={circumference / 4} strokeLinecap="butt" />
+                            {/* Warning arc */}
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f59e0b" strokeWidth={strokeW}
+                              strokeDasharray={`${warnDash} ${circumference - warnDash}`} strokeDashoffset={circumference / 4 - safeDash} strokeLinecap="butt" />
+                            {/* Critical arc */}
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#ef4444" strokeWidth={strokeW}
+                              strokeDasharray={`${critDash} ${circumference - critDash}`} strokeDashoffset={circumference / 4 - safeDash - warnDash} strokeLinecap="butt" />
+                            <text x={cx} y={cy - 4} textAnchor="middle" fontSize={18} fontWeight="900" fill="currentColor" className="text-slate-800 dark:text-white">
+                              {safeCount + warningCount + criticalCount}
+                            </text>
+                            <text x={cx} y={cy + 10} textAnchor="middle" fontSize={7.5} fill="currentColor" fillOpacity={0.5} className="text-slate-500" fontWeight="700" letterSpacing="1">
+                              STUDENTS
+                            </text>
                           </svg>
                         </div>
-                        <div className="w-full space-y-2">
-                          {[
-                            { label: "Approved", value: approved, color: "bg-emerald-500" },
-                            { label: "Pending", value: pending, color: "bg-amber-400" },
-                            { label: "Rejected", value: rejected, color: "bg-rose-500" },
-                          ].map(s => (
-                            <div key={s.label} className="flex items-center gap-2">
-                              <span className={`h-2 w-2 rounded-full ${s.color} shrink-0`} />
-                              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex-1">{s.label}</span>
-                              <span className="text-[10px] font-black text-slate-800 dark:text-white">{s.value}</span>
-                              <span className="text-[9px] text-slate-400 font-semibold w-8 text-right">{total > 0 ? Math.round((s.value / total) * 100) : 0}%</span>
-                            </div>
-                          ))}
+
+                        <div className="w-full space-y-1.5 text-xs font-bold">
+                          <div className="flex items-center justify-between p-1.5 rounded-lg bg-emerald-50/60 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+                            <span className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
+                              Safe (&ge;75%)
+                            </span>
+                            <span>{safeCount} ({Math.round((safeCount / totalMarked) * 100)}%)</span>
+                          </div>
+                          <div className="flex items-center justify-between p-1.5 rounded-lg bg-amber-50/60 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300">
+                            <span className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full bg-amber-500 inline-block" />
+                              Warning (65-74%)
+                            </span>
+                            <span>{warningCount} ({Math.round((warningCount / totalMarked) * 100)}%)</span>
+                          </div>
+                          <div className="flex items-center justify-between p-1.5 rounded-lg bg-rose-50/60 dark:bg-rose-500/10 text-rose-800 dark:text-rose-300">
+                            <span className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full bg-rose-500 inline-block" />
+                              Critical (&lt;65%)
+                            </span>
+                            <span className="font-extrabold">{criticalCount} ({Math.round((criticalCount / totalMarked) * 100)}%)</span>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1811,67 +1833,60 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 </div>
               </div>
 
-              {/* ── Portfolio Health Row: Attendance + Fee gauges ── */}
-              {activeColleges.length > 0 && (() => {
-                const healthData = activeColleges.map(college => {
-                  const camData = camDataMap[college.id];
-                  const feeStats = feeStatsMap[college.id];
-                  const collegeStudentIds = new Set(students.filter(s => s.college_id === college.id).map(s => s.id));
-                  const collegeAtt = studentAttendance.filter((a: any) => collegeStudentIds.has(a.studentId));
-                  const presentCount = collegeAtt.filter((a: any) => a.status === "present" || a.status === "od").length;
-                  const attRate = collegeAtt.length > 0 ? Math.round((presentCount / collegeAtt.length) * 100) : null;
-                  const feeRate = feeStats?.collectionRate ?? null;
-                  return { name: college.name, attRate, feeRate };
+              {/* ── Critical Attendance Drop Alerts ── */}
+              {(() => {
+                const criticalDrops: any[] = [];
+                activeColleges.forEach(college => {
+                  const cStudents = students.filter(s => s.college_id === college.id);
+                  // Group by cohort / classGroup
+                  const cohortMap = new Map<string, any[]>();
+                  cStudents.forEach(st => {
+                    const cg = st.classGroup || "General";
+                    if (!cohortMap.has(cg)) cohortMap.set(cg, []);
+                    cohortMap.get(cg)!.push(st);
+                  });
+
+                  cohortMap.forEach((cohortStudents, cg) => {
+                    const stIds = new Set(cohortStudents.map(s => s.id));
+                    const atts = studentAttendance.filter((a: any) => stIds.has(a.studentId));
+                    if (atts.length < 5) return;
+                    const present = atts.filter((a: any) => a.status === "present" || a.status === "od").length;
+                    const pct = Math.round((present / atts.length) * 100);
+                    if (pct < 65) {
+                      criticalDrops.push({ college, classGroup: cg, studentCount: cohortStudents.length, percentage: pct, totalPeriods: atts.length });
+                    }
+                  });
                 });
+
+                if (criticalDrops.length === 0) return null;
+
                 return (
-                  <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-5 shadow-sm">
-                    <div className="mb-4">
-                      <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">Portfolio Health</h3>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Attendance & fee collection rates per campus</p>
+                  <div className="bg-rose-50/70 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-2xl p-5 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0" />
+                        <div>
+                          <h4 className="text-xs font-black text-rose-900 dark:text-rose-200 uppercase tracking-wider">
+                            Critical Attendance Shortage Alerts (&lt;65% Threshold)
+                          </h4>
+                          <p className="text-[10px] text-rose-700 dark:text-rose-300 font-medium">
+                            The following cohort batches are experiencing critical attendance drops requiring KAM &amp; CM intervention with college HoDs:
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="space-y-3">
-                      {healthData.map(d => (
-                        <div key={d.name} className="grid grid-cols-1 sm:grid-cols-[1fr_2fr_2fr] gap-x-4 gap-y-1.5 items-center">
-                          <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate">{d.name}</span>
-                          {/* Attendance bar */}
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
-                              <div
-                                className="h-full rounded-full transition-all duration-700"
-                                style={{
-                                  width: d.attRate !== null ? `${d.attRate}%` : "0%",
-                                  background: d.attRate === null ? "#e2e8f0"
-                                    : d.attRate >= 75 ? "linear-gradient(90deg,#10b981,#34d399)"
-                                    : "linear-gradient(90deg,#ef4444,#f87171)"
-                                }}
-                              />
-                            </div>
-                            <span className={`text-[10px] font-black w-10 text-right shrink-0 ${
-                              d.attRate === null ? "text-slate-400"
-                              : d.attRate >= 75 ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-rose-600 dark:text-rose-400"
-                            }`}>{d.attRate !== null ? `${d.attRate}%` : "—"}</span>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide w-14 shrink-0">Attend.</span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                      {criticalDrops.map((drop, idx) => (
+                        <div key={idx} className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-rose-200 dark:border-rose-500/20 shadow-xs flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{drop.college.name}</p>
+                            <p className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 font-mono">{drop.classGroup} ({drop.studentCount} students)</p>
                           </div>
-                          {/* Fee bar */}
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
-                              <div
-                                className="h-full rounded-full transition-all duration-700"
-                                style={{
-                                  width: d.feeRate !== null ? `${d.feeRate}%` : "0%",
-                                  background: d.feeRate === null ? "#e2e8f0"
-                                    : d.feeRate >= 80 ? "linear-gradient(90deg,#6366f1,#a855f7)"
-                                    : "linear-gradient(90deg,#f59e0b,#fbbf24)"
-                                }}
-                              />
-                            </div>
-                            <span className={`text-[10px] font-black w-10 text-right shrink-0 ${
-                              d.feeRate === null ? "text-slate-400"
-                              : d.feeRate >= 80 ? "text-indigo-600 dark:text-indigo-400"
-                              : "text-amber-600 dark:text-amber-400"
-                            }`}>{d.feeRate !== null ? `${d.feeRate}%` : "—"}</span>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide w-14 shrink-0">Fees</span>
+                          <div className="text-right shrink-0">
+                            <span className="px-2 py-0.5 rounded-md text-xs font-black bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300">
+                              {drop.percentage}%
+                            </span>
                           </div>
                         </div>
                       ))}

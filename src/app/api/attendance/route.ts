@@ -423,6 +423,29 @@ export async function DELETE(request: NextRequest) {
     }
 
     const collegeId = searchParams.get("collegeId");
+    const department = searchParams.get("department");
+    const classGroup = searchParams.get("classGroup");
+
+    const hasDeptOrBatch = (department && department !== "all") || (classGroup && classGroup !== "all");
+
+    // Dynamic student subquery builder for targeted college/department/batch scoping
+    const buildStudentFilter = () => {
+      let sql = "SELECT id FROM students WHERE 1=1";
+      const params: any[] = [];
+      if (collegeId) {
+        sql += " AND college_id = ?";
+        params.push(collegeId);
+      }
+      if (department && department !== "all") {
+        sql += " AND department = ?";
+        params.push(department);
+      }
+      if (classGroup && classGroup !== "all") {
+        sql += " AND classGroup = ?";
+        params.push(classGroup);
+      }
+      return { sql, params };
+    };
 
     // 1. Date Range Deletion (From ... To ...)
     if (startDate && endDate) {
@@ -437,17 +460,17 @@ export async function DELETE(request: NextRequest) {
           message: `Cleared attendance for student (${targetStudentIds.join(", ")}) from ${startDate} to ${endDate}.`,
           deletedCount: res.changes
         });
-      } else if (collegeId) {
+      } else if (hasDeptOrBatch || collegeId) {
+        const { sql: stSql, params: stParams } = buildStudentFilter();
         const res = await db.run(
           `DELETE FROM student_attendance 
            WHERE dateStr >= ? AND dateStr <= ? 
-             AND (studentId IN (SELECT id FROM students WHERE college_id = ?) 
-                  OR slotId IN (SELECT id FROM slots WHERE college_id = ?))`,
-          [startDate, endDate, collegeId, collegeId]
+             AND studentId IN (${stSql})`,
+          [startDate, endDate, ...stParams]
         );
         return NextResponse.json({
           success: true,
-          message: `Cleared attendance records for college from ${startDate} to ${endDate}.`,
+          message: `Cleared attendance records from ${startDate} to ${endDate}.`,
           deletedCount: res.changes
         });
       } else {
@@ -493,32 +516,30 @@ export async function DELETE(request: NextRequest) {
 
     // 4. Single Date
     if (dateStr) {
-      if (collegeId) {
+      if (hasDeptOrBatch || collegeId) {
+        const { sql: stSql, params: stParams } = buildStudentFilter();
         const res = await db.run(
           `DELETE FROM student_attendance 
-           WHERE dateStr = ? 
-             AND (studentId IN (SELECT id FROM students WHERE college_id = ?) 
-                  OR slotId IN (SELECT id FROM slots WHERE college_id = ?))`,
-          [dateStr, collegeId, collegeId]
+           WHERE dateStr = ? AND studentId IN (${stSql})`,
+          [dateStr, ...stParams]
         );
-        return NextResponse.json({ success: true, message: `Deleted attendance for date ${dateStr} in college`, deletedCount: res.changes });
+        return NextResponse.json({ success: true, message: `Deleted attendance for date ${dateStr}`, deletedCount: res.changes });
       } else {
         const res = await db.run("DELETE FROM student_attendance WHERE dateStr = ?", [dateStr]);
         return NextResponse.json({ success: true, message: `Deleted attendance for date ${dateStr}`, deletedCount: res.changes });
       }
     }
 
-    // 5. Clear All / Full Wipe for college or global
-    if (collegeId) {
+    // 5. Clear All / Full Wipe for scoped college/department/batch
+    if (hasDeptOrBatch || collegeId) {
+      const { sql: stSql, params: stParams } = buildStudentFilter();
       const res = await db.run(
-        `DELETE FROM student_attendance 
-         WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) 
-            OR slotId IN (SELECT id FROM slots WHERE college_id = ?)`,
-        [collegeId, collegeId]
+        `DELETE FROM student_attendance WHERE studentId IN (${stSql})`,
+        stParams
       );
       return NextResponse.json({
         success: true,
-        message: "Attendance records for this college have been cleared successfully.",
+        message: "Attendance records for selected scope have been cleared successfully.",
         deletedCount: res.changes
       });
     }

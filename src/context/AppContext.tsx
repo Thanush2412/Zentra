@@ -411,6 +411,7 @@ interface AppContextProps {
   deleteDepartment: (id: string) => Promise<{ success: boolean; message: string; deletedCounts?: { slots: number; students: number; mentors: number; subjects: number } }>;
   deleteCourse: (id: string) => Promise<{ success: boolean; message: string; deletedCounts?: { slots: number; students: number; mentors: number; subjects: number } }>;
   refreshData: (silent?: boolean) => Promise<any>;
+  refreshAttendance: (collegeId?: string) => Promise<void>;
   students: Student[];
   studentAttendance: StudentAttendance[];
   currentStudent: Student | null;
@@ -719,6 +720,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     return { mentors: [] as Mentor[], hr: [] as HRUser[], students: [] as Student[], smes: [] as any[] };
+  };
+
+  // ── Surgical attendance-only refresh — re-fetches only studentAttendance from DB ──
+  // Use this after bulk import or when mentor-marked data needs to reflect in CAM view
+  const refreshAttendance = async (targetCollegeId?: string) => {
+    try {
+      const role = localStorage.getItem("fp_current_role") || "";
+      const userId = localStorage.getItem("fp_cam_id") || localStorage.getItem("fp_admin_id") || localStorage.getItem("fp_mentor_id") || "";
+      const res = await fetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}&fields=attendance&_t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" }
+      });
+      const data = await res.json();
+      if (data.success && data.studentAttendance) {
+        setStudentAttendance(data.studentAttendance);
+      }
+    } catch (e) {
+      console.error("Error refreshing attendance:", e);
+    }
   };
 
   useEffect(() => {
@@ -2951,6 +2971,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteDepartment,
         deleteCourse,
         refreshData,
+        refreshAttendance,
         students,
         updateStudent,
         deleteStudent,

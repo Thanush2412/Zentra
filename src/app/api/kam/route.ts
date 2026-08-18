@@ -12,10 +12,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, message: "KAM id required" }, { status: 400 });
     }
 
-    const kam = await db.get("SELECT * FROM kam_users WHERE id = ? OR email = ?", [kamId, kamId]);
+    const kam = await db.get(
+      "SELECT * FROM kam_users WHERE id = ? OR email = ? OR id IN (SELECT reference_id FROM users WHERE id = ? OR email = ?)",
+      [kamId, kamId, kamId, kamId]
+    );
     if (!kam) {
       return NextResponse.json({ success: false, message: "KAM not found" }, { status: 404 });
     }
+
+    const resolvedKamId = kam.id;
 
     // All colleges under this KAM
     const colleges = await db.all(`
@@ -26,7 +31,7 @@ export async function GET(request: Request) {
         (SELECT COUNT(*) FROM slots s JOIN mentors m ON s.mentorId = m.id WHERE m.college_id = c.id) as slot_count
       FROM colleges c WHERE c.kam_id = ?
       ORDER BY c.name
-    `, kamId);
+    `, resolvedKamId);
 
     // All campus managers under this KAM
     const campusManagers = await db.all(`
@@ -35,7 +40,7 @@ export async function GET(request: Request) {
       JOIN colleges co ON cm.college_id = co.id
       WHERE cm.kam_id = ?
       ORDER BY cm.name
-    `, kamId);
+    `, resolvedKamId);
 
     // All departments across all colleges under KAM
     const departments = await db.all(`
@@ -44,21 +49,21 @@ export async function GET(request: Request) {
       JOIN colleges c ON d.college_id = c.id
       WHERE c.kam_id = ?
       ORDER BY c.name, d.name
-    `, kamId);
+    `, resolvedKamId);
 
     // Aggregate stats
     const totalMentors = await db.get(`
       SELECT COUNT(*) as count FROM mentors m
       JOIN colleges c ON m.college_id = c.id
       WHERE c.kam_id = ?
-    `, kamId);
+    `, resolvedKamId);
 
     const totalSlots = await db.get(`
       SELECT COUNT(*) as count FROM slots s
       JOIN mentors m ON s.mentorId = m.id
       JOIN colleges c ON m.college_id = c.id
       WHERE c.kam_id = ?
-    `, kamId);
+    `, resolvedKamId);
 
     return NextResponse.json({
       success: true,

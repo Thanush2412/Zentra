@@ -1587,6 +1587,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     assignSlot,
     deleteSlot,
     refreshData,
+    refreshAttendance,
     studentAttendance,
     createSubject,
     updateSubject,
@@ -1814,6 +1815,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [isAttendanceImportSubmitting, setIsAttendanceImportSubmitting] = useState(false);
   const [showClearAttendanceModal, setShowClearAttendanceModal] = useState(false);
   const [isClearingAttendance, setIsClearingAttendance] = useState(false);
+  const [clearDeptFilter, setClearDeptFilter] = useState("all");
+  const [clearBatchFilter, setClearBatchFilter] = useState("all");
+  const [clearScope, setClearScope] = useState<"range" | "all">("range");
   const [markingStudentForDate, setMarkingStudentForDate] = useState<{ student: any; dateStr: string } | null>(null);
   const [activePeriodChange, setActivePeriodChange] = useState<{ slotId: string; newStatus: "present" | "absent" | "late" | "od"; reason: string } | null>(null);
   const [isSubmittingPeriodCorrection, setIsSubmittingPeriodCorrection] = useState(false);
@@ -2605,35 +2609,55 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         college_id: activeCollegeId
       }));
 
-      const res = await fetch("/api/attendance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "bulk_import",
-          records: recordsToPost,
-          students: studentsToSync,
-          markedBy: currentCAM?.name || "Master Import"
-        })
-      });
+      const CHUNK_SIZE = 250;
+      let totalCount = 0;
+      const totalChunks = Math.ceil(recordsToPost.length / CHUNK_SIZE);
 
-      const data = await res.json();
-      if (data.success) {
-        // Expand active date range to encompass all imported dates so they show up immediately
-        const allDates = Array.from(new Set(recordsToPost.map(r => r.dateStr))).sort();
-        if (allDates.length > 0) {
-          const minD = allDates[0];
-          const maxD = allDates[allDates.length - 1];
-          if (minD < attendanceStartDate) setAttendanceStartDate(minD);
-          if (maxD > attendanceEndDate) setAttendanceEndDate(maxD);
+      for (let i = 0; i < recordsToPost.length; i += CHUNK_SIZE) {
+        const chunkRecords = recordsToPost.slice(i, i + CHUNK_SIZE);
+        const chunkStudents = i === 0 ? studentsToSync : [];
+        const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
+
+        const res = await fetch("/api/attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "bulk_import",
+            records: chunkRecords,
+            students: chunkStudents,
+            markedBy: currentCAM?.name || "Master Import"
+          })
+        });
+
+        const rawText = await res.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(rawText);
+        } catch (_) {
+          throw new Error(`Server returned HTTP ${res.status}: ${rawText.slice(0, 100)}`);
         }
 
-        toast(`Successfully imported ${data.count} attendance entries across ${attendanceImportPreview.parsed.length} students in real-time!`, "success");
-        setShowAttendanceImportModal(false);
-        setAttendanceImportPreview(null);
-        await refreshData();
-      } else {
-        toast(data.message || "Failed to save attendance.", "error");
+        if (!data.success) {
+          throw new Error(data.message || `Failed at batch ${chunkIndex} of ${totalChunks}`);
+        }
+        totalCount += data.count || chunkRecords.length;
       }
+
+      // Expand active date range to encompass all imported dates so they show up immediately
+      const allDates = Array.from(new Set(recordsToPost.map(r => r.dateStr))).sort();
+      if (allDates.length > 0) {
+        const minD = allDates[0];
+        const maxD = allDates[allDates.length - 1];
+        if (minD < attendanceStartDate) setAttendanceStartDate(minD);
+        if (maxD > attendanceEndDate) setAttendanceEndDate(maxD);
+      }
+
+      toast(`Successfully imported ${totalCount} attendance entries across ${attendanceImportPreview.parsed.length} students in real-time!`, "success");
+      setShowAttendanceImportModal(false);
+      setAttendanceImportPreview(null);
+      // Surgical attendance-only re-fetch — much faster than full refreshData()
+      // and fetches ALL dates without the 2000-record limit
+      await refreshAttendance(activeCollegeId);
     } catch (err: any) {
       toast("Error submitting attendance import: " + err.message, "error");
     } finally {
@@ -2747,7 +2771,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       const data = await res.json();
       if (data.success) {
         toast(`Updated to ${nextStatus.toUpperCase()}`, "success");
-        await refreshData();
+        // Surgical attendance refresh — faster than full refreshData
+        await refreshAttendance(activeCollegeId);
       } else {
         toast(data.message || "Failed to update attendance", "error");
       }
@@ -2757,39 +2782,34 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   };
 
   const handleClearAllAttendance = () => {
+    setClearDeptFilter(studentDeptFilter || "all");
+    setClearBatchFilter(studentBatchFilter || "all");
+    setClearScope("range");
     setShowClearAttendanceModal(true);
   };
 
-  const handleClearAttendanceForRange = async () => {
+  const handleExecuteClearAttendance = async () => {
     setIsClearingAttendance(true);
     try {
-      const res = await fetch(`/api/attendance?startDate=${encodeURIComponent(attendanceStartDate)}&endDate=${encodeURIComponent(attendanceEndDate)}&collegeId=${encodeURIComponent(activeCollegeId || "")}`, {
+      const params = new URLSearchParams();
+      if (activeCollegeId) params.set("collegeId", activeCollegeId);
+      if (clearDeptFilter !== "all") params.set("department", clearDeptFilter);
+      if (clearBatchFilter !== "all") params.set("classGroup", clearBatchFilter);
+      if (clearScope === "range") {
+        params.set("startDate", attendanceStartDate);
+        params.set("endDate", attendanceEndDate);
+      } else {
+        params.set("all", "true");
+      }
+
+      const res = await fetch(`/api/attendance?${params.toString()}`, {
         method: "DELETE"
       });
       const data = await res.json();
       if (data.success) {
-        toast(`Cleared attendance records for this campus from ${formatDateToDMY(attendanceStartDate)} to ${formatDateToDMY(attendanceEndDate)}! (${data.deletedCount || 0} entries removed)`, "success");
+        toast(`Successfully removed ${data.deletedCount || 0} attendance records for the selected scope!`, "success");
         setShowClearAttendanceModal(false);
-        await refreshData(true);
-      } else {
-        toast(data.message || "Failed to clear attendance.", "error");
-      }
-    } catch (err: any) {
-      toast("Error clearing attendance: " + err.message, "error");
-    } finally {
-      setIsClearingAttendance(false);
-    }
-  };
-
-  const handleClearAllAttendanceEntireSemester = async () => {
-    setIsClearingAttendance(true);
-    try {
-      const res = await fetch(`/api/attendance?all=true&collegeId=${encodeURIComponent(activeCollegeId || "")}`, { method: "DELETE" });
-      const data = await res.json();
-      if (data.success) {
-        toast(`Student attendance records for this campus cleared completely! (${data.deletedCount || 0} entries removed)`, "success");
-        setShowClearAttendanceModal(false);
-        await refreshData(true);
+        await refreshAttendance(activeCollegeId);
       } else {
         toast(data.message || "Failed to clear attendance.", "error");
       }
@@ -2832,22 +2852,27 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
     if (ok) {
       try {
-        const res = await fetch("/api/attendance", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "bulk_import",
-            records,
-            markedBy: currentCAM?.name || "Campus Manager"
-          })
-        });
-        const data = await res.json();
-        if (data.success) {
-          toast(`Marked all ${visibleStudents.length} students PRESENT on ${dateStr}!`, "success");
-          await refreshData();
-        } else {
-          toast(data.message || "Failed to mark attendance.", "error");
+        const CHUNK_SIZE = 250;
+        for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+          const chunk = records.slice(i, i + CHUNK_SIZE);
+          const res = await fetch("/api/attendance", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "bulk_import",
+              records: chunk,
+              markedBy: currentCAM?.name || "Campus Manager"
+            })
+          });
+          const rawText = await res.text();
+          let data: any = {};
+          try { data = JSON.parse(rawText); } catch (_) {
+            throw new Error(`Server error (${res.status}): ${rawText.slice(0, 100)}`);
+          }
+          if (!data.success) throw new Error(data.message || "Failed to mark attendance.");
         }
+        toast(`Marked all ${visibleStudents.length} students PRESENT on ${dateStr}!`, "success");
+        await refreshAttendance(activeCollegeId);
       } catch (err: any) {
         toast("Error marking attendance: " + err.message, "error");
       }
@@ -2901,7 +2926,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       if (res.success) {
         toast("Attendance corrected successfully!", "success");
         setCorrectingStudent(null);
-        refreshData();
+        await refreshAttendance(activeCollegeId);
       } else {
         toast(res.message, "error");
       }
@@ -8502,14 +8527,39 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   {/* 6. ACADEMIC MONITORING / MASTER STUDENT ATTENDANCE DIRECTORY */}
                   {activeTab === "monitoring" && (() => {
                     const todayStr = new Date().toISOString().split("T")[0];
+
+                    // Build working dates from THREE sources so no date is ever missing:
+                    // 1. Dates that actually have attendance records in context
+                    // 2. All calendar Mon–Sat days in the selected range (excluding holidays)
+                    // 3. Today (always included if within range)
                     const attendanceDateSet = new Set<string>();
+
+                    // Source 1: dates with actual attendance data
                     (studentAttendance || []).forEach(a => {
                       if (a.dateStr) attendanceDateSet.add(a.dateStr);
                     });
-                    // Always ensure today is present if within selected range so CM can view and mark up to today
+
+                    // Source 2: every Mon–Sat in the selected range (so mentor-marked dates appear even if not in context yet)
+                    const rangeStart = new Date(attendanceStartDate + "T00:00:00");
+                    const rangeEnd = new Date(attendanceEndDate + "T00:00:00");
+                    if (!isNaN(rangeStart.getTime()) && !isNaN(rangeEnd.getTime())) {
+                      const cur = new Date(rangeStart);
+                      while (cur <= rangeEnd) {
+                        const dayOfWeek = cur.getDay();
+                        const ymd = cur.toISOString().split("T")[0];
+                        const isHoliday = (holidays || []).some((h: any) => h?.date === ymd || h?.dateStr === ymd);
+                        if (dayOfWeek !== 0 && !isHoliday) {
+                          attendanceDateSet.add(ymd);
+                        }
+                        cur.setDate(cur.getDate() + 1);
+                      }
+                    }
+
+                    // Source 3: today
                     if (todayStr >= attendanceStartDate && todayStr <= attendanceEndDate) {
                       attendanceDateSet.add(todayStr);
                     }
+
                     const workingDates = Array.from(attendanceDateSet)
                       .filter(d => d >= attendanceStartDate && d <= attendanceEndDate)
                       .sort();
@@ -13094,7 +13144,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       toast(`Attendance updated to ${newStatus.toUpperCase()}! (Logged to audit trail, ${data.newCount || correctionCount + 1}/2 used)`, "success");
                       st.correction_count = (st.correction_count || 0) + 1;
                       setActivePeriodChange(null);
-                      await refreshData(true);
+                      await refreshAttendance(activeCollegeId);
                     } else {
                       toast(data.message || "Failed to update attendance.", "error");
                     }
@@ -13313,87 +13363,188 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 );
               })()}
 
-              {/* ── Clear Attendance Options Modal (Range vs Entire Semester) ── */}
-              {showClearAttendanceModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans animate-in fade-in">
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-5 animate-in zoom-in-95">
-                    <div className="flex justify-between items-start border-b border-slate-150 pb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-xl bg-rose-100 border border-rose-200 text-rose-600 flex items-center justify-center shadow-2xs">
-                          <Trash2 className="h-5 w-5" />
+              {/* ── Clear Attendance Options Modal (Selective Department & Batch Mapping) ── */}
+              {showClearAttendanceModal && (() => {
+                // Calculate matching target students
+                const targetDeptStudents = collegeStudents.filter(s => {
+                  const matchDept = clearDeptFilter === "all" || s.department === clearDeptFilter;
+                  const matchBatch = clearBatchFilter === "all" || s.classGroup === clearBatchFilter;
+                  return matchDept && matchBatch;
+                });
+                const targetStudentIds = new Set(targetDeptStudents.map(s => s.id));
+
+                // Calculate matching attendance records
+                const matchingAttendance = studentAttendance.filter((a: any) => {
+                  if (!targetStudentIds.has(a.studentId)) return false;
+                  if (clearScope === "range") {
+                    return a.dateStr >= attendanceStartDate && a.dateStr <= attendanceEndDate;
+                  }
+                  return true;
+                });
+
+                // Unique departments across campus students & department registry
+                const uniqueStudentDepartments = Array.from(new Set([
+                  ...collegeStudents.map(s => s.department).filter(Boolean),
+                  ...departmentsList.filter(d => !activeCollegeId || d.college_id === activeCollegeId).map(d => d.name)
+                ])).sort();
+
+                // Unique batches for selected department
+                const availableBatchesForDept = Array.from(new Set(
+                  collegeStudents
+                    .filter(s => clearDeptFilter === "all" || s.department === clearDeptFilter)
+                    .map(s => s.classGroup)
+                    .filter(Boolean)
+                )).sort();
+
+                return (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95">
+                      <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800 pb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-xl bg-rose-100 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 flex items-center justify-center shadow-2xs">
+                            <Trash2 className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-black text-slate-800 dark:text-white">Clear / Wipe Attendance Data</h3>
+                            <p className="text-[11px] text-slate-400 font-semibold">Select department and cohort batch to selectively remove data</p>
+                          </div>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowClearAttendanceModal(false)}
+                          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold text-xl cursor-pointer"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <div className="space-y-4 text-xs font-semibold">
+                        {/* Dropdown 1: Department */}
                         <div>
-                          <h3 className="text-base font-black text-slate-800">Clear Attendance Records</h3>
-                          <p className="text-[11px] text-slate-400 font-semibold">Select the scope of attendance data you wish to wipe</p>
+                          <label className="block text-[11px] font-black uppercase text-slate-700 dark:text-slate-300 mb-1.5">
+                            Target Department:
+                          </label>
+                          <select
+                            value={clearDeptFilter}
+                            onChange={(e) => {
+                              setClearDeptFilter(e.target.value);
+                              setClearBatchFilter("all"); // Reset batch on dept change
+                            }}
+                            className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:border-rose-500"
+                          >
+                            <option value="all">🏢 All Departments (Entire Campus)</option>
+                            {uniqueStudentDepartments.map(dept => (
+                              <option key={dept} value={dept}>{dept}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Dropdown 2: Batch / Class Group */}
+                        <div>
+                          <label className="block text-[11px] font-black uppercase text-slate-700 dark:text-slate-300 mb-1.5">
+                            Target Batch / Class Group:
+                          </label>
+                          <select
+                            value={clearBatchFilter}
+                            onChange={(e) => setClearBatchFilter(e.target.value)}
+                            className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:border-rose-500"
+                          >
+                            <option value="all">👥 All Batches in Selected Department</option>
+                            {availableBatchesForDept.map(bg => (
+                              <option key={bg} value={bg}>{bg}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Scope Selector: Date Range vs All Dates */}
+                        <div>
+                          <label className="block text-[11px] font-black uppercase text-slate-700 dark:text-slate-300 mb-1.5">
+                            Date Scope:
+                          </label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setClearScope("range")}
+                              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                                clearScope === "range"
+                                  ? "border-rose-500 bg-rose-50/60 dark:bg-rose-500/10 text-rose-800 dark:text-rose-300 shadow-2xs"
+                                  : "border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400"
+                              }`}
+                            >
+                              <div className="font-extrabold text-xs flex items-center gap-1.5">
+                                <Calendar className="h-3.5 w-3.5 text-rose-500" /> Active Range
+                              </div>
+                              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-mono">
+                                {formatDateToDMY(attendanceStartDate)} → {formatDateToDMY(attendanceEndDate)}
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setClearScope("all")}
+                              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                                clearScope === "all"
+                                  ? "border-rose-500 bg-rose-50/60 dark:bg-rose-500/10 text-rose-800 dark:text-rose-300 shadow-2xs"
+                                  : "border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400"
+                              }`}
+                            >
+                              <div className="font-extrabold text-xs flex items-center gap-1.5">
+                                <Layers className="h-3.5 w-3.5 text-rose-500" /> Entire Semester
+                              </div>
+                              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                All historical &amp; current dates
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Live Impact Preview Card */}
+                        <div className="p-3.5 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-slate-600 dark:text-slate-400">Target Students:</span>
+                            <span className="font-black text-slate-900 dark:text-white">{targetDeptStudents.length} students</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-slate-600 dark:text-slate-400">Recorded Period Entries:</span>
+                            <span className="font-black text-rose-600 dark:text-rose-400">{matchingAttendance.length} period entries</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 font-normal pt-1 border-t border-slate-200 dark:border-slate-700 leading-relaxed">
+                            ⚠️ Only the selected records will be wiped. Other departments and unselected batches remain completely unaffected.
+                          </p>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowClearAttendanceModal(false)}
-                        className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
-                      >
-                        ×
-                      </button>
-                    </div>
 
-                    <div className="space-y-3 text-xs">
-                      {/* Option 1: Clear Active Range */}
-                      <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-rose-50/40 hover:border-rose-200 transition-all space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-black text-slate-800 text-xs">1. Clear Active Date Range Only</span>
-                          <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-bold text-[10px] border border-indigo-200">
-                            {formatDateToDMY(attendanceStartDate)} → {formatDateToDMY(attendanceEndDate)}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500">
-                          Deletes attendance entries only within the selected date range. All dates outside this range will remain intact.
-                        </p>
+                      <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-150 dark:border-slate-800">
                         <button
                           type="button"
-                          disabled={isClearingAttendance}
-                          onClick={handleClearAttendanceForRange}
-                          className="w-full mt-2 py-2 px-3 rounded-xl bg-slate-800 hover:bg-rose-700 text-white font-extrabold text-xs transition-all cursor-pointer shadow-2xs flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                          onClick={() => setShowClearAttendanceModal(false)}
+                          className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all cursor-pointer"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          <span>Clear Active Range ({formatDateToDMY(attendanceStartDate)} to {formatDateToDMY(attendanceEndDate)})</span>
+                          Cancel
                         </button>
-                      </div>
-
-                      {/* Option 2: Clear Entire Semester */}
-                      <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/40 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-black text-rose-800 text-xs">2. Clear Entire Semester (All Dates)</span>
-                          <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-700 font-extrabold text-[10px]">
-                            Full Reset
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-rose-600/80">
-                          Completely wipes recorded student attendance entries for this campus across all historical and current dates. Other campuses remain unaffected.
-                        </p>
                         <button
                           type="button"
-                          disabled={isClearingAttendance}
-                          onClick={handleClearAllAttendanceEntireSemester}
-                          className="w-full mt-2 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs transition-all cursor-pointer shadow-2xs flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                          disabled={isClearingAttendance || matchingAttendance.length === 0}
+                          onClick={handleExecuteClearAttendance}
+                          className="py-2.5 px-5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs transition-all cursor-pointer shadow-md flex items-center justify-center gap-2 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          <span>Wipe All Semester Attendance</span>
+                          {isClearingAttendance ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span>Clearing Data...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Trash2 className="h-4 w-4" />
+                              <span>Wipe {matchingAttendance.length} Attendance Entries</span>
+                            </>
+                          )}
                         </button>
                       </div>
-                    </div>
-
-                    <div className="flex items-center justify-end pt-2 border-t border-slate-150">
-                      <button
-                        type="button"
-                        onClick={() => setShowClearAttendanceModal(false)}
-                        className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-                      >
-                        Cancel
-                      </button>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* ── Add / Edit Subject Modal Popup (Admin-Style 2-Column Layout) ── */}
               {showSubjectModal && (

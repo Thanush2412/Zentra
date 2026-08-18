@@ -22,6 +22,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const role = searchParams.get("role");
     const userId = searchParams.get("userId");
+    const fields = searchParams.get("fields"); // e.g. "attendance" for surgical re-fetch
 
     let collegeId: string | null = null;
     if (role && userId && role !== "admin" && role !== "kam") {
@@ -35,6 +36,28 @@ export async function GET(request: Request) {
         const student = await db.get("SELECT college_id FROM students WHERE id = ?", userId);
         collegeId = student ? student.college_id : null;
       }
+    }
+
+    // ── FAST PATH: attendance-only re-fetch (used after bulk import / mentor mark) ──
+    if (fields === "attendance") {
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      const thresh = sixMonthsAgo.toISOString().slice(0, 10);
+
+      let attSql: string;
+      let attParams: any[];
+      if (role === "student" && userId) {
+        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 1000";
+        attParams = [userId];
+      } else if (collegeId) {
+        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) AND dateStr >= ? ORDER BY dateStr ASC";
+        attParams = [collegeId, thresh];
+      } else {
+        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? ORDER BY dateStr ASC LIMIT 20000";
+        attParams = [thresh];
+      }
+      const att = await db.all(attSql, ...attParams);
+      return NextResponse.json({ success: true, studentAttendance: att });
     }
 
     // Build SQL queries with filtering at the DB level when collegeId is known
@@ -62,17 +85,18 @@ export async function GET(request: Request) {
     const announcementSql = collegeId ? "SELECT * FROM announcements WHERE college_id = ? OR college_id IS NULL ORDER BY created_at DESC" : "SELECT * FROM announcements ORDER BY created_at DESC";
     const announcementParams = collegeId ? [collegeId] : [];
 
-    // Optimize attendance data fetching - only fetch last 3 months to reduce load time
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-    const dateThreshold = threeMonthsAgo.toISOString().slice(0, 10);
+    // Fetch attendance with a wider range for CAM monitoring — up to 6 months, higher limit
+    // CAM needs to see full semester history for the attendance matrix
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const dateThreshold = sixMonthsAgo.toISOString().slice(0, 10);
 
     const attendanceSql = (role === "student" && userId)
-      ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId = ? AND dateStr >= ? ORDER BY dateStr DESC LIMIT 500"
+      ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 1000"
       : collegeId
-        ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) AND dateStr >= ? ORDER BY dateStr DESC LIMIT 2000"
-        : "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? ORDER BY dateStr DESC LIMIT 5000";
-    const attendanceParams = (role === "student" && userId) ? [userId, dateThreshold] : collegeId ? [collegeId, dateThreshold] : [dateThreshold];
+        ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) AND dateStr >= ? ORDER BY dateStr ASC"
+        : "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? ORDER BY dateStr ASC LIMIT 20000";
+    const attendanceParams = (role === "student" && userId) ? [userId] : collegeId ? [collegeId, dateThreshold] : [dateThreshold];
 
     const isMentor = role === "mentor";
     const isStudent = role === "student";
