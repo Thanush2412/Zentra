@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
 export async function GET(request: Request) {
@@ -196,38 +196,42 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "No attendance records to import" }, { status: 400 });
       }
 
-      let count = 0;
       const nowStr = new Date().toISOString();
+      const statements: Array<{ sql: string; args: any[] }> = [];
 
       for (const item of records) {
         const { studentId, slotId, dateStr, status } = item;
         if (!studentId || !slotId || !dateStr || !status) continue;
 
         if (status === "not_marked") {
-          await db.run(
-            "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
-            [studentId, slotId, dateStr]
-          );
+          statements.push({
+            sql: "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+            args: [studentId, slotId, dateStr]
+          });
         } else {
-          const existing = await db.get(
-            "SELECT id FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
-            [studentId, slotId, dateStr]
-          );
-
-          if (existing) {
-            await db.run(
-              "UPDATE student_attendance SET status = ?, markedBy = ?, timestamp = ? WHERE id = ?",
-              [status, markedBy || "Import", nowStr, existing.id]
-            );
-          } else {
-            const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-            await db.run(
-              "INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-              [recordId, studentId, slotId, dateStr, status, markedBy || "Import", nowStr]
-            );
-          }
-          count++;
+          const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          statements.push({
+            sql: `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(studentId, slotId, dateStr) 
+                  DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp`,
+            args: [recordId, studentId, slotId, dateStr, status, markedBy || "Master Import", nowStr]
+          });
         }
+      }
+
+      // Execute in chunks of 500 statements using client.batch
+      const CHUNK_SIZE = 500;
+      let count = 0;
+
+      for (let i = 0; i < statements.length; i += CHUNK_SIZE) {
+        const chunk = statements.slice(i, i + CHUNK_SIZE);
+        if (db.client && typeof db.client.batch === "function") {
+          await db.client.batch(chunk, "write");
+        } else {
+          await Promise.all(chunk.map(stmt => db.run(stmt.sql, stmt.args)));
+        }
+        count += chunk.length;
       }
 
       return NextResponse.json({ success: true, message: `Successfully imported ${count} attendance entries.`, count });
@@ -308,6 +312,105 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: "Attendance marked successfully.", insertedCount });
   } catch (error: any) {
     console.error("API POST Attendance error:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    const dateStr = searchParams.get("dateStr");
+    const startDate = searchParams.get("startDate");
+    const endDate = searchParams.get("endDate");
+    const studentIdParam = searchParams.get("studentId") || searchParams.get("rollNo") || searchParams.get("regNo");
+    const clearAll = searchParams.get("all") === "true";
+
+    let targetStudentIds: string[] = [];
+    if (studentIdParam) {
+      targetStudentIds.push(studentIdParam);
+      // Look up student from db to also get their alternative IDs (id, roll_number, register_number)
+      const st = await db.get(
+        "SELECT id, roll_number, register_number FROM students WHERE id = ? OR roll_number = ? OR register_number = ?",
+        [studentIdParam, studentIdParam, studentIdParam]
+      );
+      if (st) {
+        if (st.id) targetStudentIds.push(st.id);
+        if (st.roll_number) targetStudentIds.push(st.roll_number);
+        if (st.register_number) targetStudentIds.push(st.register_number);
+      }
+      targetStudentIds = Array.from(new Set(targetStudentIds));
+    }
+
+    // 1. Date Range Deletion (From ... To ...)
+    if (startDate && endDate) {
+      if (targetStudentIds.length > 0) {
+        const placeholders = targetStudentIds.map(() => "?").join(",");
+        const res = await db.run(
+          `DELETE FROM student_attendance WHERE dateStr >= ? AND dateStr <= ? AND studentId IN (${placeholders})`,
+          [startDate, endDate, ...targetStudentIds]
+        );
+        return NextResponse.json({
+          success: true,
+          message: `Cleared attendance for student (${targetStudentIds.join(", ")}) from ${startDate} to ${endDate}.`,
+          deletedCount: res.changes
+        });
+      } else {
+        const res = await db.run(
+          "DELETE FROM student_attendance WHERE dateStr >= ? AND dateStr <= ?",
+          [startDate, endDate]
+        );
+        return NextResponse.json({
+          success: true,
+          message: `Cleared attendance records from ${startDate} to ${endDate}.`,
+          deletedCount: res.changes
+        });
+      }
+    }
+
+    // 2. Student Deletion (All Dates for this Student)
+    if (targetStudentIds.length > 0 && !dateStr) {
+      const placeholders = targetStudentIds.map(() => "?").join(",");
+      const res = await db.run(
+        `DELETE FROM student_attendance WHERE studentId IN (${placeholders})`,
+        targetStudentIds
+      );
+      return NextResponse.json({
+        success: true,
+        message: `Deleted all attendance for student (${targetStudentIds.join(", ")})`,
+        deletedCount: res.changes
+      });
+    }
+
+    // 3. Single Date & Student
+    if (dateStr && targetStudentIds.length > 0) {
+      const placeholders = targetStudentIds.map(() => "?").join(",");
+      const res = await db.run(
+        `DELETE FROM student_attendance WHERE dateStr = ? AND studentId IN (${placeholders})`,
+        [dateStr, ...targetStudentIds]
+      );
+      return NextResponse.json({
+        success: true,
+        message: `Deleted attendance for student (${targetStudentIds.join(", ")}) on ${dateStr}`,
+        deletedCount: res.changes
+      });
+    }
+
+    // 4. Single Date
+    if (dateStr) {
+      const res = await db.run("DELETE FROM student_attendance WHERE dateStr = ?", [dateStr]);
+      return NextResponse.json({ success: true, message: `Deleted attendance for date ${dateStr}`, deletedCount: res.changes });
+    }
+
+    // 5. Default / Full Wipe: Clear all student attendance records
+    const res = await db.run("DELETE FROM student_attendance");
+    return NextResponse.json({
+      success: true,
+      message: "All student attendance records have been cleared successfully.",
+      deletedCount: res.changes
+    });
+  } catch (error: any) {
+    console.error("API DELETE Attendance error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

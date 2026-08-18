@@ -1509,39 +1509,6 @@ async function seedStudents(db: any, targetCollege1: string, targetCollege2: str
             [roll, name, email, classGroup, dept, collegeId, startYear, endYear, stSem, stShift]
           );
           totalStudents++;
-
-          // Seed student attendance for this student
-          for (const dCol of dateCols) {
-            const statusVal = row[dCol.colIdx];
-            if (statusVal !== undefined && statusVal !== null) {
-              const statusStr = String(statusVal).trim().toUpperCase();
-              if (statusStr === 'P' || statusStr === 'PRESENT' || statusStr === 'AB' || statusStr === 'A' || statusStr === 'ABSENT') {
-                const status = (statusStr === 'P' || statusStr === 'PRESENT') ? 'present' : 'absent';
-                
-                // Determine day of the week
-                const [y, m, d] = dCol.dateStr.split('-').map(Number);
-                const dateObj = new Date(y, m - 1, d);
-                const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-                const dayName = days[dateObj.getDay()];
-
-                // Filter slots in memory
-                const slotsForDay = allSlots.filter((slot: any) => 
-                  slot.classGroup && slot.classGroup.toLowerCase() === classGroup.toLowerCase() && 
-                  slot.day && slot.day.toLowerCase() === dayName.toLowerCase()
-                );
-
-                for (const slot of slotsForDay) {
-                  const attId = `${roll}_${slot.id}_${dCol.dateStr}`;
-                  await db.run(
-                    `INSERT OR REPLACE INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    [attId, roll, slot.id, dCol.dateStr, status, slot.mentorId, new Date().toISOString()]
-                  );
-                  totalAttendance++;
-                }
-              }
-            }
-          }
         }
         console.log(`Seeded students for class group "${classGroup}" from sheet "${sheetName}".`);
       }

@@ -1048,6 +1048,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [showAttendanceImportModal, setShowAttendanceImportModal] = useState(false);
   const [attendanceImportPreview, setAttendanceImportPreview] = useState<{ parsed: any[]; warnings: string[]; targetDate: string } | null>(null);
   const [isAttendanceImportSubmitting, setIsAttendanceImportSubmitting] = useState(false);
+  const [showClearAttendanceModal, setShowClearAttendanceModal] = useState(false);
+  const [isClearingAttendance, setIsClearingAttendance] = useState(false);
   const [markingStudentForDate, setMarkingStudentForDate] = useState<{ student: any; dateStr: string } | null>(null);
 
   // Event Management Module States
@@ -1464,23 +1466,33 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   };
 
   const getSemesterWorkingDates = (startStr: string, endStr: string) => {
-    const dates: string[] = [];
+    const dateSet = new Set<string>();
     const start = new Date(startStr + "T00:00:00");
     const end = new Date(endStr + "T00:00:00");
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) return [];
+    
+    // 1. Calendar working days (Mon-Sat, excluding holidays)
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+      const cur = new Date(start);
+      while (cur <= end) {
+        const dayOfWeek = cur.getDay(); // 0 = Sun
+        const ymd = cur.toISOString().split("T")[0];
+        const isHoliday = (holidays || []).some((h: any) => h?.date === ymd || h?.dateStr === ymd);
 
-    const cur = new Date(start);
-    while (cur <= end) {
-      const dayOfWeek = cur.getDay(); // 0 = Sun
-      const ymd = cur.toISOString().split("T")[0];
-      const isHoliday = (holidays || []).some((h: any) => h?.date === ymd || h?.dateStr === ymd);
-
-      if (dayOfWeek !== 0 && !isHoliday) {
-        dates.push(ymd);
+        if (dayOfWeek !== 0 && !isHoliday) {
+          dateSet.add(ymd);
+        }
+        cur.setDate(cur.getDate() + 1);
       }
-      cur.setDate(cur.getDate() + 1);
     }
-    return dates;
+
+    // 2. Also include ANY date in studentAttendance within the range
+    (studentAttendance || []).forEach(att => {
+      if (att.dateStr && att.dateStr >= startStr && att.dateStr <= endStr) {
+        dateSet.add(att.dateStr);
+      }
+    });
+
+    return Array.from(dateSet).sort();
   };
 
   const formatDateToDMY = (ymd: string) => {
@@ -1570,12 +1582,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
         const warnings: string[] = [];
         const parsedAttendance: any[] = [];
+        const allDetectedDates: string[] = [];
 
         rawRows.forEach((row, idx) => {
           let stIdOrRoll = "";
           let stName = "";
-          const dateMarks: Record<string, string> = {}; // { '2026-06-15': 'present', '2026-06-16': 'absent' }
-          const periodMarks: Record<string, string> = {}; // { 'p1': 'present' }
+          const dateMarks: Record<string, string> = {};
+          const periodMarks: Record<string, string> = {};
 
           Object.keys(row).forEach(col => {
             const rawCol = col.trim();
@@ -1583,13 +1596,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             const val = String(row[col]).trim();
             if (!val) return;
 
-            // Check if column is Student Identifier
             if (norm === "rollno" || norm === "rollnumber" || norm === "regno" || norm === "id" || norm === "studentid" || norm === "rollnostudentid") {
               stIdOrRoll = val;
             } else if (norm === "name" || norm === "studentname") {
               stName = val;
             } else {
-              // Check if column header is a Date (e.g. 15-06-2026, 16/06/2026, 2026-06-15)
               const parsedColDate = parseDateToYMD(rawCol);
               if (parsedColDate && parsedColDate.length === 10) {
                 const uVal = val.toUpperCase();
@@ -1603,6 +1614,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   ? "late"
                   : "not_marked";
                 dateMarks[parsedColDate] = status;
+                allDetectedDates.push(parsedColDate);
               } else if (norm.includes("period") || norm.startsWith("p") || norm.includes("slot") || norm.includes("hour")) {
                 const numMatch = norm.match(/\d+/);
                 const pNum = numMatch ? parseInt(numMatch[0], 10) : 1;
@@ -1632,6 +1644,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             targetDate: Object.keys(dateMarks)[0] || attendanceDate
           });
         });
+
+        // Automatically adjust view date range if imported dates are outside current range
+        if (allDetectedDates.length > 0) {
+          const sorted = allDetectedDates.sort();
+          const minDate = sorted[0];
+          const maxDate = sorted[sorted.length - 1];
+          if (minDate < attendanceStartDate) setAttendanceStartDate(minDate);
+          if (maxDate > attendanceEndDate) setAttendanceEndDate(maxDate);
+        }
 
         setAttendanceImportPreview({
           parsed: parsedAttendance,
@@ -1759,24 +1780,24 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         const dateObj = new Date(dStr + "T00:00:00");
         const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
         const stSlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
+        const stDayAtt = studentAttendance.filter(a => a.studentId === st.id && a.dateStr === dStr);
 
-        if (stSlots.length === 0) return "—";
+        if (stSlots.length === 0 && stDayAtt.length === 0) return "—";
         totalWorkingDays++;
 
-        const pCount = stSlots.filter(s => {
-          const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
-          return att?.status === "present" || att?.status === "od";
-        }).length;
+        const pCount = stDayAtt.filter(a => a.status === "present").length;
+        const odCount = stDayAtt.filter(a => a.status === "od").length;
+        const aCount = stDayAtt.filter(a => a.status === "absent").length;
+        const totalMarked = stDayAtt.length;
+        const totalEff = Math.max(stSlots.length, totalMarked);
 
-        const aCount = stSlots.filter(s => {
-          const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
-          return att?.status === "absent";
-        }).length;
-
-        if (pCount === stSlots.length) {
+        if (odCount > 0 && (odCount + pCount >= totalEff)) {
+          presentDays += 1;
+          return "OD";
+        } else if (pCount > 0 && (pCount === totalEff || aCount === 0)) {
           presentDays += 1;
           return "P";
-        } else if (pCount > 0) {
+        } else if (pCount > 0 && aCount > 0) {
           presentDays += 0.5;
           absentDays += 0.5;
           return "HD";
@@ -1842,6 +1863,50 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       }
     } catch (err: any) {
       toast("Error updating period: " + err.message, "error");
+    }
+  };
+
+  const handleClearAllAttendance = () => {
+    setShowClearAttendanceModal(true);
+  };
+
+  const handleClearAttendanceForRange = async () => {
+    setIsClearingAttendance(true);
+    try {
+      const res = await fetch(`/api/attendance?startDate=${encodeURIComponent(attendanceStartDate)}&endDate=${encodeURIComponent(attendanceEndDate)}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(`Cleared attendance records from ${formatDateToDMY(attendanceStartDate)} to ${formatDateToDMY(attendanceEndDate)}! (${data.deletedCount || 0} entries removed)`, "success");
+        setShowClearAttendanceModal(false);
+        await refreshData(true);
+      } else {
+        toast(data.message || "Failed to clear attendance.", "error");
+      }
+    } catch (err: any) {
+      toast("Error clearing attendance: " + err.message, "error");
+    } finally {
+      setIsClearingAttendance(false);
+    }
+  };
+
+  const handleClearAllAttendanceEntireSemester = async () => {
+    setIsClearingAttendance(true);
+    try {
+      const res = await fetch("/api/attendance?all=true", { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        toast(`All student attendance records cleared completely! (${data.deletedCount || 0} entries removed)`, "success");
+        setShowClearAttendanceModal(false);
+        await refreshData(true);
+      } else {
+        toast(data.message || "Failed to clear attendance.", "error");
+      }
+    } catch (err: any) {
+      toast("Error clearing attendance: " + err.message, "error");
+    } finally {
+      setIsClearingAttendance(false);
     }
   };
 
@@ -7340,18 +7405,26 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* 6. ACADEMIC MONITORING / MASTER STUDENT ATTENDANCE DIRECTORY */}
                   {activeTab === "monitoring" && (() => {
-                    // Determine working dates for active range
-                    const activeStartDate = attendanceMonthFilter === "2026-06" ? "2026-06-15" :
-                                            attendanceMonthFilter === "2026-07" ? "2026-07-01" :
-                                            attendanceMonthFilter === "2026-08" ? "2026-08-01" :
-                                            attendanceStartDate;
-                    
-                    const activeEndDate = attendanceMonthFilter === "2026-06" ? "2026-06-30" :
-                                          attendanceMonthFilter === "2026-07" ? "2026-07-31" :
-                                          attendanceMonthFilter === "2026-08" ? "2026-08-31" :
-                                          attendanceEndDate;
+                    const workingDates = getSemesterWorkingDates(attendanceStartDate, attendanceEndDate);
 
-                    const workingDates = getSemesterWorkingDates(activeStartDate, activeEndDate);
+                    // High-Performance O(1) Precomputed Maps (Eliminates all table lag)
+                    const attendanceMap = new Map<string, any[]>();
+                    (studentAttendance || []).forEach(a => {
+                      if (!a.studentId || !a.dateStr) return;
+                      const k1 = `${a.studentId}_${a.dateStr}`;
+                      const l1 = attendanceMap.get(k1);
+                      if (l1) l1.push(a);
+                      else attendanceMap.set(k1, [a]);
+                    });
+
+                    const slotsCache = new Map<string, any[]>();
+                    const getStudentSlots = (dayName: string, classGroup?: string) => {
+                      const cacheKey = `${dayName}__${(classGroup || "").toLowerCase()}`;
+                      if (slotsCache.has(cacheKey)) return slotsCache.get(cacheKey)!;
+                      const res = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, classGroup)));
+                      slotsCache.set(cacheKey, res);
+                      return res;
+                    };
 
                     // Apply student filters
                     const filtered = collegeStudents.filter(s => {
@@ -7372,20 +7445,52 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       workingDates.forEach(dStr => {
                         const dateObj = new Date(dStr + "T00:00:00");
                         const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
-                        const stSlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
-                        if (stSlots.length === 0) return;
+                        const stSlots = getStudentSlots(dayName, st.classGroup);
+                        const stDayAtt = attendanceMap.get(`${st.id}_${dStr}`) || (st.roll_number ? attendanceMap.get(`${st.roll_number}_${dStr}`) : null) || [];
+                        if (stSlots.length === 0 && stDayAtt.length === 0) return;
 
-                        const pCount = stSlots.filter(s => {
-                          const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
-                          return att?.status === "present" || att?.status === "od";
-                        }).length;
+                        const pCount = stDayAtt.filter(a => a.status === "present" || a.status === "od").length;
+                        const aCount = stDayAtt.filter(a => a.status === "absent").length;
 
-                        if (pCount === stSlots.length) grandPresentDaysSum += 1;
-                        else if (pCount > 0) grandPresentDaysSum += 0.5;
+                        if (pCount > 0 && aCount === 0) grandPresentDaysSum += 1;
+                        else if (pCount > 0 && aCount > 0) grandPresentDaysSum += 0.5;
                       });
                     });
 
                     const overallAvgPct = grandTotalPossibleDays > 0 ? Math.round((grandPresentDaysSum / grandTotalPossibleDays) * 100) : 0;
+
+                    // Preset helpers
+                    const setPresetDates = (preset: string) => {
+                      const today = new Date().toISOString().split("T")[0];
+                      if (preset === "all") {
+                        setAttendanceStartDate("2026-06-15");
+                        setAttendanceEndDate(today);
+                      } else if (preset === "this_month") {
+                        const now = new Date();
+                        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+                        setAttendanceStartDate(firstDay);
+                        setAttendanceEndDate(today);
+                      } else if (preset === "past_30") {
+                        const d = new Date();
+                        d.setDate(d.getDate() - 30);
+                        setAttendanceStartDate(d.toISOString().split("T")[0]);
+                        setAttendanceEndDate(today);
+                      } else if (preset === "past_7") {
+                        const d = new Date();
+                        d.setDate(d.getDate() - 7);
+                        setAttendanceStartDate(d.toISOString().split("T")[0]);
+                        setAttendanceEndDate(today);
+                      } else if (preset === "jun_2026") {
+                        setAttendanceStartDate("2026-06-15");
+                        setAttendanceEndDate("2026-06-30");
+                      } else if (preset === "jul_2026") {
+                        setAttendanceStartDate("2026-07-01");
+                        setAttendanceEndDate("2026-07-31");
+                      } else if (preset === "aug_2026") {
+                        setAttendanceStartDate("2026-08-01");
+                        setAttendanceEndDate("2026-08-31");
+                      }
+                    };
 
                     return (
                       <div className="space-y-6 font-sans">
@@ -7396,11 +7501,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <div className="flex items-center gap-2">
                                 <h2 className="text-base font-black text-slate-800">Master Student Attendance Directory</h2>
                                 <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-extrabold">
-                                  {workingDates.length} Working Days ({formatDateToDMY(activeStartDate)} to {formatDateToDMY(activeEndDate)})
+                                  {workingDates.length} Active Dates ({formatDateToDMY(attendanceStartDate)} to {formatDateToDMY(attendanceEndDate)})
                                 </span>
                               </div>
                               <p className="text-xs text-slate-400 font-semibold mt-0.5">
-                                Master date-wise attendance matrix with full semester tracking, Excel template download, and bulk imports.
+                                Master date-wise attendance matrix with real-time period synchronization, Excel import/export, and range filtering.
                               </p>
                             </div>
 
@@ -7409,7 +7514,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               {/* Download Master Template */}
                               <button
                                 type="button"
-                                onClick={() => handleDownloadAttendanceTemplate(studentBatchFilter, activeStartDate, activeEndDate)}
+                                onClick={() => handleDownloadAttendanceTemplate(studentBatchFilter, attendanceStartDate, attendanceEndDate)}
                                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
                                 title="Download master template matching exact date headers format"
                               >
@@ -7432,12 +7537,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               {/* Export Master Excel */}
                               <button
                                 type="button"
-                                onClick={() => handleExportDateAttendance(activeStartDate, activeEndDate, filtered)}
+                                onClick={() => handleExportDateAttendance(attendanceStartDate, attendanceEndDate, filtered)}
                                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer active:scale-95"
                                 title="Export complete master attendance sheet for all dates to Excel"
                               >
                                 <Download className="h-3.5 w-3.5 text-emerald-600" />
                                 <span>Export Master Excel</span>
+                              </button>
+
+                              {/* Clear All Attendance */}
+                              <button
+                                type="button"
+                                onClick={handleClearAllAttendance}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer active:scale-95"
+                                title="Wipe all recorded attendance for fresh import or testing"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                                <span>Clear Attendance</span>
                               </button>
                             </div>
                           </div>
@@ -7449,99 +7565,149 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <span className="text-xl font-black text-slate-800">{filtered.length}</span>
                             </div>
                             <div className="p-3.5 bg-indigo-50/60 border border-indigo-150 rounded-xl shadow-2xs">
-                              <span className="text-[9.5px] uppercase font-bold text-indigo-600 block">Semester Working Days</span>
+                              <span className="text-[9.5px] uppercase font-bold text-indigo-600 block">Semester Active Dates</span>
                               <span className="text-xl font-black text-indigo-700">{workingDates.length} Days</span>
                             </div>
                             <div className="p-3.5 bg-emerald-50/60 border border-emerald-150 rounded-xl shadow-2xs">
-                              <span className="text-[9.5px] uppercase font-bold text-emerald-600 block">Total Student Days Present</span>
+                              <span className="text-[9.5px] uppercase font-bold text-emerald-600 block">Total Days Present</span>
                               <span className="text-xl font-black text-emerald-700">{grandPresentDaysSum} Days</span>
                             </div>
                             <div className="p-3.5 bg-purple-50/60 border border-purple-150 rounded-xl shadow-2xs">
-                              <span className="text-[9.5px] uppercase font-bold text-purple-600 block">Average Compliance Rate</span>
+                              <span className="text-[9.5px] uppercase font-bold text-purple-600 block">Average Compliance</span>
                               <span className="text-xl font-black text-purple-700">{overallAvgPct}%</span>
                             </div>
                           </div>
 
-                          {/* Date Range & Cohort Filter Toolbar */}
-                          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200 items-end">
-                            <div className="space-y-1 sm:col-span-1">
-                              <label className="text-[9.5px] uppercase font-bold text-slate-500">Search Student</label>
-                              <div className="relative">
-                                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                                <input
-                                  type="text"
-                                  placeholder="Search name, roll no..."
-                                  value={studentSearch}
-                                  onChange={e => setStudentSearch(e.target.value)}
-                                  className="w-full pl-8 pr-3 py-1.5 border border-slate-200 bg-white text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold shadow-2xs"
-                                />
+                          {/* Date Range Toolbar with Direct "From" and "To" Pickers */}
+                          <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 space-y-3">
+                            {/* Row 1: Direct From & To Date Pickers and Quick Presets */}
+                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                              {/* From & To Date Inputs */}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">From:</label>
+                                  <input
+                                    type="date"
+                                    value={attendanceStartDate}
+                                    onChange={e => e.target.value && setAttendanceStartDate(e.target.value)}
+                                    className="text-xs font-bold text-slate-800 outline-none cursor-pointer bg-transparent"
+                                  />
+                                </div>
+
+                                <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">To:</label>
+                                  <input
+                                    type="date"
+                                    value={attendanceEndDate}
+                                    onChange={e => e.target.value && setAttendanceEndDate(e.target.value)}
+                                    className="text-xs font-bold text-slate-800 outline-none cursor-pointer bg-transparent"
+                                  />
+                                </div>
+
+                                <span className="text-[11px] font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
+                                  {workingDates.length} date columns
+                                </span>
+                              </div>
+
+                              {/* Preset Chips */}
+                              <div className="flex items-center gap-1.5 flex-wrap text-[11px] font-bold">
+                                <span className="text-slate-400 font-bold text-[10px] uppercase mr-1">Presets:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setPresetDates("all")}
+                                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-all cursor-pointer active:scale-95"
+                                >
+                                  All Semester
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPresetDates("this_month")}
+                                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-all cursor-pointer active:scale-95"
+                                >
+                                  This Month
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPresetDates("past_30")}
+                                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-all cursor-pointer active:scale-95"
+                                >
+                                  Past 30 Days
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPresetDates("past_7")}
+                                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-all cursor-pointer active:scale-95"
+                                >
+                                  Past 7 Days
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPresetDates("jun_2026")}
+                                  className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition-all cursor-pointer active:scale-95"
+                                >
+                                  June
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPresetDates("jul_2026")}
+                                  className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition-all cursor-pointer active:scale-95"
+                                >
+                                  July
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPresetDates("aug_2026")}
+                                  className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition-all cursor-pointer active:scale-95"
+                                >
+                                  August
+                                </button>
                               </div>
                             </div>
 
-                            <div className="space-y-1">
-                              <label className="text-[9.5px] uppercase font-bold text-slate-500">Department</label>
-                              <select
-                                value={studentDeptFilter}
-                                onChange={e => setStudentDeptFilter(e.target.value)}
-                                className="w-full p-2 border border-slate-200 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-2xs"
-                              >
-                                <option value="all">All Departments</option>
-                                {studentDepts.map(d => (
-                                  <option key={d} value={d}>{d}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="space-y-1">
-                              <label className="text-[9.5px] uppercase font-bold text-slate-500">Class Cohort</label>
-                              <select
-                                value={studentBatchFilter}
-                                onChange={e => setStudentBatchFilter(e.target.value)}
-                                className="w-full p-2 border border-slate-200 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-2xs"
-                              >
-                                <option value="all">All Batches</option>
-                                {activeBatches.map(b => (
-                                  <option key={b} value={b}>{b}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="space-y-1">
-                              <label className="text-[9.5px] uppercase font-bold text-slate-500">Date Range View</label>
-                              <select
-                                value={attendanceMonthFilter}
-                                onChange={e => setAttendanceMonthFilter(e.target.value)}
-                                className="w-full p-2 border border-slate-200 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-2xs text-indigo-700"
-                              >
-                                <option value="all">All Semester (15-06-2026 to Today)</option>
-                                <option value="2026-06">June 2026</option>
-                                <option value="2026-07">July 2026</option>
-                                <option value="2026-08">August 2026</option>
-                                <option value="custom">Custom Date Range</option>
-                              </select>
-                            </div>
-
-                            {attendanceMonthFilter === "custom" ? (
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="date"
-                                  value={attendanceStartDate}
-                                  onChange={e => setAttendanceStartDate(e.target.value)}
-                                  className="w-1/2 p-1.5 border border-slate-200 rounded-xl bg-white text-[11px] font-bold text-slate-700 outline-none"
-                                />
-                                <span className="text-slate-400 font-bold text-xs">to</span>
-                                <input
-                                  type="date"
-                                  value={attendanceEndDate}
-                                  onChange={e => setAttendanceEndDate(e.target.value)}
-                                  className="w-1/2 p-1.5 border border-slate-200 rounded-xl bg-white text-[11px] font-bold text-slate-700 outline-none"
-                                />
+                            {/* Row 2: Search, Department & Cohort Filters */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200/80">
+                              <div className="space-y-1">
+                                <label className="text-[9.5px] uppercase font-bold text-slate-500">Search Student</label>
+                                <div className="relative">
+                                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                                  <input
+                                    type="text"
+                                    placeholder="Search name, roll no..."
+                                    value={studentSearch}
+                                    onChange={e => setStudentSearch(e.target.value)}
+                                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 bg-white text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold shadow-2xs"
+                                  />
+                                </div>
                               </div>
-                            ) : (
-                              <div className="p-2 rounded-xl bg-slate-100 text-center text-slate-500 text-[11px] font-bold">
-                                {workingDates.length} columns active
+
+                              <div className="space-y-1">
+                                <label className="text-[9.5px] uppercase font-bold text-slate-500">Department</label>
+                                <select
+                                  value={studentDeptFilter}
+                                  onChange={e => setStudentDeptFilter(e.target.value)}
+                                  className="w-full p-2 border border-slate-200 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-2xs"
+                                >
+                                  <option value="all">All Departments</option>
+                                  {studentDepts.map(d => (
+                                    <option key={d} value={d}>{d}</option>
+                                  ))}
+                                </select>
                               </div>
-                            )}
+
+                              <div className="space-y-1">
+                                <label className="text-[9.5px] uppercase font-bold text-slate-500">Class Cohort</label>
+                                <select
+                                  value={studentBatchFilter}
+                                  onChange={e => setStudentBatchFilter(e.target.value)}
+                                  className="w-full p-2 border border-slate-200 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-2xs"
+                                >
+                                  <option value="all">All Batches</option>
+                                  {activeBatches.map(b => (
+                                    <option key={b} value={b}>{b}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
                           </div>
 
                           {/* Master Multi-Date Attendance Register Table */}
@@ -7578,9 +7744,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   const dateCells = workingDates.map(dStr => {
                                     const dateObj = new Date(dStr + "T00:00:00");
                                     const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
-                                    const stSlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
+                                    const stSlots = getStudentSlots(dayName, st.classGroup);
+                                    const stDayAtt = attendanceMap.get(`${st.id}_${dStr}`) || (st.roll_number ? attendanceMap.get(`${st.roll_number}_${dStr}`) : null) || [];
 
-                                    if (stSlots.length === 0) {
+                                    if (stSlots.length === 0 && stDayAtt.length === 0) {
                                       return (
                                         <td key={dStr} className="p-1.5 text-center border-r border-slate-100 text-slate-300">
                                           <span className="text-[10px]">—</span>
@@ -7590,33 +7757,27 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                                     totalStudentWorkingDays++;
 
-                                    const pCount = stSlots.filter(s => {
-                                      const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
-                                      return att?.status === "present" || att?.status === "od";
-                                    }).length;
-
-                                    const odCount = stSlots.filter(s => {
-                                      const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
-                                      return att?.status === "od";
-                                    }).length;
-
-                                    const aCount = stSlots.filter(s => {
-                                      const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
-                                      return att?.status === "absent";
-                                    }).length;
+                                    const pCount = stDayAtt.filter(a => a.status === "present").length;
+                                    const odCount = stDayAtt.filter(a => a.status === "od").length;
+                                    const aCount = stDayAtt.filter(a => a.status === "absent").length;
+                                    const totalMarked = stDayAtt.length;
+                                    const totalEff = Math.max(stSlots.length, totalMarked);
 
                                     let statusLabel = "—";
                                     let badgeColor = "bg-slate-50 text-slate-400 border-slate-200";
 
-                                    if (odCount === stSlots.length) {
+                                    if (totalMarked === 0) {
+                                      statusLabel = "—";
+                                      badgeColor = "bg-slate-50 text-slate-300 border-slate-200";
+                                    } else if (odCount > 0 && (odCount + pCount >= totalEff)) {
                                       statusLabel = "OD";
                                       badgeColor = "bg-purple-50 text-purple-700 border-purple-200";
                                       presentDays += 1;
-                                    } else if (pCount === stSlots.length) {
+                                    } else if (pCount > 0 && (pCount === totalEff || aCount === 0)) {
                                       statusLabel = "P";
                                       badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200";
                                       presentDays += 1;
-                                    } else if (pCount > 0) {
+                                    } else if (pCount > 0 && aCount > 0) {
                                       statusLabel = "HD";
                                       badgeColor = "bg-amber-50 text-amber-700 border-amber-200";
                                       presentDays += 0.5;
@@ -7627,13 +7788,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       absentDays += 1;
                                     }
 
+                                    const tooltipText = `${st.name} | ${formatDateToDMY(dStr)} (${dayName})\nMarked: ${pCount + odCount}/${totalEff} Periods Present\n${stDayAtt.map((a, i) => `• Period ${i+1}: ${a.status.toUpperCase()}`).join('\n') || "No periods marked yet"}\n(Click to Mark/Edit)`;
+
                                     return (
                                       <td key={dStr} className="p-1.5 text-center border-r border-slate-100">
                                         <button
                                           type="button"
                                           onClick={() => setMarkingStudentForDate({ student: st, dateStr: dStr })}
                                           className={`inline-flex items-center justify-center h-5 w-6 rounded font-black text-[10px] border transition-all cursor-pointer hover:scale-110 active:scale-95 ${badgeColor}`}
-                                          title={`Click to mark/edit periods for ${st.name} on ${dStr}`}
+                                          title={tooltipText}
                                         >
                                           {statusLabel}
                                         </button>
@@ -11825,6 +11988,88 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
                 );
               })()}
+
+              {/* ── Clear Attendance Options Modal (Range vs Entire Semester) ── */}
+              {showClearAttendanceModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans animate-in fade-in">
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-5 animate-in zoom-in-95">
+                    <div className="flex justify-between items-start border-b border-slate-150 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-rose-100 border border-rose-200 text-rose-600 flex items-center justify-center shadow-2xs">
+                          <Trash2 className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-black text-slate-800">Clear Attendance Records</h3>
+                          <p className="text-[11px] text-slate-400 font-semibold">Select the scope of attendance data you wish to wipe</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowClearAttendanceModal(false)}
+                        className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 text-xs">
+                      {/* Option 1: Clear Active Range */}
+                      <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-rose-50/40 hover:border-rose-200 transition-all space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-slate-800 text-xs">1. Clear Active Date Range Only</span>
+                          <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-bold text-[10px] border border-indigo-200">
+                            {formatDateToDMY(attendanceStartDate)} → {formatDateToDMY(attendanceEndDate)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          Deletes attendance entries only within the selected date range. All dates outside this range will remain intact.
+                        </p>
+                        <button
+                          type="button"
+                          disabled={isClearingAttendance}
+                          onClick={handleClearAttendanceForRange}
+                          className="w-full mt-2 py-2 px-3 rounded-xl bg-slate-800 hover:bg-rose-700 text-white font-extrabold text-xs transition-all cursor-pointer shadow-2xs flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>Clear Active Range ({formatDateToDMY(attendanceStartDate)} to {formatDateToDMY(attendanceEndDate)})</span>
+                        </button>
+                      </div>
+
+                      {/* Option 2: Clear Entire Semester */}
+                      <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/40 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-rose-800 text-xs">2. Clear Entire Semester (All Dates)</span>
+                          <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-700 font-extrabold text-[10px]">
+                            Full Reset
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-rose-600/80">
+                          Completely wipes all recorded student attendance entries for the entire college across all historical and current dates.
+                        </p>
+                        <button
+                          type="button"
+                          disabled={isClearingAttendance}
+                          onClick={handleClearAllAttendanceEntireSemester}
+                          className="w-full mt-2 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs transition-all cursor-pointer shadow-2xs flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>Wipe All Semester Attendance</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end pt-2 border-t border-slate-150">
+                      <button
+                        type="button"
+                        onClick={() => setShowClearAttendanceModal(false)}
+                        className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ── Add / Edit Subject Modal Popup (Admin-Style 2-Column Layout) ── */}
               {showSubjectModal && (
