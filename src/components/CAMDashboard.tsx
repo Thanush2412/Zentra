@@ -1603,22 +1603,27 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             } else {
               const parsedColDate = parseDateToYMD(rawCol);
               if (parsedColDate && parsedColDate.length === 10) {
-                const uVal = val.toUpperCase();
-                const status = (uVal === "P" || uVal === "1" || uVal === "1.0" || uVal === "PRESENT")
-                  ? "present"
-                  : (uVal === "A" || uVal === "0" || uVal === "0.0" || uVal === "ABSENT")
-                  ? "absent"
-                  : (uVal === "OD" || uVal === "ON DUTY" || uVal === "ONDUTY")
-                  ? "od"
-                  : (uVal === "HD" || uVal === "HALF DAY" || uVal === "0.5" || uVal === "L" || uVal === "LATE")
-                  ? "late"
-                  : "not_marked";
+                const uVal = val.trim().toUpperCase();
+                const normVal = uVal.replace(/[^A-Z0-9]/g, "");
+
+                let status = "not_marked";
+                if (normVal === "P" || normVal === "PR" || normVal === "PRE" || normVal === "PRESENT" || normVal === "1" || normVal === "10" || normVal === "Y" || normVal === "YES" || normVal === "TRUE") {
+                  status = "present";
+                } else if (normVal === "A" || normVal === "AB" || normVal === "ABS" || normVal === "ABSENT" || normVal === "ABSENTEE" || normVal === "0" || normVal === "00" || normVal === "N" || normVal === "NO" || normVal === "FALSE") {
+                  status = "absent";
+                } else if (normVal === "OD" || normVal === "ONDUTY" || normVal === "DUTY" || normVal === "ML" || normVal === "CL" || normVal === "LEAVE") {
+                  status = "od";
+                } else if (normVal === "HD" || normVal === "HALFDAY" || normVal === "HALF" || normVal === "05" || normVal === "L" || normVal === "LATE" || normVal === "H") {
+                  status = "late";
+                }
+
                 dateMarks[parsedColDate] = status;
                 allDetectedDates.push(parsedColDate);
               } else if (norm.includes("period") || norm.startsWith("p") || norm.includes("slot") || norm.includes("hour")) {
                 const numMatch = norm.match(/\d+/);
                 const pNum = numMatch ? parseInt(numMatch[0], 10) : 1;
-                const cleanVal = val.toUpperCase().startsWith("P") ? "present" : val.toUpperCase().startsWith("A") ? "absent" : val.toUpperCase().startsWith("L") ? "late" : "not_marked";
+                const uVal = val.trim().toUpperCase();
+                const cleanVal = (uVal.startsWith("P") || uVal === "1") ? "present" : (uVal.startsWith("A") || uVal === "0") ? "absent" : (uVal.startsWith("L") || uVal.startsWith("H")) ? "late" : (uVal.startsWith("OD")) ? "od" : "not_marked";
                 periodMarks[`p${pNum}`] = cleanVal;
               }
             }
@@ -1684,7 +1689,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
             const dateObj = new Date(dStr + "T00:00:00");
             const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
-            const daySlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, item.classGroup)));
+            let daySlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, item.classGroup)));
+
+            if (daySlots.length === 0) {
+              // Find any slot for this student's cohort or default to any valid slot in collegeSlots
+              const cohortSlot = collegeSlots.find(s => isCohortMatch(s.classGroup, item.classGroup)) || collegeSlots[0];
+              if (cohortSlot) {
+                daySlots = [cohortSlot];
+              }
+            }
 
             daySlots.forEach(slot => {
               recordsToPost.push({
@@ -2677,8 +2690,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   // Additional derived filters and variables
 
   const activeBatches = useMemo(() => {
-    return Array.from(new Set(collegeSlots.map(s => s.classGroup).filter((g): g is string => Boolean(g))));
-  }, [collegeSlots]);
+    // Derive from STUDENTS (not slots) so the filter matches what students actually have
+    const fromStudents = Array.from(new Set(collegeStudents.map(s => s.classGroup).filter((g): g is string => Boolean(g)))).sort();
+    const fromSlots = Array.from(new Set(collegeSlots.map(s => s.classGroup).filter((g): g is string => Boolean(g))));
+    // Merge: students first, then any slot-only cohorts
+    return Array.from(new Set([...fromStudents, ...fromSlots]));
+  }, [collegeStudents, collegeSlots]);
 
   const classrooms = useMemo(() => {
     const activeCol = colleges.find(c => c.id === activeCollegeId);
@@ -7405,7 +7422,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* 6. ACADEMIC MONITORING / MASTER STUDENT ATTENDANCE DIRECTORY */}
                   {activeTab === "monitoring" && (() => {
-                    const workingDates = getSemesterWorkingDates(attendanceStartDate, attendanceEndDate);
+                    // Use ONLY actual attendance dates (not calendar working days)
+                    // This gives exactly the 48 dates from the imported CSV, not 60 calendar days
+                    const attendanceDateSet = new Set<string>();
+                    (studentAttendance || []).forEach(a => {
+                      if (a.dateStr) attendanceDateSet.add(a.dateStr);
+                    });
+                    const workingDates = attendanceDateSet.size > 0
+                      ? Array.from(attendanceDateSet).filter(d => d >= attendanceStartDate && d <= attendanceEndDate).sort()
+                      : getSemesterWorkingDates(attendanceStartDate, attendanceEndDate);
 
                     // High-Performance O(1) Precomputed Maps (Eliminates all table lag)
                     const attendanceMap = new Map<string, any[]>();
@@ -7437,17 +7462,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     });
 
                     // Overall summary stats
-                    let grandTotalWorkingDays = workingDates.length;
+                    // Compute actual dates with ANY attendance in the attendanceMap (for compliance denominator)
+                    const datesWithAnyAttendance = new Set<string>();
+                    (studentAttendance || []).forEach(a => {
+                      if (a.dateStr && workingDates.includes(a.dateStr)) datesWithAnyAttendance.add(a.dateStr);
+                    });
+                    const actualAttendanceDates = datesWithAnyAttendance.size || workingDates.length;
+
                     let grandPresentDaysSum = 0;
-                    let grandTotalPossibleDays = filtered.length * grandTotalWorkingDays;
+                    let grandMarkedDaysSum = 0; // total days where attendance was actually recorded (per student)
 
                     filtered.forEach(st => {
                       workingDates.forEach(dStr => {
-                        const dateObj = new Date(dStr + "T00:00:00");
-                        const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
-                        const stSlots = getStudentSlots(dayName, st.classGroup);
-                        const stDayAtt = attendanceMap.get(`${st.id}_${dStr}`) || (st.roll_number ? attendanceMap.get(`${st.roll_number}_${dStr}`) : null) || [];
-                        if (stSlots.length === 0 && stDayAtt.length === 0) return;
+                        const stDayAtt = attendanceMap.get(`${st.id}_${dStr}`) || [];
+                        if (stDayAtt.length === 0) return;
+
+                        grandMarkedDaysSum++; // this date was marked for this student
 
                         const pCount = stDayAtt.filter(a => a.status === "present" || a.status === "od").length;
                         const aCount = stDayAtt.filter(a => a.status === "absent").length;
@@ -7457,6 +7487,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       });
                     });
 
+                    // Compliance = present / (students × actual attendance dates)
+                    const grandTotalPossibleDays = filtered.length * actualAttendanceDates;
                     const overallAvgPct = grandTotalPossibleDays > 0 ? Math.round((grandPresentDaysSum / grandTotalPossibleDays) * 100) : 0;
 
                     // Preset helpers
@@ -7493,17 +7525,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     };
 
                     return (
-                      <div className="space-y-6 font-sans">
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+                      <div className="space-y-4 font-sans">
+                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                           {/* Header & Controls Bar */}
-                          <div className="border-b border-slate-150 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                          <div className="border-b border-slate-150 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                             <div>
-                              <div className="flex items-center gap-2">
-                                <h2 className="text-base font-black text-slate-800">Master Student Attendance Directory</h2>
-                                <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-extrabold">
-                                  {workingDates.length} Active Dates ({formatDateToDMY(attendanceStartDate)} to {formatDateToDMY(attendanceEndDate)})
-                                </span>
-                              </div>
+                              <h2 className="text-base font-black text-slate-800">Master Student Attendance Directory</h2>
                               <p className="text-xs text-slate-400 font-semibold mt-0.5">
                                 Master date-wise attendance matrix with real-time period synchronization, Excel import/export, and range filtering.
                               </p>
@@ -7511,28 +7538,29 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                             {/* Action Buttons */}
                             <div className="flex items-center gap-2 flex-wrap">
-                              {/* Download Master Template */}
-                              <button
-                                type="button"
-                                onClick={() => handleDownloadAttendanceTemplate(studentBatchFilter, attendanceStartDate, attendanceEndDate)}
-                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
-                                title="Download master template matching exact date headers format"
-                              >
-                                <Download className="h-3.5 w-3.5 text-slate-600" />
-                                <span>Download Master Template</span>
-                              </button>
-
-                              {/* Import Master Excel */}
-                              <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer active:scale-95">
-                                <Upload className="h-3.5 w-3.5 text-indigo-600" />
-                                <span>Import Attendance (.xlsx)</span>
-                                <input
-                                  type="file"
-                                  accept=".xlsx, .xls, .csv"
-                                  onChange={handleAttendanceFileSelect}
-                                  className="hidden"
-                                />
-                              </label>
+                              {/* Combined Import Button */}
+                              <div className="relative group">
+                                <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold transition-all shadow-sm cursor-pointer active:scale-95">
+                                  <Upload className="h-3.5 w-3.5" />
+                                  <span>Import Attendance</span>
+                                  <input
+                                    type="file"
+                                    accept=".xlsx, .xls, .csv"
+                                    onChange={handleAttendanceFileSelect}
+                                    className="hidden"
+                                  />
+                                </label>
+                                {/* Download template sub-button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadAttendanceTemplate(studentBatchFilter, attendanceStartDate, attendanceEndDate)}
+                                  className="ml-0.5 inline-flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+                                  title="Download blank template to fill attendance"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                  <span>Template</span>
+                                </button>
+                              </div>
 
                               {/* Export Master Excel */}
                               <button
@@ -7542,7 +7570,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 title="Export complete master attendance sheet for all dates to Excel"
                               >
                                 <Download className="h-3.5 w-3.5 text-emerald-600" />
-                                <span>Export Master Excel</span>
+                                <span>Export Excel</span>
                               </button>
 
                               {/* Clear All Attendance */}
@@ -7553,161 +7581,97 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 title="Wipe all recorded attendance for fresh import or testing"
                               >
                                 <Trash2 className="h-3.5 w-3.5 text-rose-600" />
-                                <span>Clear Attendance</span>
+                                <span>Clear</span>
                               </button>
                             </div>
                           </div>
 
-                          {/* Quick Summary Metrics */}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                            <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl shadow-2xs">
-                              <span className="text-[9.5px] uppercase font-bold text-slate-400 block">Total Students</span>
-                              <span className="text-xl font-black text-slate-800">{filtered.length}</span>
+                          {/* Date Range + Filters Toolbar (single compact row) */}
+                          <div className="flex flex-col lg:flex-row lg:items-center gap-3 flex-wrap">
+                            {/* From & To Pickers */}
+                            <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">From:</span>
+                              <input
+                                type="date"
+                                value={attendanceStartDate}
+                                onChange={e => e.target.value && setAttendanceStartDate(e.target.value)}
+                                className="text-xs font-bold text-slate-800 outline-none cursor-pointer bg-transparent"
+                              />
                             </div>
-                            <div className="p-3.5 bg-indigo-50/60 border border-indigo-150 rounded-xl shadow-2xs">
-                              <span className="text-[9.5px] uppercase font-bold text-indigo-600 block">Semester Active Dates</span>
-                              <span className="text-xl font-black text-indigo-700">{workingDates.length} Days</span>
+                            <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">To:</span>
+                              <input
+                                type="date"
+                                value={attendanceEndDate}
+                                onChange={e => e.target.value && setAttendanceEndDate(e.target.value)}
+                                className="text-xs font-bold text-slate-800 outline-none cursor-pointer bg-transparent"
+                              />
                             </div>
-                            <div className="p-3.5 bg-emerald-50/60 border border-emerald-150 rounded-xl shadow-2xs">
-                              <span className="text-[9.5px] uppercase font-bold text-emerald-600 block">Total Days Present</span>
-                              <span className="text-xl font-black text-emerald-700">{grandPresentDaysSum} Days</span>
-                            </div>
-                            <div className="p-3.5 bg-purple-50/60 border border-purple-150 rounded-xl shadow-2xs">
-                              <span className="text-[9.5px] uppercase font-bold text-purple-600 block">Average Compliance</span>
-                              <span className="text-xl font-black text-purple-700">{overallAvgPct}%</span>
-                            </div>
-                          </div>
+                            <span className="text-[11px] font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-200 whitespace-nowrap">
+                              {workingDates.length} date columns
+                            </span>
 
-                          {/* Date Range Toolbar with Direct "From" and "To" Pickers */}
-                          <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 space-y-3">
-                            {/* Row 1: Direct From & To Date Pickers and Quick Presets */}
-                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                              {/* From & To Date Inputs */}
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
-                                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">From:</label>
-                                  <input
-                                    type="date"
-                                    value={attendanceStartDate}
-                                    onChange={e => e.target.value && setAttendanceStartDate(e.target.value)}
-                                    className="text-xs font-bold text-slate-800 outline-none cursor-pointer bg-transparent"
-                                  />
-                                </div>
-
-                                <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
-                                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">To:</label>
-                                  <input
-                                    type="date"
-                                    value={attendanceEndDate}
-                                    onChange={e => e.target.value && setAttendanceEndDate(e.target.value)}
-                                    className="text-xs font-bold text-slate-800 outline-none cursor-pointer bg-transparent"
-                                  />
-                                </div>
-
-                                <span className="text-[11px] font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
-                                  {workingDates.length} date columns
-                                </span>
-                              </div>
-
-                              {/* Preset Chips */}
-                              <div className="flex items-center gap-1.5 flex-wrap text-[11px] font-bold">
-                                <span className="text-slate-400 font-bold text-[10px] uppercase mr-1">Presets:</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setPresetDates("all")}
-                                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-all cursor-pointer active:scale-95"
-                                >
-                                  All Semester
+                            {/* Preset Chips */}
+                            <div className="flex items-center gap-1 flex-wrap text-[11px] font-bold">
+                              {[
+                                { key: "all", label: "All" },
+                                { key: "this_month", label: "This Month" },
+                                { key: "past_30", label: "30D" },
+                                { key: "past_7", label: "7D" },
+                                { key: "jun_2026", label: "Jun" },
+                                { key: "jul_2026", label: "Jul" },
+                                { key: "aug_2026", label: "Aug" },
+                              ].map(p => (
+                                <button key={p.key} type="button" onClick={() => setPresetDates(p.key)}
+                                  className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition-all cursor-pointer active:scale-95 text-[10px]">
+                                  {p.label}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPresetDates("this_month")}
-                                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-all cursor-pointer active:scale-95"
-                                >
-                                  This Month
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPresetDates("past_30")}
-                                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-all cursor-pointer active:scale-95"
-                                >
-                                  Past 30 Days
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPresetDates("past_7")}
-                                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-all cursor-pointer active:scale-95"
-                                >
-                                  Past 7 Days
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPresetDates("jun_2026")}
-                                  className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition-all cursor-pointer active:scale-95"
-                                >
-                                  June
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPresetDates("jul_2026")}
-                                  className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition-all cursor-pointer active:scale-95"
-                                >
-                                  July
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPresetDates("aug_2026")}
-                                  className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition-all cursor-pointer active:scale-95"
-                                >
-                                  August
-                                </button>
-                              </div>
+                              ))}
                             </div>
 
-                            {/* Row 2: Search, Department & Cohort Filters */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200/80">
-                              <div className="space-y-1">
-                                <label className="text-[9.5px] uppercase font-bold text-slate-500">Search Student</label>
-                                <div className="relative">
-                                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                                  <input
-                                    type="text"
-                                    placeholder="Search name, roll no..."
-                                    value={studentSearch}
-                                    onChange={e => setStudentSearch(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 bg-white text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold shadow-2xs"
-                                  />
-                                </div>
-                              </div>
+                            {/* Divider */}
+                            <div className="hidden lg:block w-px h-6 bg-slate-200" />
 
-                              <div className="space-y-1">
-                                <label className="text-[9.5px] uppercase font-bold text-slate-500">Department</label>
-                                <select
-                                  value={studentDeptFilter}
-                                  onChange={e => setStudentDeptFilter(e.target.value)}
-                                  className="w-full p-2 border border-slate-200 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-2xs"
-                                >
-                                  <option value="all">All Departments</option>
-                                  {studentDepts.map(d => (
-                                    <option key={d} value={d}>{d}</option>
-                                  ))}
-                                </select>
-                              </div>
-
-                              <div className="space-y-1">
-                                <label className="text-[9.5px] uppercase font-bold text-slate-500">Class Cohort</label>
-                                <select
-                                  value={studentBatchFilter}
-                                  onChange={e => setStudentBatchFilter(e.target.value)}
-                                  className="w-full p-2 border border-slate-200 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-2xs"
-                                >
-                                  <option value="all">All Batches</option>
-                                  {activeBatches.map(b => (
-                                    <option key={b} value={b}>{b}</option>
-                                  ))}
-                                </select>
-                              </div>
+                            {/* Search */}
+                            <div className="relative">
+                              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+                              <input
+                                type="text"
+                                placeholder="Search name, roll no..."
+                                value={studentSearch}
+                                onChange={e => setStudentSearch(e.target.value)}
+                                className="pl-8 pr-3 py-1.5 border border-slate-200 bg-slate-50 text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold w-44"
+                              />
                             </div>
+
+                            {/* Department filter */}
+                            <select
+                              value={studentDeptFilter}
+                              onChange={e => setStudentDeptFilter(e.target.value)}
+                              className="py-1.5 px-2.5 border border-slate-200 rounded-xl bg-slate-50 text-xs font-bold cursor-pointer outline-none"
+                            >
+                              <option value="all">All Departments</option>
+                              {studentDepts.map(d => (
+                                <option key={d} value={d}>{d}</option>
+                              ))}
+                            </select>
+
+                            {/* Batch filter */}
+                            <select
+                              value={studentBatchFilter}
+                              onChange={e => setStudentBatchFilter(e.target.value)}
+                              className="py-1.5 px-2.5 border border-slate-200 rounded-xl bg-slate-50 text-xs font-bold cursor-pointer outline-none"
+                            >
+                              <option value="all">All Batches</option>
+                              {activeBatches.map(b => (
+                                <option key={b} value={b}>{b}</option>
+                              ))}
+                            </select>
+
+                            {/* Student count badge */}
+                            <span className="text-[10px] font-extrabold text-slate-500 bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200 whitespace-nowrap">
+                              {filtered.length} students
+                            </span>
                           </div>
 
                           {/* Master Multi-Date Attendance Register Table */}
@@ -7745,8 +7709,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     const dateObj = new Date(dStr + "T00:00:00");
                                     const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
                                     const stSlots = getStudentSlots(dayName, st.classGroup);
-                                    const stDayAtt = attendanceMap.get(`${st.id}_${dStr}`) || (st.roll_number ? attendanceMap.get(`${st.roll_number}_${dStr}`) : null) || [];
+                                    const stDayAtt = attendanceMap.get(`${st.id}_${dStr}`) || [];
 
+                                    // Only render blank if there are NO slots AND NO attendance records for this date
                                     if (stSlots.length === 0 && stDayAtt.length === 0) {
                                       return (
                                         <td key={dStr} className="p-1.5 text-center border-r border-slate-100 text-slate-300">
@@ -7760,11 +7725,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     const pCount = stDayAtt.filter(a => a.status === "present").length;
                                     const odCount = stDayAtt.filter(a => a.status === "od").length;
                                     const aCount = stDayAtt.filter(a => a.status === "absent").length;
+                                    const hdCount = stDayAtt.filter(a => a.status === "late" || a.status === "hd").length;
                                     const totalMarked = stDayAtt.length;
                                     const totalEff = Math.max(stSlots.length, totalMarked);
 
                                     let statusLabel = "—";
-                                    let badgeColor = "bg-slate-50 text-slate-400 border-slate-200";
+                                    let badgeColor = "bg-slate-50 text-slate-300 border-slate-200";
 
                                     if (totalMarked === 0) {
                                       statusLabel = "—";
@@ -7773,11 +7739,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       statusLabel = "OD";
                                       badgeColor = "bg-purple-50 text-purple-700 border-purple-200";
                                       presentDays += 1;
-                                    } else if (pCount > 0 && (pCount === totalEff || aCount === 0)) {
+                                    } else if (pCount > 0 && aCount === 0 && hdCount === 0) {
                                       statusLabel = "P";
                                       badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200";
                                       presentDays += 1;
-                                    } else if (pCount > 0 && aCount > 0) {
+                                    } else if (hdCount > 0 || (pCount > 0 && aCount > 0)) {
                                       statusLabel = "HD";
                                       badgeColor = "bg-amber-50 text-amber-700 border-amber-200";
                                       presentDays += 0.5;
@@ -7845,100 +7811,185 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                       {/* Missed Attendance Registry */}
                       {(() => {
+                        const today = new Date();
+                        const todayStr = today.toISOString().split("T")[0];
+
+                        // Build O(1) lookup: covered by slotId or by dateStr only
+                        const coveredSet = new Set<string>();
+                        // Mark covered if any slot record exists with that slotId+date
+                        (studentAttendance || []).forEach(a => {
+                          if (a.dateStr && a.slotId) coveredSet.add(`${a.dateStr}_slot_${a.slotId}`);
+                          // Also mark the whole date as covered if there are ANY records for that date
+                          if (a.dateStr) coveredSet.add(`date_${a.dateStr}`);
+                        });
+
                         const missedAttendanceList = (() => {
-                          const today = new Date();
                           const list: any[] = [];
-                          
-                          for (let i = 0; i < 7; i++) {
+                          for (let i = 1; i <= 7; i++) { // skip today (i=0), check past 7 working days
                             const d = new Date();
                             d.setDate(today.getDate() - i);
-                            
                             const dayName = d.toLocaleDateString("en-US", { weekday: "long" });
+                            // Only check Mon-Fri (or Sat if college has 6 working days)
                             if (!workingDays.includes(dayName)) continue;
-                            
-                            const dateStr = d.toISOString().split("T")[0]; // YYYY-MM-DD
-                            
+                            const dateStr = d.toISOString().split("T")[0];
+
                             const daySlots = slots.filter(s => {
                               const m = mentors.find(men => men.id === s.mentorId);
                               const matchesCollege = m && (m.college_id === activeCollegeId || (!m.college_id && activeCollegeId === "college_1"));
                               return matchesCollege && s.day === dayName;
                             });
-                            
+
+                            // DEDUPLICATE: one entry per mentor+course+time (eliminates 4x cohort duplicates)
+                            const seen = new Set<string>();
                             daySlots.forEach(s => {
-                              const hasAtt = studentAttendance.some(a => a.slotId === s.id && a.dateStr === dateStr);
-                              if (!hasAtt) {
+                              const dedupKey = `${s.mentorId}__${(s.course || "").toLowerCase()}__${s.time || ""}`;
+                              if (seen.has(dedupKey)) return;
+                              seen.add(dedupKey);
+
+                              const coveredBySlot = coveredSet.has(`${dateStr}_slot_${s.id}`);
+                              const coveredByDate = coveredSet.has(`date_${dateStr}`);
+                              if (!coveredBySlot && !coveredByDate) {
                                 const mentorObj = mentors.find(m => m.id === s.mentorId);
                                 list.push({
                                   slot: s,
                                   dateStr,
                                   dayName,
                                   mentor: mentorObj,
-                                  id: `${s.id}_${dateStr}`
+                                  id: `${s.mentorId}_${s.course}_${s.time}_${dateStr}`
                                 });
                               }
                             });
                           }
-                          
                           return list;
                         })();
 
+                        // Group by mentor for summary
+                        const byMentor = new Map<string, typeof missedAttendanceList>();
+                        missedAttendanceList.forEach(item => {
+                          const key = item.mentor?.id || "unknown";
+                          if (!byMentor.has(key)) byMentor.set(key, []);
+                          byMentor.get(key)!.push(item);
+                        });
+
                         return (
-                          <div className="bg-white p-6 rounded-xl border border-slate-205 shadow-sm space-y-4">
-                            <div>
-                              <h2 className="text-base font-black text-slate-905 flex items-center gap-2">
-                                <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span>
-                                Faculty Attendance Compliance (Missed Markings)
-                              </h2>
-                              <p className="text-xs text-slate-400 font-semibold mt-0.5">Sessions in the past 7 days where attendance logs have not been submitted.</p>
+                          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div>
+                                <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+                                  {missedAttendanceList.length > 0
+                                    ? <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+                                    : <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                                  }
+                                  Faculty Attendance Compliance
+                                </h2>
+                                <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                                  Past 7 days — sessions where student attendance was not recorded.
+                                </p>
+                              </div>
+                              {/* Summary badges */}
+                              <div className="flex items-center gap-2 text-[11px] font-bold">
+                                {missedAttendanceList.length > 0 ? (
+                                  <>
+                                    <span className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-700">
+                                      {missedAttendanceList.length} missed sessions
+                                    </span>
+                                    <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700">
+                                      {byMentor.size} faculty affected
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700">
+                                    ✓ All sessions compliant
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
-                            <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
-                              <table className="w-full border-collapse text-left text-xs font-semibold min-w-[500px]">
-                                <thead>
-                                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
-                                    <th className="p-3 border-r border-slate-100">Date / Slot</th>
-                                    <th className="p-3 border-r border-slate-100">Class Group</th>
-                                    <th className="p-3 border-r border-slate-100">Subject</th>
-                                    <th className="p-3 border-r border-slate-100">Faculty Mentor</th>
-                                    <th className="p-3 text-center">Action</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                                  {missedAttendanceList.map(item => (
-                                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                                      <td className="p-3 font-bold text-slate-805 border-r border-slate-100">
-                                        {item.dateStr}
-                                        <span className="text-[9.5px] text-slate-400 font-semibold block mt-0.5">{item.dayName} • {item.slot.time}</span>
-                                      </td>
-                                      <td className="p-3 font-bold text-slate-500 border-r border-slate-100">{item.slot.classGroup}</td>
-                                      <td className="p-3 border-r border-slate-100">{item.slot.course}</td>
-                                      <td className="p-3 border-r border-slate-100">
-                                        <div className="font-bold text-slate-805">{item.mentor?.name || "Unknown Mentor"}</div>
-                                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{item.mentor?.email || "—"}</div>
-                                      </td>
-                                      <td className="p-3 text-center">
-                                        <Button
-                                          variant="danger"
-                                          size="xs"
-                                          onClick={() => handleSendWarningEmail(item)}
-                                          disabled={emailSendingId === item.id}
-                                          icon={emailSendingId === item.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
-                                        >
-                                          {emailSendingId === item.id ? "Sending Alert..." : "Send Alert Email"}
-                                        </Button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                  {missedAttendanceList.length === 0 && (
-                                    <tr>
-                                      <td colSpan={5} className="p-8 text-center text-emerald-600 font-extrabold italic">
-                                        Yes All faculty members have marked attendance compliant logs for this week.
-                                      </td>
-                                    </tr>
-                                  )}
-                                </tbody>
-                              </table>
-                            </div>
+                            {missedAttendanceList.length === 0 ? (
+                              <div className="py-10 text-center">
+                                <div className="text-3xl mb-2">✅</div>
+                                <p className="text-emerald-600 font-extrabold text-sm">All faculty have marked attendance this week.</p>
+                                <p className="text-xs text-slate-400 font-semibold mt-1">No missed sessions in the past 7 working days.</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {Array.from(byMentor.entries()).map(([mentorId, items]) => {
+                                  const mentor = items[0].mentor;
+                                  return (
+                                    <div key={mentorId} className="border border-rose-100 rounded-xl overflow-hidden">
+                                      {/* Mentor header */}
+                                      <div className="flex items-center justify-between px-4 py-2.5 bg-rose-50/60 border-b border-rose-100">
+                                        <div className="flex items-center gap-2.5">
+                                          <div className="h-7 w-7 rounded-full bg-rose-200 flex items-center justify-center text-rose-700 font-black text-xs">
+                                            {(mentor?.name || "?")[0].toUpperCase()}
+                                          </div>
+                                          <div>
+                                            <div className="text-xs font-extrabold text-slate-800">{mentor?.name || "Unknown Mentor"}</div>
+                                            <div className="text-[10px] text-slate-400 font-mono">{mentor?.email || "—"}</div>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-[10px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">
+                                            {items.length} missed
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleSendWarningEmail(items[0])}
+                                            disabled={emailSendingId === items[0].id}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 text-[10px] font-bold transition-all cursor-pointer"
+                                          >
+                                            <Mail className="h-3 w-3" />
+                                            {emailSendingId === items[0].id ? "Sending..." : "Send Alert"}
+                                          </button>
+                                        </div>
+                                      </div>
+                                      {/* Log entries — group by subject+time, show dates as circles */}
+                                      <div className="px-4 py-3 flex flex-wrap gap-2">
+                                        {/* Group items by subject */}
+                                        {(() => {
+                                          const bySubject = new Map<string, typeof items>();
+                                          items.forEach(item => {
+                                            const key = `${item.slot.course || "—"} (${item.slot.time || "—"})`;
+                                            if (!bySubject.has(key)) bySubject.set(key, []);
+                                            bySubject.get(key)!.push(item);
+                                          });
+                                          return Array.from(bySubject.entries()).map(([subjectKey, subItems]) => {
+                                            // Deduplicate dates within this subject group
+                                            const seenDates = new Set<string>();
+                                            const uniqueItems = subItems.filter(item => {
+                                              if (seenDates.has(item.dateStr)) return false;
+                                              seenDates.add(item.dateStr);
+                                              return true;
+                                            });
+                                            return (
+                                              <div key={subjectKey} className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md whitespace-nowrap">
+                                                  {subjectKey}
+                                                </span>
+                                                {uniqueItems.map(item => {
+                                                  const [, , dd] = item.dateStr.split("-");
+                                                  const dayAbbr = item.dayName.slice(0, 3); // Mon, Tue...
+                                                  return (
+                                                    <span
+                                                      key={item.dateStr}
+                                                      title={`${item.dayName}, ${item.dateStr}`}
+                                                      className="flex flex-col items-center justify-center h-8 w-8 rounded-full bg-rose-100 border border-rose-300 text-rose-700 cursor-default hover:bg-rose-200 transition-colors"
+                                                    >
+                                                      <span className="text-[7px] font-bold leading-none">{dayAbbr}</span>
+                                                      <span className="text-[9px] font-black leading-none">{dd}</span>
+                                                    </span>
+                                                  );
+                                                })}
+                                              </div>
+                                            );
+                                          });
+                                        })()}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
@@ -11841,7 +11892,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 const dateObj = new Date(dStr + "T00:00:00");
                 const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
                 const stSlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
-                const sortedSlots = sortSlotsByTime(stSlots);
+                // Deduplicate: keep only one slot per unique time+course combination
+                // Prefer exact classGroup match over wildcard match to get the right slotId for attendance
+                const slotDedupeMap = new Map<string, typeof stSlots[0]>();
+                stSlots.forEach(s => {
+                  const key = `${s.time || ""}__${(s.course || "").toLowerCase()}`;
+                  const existing = slotDedupeMap.get(key);
+                  if (!existing) {
+                    slotDedupeMap.set(key, s);
+                  } else {
+                    // Prefer exact classGroup match
+                    const exactMatch = s.classGroup && st.classGroup && s.classGroup.trim().toLowerCase() === st.classGroup.trim().toLowerCase();
+                    const existingExact = existing.classGroup && st.classGroup && existing.classGroup.trim().toLowerCase() === st.classGroup.trim().toLowerCase();
+                    if (exactMatch && !existingExact) slotDedupeMap.set(key, s);
+                  }
+                });
+                const sortedSlots = sortSlotsByTime(Array.from(slotDedupeMap.values()));
 
                 return (
                   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">

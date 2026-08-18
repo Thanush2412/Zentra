@@ -199,14 +199,22 @@ export async function POST(request: Request) {
       const nowStr = new Date().toISOString();
       const statements: Array<{ sql: string; args: any[] }> = [];
 
+      // Pre-fetch all valid slot IDs and student IDs to prevent foreign key errors
+      const validSlots = await db.all("SELECT id FROM slots");
+      const validSlotIds = new Set(validSlots.map((s: any) => s.id));
+      const fallbackSlotId = validSlots.length > 0 ? validSlots[0].id : null;
+
       for (const item of records) {
         const { studentId, slotId, dateStr, status } = item;
-        if (!studentId || !slotId || !dateStr || !status) continue;
+        if (!studentId || !dateStr || !status) continue;
+
+        const effectiveSlotId = validSlotIds.has(slotId) ? slotId : fallbackSlotId;
+        if (!effectiveSlotId) continue;
 
         if (status === "not_marked") {
           statements.push({
             sql: "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
-            args: [studentId, slotId, dateStr]
+            args: [studentId, effectiveSlotId, dateStr]
           });
         } else {
           const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -215,7 +223,7 @@ export async function POST(request: Request) {
                   VALUES (?, ?, ?, ?, ?, ?, ?)
                   ON CONFLICT(studentId, slotId, dateStr) 
                   DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp`,
-            args: [recordId, studentId, slotId, dateStr, status, markedBy || "Master Import", nowStr]
+            args: [recordId, studentId, effectiveSlotId, dateStr, status, markedBy || "Master Import", nowStr]
           });
         }
       }

@@ -60,8 +60,8 @@ export async function GET(request: Request) {
     const attendanceSql = (role === "student" && userId)
       ? "SELECT * FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 500"
       : collegeId
-        ? "SELECT sa.* FROM student_attendance sa JOIN students s ON sa.studentId = s.id WHERE s.college_id = ? ORDER BY sa.dateStr DESC LIMIT 2000"
-        : "SELECT * FROM student_attendance ORDER BY dateStr DESC LIMIT 1000";
+        ? "SELECT sa.* FROM student_attendance sa JOIN students s ON sa.studentId = s.id WHERE s.college_id = ? ORDER BY sa.dateStr ASC"
+        : "SELECT * FROM student_attendance ORDER BY dateStr ASC LIMIT 5000";
     const attendanceParams = (role === "student" && userId) ? [userId] : collegeId ? [collegeId] : [];
 
     const isStudentOrMentor = role === "student" || role === "mentor";

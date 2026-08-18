@@ -154,6 +154,18 @@ export function parseDateToYMD(val?: any): string {
     }
   }
 
+  // Handle malformed Excel CSV dates like "2/726" or "3/726"
+  // These are D/MMYY where the slash between M and YY is missing
+  // e.g. "2/726" = day=2, month=7, year=26 = 2026-07-02
+  const malformedMatch = str.match(/^(\d{1,2})\/(\d)(\d{2})$/);
+  if (malformedMatch) {
+    const day = malformedMatch[1].padStart(2, "0");
+    const month = malformedMatch[2].padStart(2, "0");
+    const yr = parseInt(malformedMatch[3], 10);
+    const year = yr > 40 ? `19${malformedMatch[3]}` : `20${malformedMatch[3]}`;
+    return `${year}-${month}-${day}`;
+  }
+
   // Handle DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
   const dmyMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
   if (dmyMatch) {
