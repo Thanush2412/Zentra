@@ -35,13 +35,12 @@ export async function POST(request: Request) {
     );
     const kamId = originCollege?.kam_id;
 
-    // Fetch all colleges under KAM (or all colleges across DB)
+    // Fetch all colleges under KAM (strictly colleges under this KAM)
     let regionalColleges: any[] = [];
     if (kamId) {
       regionalColleges = await db.all("SELECT * FROM colleges WHERE kam_id = ?", [kamId]);
-    }
-    if (!regionalColleges || regionalColleges.length <= 1) {
-      regionalColleges = await db.all("SELECT * FROM colleges");
+    } else {
+      regionalColleges = await db.all("SELECT * FROM colleges WHERE id = ?", [interview.origin_college_id || interview.college_id]);
     }
 
     // Insert pending CAM capacity request rows for each regional college

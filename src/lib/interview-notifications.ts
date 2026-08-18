@@ -53,13 +53,12 @@ export async function dispatchExternalInterviewNotifications(
     const originCollege = await db.get("SELECT * FROM colleges WHERE id = ?", [originCollegeId]);
     const kamId = originCollege?.kam_id;
 
-    // 2. Fetch all colleges managed by this KAM (Region/Cluster colleges or all DB colleges)
+    // 2. Fetch all colleges managed by this KAM (Region/Cluster colleges)
     let regionalColleges: any[] = [];
     if (kamId) {
       regionalColleges = await db.all("SELECT * FROM colleges WHERE kam_id = ?", [kamId]);
-    }
-    if (!regionalColleges || regionalColleges.length <= 1) {
-      regionalColleges = await db.all("SELECT * FROM colleges");
+    } else {
+      regionalColleges = await db.all("SELECT * FROM colleges WHERE id = ?", [originCollegeId]);
     }
 
     const regionalCollegeIds = regionalColleges.map((c: any) => c.id).filter(Boolean);

@@ -1045,7 +1045,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   currentUserName = "User",
   defaultCollegeId
 }) => {
-  const { currentMentor, students, mentors, slots, colleges } = useApp();
+  const { currentMentor, currentKAM, students, mentors, slots, colleges } = useApp();
   const { toast } = useToast();
 
   const [dbColleges, setDbColleges] = useState<any[]>([]);
@@ -1184,6 +1184,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       params.set("role", currentUserRole);
       if (currentMentor?.id) params.set("mentorId", currentMentor.id);
       if (defaultCollegeId) params.set("collegeId", defaultCollegeId);
+      if (currentKAM?.id) params.set("kamId", currentKAM.id);
 
       const res = await fetch(`/api/interviews?${params}`);
       const data = await res.json();
@@ -1198,7 +1199,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     }
   };
 
-  useEffect(() => { fetchInterviews(); }, [currentMentor?.id, defaultCollegeId, currentUserRole]);
+  useEffect(() => { fetchInterviews(); }, [currentMentor?.id, defaultCollegeId, currentKAM?.id, currentUserRole]);
 
   // Auto-select first subject/class
   useEffect(() => {
@@ -1699,8 +1700,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           return false;
         }
 
-        if (isHost) {
-          // Host CAM has action items if unallocated students remain or pending stages
+        if (i.type === "internal") {
+          // Internal requests are strictly inside this campus
+          if (!isHost) return false;
           return (
             remainingUnallocated > 0 ||
             s.includes("pending") ||
@@ -1709,10 +1711,19 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
             s === "draft"
           );
         } else {
-          // Partner CAM (e.g. SRM, SSN, Loyola):
-          // As long as there are still unallocated students in the zone (e.g. 11 remaining),
-          // ALL partner CAMs must see it in Pending Allocations until 100% fulfilled!
-          return remainingUnallocated > 0 && s !== "draft" && s !== "pending_origin_cm";
+          // External requests
+          if (isHost) {
+            return (
+              remainingUnallocated > 0 ||
+              s.includes("pending") ||
+              s === "capacity_partially_accepted" ||
+              s === "priority_allocation" ||
+              s === "draft"
+            );
+          } else {
+            // Partner CAM under same KAM:
+            return remainingUnallocated > 0 && s !== "draft" && s !== "pending_origin_cm";
+          }
         }
       })
       .sort((a, b) => {
