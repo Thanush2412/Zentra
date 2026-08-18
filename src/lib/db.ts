@@ -926,6 +926,22 @@ export function getDb(): Promise<TursoDbAdapter> {
         try { await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN working_days INTEGER DEFAULT 5;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE campus_daily_configs ADD COLUMN session_mode TEXT DEFAULT 'Offline';`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE students ADD COLUMN correction_count INTEGER DEFAULT 0;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE students ADD COLUMN hire_score TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE students ADD COLUMN efset_score TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE students ADD COLUMN mother_name TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE students ADD COLUMN father_name TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE students ADD COLUMN pan_number TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE academic_events ADD COLUMN end_date TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE academic_events ADD COLUMN category TEXT DEFAULT 'Coding Fest & Hackathon';`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE academic_events ADD COLUMN department TEXT DEFAULT 'All Departments';`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE academic_events ADD COLUMN audience TEXT DEFAULT 'All Campus';`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE academic_events ADD COLUMN status TEXT DEFAULT 'Upcoming';`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE academic_events ADD COLUMN venue TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE academic_events ADD COLUMN college_id TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE academic_events ADD COLUMN photos TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE academic_events ADD COLUMN coordinator TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE academic_events ADD COLUMN chief_guest TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE academic_events ADD COLUMN registration_link TEXT;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE student_attendance ADD COLUMN type TEXT DEFAULT 'Regular';`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE student_attendance ADD COLUMN mode TEXT DEFAULT 'Offline';`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE student_attendance ADD COLUMN attendanceTypeSub TEXT;`); } catch (_) { }

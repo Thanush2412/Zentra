@@ -26,7 +26,8 @@ import {
   Calendar,
   Globe,
   Check,
-  RefreshCw
+  RefreshCw,
+  CalendarCheck2
 } from "lucide-react";
 
 interface DashboardLayoutProps {
@@ -239,8 +240,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
   return (
     <div className="h-screen flex flex-col font-sans bg-warm-canvas text-gray-800 transition-colors duration-200 overflow-hidden">
-      {/* Compact 75% Width Global Header */}
-      <header className="floating-header w-[95%] sm:w-[85%] md:w-[80%] lg:w-[75%] max-w-[1200px] mx-auto self-center mt-2.5 md:mt-4 px-3 sm:px-6 py-2.5 md:py-4 flex items-center justify-between z-30 transition-all rounded-xl border border-slate-200/80 shadow-md bg-white/80 backdrop-blur-md">
+      {/* Balanced Centered Global Header + Compact Right Floating Team Attendance Pill */}
+      <div className="relative w-[92%] sm:w-[82%] md:w-[74%] lg:w-[66%] max-w-[1040px] mx-auto self-center mt-2.5 md:mt-4 z-30 shrink-0">
+        <header className="floating-header w-full px-3 sm:px-6 py-2.5 md:py-4 flex items-center justify-between transition-all rounded-xl border border-slate-200/80 shadow-md bg-white/80 backdrop-blur-md">
         {/* Left: Brand */}
         <div className="flex items-center gap-3 shrink-0">
           <img src="/E-Campus.png" alt="FACE Prep E-Campus Logo" className="h-7 sm:h-9 md:h-10 w-auto object-contain shrink-0 max-h-10" />
@@ -545,8 +547,31 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
               </div>
             )}
           </div>
+
         </div>
       </header>
+
+      {/* Compact Separate Floating Pill Card placed to the right of the main header */}
+      {currentRole === "cam" && (
+        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2.5 flex items-center">
+          <div className="floating-header px-2 py-1 flex items-center justify-center transition-all rounded-xl border border-slate-200/80 shadow-sm bg-white/90 backdrop-blur-md animate-fadeIn">
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(new CustomEvent("fp_navigate_tab", { detail: "mentor_attendance" }));
+                }
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-[#D528A2] via-pink-600 to-rose-500 text-white font-extrabold text-[11px] tracking-tight shadow-xs hover:shadow-md hover:scale-102 active:scale-98 transition-all cursor-pointer whitespace-nowrap shrink-0"
+              title="Team Attendance Management"
+            >
+              <CalendarCheck2 className="h-3.5 w-3.5 text-white shrink-0" />
+              <span className="font-extrabold">Team Attendance</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
 
       {/* Main Workspace Dashboard Content */}
       <main className="flex-grow flex flex-col relative overflow-hidden">

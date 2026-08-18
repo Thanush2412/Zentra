@@ -8,6 +8,9 @@ export function isTimeSlotMatch(t1?: string, t2?: string): boolean {
   const norm = (s: string) => {
     return s
       .toLowerCase()
+      .replace(/p\.m/g, "pm")
+      .replace(/a\.m/g, "am")
+      .replace(/to/g, "-")
       .replace(/\./g, ":")
       .replace(/\s+/g, "")
       .replace(/(\D)0(\d)/g, "$1$2")
@@ -23,6 +26,55 @@ export function isCohortMatch(c1?: string, c2?: string): boolean {
   const norm1 = c1.toLowerCase().replace(/[^a-z0-9]/g, "");
   const norm2 = c2.toLowerCase().replace(/[^a-z0-9]/g, "");
   return norm1 === norm2 || norm1.includes(norm2) || norm2.includes(norm1);
+}
+
+export function isDeptSubjectMatch(subDept?: string, dName?: string, dCode?: string): boolean {
+  if (!subDept || !dName) return false;
+  const norm = (str: string) => (str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const nSub = norm(subDept);
+  const nName = norm(dName);
+  if (nSub === nName) return true;
+  if (dCode && nSub === norm(dCode)) return true;
+  const baseSub = norm(subDept.replace(/\s*-\s*(Semester|Sem|Year|Yr|Shift|Batch)\s*\d+/gi, ""));
+  const baseName = norm(dName.replace(/\s*-\s*(Semester|Sem|Year|Yr|Shift|Batch)\s*\d+/gi, ""));
+  return baseSub === baseName || (nSub.length > 3 && nName.length > 3 && (nSub.includes(nName) || nName.includes(nSub)));
+}
+
+export function isSameYear(sYear?: string | number, targetYrStr?: string, sSem?: string): boolean {
+  const targetYrNum = targetYrStr ? parseInt(String(targetYrStr).replace(/\D/g, ""), 10) : 0;
+
+  if (sYear !== undefined && sYear !== null && sYear !== "") {
+    const s = String(sYear).toLowerCase().trim();
+    const t = (targetYrStr || "").toLowerCase().trim();
+    if (s === t) return true;
+    const sNum = parseInt(s.replace(/\D/g, ""), 10);
+    if (sNum && targetYrNum && sNum === targetYrNum) return true;
+    if (targetYrNum === 1 && (s === "year i" || s === "1" || s === "year 1" || s === "i")) return true;
+    if (targetYrNum === 2 && (s === "year ii" || s === "2" || s === "year 2" || s === "ii")) return true;
+    if (targetYrNum === 3 && (s === "year iii" || s === "3" || s === "year 3" || s === "iii")) return true;
+    if (targetYrNum === 4 && (s === "year iv" || s === "4" || s === "year 4" || s === "iv")) return true;
+  }
+
+  // Fallback: Infer year from semester if sYear is missing or not matching
+  if (sSem && targetYrNum) {
+    const semNum = parseInt(String(sSem).replace(/\D/g, ""), 10);
+    if (semNum) {
+      const inferredYr = Math.ceil(semNum / 2);
+      if (inferredYr === targetYrNum) return true;
+    }
+  }
+
+  return false;
+}
+
+export function isSameSemester(sSem?: string, targetSemStr?: string): boolean {
+  if (!sSem || !targetSemStr) return false;
+  const s = String(sSem).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const t = String(targetSemStr).toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (s === t) return true;
+  const sNum = s.match(/\d+/)?.[0];
+  const tNum = t.match(/\d+/)?.[0];
+  return !!(sNum && tNum && sNum === tNum);
 }
 
 export function cn(...inputs: ClassValue[]) {
@@ -65,6 +117,83 @@ export function formatDate(dateString: string): string {
   } catch (e) {
     return dateString;
   }
+}
+
+export function parseDateToYMD(val?: any): string {
+  if (!val) return "";
+  if (val instanceof Date) {
+    if (!isNaN(val.getTime())) {
+      return val.toISOString().split("T")[0];
+    }
+    return "";
+  }
+  const str = String(val).trim();
+  if (!str) return "";
+
+  // If it's a numeric Excel serial (e.g. 38456 or 39164 or 44560)
+  if (/^\d{4,6}$/.test(str)) {
+    const serial = Number(str);
+    if (serial > 10000 && serial < 100000) {
+      // Excel epoch starts at 1899-12-30 (25569 days to 1970-01-01)
+      const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().split("T")[0];
+      }
+    }
+  }
+
+  // If it's an ISO string containing Excel serial (e.g., +039164-01-01...)
+  const isoSerialMatch = str.match(/\+0*(\d{5})/);
+  if (isoSerialMatch) {
+    const serial = parseInt(isoSerialMatch[1], 10);
+    if (serial > 10000 && serial < 100000) {
+      const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().split("T")[0];
+      }
+    }
+  }
+
+  // Handle DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, "0");
+    const month = dmyMatch[2].padStart(2, "0");
+    let year = dmyMatch[3];
+    if (year.length === 2) {
+      year = parseInt(year, 10) > 40 ? `19${year}` : `20${year}`;
+    }
+    return `${year}-${month}-${day}`;
+  }
+
+  // Handle YYYY-MM-DD
+  const ymdMatch = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = ymdMatch[2].padStart(2, "0");
+    const day = ymdMatch[3].padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  // Fallback to standard JS Date
+  try {
+    const d = new Date(str);
+    if (!isNaN(d.getTime()) && d.getFullYear() > 1900 && d.getFullYear() < 2100) {
+      return d.toISOString().split("T")[0];
+    }
+  } catch (_) {}
+
+  return str;
+}
+
+export function formatDisplayDob(val?: string): string {
+  if (!val) return "—";
+  const ymd = parseDateToYMD(val);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    const [y, m, d] = ymd.split("-");
+    return `${d}/${m}/${y}`;
+  }
+  return ymd || "—";
 }
 
 export function parseDbDate(dStr?: string): Date {

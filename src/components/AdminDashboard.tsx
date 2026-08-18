@@ -48,7 +48,7 @@ import {
   Power,
   CheckCircle2
 } from "lucide-react";
-import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak } from "@/lib/utils";
+import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak, isDeptSubjectMatch, isSameYear, isSameSemester } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 import { LoadingButton } from "./ui/LoadingButton";
 import { Pagination } from "@/components/ui/Pagination";
@@ -3536,7 +3536,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <div className="space-y-3">
                               {filteredDepts.map((dept) => {
                                 const facultyCount = mentors.filter(m => isMentorInProgram(m, dept.name, slots, subjectsList)).length;
-                                const deptSubjects = (subjectsList || []).filter(s => s.department === dept.name);
+                                const deptSubjects = (subjectsList || []).filter(s => isDeptSubjectMatch(s.department, dept.name, dept.code));
                                 const isDeptExpanded = expandedDepts[dept.id];
                                 const deptSlots = slots.filter(s => (s.department || getDeptFromClassGroup(s.classGroup)) === dept.name);
 
@@ -3660,25 +3660,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                                           {Array.from({ length: dept.years ? Number(dept.years) : 4 }, (_, i) => `Year ${i + 1}`).map((yr, i) => {
-                                            const isSameYear = (sYear?: string, targetYrStr?: string) => {
-                                              if (!sYear || !targetYrStr) return false;
-                                              const s = sYear.toLowerCase().trim();
-                                              const t = targetYrStr.toLowerCase().trim();
-                                              if (s === t) return true;
-                                              if (t === "year 1" && (s === "year i" || s === "1" || s === "year 1")) return true;
-                                              if (t === "year 2" && (s === "year ii" || s === "2" || s === "year 2")) return true;
-                                              if (t === "year 3" && (s === "year iii" || s === "3" || s === "year 3")) return true;
-                                              if (t === "year 4" && (s === "year iv" || s === "4" || s === "year 4")) return true;
-                                              return false;
-                                            };
-                                            const yrSubjects = deptSubjects.filter(s => isSameYear(s.year, yr) && (searchQuery === "" || s.name.toLowerCase().includes(searchQuery.toLowerCase())));
+                                            const yrSubjects = deptSubjects.filter(s => isSameYear(s.year, yr, s.semester) && (searchQuery === "" || s.name.toLowerCase().includes(searchQuery.toLowerCase())));
                                             const yearKey = `${dept.id}_${yr}`;
                                             const isYearExpanded = expandedDeptYears[yearKey] !== false; // default to expanded/true
 
                                             const semOdd = `Semester ${2 * (i + 1) - 1}`;
                                             const semEven = `Semester ${2 * (i + 1)}`;
-                                            const oddCount = yrSubjects.filter(s => s.semester === semOdd).length;
-                                            const evenCount = yrSubjects.filter(s => s.semester === semEven).length;
+                                            const semOddSubjects = yrSubjects.filter(s => isSameSemester(s.semester, semOdd));
+                                            const semEvenSubjects = yrSubjects.filter(s => isSameSemester(s.semester, semEven));
+                                            const oddCount = semOddSubjects.length;
+                                            const evenCount = semEvenSubjects.length;
 
                                             return (
                                               <div key={yr} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col">
@@ -3727,7 +3718,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                         <span className="font-extrabold text-[10px] uppercase tracking-wider text-indigo-700">{semOdd}</span>
                                                         <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{oddCount} subject(s)</span>
                                                       </div>
-                                                      {yrSubjects.filter(s => s.semester === semOdd).length === 0 ? (
+                                                      {semOddSubjects.length === 0 ? (
                                                         <div className="text-center py-6 text-gray-400 italic text-[10px] my-auto">No subjects mapped to {semOdd} yet.</div>
                                                       ) : (
                                                         <div className="overflow-x-auto">
@@ -3741,7 +3732,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                               </tr>
                                                             </thead>
                                                             <tbody className="divide-y divide-gray-100">
-                                                              {yrSubjects.filter(s => s.semester === semOdd).map((sub, sIdx) => (
+                                                              {semOddSubjects.map((sub, sIdx) => (
                                                                 <tr key={`${sub.id || sub.name}_${sIdx}`} className="hover:bg-gray-50/30 transition-colors">
                                                                   <td className="px-2 py-2">
                                                                     <div className="font-bold text-gray-900 leading-tight">
@@ -3811,7 +3802,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                         <span className="font-extrabold text-[10px] uppercase tracking-wider text-purple-700">{semEven}</span>
                                                         <span className="bg-purple-50 border border-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{evenCount} subject(s)</span>
                                                       </div>
-                                                      {yrSubjects.filter(s => s.semester === semEven).length === 0 ? (
+                                                      {semEvenSubjects.length === 0 ? (
                                                         <div className="text-center py-6 text-gray-400 italic text-[10px] my-auto">No subjects mapped to {semEven} yet.</div>
                                                       ) : (
                                                         <div className="overflow-x-auto">
@@ -3825,7 +3816,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                               </tr>
                                                             </thead>
                                                             <tbody className="divide-y divide-gray-100">
-                                                              {yrSubjects.filter(s => s.semester === semEven).map((sub, sIdx) => (
+                                                              {semEvenSubjects.map((sub, sIdx) => (
                                                                 <tr key={`${sub.id || sub.name}_${sIdx}`} className="hover:bg-gray-50/30 transition-colors">
                                                                   <td className="px-2 py-2">
                                                                     <div className="font-bold text-gray-900 leading-tight">

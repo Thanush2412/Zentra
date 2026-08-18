@@ -1421,29 +1421,32 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
     if (clean1 === clean2) return true;
 
+    const norm1 = clean1.replace(/[^a-z0-9]/g, "");
+    const norm2 = clean2.replace(/[^a-z0-9]/g, "");
+
+    if (norm1 === norm2 || (norm1.length > 5 && norm2.length > 5 && (norm1.includes(norm2) || norm2.includes(norm1)))) return true;
+
     const course1 = findCourseForClassGroup(cg1);
     const course2 = findCourseForClassGroup(cg2);
 
     const s1 = getSemForClass(cg1);
     const s2 = getSemForClass(cg2);
 
-    // If the resolved DB courses match, and the normalized semesters match, it's a match!
     if (course1 && course2 && course1.id === course2.id) {
-      if (s1 && s2 && s1.toLowerCase() === s2.toLowerCase()) {
+      if (!s1 || !s2 || s1.toLowerCase() === s2.toLowerCase()) {
         return true;
       }
     }
 
-    // Fallback: name comparison if courses aren't resolved
     const { name: name1 } = getShortClassGroup(cg1);
     const { name: name2 } = getShortClassGroup(cg2);
-    if (name1 && name2 && name1.toLowerCase() === name2.toLowerCase()) {
-      if (s1 && s2 && s1.toLowerCase() === s2.toLowerCase()) {
+    if (name1 && name2 && (name1.toLowerCase() === name2.toLowerCase() || isCohortMatching(cg1, cg2))) {
+      if (!s1 || !s2 || s1.toLowerCase() === s2.toLowerCase()) {
         return true;
       }
     }
 
-    return false;
+    return isCohortMatching(cg1, cg2);
   };
 
   const getShortSemLabel = (semStr: string): string => {
@@ -4729,9 +4732,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const yearStr = getYearForClass(selectedCell.slot.classGroup);
           const shiftLabel = selectedCell.slot.shift === "shift_1" ? "Shift 1" : selectedCell.slot.shift === "shift_2" ? "Shift 2" : "General";
 
-          const classStudents = students.filter(
-            (student) => isClassGroupMatch(student.classGroup, selectedCell.slot!.classGroup)
-          );
+          const classStudents = students.filter((student) => {
+            if (isClassGroupMatch(student.classGroup, selectedCell.slot!.classGroup)) return true;
+            if (isClassGroupMatch(student.department, selectedCell.slot!.department || selectedCell.slot!.classGroup)) return true;
+            if (student.college_id && selectedCell.slot!.college_id && student.college_id === selectedCell.slot!.college_id) return true;
+            return false;
+          });
 
           const existingAttendance = studentAttendance.filter(
             (a) => a.slotId === selectedCell.slot!.id && a.dateStr === selectedCell.dateStr
@@ -4980,9 +4986,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const { name: deptShort, sem } = getShortClassGroup(selectedCell.slot.classGroup);
           const yearStr = getYearForClass(selectedCell.slot.classGroup);
 
-          const classStudents = students.filter(
-            (student) => isClassGroupMatch(student.classGroup, selectedCell.slot!.classGroup)
-          );
+          const classStudents = students.filter((student) => {
+            if (isClassGroupMatch(student.classGroup, selectedCell.slot!.classGroup)) return true;
+            if (isClassGroupMatch(student.department, selectedCell.slot!.department || selectedCell.slot!.classGroup)) return true;
+            if (student.college_id && selectedCell.slot!.college_id && student.college_id === selectedCell.slot!.college_id) return true;
+            return false;
+          });
 
           const today = new Date();
           const y = today.getFullYear();

@@ -12,13 +12,13 @@ import { Input } from "./Input";
 import { Select } from "./Select";
 import { LoadingButton } from "./ui/LoadingButton";
 import { Pagination } from "./ui/Pagination";
-import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList } from "../lib/utils";
+import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob } from "../lib/utils";
 import { InterviewModule } from "./InterviewModule";
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,
   PlusCircle, Check, ArrowRight, Settings, MessageSquare, ShieldAlert,
-  Award, TrendingUp, FileText, RefreshCw, Plus, Trash2, Edit2, Download, Upload, ChevronDown, Loader2, Save,
+  Award, TrendingUp, FileText, FileSpreadsheet, RefreshCw, Plus, Trash2, Edit2, Download, Upload, ChevronDown, Loader2, Save,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle, User, SlidersHorizontal, CalendarCheck2, IndianRupee, BadgePercent, X, Mail, Lock, Menu, Briefcase
 } from "lucide-react";
 
@@ -802,8 +802,8 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
 };
 
 export interface CAMDashboardProps {
-  activeTab?: "overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "more_menu" | "mentor_attendance";
-  onTabChange?: (tab: "overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "more_menu" | "mentor_attendance") => void;
+  activeTab?: "overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events";
+  onTabChange?: (tab: "overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events") => void;
 }
 
 export const CAMDashboard: React.FC<CAMDashboardProps> = ({
@@ -865,6 +865,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     deleteStudent,
     bulkDeleteStudents,
     departmentsList,
+    holidays,
   } = useApp();
   const { toast, confirm: showConfirm } = useToast();
 
@@ -898,9 +899,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     : (currentCAM?.college_name || colleges.find(c => c.id === activeCollegeId)?.name || "Primary Campus");
 
   // Tab State
-  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews">("overview");
+  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events">("overview");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
+
+  useEffect(() => {
+    const handleNav = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        setActiveTab(customEvent.detail);
+      }
+    };
+    window.addEventListener("fp_navigate_tab", handleNav);
+    return () => window.removeEventListener("fp_navigate_tab", handleNav);
+  }, [setActiveTab]);
 
   // GSAP Container reference
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1017,6 +1029,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [isImportSubmitting, setIsImportSubmitting] = useState(false);
 
   // Student Directory & Import States
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showStudentImportModal, setShowStudentImportModal] = useState(false);
   const [studentImportPreview, setStudentImportPreview] = useState<{ parsed: any[]; warnings: string[]; targetClassGroup: string } | null>(null);
   const [isStudentImportSubmitting, setIsStudentImportSubmitting] = useState(false);
@@ -1027,10 +1040,66 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<any | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
+  // Attendance Directory & Date-Wise Monitoring States
+  const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [attendanceStartDate, setAttendanceStartDate] = useState("2026-06-15");
+  const [attendanceEndDate, setAttendanceEndDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [attendanceMonthFilter, setAttendanceMonthFilter] = useState("all");
+  const [showAttendanceImportModal, setShowAttendanceImportModal] = useState(false);
+  const [attendanceImportPreview, setAttendanceImportPreview] = useState<{ parsed: any[]; warnings: string[]; targetDate: string } | null>(null);
+  const [isAttendanceImportSubmitting, setIsAttendanceImportSubmitting] = useState(false);
+  const [markingStudentForDate, setMarkingStudentForDate] = useState<{ student: any; dateStr: string } | null>(null);
+
+  // Event Management Module States
+  const [eventSearchQuery, setEventSearchQuery] = useState("");
+  const [eventCategoryFilter, setEventCategoryFilter] = useState("All");
+  const [eventDeptFilter, setEventDeptFilter] = useState("All");
+  const [eventStatusFilter, setEventStatusFilter] = useState("All");
+  const [eventViewMode, setEventViewMode] = useState<"cards" | "timeline" | "table">("cards");
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [editingEventObj, setEditingEventObj] = useState<any | null>(null);
+
+  // Event Form Fields
+  const [evFormName, setEvFormName] = useState("");
+  const [evFormDate, setEvFormDate] = useState("");
+  const [evFormEndDate, setEvFormEndDate] = useState("");
+  const [evFormCategory, setEvFormCategory] = useState("Coding Fest & Hackathon");
+  const [evFormDept, setEvFormDept] = useState("All Departments");
+  const [evFormAudience, setEvFormAudience] = useState("All Campus");
+  const [evFormStatus, setEvFormStatus] = useState("Upcoming");
+  const [evFormVenue, setEvFormVenue] = useState("");
+  const [evFormDesc, setEvFormDesc] = useState("");
+  const [evFormCoordinator, setEvFormCoordinator] = useState("");
+  const [evFormChiefGuest, setEvFormChiefGuest] = useState("");
+  const [evFormRegistrationLink, setEvFormRegistrationLink] = useState("");
+  const [evFormPhotos, setEvFormPhotos] = useState<string[]>([]);
+  const [selectedPhotoLightbox, setSelectedPhotoLightbox] = useState<{ src: string; title: string } | null>(null);
+
   // Centralized loading state tracker for all async operations
   const [loadingActions, setLoadingActions] = useState<Record<string, boolean>>({});
+  const [isSyncingHireScore, setIsSyncingHireScore] = useState(false);
   const setActionLoading = (key: string, loading: boolean) => {
     setLoadingActions(prev => ({ ...prev, [key]: loading }));
+  };
+
+  const handleSyncHireScoreLive = async () => {
+    setIsSyncingHireScore(true);
+    try {
+      const res = await fetch(`/api/hirescore?college_id=${encodeURIComponent(activeCollegeId || "")}`, {
+        method: "POST"
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(`Synced ${data.syncedCount} student(s) with live HireScore & EFSET benchmark data!`, "success");
+        await refreshData();
+      } else {
+        toast(data.message || "Failed to sync HireScore data.", "error");
+      }
+    } catch (err: any) {
+      toast("Error syncing HireScore: " + err.message, "error");
+    } finally {
+      setIsSyncingHireScore(false);
+    }
   };
 
   const handleSingleDeleteStudent = async (st: any) => {
@@ -1106,6 +1175,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       "Department",
       "Shift",
       "Name",
+      "Hire Score",
+      "EFSET Score",
+      "Mother Name",
+      "Father Name",
       "10th Mark(%)",
       "11th Mark(%)",
       "12th Mark(%)",
@@ -1116,6 +1189,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       "Student Phone Number",
       "Parent Phone Number (WhatsApp Number)",
       "Aadhar Card Number",
+      "PAN Card Number",
       "Email ID",
       "LinkedIn Link",
       "GitHub link",
@@ -1131,6 +1205,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         resolvedDept,
         resolvedShift,
         "Anitha R",
+        "85",
+        "C2",
+        "Lakshmi R",
+        "Ramesh K",
         "92",
         "88",
         "94",
@@ -1141,6 +1219,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "9876543210",
         "9876543211",
         "123456789012",
+        "ABCDE1234F",
         "anitha@university.edu",
         "https://linkedin.com/in/anitha",
         "https://github.com/anitha",
@@ -1154,6 +1233,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         resolvedDept,
         resolvedShift,
         "Bala Kumar M",
+        "78",
+        "B2",
+        "Meena M",
+        "Murugan S",
         "85",
         "82",
         "89",
@@ -1164,6 +1247,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "9876543220",
         "9876543221",
         "987654321098",
+        "WXYZ9876K",
         "bala@university.edu",
         "https://linkedin.com/in/bala",
         "https://github.com/bala",
@@ -1192,42 +1276,58 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       if (!val) return;
 
       if (norm === "slno" || norm === "sno" || norm === "serialnumber") return;
-      if (norm === "rollno" || norm === "rollnumber" || norm === "regno" || norm === "registernumber") mapped.roll_number = val;
+      if (norm === "rollno" || norm === "rollnumber" || norm === "regno" || norm === "registernumber" || norm === "registrationnumber") mapped.roll_number = val;
       else if (norm === "name" || norm === "studentname" || norm === "fullname") mapped.name = val;
-      else if (norm === "10thmark" || norm === "10th" || norm === "tenthmark") mapped.tenth_mark = val;
-      else if (norm === "11thmark" || norm === "11th" || norm === "eleventhmark") mapped.eleventh_mark = val;
-      else if (norm === "12thmark" || norm === "12th" || norm === "twelfthmark") mapped.twelfth_mark = val;
-      else if (norm === "group" || norm === "academicgroup") mapped.academic_group = val;
-      else if (norm === "medium") mapped.medium = val;
-      else if (norm === "bloodgroup" || norm === "bg") mapped.blood_group = val;
-      else if (norm === "dob" || norm === "dateofbirth") mapped.dob = parseDbDate(val);
-      else if (norm === "studentphonenumber" || norm === "phone" || norm === "studentphone" || norm === "mobile") mapped.phone = val;
-      else if (norm === "parentphonenumber" || norm === "parentphone" || norm === "parentphonenumberwhatsappnumber" || norm === "guardianphone") mapped.parent_phone = val;
-      else if (norm === "aadharcardnumber" || norm === "aadharnumber" || norm === "aadhar") mapped.aadhar_number = val;
-      else if (norm === "emailid" || norm === "email" || norm === "studentemail") mapped.email = val;
-      else if (norm === "linkedinlink" || norm === "linkedin") mapped.linkedin_link = val;
-      else if (norm === "githublink" || norm === "github") mapped.github_id = val;
-      else if (norm === "projectdrivelink" || norm === "projectdrive" || norm === "drive") mapped.project_drive_link = val;
-      else if (norm === "hackerrankprofilelink" || norm === "hackerrank") mapped.hackerrank_link = val;
-      else if (norm === "leetcodeprofilelink" || norm === "leetcode") mapped.leetcode_link = val;
-      else if (norm === "figmaprofile" || norm === "figma") mapped.figma_link = val;
+      else if (norm.includes("hire") || norm.includes("placement") || norm === "hirescore") mapped.hire_score = val;
+      else if (norm.includes("efset") || norm.includes("efscore") || norm.includes("englishscore")) mapped.efset_score = val;
+      else if (norm.includes("mother")) mapped.mother_name = val;
+      else if (norm.includes("father")) mapped.father_name = val;
+      else if (norm.includes("pan") || norm === "pancard") mapped.pan_number = val;
+      else if (norm.includes("10th") || norm.includes("tenth") || norm === "xmark" || norm === "xmarks" || norm === "sslc") mapped.tenth_mark = val;
+      else if (norm.includes("11th") || norm.includes("eleventh") || norm === "ximark" || norm === "ximarks") mapped.eleventh_mark = val;
+      else if (norm.includes("12th") || norm.includes("twelfth") || norm === "xiimark" || norm === "xiimarks" || norm === "hsc") mapped.twelfth_mark = val;
+      else if (norm.includes("blood") || norm === "bg") mapped.blood_group = val;
+      else if (norm.includes("dob") || norm.includes("birth") || norm.includes("dateofbirth")) mapped.dob = parseDateToYMD(val);
+      else if (norm.includes("parent") || norm.includes("whatsapp") || norm.includes("guardian")) mapped.parent_phone = val;
+      else if (norm.includes("aadhar") || norm.includes("adhaar") || norm.includes("aadhaar")) mapped.aadhar_number = val;
+      else if (norm.includes("email") || norm.includes("mail")) mapped.email = val;
+      else if (norm.includes("studentphone") || norm.includes("studentmobile") || norm === "phone" || norm === "mobile" || norm === "contact" || norm === "phonenumber") mapped.phone = val;
+      else if (norm.includes("group") || norm.includes("academicgroup")) mapped.academic_group = val;
+      else if (norm.includes("medium")) mapped.medium = val;
+      else if (norm.includes("linkedin")) mapped.linkedin_link = val;
+      else if (norm.includes("github") || norm.includes("git")) mapped.github_id = val;
+      else if (norm.includes("drive") || norm.includes("projectlink") || norm.includes("portfolio")) mapped.project_drive_link = val;
+      else if (norm.includes("hackerrank") || norm.includes("hrank")) mapped.hackerrank_link = val;
+      else if (norm.includes("leetcode") || norm.includes("lcode")) mapped.leetcode_link = val;
+      else if (norm.includes("figma")) mapped.figma_link = val;
       else if (norm === "department" || norm === "dept" || norm === "course" || norm === "stream") mapped.department = val;
       else if (norm === "shift") mapped.shift = val;
-      else if (norm === "semester" || norm === "sem") mapped.semester = val;
+      else if (norm === "semester" || norm === "sem" || norm.includes("semester") || norm.includes("sem")) mapped.semester = val;
       else if (norm === "classgroup" || norm === "class" || norm === "cohort") mapped.classGroup = val;
     });
 
-    // Auto-standardize semester
+    // Extract semester cleanly
+    if (!mapped.semester && mapped.classGroup) {
+      mapped.semester = getSemesterFromClassGroup(mapped.classGroup);
+    }
+    if (!mapped.semester && defaultCG) {
+      mapped.semester = getSemesterFromClassGroup(defaultCG) || templateSem || "Semester 1";
+    }
+
+    // Standardize semester name (e.g. "Semester 5")
     if (mapped.semester) {
-      const semMatch = mapped.semester.match(/\d+/);
-      if (semMatch) {
-        mapped.semester = `Semester ${semMatch[0]}`;
+      const romanMap: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8 };
+      const numMatch = mapped.semester.match(/\d+/);
+      if (numMatch) {
+        mapped.semester = `Semester ${numMatch[0]}`;
       } else {
-        const romanMap: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6 };
         const lower = mapped.semester.toLowerCase().replace(/[^a-z]/g, "");
         const semNum = romanMap[lower];
         if (semNum) mapped.semester = `Semester ${semNum}`;
+        else mapped.semester = "Semester 1";
       }
+    } else {
+      mapped.semester = templateSem || "Semester 1";
     }
 
     // Auto-derive department from classGroup if not in sheet
@@ -1249,7 +1349,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     // Derive classGroup cleanly without forcing Shift 1 on non-shift campuses
     if (!mapped.classGroup || mapped.classGroup === defaultCG) {
       const deptPart = mapped.department || (defaultCG.includes(" - ") ? defaultCG.split(" - ")[0] : "General");
-      const semPart = defaultCG.split(" - ").find((p: string) => p.toLowerCase().startsWith("semester")) || "Semester 1";
+      const semPart = mapped.semester || "Semester 1";
       if (isCampusShiftBased && mapped.shift && mapped.shift !== "General") {
         mapped.classGroup = `${deptPart} - ${mapped.shift} - ${semPart}`;
       } else {
@@ -1355,6 +1455,447 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       toast("Error submitting student import: " + err.message, "error");
     } finally {
       setIsStudentImportSubmitting(false);
+    }
+  };
+
+  // ── MASTER DATE-WISE ATTENDANCE EXCEL TEMPLATE, IMPORT & EXPORT HANDLERS ──
+  const sortSlotsByTime = (slotsList: any[]) => {
+    return [...slotsList].sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+  };
+
+  const getSemesterWorkingDates = (startStr: string, endStr: string) => {
+    const dates: string[] = [];
+    const start = new Date(startStr + "T00:00:00");
+    const end = new Date(endStr + "T00:00:00");
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return [];
+
+    const cur = new Date(start);
+    while (cur <= end) {
+      const dayOfWeek = cur.getDay(); // 0 = Sun
+      const ymd = cur.toISOString().split("T")[0];
+      const isHoliday = (holidays || []).some((h: any) => h?.date === ymd || h?.dateStr === ymd);
+
+      if (dayOfWeek !== 0 && !isHoliday) {
+        dates.push(ymd);
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return dates;
+  };
+
+  const formatDateToDMY = (ymd: string) => {
+    const parts = ymd.split("-");
+    if (parts.length === 3) {
+      return `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+    return ymd;
+  };
+
+  const handleDownloadAttendanceTemplate = async (targetCG?: string, startStr?: string, endStr?: string) => {
+    const XLSX = await import("xlsx");
+    const sDate = startStr || attendanceStartDate || "2026-06-15";
+    const eDate = endStr || attendanceEndDate || new Date().toISOString().split("T")[0];
+    const workingDates = getSemesterWorkingDates(sDate, eDate);
+
+    const filteredStudents = collegeStudents.filter(s => !targetCG || targetCG === "all" || isCohortMatch(s.classGroup, targetCG));
+
+    const dateHeaders = workingDates.map(d => formatDateToDMY(d));
+    const headers = [
+      "Sl. No.",
+      "Roll No",
+      "Name",
+      "Department",
+      "Class Group",
+      "Total days",
+      "Total of Present Days",
+      "Total of Absent Days",
+      "%",
+      ...dateHeaders
+    ];
+
+    const dataRows = filteredStudents.length > 0 ? filteredStudents.map((st, idx) => {
+      const defaultStatuses = workingDates.map(() => "P");
+      return [
+        idx + 1,
+        st.roll_number || st.id,
+        st.name,
+        st.department || "",
+        st.classGroup || "",
+        workingDates.length,
+        workingDates.length,
+        0,
+        "100%",
+        ...defaultStatuses
+      ];
+    }) : [
+      [
+        1,
+        "E24AI001",
+        "Sample Student",
+        "Computer Science",
+        targetCG || "BCA - Semester 5",
+        workingDates.length,
+        workingDates.length,
+        0,
+        "100%",
+        ...workingDates.map(() => "P")
+      ]
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Master Attendance");
+    XLSX.writeFile(wb, `Master_Attendance_Template_${sDate}_to_${eDate}.xlsx`);
+    toast("Master multi-date attendance template downloaded!", "success");
+  };
+
+  const handleAttendanceFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const XLSX = await import("xlsx");
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const wsName = wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+        if (rawRows.length === 0) {
+          toast("Uploaded attendance sheet is empty.", "warning");
+          return;
+        }
+
+        const warnings: string[] = [];
+        const parsedAttendance: any[] = [];
+
+        rawRows.forEach((row, idx) => {
+          let stIdOrRoll = "";
+          let stName = "";
+          const dateMarks: Record<string, string> = {}; // { '2026-06-15': 'present', '2026-06-16': 'absent' }
+          const periodMarks: Record<string, string> = {}; // { 'p1': 'present' }
+
+          Object.keys(row).forEach(col => {
+            const rawCol = col.trim();
+            const norm = rawCol.toLowerCase().replace(/[^a-z0-9]/g, "");
+            const val = String(row[col]).trim();
+            if (!val) return;
+
+            // Check if column is Student Identifier
+            if (norm === "rollno" || norm === "rollnumber" || norm === "regno" || norm === "id" || norm === "studentid" || norm === "rollnostudentid") {
+              stIdOrRoll = val;
+            } else if (norm === "name" || norm === "studentname") {
+              stName = val;
+            } else {
+              // Check if column header is a Date (e.g. 15-06-2026, 16/06/2026, 2026-06-15)
+              const parsedColDate = parseDateToYMD(rawCol);
+              if (parsedColDate && parsedColDate.length === 10) {
+                const uVal = val.toUpperCase();
+                const status = (uVal === "P" || uVal === "1" || uVal === "1.0" || uVal === "PRESENT")
+                  ? "present"
+                  : (uVal === "A" || uVal === "0" || uVal === "0.0" || uVal === "ABSENT")
+                  ? "absent"
+                  : (uVal === "OD" || uVal === "ON DUTY" || uVal === "ONDUTY")
+                  ? "od"
+                  : (uVal === "HD" || uVal === "HALF DAY" || uVal === "0.5" || uVal === "L" || uVal === "LATE")
+                  ? "late"
+                  : "not_marked";
+                dateMarks[parsedColDate] = status;
+              } else if (norm.includes("period") || norm.startsWith("p") || norm.includes("slot") || norm.includes("hour")) {
+                const numMatch = norm.match(/\d+/);
+                const pNum = numMatch ? parseInt(numMatch[0], 10) : 1;
+                const cleanVal = val.toUpperCase().startsWith("P") ? "present" : val.toUpperCase().startsWith("A") ? "absent" : val.toUpperCase().startsWith("L") ? "late" : "not_marked";
+                periodMarks[`p${pNum}`] = cleanVal;
+              }
+            }
+          });
+
+          const matchedStudent = collegeStudents.find(s =>
+            (stIdOrRoll && (s.roll_number?.toLowerCase() === stIdOrRoll.toLowerCase() || s.id?.toLowerCase() === stIdOrRoll.toLowerCase())) ||
+            (stName && s.name?.toLowerCase() === stName.toLowerCase())
+          );
+
+          if (!matchedStudent) {
+            warnings.push(`Row ${idx + 2}: Student not found matching ID "${stIdOrRoll}" / Name "${stName}".`);
+            return;
+          }
+
+          parsedAttendance.push({
+            studentId: matchedStudent.id,
+            studentName: matchedStudent.name,
+            rollNo: matchedStudent.roll_number || matchedStudent.id,
+            classGroup: matchedStudent.classGroup,
+            dateMarks,
+            periodMarks,
+            targetDate: Object.keys(dateMarks)[0] || attendanceDate
+          });
+        });
+
+        setAttendanceImportPreview({
+          parsed: parsedAttendance,
+          warnings,
+          targetDate: attendanceDate
+        });
+        setShowAttendanceImportModal(true);
+      } catch (err: any) {
+        toast("Failed to parse attendance file: " + err.message, "error");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  };
+
+  const handleConfirmAttendanceImportSubmit = async () => {
+    if (!attendanceImportPreview || attendanceImportPreview.parsed.length === 0) return;
+    setIsAttendanceImportSubmitting(true);
+
+    try {
+      const recordsToPost: any[] = [];
+
+      attendanceImportPreview.parsed.forEach(item => {
+        // If row has multi-date marks (e.g. 15-06-2026, 16-06-2026...)
+        if (item.dateMarks && Object.keys(item.dateMarks).length > 0) {
+          Object.keys(item.dateMarks).forEach(dStr => {
+            const status = item.dateMarks[dStr];
+            if (!status || status === "not_marked") return;
+
+            const dateObj = new Date(dStr + "T00:00:00");
+            const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+            const daySlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, item.classGroup)));
+
+            daySlots.forEach(slot => {
+              recordsToPost.push({
+                studentId: item.studentId,
+                slotId: slot.id,
+                dateStr: dStr,
+                status: status,
+                markedBy: currentCAM?.name || "Master Import"
+              });
+            });
+          });
+        } else if (item.periodMarks && Object.keys(item.periodMarks).length > 0) {
+          // Single-day period marks fallback
+          const dateObj = new Date(attendanceImportPreview.targetDate + "T00:00:00");
+          const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+          const daySlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, item.classGroup)));
+          const sortedStudentSlots = sortSlotsByTime(daySlots);
+
+          Object.keys(item.periodMarks).forEach(pKey => {
+            const pIndex = parseInt(pKey.replace(/\D/g, "") || "1", 10) - 1;
+            const targetSlot = sortedStudentSlots[pIndex] || daySlots[pIndex];
+            if (targetSlot) {
+              recordsToPost.push({
+                studentId: item.studentId,
+                slotId: targetSlot.id,
+                dateStr: attendanceImportPreview.targetDate,
+                status: item.periodMarks[pKey],
+                markedBy: currentCAM?.name || "Manager Import"
+              });
+            }
+          });
+        }
+      });
+
+      if (recordsToPost.length === 0) {
+        toast("No scheduled slots matched for the imported attendance records.", "warning");
+        setIsAttendanceImportSubmitting(false);
+        return;
+      }
+
+      const res = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "bulk_import",
+          records: recordsToPost,
+          markedBy: currentCAM?.name || "Master Import"
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        toast(`Successfully imported ${data.count} attendance entries across ${attendanceImportPreview.parsed.length} students!`, "success");
+        setShowAttendanceImportModal(false);
+        setAttendanceImportPreview(null);
+        await refreshData();
+      } else {
+        toast(data.message || "Failed to save attendance.", "error");
+      }
+    } catch (err: any) {
+      toast("Error submitting attendance import: " + err.message, "error");
+    } finally {
+      setIsAttendanceImportSubmitting(false);
+    }
+  };
+
+  const handleExportDateAttendance = async (startStr: string, endStr: string, studentsToExport: any[]) => {
+    const XLSX = await import("xlsx");
+    const sDate = startStr || attendanceStartDate || "2026-06-15";
+    const eDate = endStr || attendanceEndDate || new Date().toISOString().split("T")[0];
+    const workingDates = getSemesterWorkingDates(sDate, eDate);
+
+    const dateHeaders = workingDates.map(d => formatDateToDMY(d));
+    const headers = [
+      "Sl. No.",
+      "Roll No",
+      "Name",
+      "Department",
+      "Class Group",
+      "Total days",
+      "Total of Present Days",
+      "Total of Absent Days",
+      "%",
+      ...dateHeaders
+    ];
+
+    const rows = studentsToExport.map((st, idx) => {
+      let presentDays = 0;
+      let absentDays = 0;
+      let totalWorkingDays = 0;
+
+      const dateStatuses = workingDates.map(dStr => {
+        const dateObj = new Date(dStr + "T00:00:00");
+        const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+        const stSlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
+
+        if (stSlots.length === 0) return "—";
+        totalWorkingDays++;
+
+        const pCount = stSlots.filter(s => {
+          const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
+          return att?.status === "present" || att?.status === "od";
+        }).length;
+
+        const aCount = stSlots.filter(s => {
+          const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
+          return att?.status === "absent";
+        }).length;
+
+        if (pCount === stSlots.length) {
+          presentDays += 1;
+          return "P";
+        } else if (pCount > 0) {
+          presentDays += 0.5;
+          absentDays += 0.5;
+          return "HD";
+        } else if (aCount > 0) {
+          absentDays += 1;
+          return "A";
+        }
+        return "—";
+      });
+
+      const effectiveTotalDays = totalWorkingDays || workingDates.length;
+      const pct = effectiveTotalDays > 0 ? Math.round((presentDays / effectiveTotalDays) * 100) : 0;
+
+      return [
+        idx + 1,
+        st.roll_number || st.id,
+        st.name,
+        st.department || "",
+        st.classGroup || "",
+        effectiveTotalDays,
+        presentDays,
+        absentDays,
+        `${pct}%`,
+        ...dateStatuses
+      ];
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Master Attendance Register");
+    XLSX.writeFile(wb, `Master_Student_Attendance_${sDate}_to_${eDate}.xlsx`);
+    toast(`Exported Master Attendance Register for ${sDate} to ${eDate}!`, "success");
+  };
+
+  const handleToggleStudentPeriodStatus = async (studentId: string, slotId: string, dateStr: string, currentStatus: string) => {
+    const cycleMap: Record<string, string> = {
+      not_marked: "present",
+      present: "absent",
+      absent: "late",
+      late: "not_marked"
+    };
+    const nextStatus = cycleMap[currentStatus || "not_marked"] || "present";
+
+    try {
+      const res = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "mark_period",
+          studentId,
+          slotId,
+          dateStr,
+          status: nextStatus,
+          markedBy: currentCAM?.name || "Campus Manager"
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(`Updated to ${nextStatus.toUpperCase()}`, "success");
+        await refreshData();
+      } else {
+        toast(data.message || "Failed to update attendance", "error");
+      }
+    } catch (err: any) {
+      toast("Error updating period: " + err.message, "error");
+    }
+  };
+
+  const handleMarkAllPresentForDay = async (dateStr: string, visibleStudents: any[]) => {
+    const dateObj = new Date(dateStr + "T00:00:00");
+    const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+    const daySlots = collegeSlots.filter(s => s.day === dayName);
+
+    const records: any[] = [];
+    visibleStudents.forEach(st => {
+      const stSlots = daySlots.filter(s => !s.classGroup || isCohortMatch(s.classGroup, st.classGroup));
+      stSlots.forEach(s => {
+        records.push({
+          studentId: st.id,
+          slotId: s.id,
+          dateStr,
+          status: "present"
+        });
+      });
+    });
+
+    if (records.length === 0) {
+      toast("No timetable slots found for the visible students on this day.", "warning");
+      return;
+    }
+
+    const ok = await showConfirm({
+      title: "Mark All Present",
+      message: `Mark all ${visibleStudents.length} students as PRESENT for all periods on ${dateStr}?`,
+      confirmLabel: "Mark All Present",
+      danger: false
+    });
+
+    if (ok) {
+      try {
+        const res = await fetch("/api/attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "bulk_import",
+            records,
+            markedBy: currentCAM?.name || "Campus Manager"
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast(`Marked all ${visibleStudents.length} students PRESENT on ${dateStr}!`, "success");
+          await refreshData();
+        } else {
+          toast(data.message || "Failed to mark attendance.", "error");
+        }
+      } catch (err: any) {
+        toast("Error marking attendance: " + err.message, "error");
+      }
     }
   };
 
@@ -2373,11 +2914,352 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   };
 
+  // --- EVENT MANAGEMENT HELPERS & EXCEL HANDLERS ---
+  const filteredEvents = useMemo(() => {
+    return (dbAcademicEvents || []).filter((ev) => {
+      // 1. Campus Isolation Filter (strictly isolate events to active campus)
+      const campusMatch = isGlobalAllCampuses || !ev.college_id || ev.college_id === activeCollegeId || activeCollegeId === "all";
+      if (!campusMatch) return false;
+
+      const q = eventSearchQuery.toLowerCase();
+      const nameMatch = (ev.name || "").toLowerCase().includes(q);
+      const descMatch = (ev.desc || "").toLowerCase().includes(q);
+      const venueMatch = (ev.venue || "").toLowerCase().includes(q);
+      const coordMatch = (ev.coordinator || "").toLowerCase().includes(q);
+      const matchesSearch = nameMatch || descMatch || venueMatch || coordMatch;
+
+      const matchesCat = eventCategoryFilter === "All" || (ev.category || "Coding Fest & Hackathon") === eventCategoryFilter;
+      const matchesDept = eventDeptFilter === "All" || (ev.department || "All Departments") === eventDeptFilter;
+      const matchesStatus = eventStatusFilter === "All" || (ev.status || "Upcoming") === eventStatusFilter;
+
+      return matchesSearch && matchesCat && matchesDept && matchesStatus;
+    });
+  }, [dbAcademicEvents, eventSearchQuery, eventCategoryFilter, eventDeptFilter, eventStatusFilter, isGlobalAllCampuses, activeCollegeId]);
+
+  const handleOpenCreateEventModal = () => {
+    setEditingEventObj(null);
+    setEvFormName("");
+    setEvFormDate(new Date().toISOString().split("T")[0]);
+    setEvFormEndDate("");
+    setEvFormCategory("Coding Fest & Hackathon");
+    setEvFormDept("All Departments");
+    setEvFormAudience("All Campus");
+    setEvFormStatus("Upcoming");
+    setEvFormVenue("");
+    setEvFormDesc("");
+    setEvFormCoordinator("");
+    setEvFormChiefGuest("");
+    setEvFormRegistrationLink("");
+    setEvFormPhotos([]);
+    setShowEventModal(true);
+  };
+
+  const handleOpenEditEventModal = (ev: any) => {
+    setEditingEventObj(ev);
+    setEvFormName(ev.name || "");
+    setEvFormDate(ev.date || "");
+    setEvFormEndDate(ev.end_date || "");
+    setEvFormCategory(ev.category || "Coding Fest & Hackathon");
+    setEvFormDept(ev.department || "All Departments");
+    setEvFormAudience(ev.audience || "All Campus");
+    setEvFormStatus(ev.status || "Upcoming");
+    setEvFormVenue(ev.venue || "");
+    setEvFormDesc(ev.desc || "");
+    setEvFormCoordinator(ev.coordinator || "");
+    setEvFormChiefGuest(ev.chief_guest || "");
+    setEvFormRegistrationLink(ev.registration_link || "");
+
+    let existingPhotos: string[] = [];
+    if (ev.photos) {
+      try {
+        existingPhotos = typeof ev.photos === "string" ? JSON.parse(ev.photos) : (Array.isArray(ev.photos) ? ev.photos : []);
+      } catch (_) {
+        existingPhotos = [ev.photos];
+      }
+    }
+    setEvFormPhotos(existingPhotos);
+    setShowEventModal(true);
+  };
+
+  const handleAddEventPhotoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      toast("Photo size should be less than 4MB", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (uploadEv) => {
+      const base64 = uploadEv.target?.result as string;
+      if (base64) {
+        setEvFormPhotos(prev => [...prev, base64]);
+        toast("Photo added to gallery", "success");
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleRemoveEventPhoto = (index: number) => {
+    setEvFormPhotos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleQuickUploadPhotoToEvent = async (ev: any, file: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (uploadEv) => {
+      const base64 = uploadEv.target?.result as string;
+      if (base64) {
+        let existingPhotos: string[] = [];
+        try {
+          existingPhotos = typeof ev.photos === "string" ? JSON.parse(ev.photos) : (Array.isArray(ev.photos) ? ev.photos : []);
+        } catch (_) {}
+        const updatedPhotos = [...existingPhotos, base64];
+        const res = await saveAcademicEvent({ ...ev, photos: JSON.stringify(updatedPhotos) });
+        if (res.success) {
+          toast("Event moment uploaded successfully!", "success");
+        } else {
+          toast("Failed to upload moment", "error");
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveRichEventSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!evFormName.trim() || !evFormDate) {
+      toast("Event Title and Start Date are required.", "error");
+      return;
+    }
+
+    const payload = {
+      id: editingEventObj ? editingEventObj.id : undefined,
+      name: evFormName,
+      date: evFormDate,
+      end_date: evFormEndDate || null,
+      category: evFormCategory,
+      department: evFormDept,
+      audience: evFormAudience,
+      status: evFormStatus,
+      venue: evFormVenue || null,
+      desc: evFormDesc || null,
+      coordinator: evFormCoordinator || null,
+      chief_guest: evFormChiefGuest || null,
+      registration_link: evFormRegistrationLink || null,
+      photos: evFormPhotos.length > 0 ? JSON.stringify(evFormPhotos) : null,
+      college_id: activeCollegeId
+    };
+
+    const res = await saveAcademicEvent(payload);
+    if (res.success) {
+      toast(editingEventObj ? "Campus event updated successfully." : "Campus event created successfully.", "success");
+      setShowEventModal(false);
+    } else {
+      toast(res.message || "Failed to save event", "error");
+    }
+  };
+
+  const handleQuickStatusChange = async (ev: any) => {
+    const statuses = ["Upcoming", "Ongoing", "Completed", "Postponed"];
+    const currIdx = statuses.indexOf(ev.status || "Upcoming");
+    const nextStatus = statuses[(currIdx + 1) % statuses.length];
+    
+    const res = await saveAcademicEvent({ ...ev, status: nextStatus });
+    if (res.success) {
+      toast(`Status updated to ${nextStatus}`, "success");
+    } else {
+      toast("Failed to update status", "error");
+    }
+  };
+
+  const handleDownloadEventTemplate = async () => {
+    const XLSX = await import("xlsx");
+    const headers = [
+      "Sl. No.",
+      "Event Title",
+      "Start Date (YYYY-MM-DD)",
+      "End Date",
+      "Category",
+      "Department Scope",
+      "Target Audience",
+      "Status",
+      "Venue / Location",
+      "Coordinator",
+      "Chief Guest / Speaker",
+      "Agendas & Highlights"
+    ];
+    const sampleRows = [
+      [
+        "1",
+        "CodeCraft 2026 - 24hr Campus Hackathon",
+        "2026-08-28",
+        "2026-08-29",
+        "Coding Fest & Hackathon",
+        "Computer Science",
+        "All Campus",
+        "Upcoming",
+        "Innovation Labs & Tech Arena",
+        "Prof. Vignesh (HOD-CSE)",
+        "Sundeep G. (Principal Architect, Tech Corp)",
+        "24-hour non-stop coding, hardware prototyping, and AI product building challenge."
+      ],
+      [
+        "2",
+        "CyberShield & Cloud Security Hands-on BootCamp",
+        "2026-09-08",
+        "2026-09-09",
+        "Workshop & Hands-on BootCamp",
+        "Information Technology",
+        "Students Only",
+        "Upcoming",
+        "Campus Tech Center",
+        "Dr. Priya M. (IT Dept Coordinator)",
+        "Arun V. (Security Consultant)",
+        "Two-day hands-on workshop covering network vulnerability assessment and cloud security."
+      ],
+      [
+        "3",
+        "InnovateX - Annual Tech Symposium & Project Expo",
+        "2026-09-22",
+        "2026-09-23",
+        "Technical Symposium & Project Expo",
+        "All Departments",
+        "All Campus",
+        "Upcoming",
+        "Main University Auditorium & Exhibition Hall",
+        "Prof. Harish K. (Symposium Head)",
+        "Dr. M. Karthik (Director, R&D Hub)",
+        "Inter-college technical paper presentations, robotics championship, and startup project expo."
+      ]
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Campus Events");
+    XLSX.writeFile(wb, "Campus_Events_Template.xlsx");
+  };
+
+  const handleImportEventsExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const XLSX = await import("xlsx");
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const rows: any[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+      const formattedEvents = rows.map((r) => {
+        const keys = Object.keys(r);
+        let name = "", date = "", end_date = "", category = "Academic Event", department = "All Departments", audience = "All Campus", status = "Upcoming", venue = "", desc = "";
+        
+        keys.forEach((k) => {
+          const norm = k.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const val = (r[k] || "").toString().trim();
+          if (!val) return;
+          if (norm.includes("title") || norm.includes("name") || norm === "event") name = val;
+          else if (norm === "date" || norm.includes("startdate")) {
+            try {
+              const d = parseDbDate(val);
+              date = !isNaN(d.getTime()) ? d.toISOString().split("T")[0] : String(val).trim();
+            } catch (_) {
+              date = String(val).trim();
+            }
+          }
+          else if (norm.includes("enddate")) {
+            try {
+              const d = parseDbDate(val);
+              end_date = !isNaN(d.getTime()) ? d.toISOString().split("T")[0] : String(val).trim();
+            } catch (_) {
+              end_date = String(val).trim();
+            }
+          }
+          else if (norm.includes("category") || norm === "type") category = val;
+          else if (norm.includes("dept") || norm.includes("department")) department = val;
+          else if (norm.includes("audience")) audience = val;
+          else if (norm.includes("status")) status = val;
+          else if (norm.includes("venue") || norm.includes("room") || norm.includes("location")) venue = val;
+          else if (norm.includes("desc") || norm.includes("agenda") || norm.includes("note")) desc = val;
+        });
+
+        return {
+          name,
+          date,
+          end_date,
+          category,
+          department,
+          audience,
+          status,
+          venue,
+          desc,
+          college_id: activeCollegeId
+        };
+      }).filter(ev => ev.name && ev.date);
+
+      if (formattedEvents.length === 0) {
+        toast("No valid event rows found in Excel sheet.", "error");
+        return;
+      }
+
+      const res = await fetch("/api/academic-calendar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "batch_events", data: formattedEvents })
+      });
+      const resData = await res.json();
+      if (resData.success) {
+        toast(`${formattedEvents.length} events imported successfully!`, "success");
+        await refreshData();
+      } else {
+        toast(resData.message || "Failed to import events.", "error");
+      }
+    } catch (err: any) {
+      toast(`Import failed: ${err.message}`, "error");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const handleExportEventsExcel = async () => {
+    const XLSX = await import("xlsx");
+    const headers = [
+      "Sl. No.",
+      "Event Title",
+      "Date",
+      "End Date",
+      "Category",
+      "Department",
+      "Target Audience",
+      "Status",
+      "Venue",
+      "Description"
+    ];
+
+    const rows = filteredEvents.map((ev, idx) => [
+      idx + 1,
+      ev.name,
+      ev.date,
+      ev.end_date || "—",
+      ev.category || "Academic Event",
+      ev.department || "All Departments",
+      ev.audience || "All Campus",
+      ev.status || "Upcoming",
+      ev.venue || "—",
+      ev.desc || "—"
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Event Milestones");
+    XLSX.writeFile(wb, "Campus_Event_Milestones.xlsx");
+  };
+
   const handleDeleteEvent = async (id: string) => {
-    if (await showConfirm({ message: "Remove this calendar event?", danger: true, confirmLabel: "Remove" })) {
+    if (await showConfirm({ message: "Remove this calendar event milestone?", danger: true, confirmLabel: "Remove" })) {
       const res = await deleteAcademicEvent(id);
       if (res.success) {
-        toast("Calendar Milestone removed successfully.", "success");
+        toast("Event milestone removed successfully.", "success");
       } else {
         toast(res.message || "Failed to delete event", "error");
       }
@@ -3965,17 +4847,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         };
 
         return (
-          <aside ref={sidebarRef} className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-3" : "w-64 p-5"}`}>
-            <div className="flex flex-col flex-1 overflow-visible">
+          <aside ref={sidebarRef} className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-2.5" : "w-[270px] p-3.5"}`}>
+            <div className="flex flex-col flex-1 overflow-hidden">
               {/* Sidebar Link items */}
-              <nav className={`py-2 space-y-2 ${isCollapsed ? "px-1" : "px-4"}`}>
+              <nav className={`py-1 space-y-1.5 overflow-y-auto max-h-[calc(100vh-11rem)] custom-scrollbar ${isCollapsed ? "px-0.5" : "px-1.5"}`}>
                 {[
                   {
                     id: "dashboard",
                     title: "Dashboard",
                     icon: Building2,
                     items: [
-                      { id: "overview", label: "Operations Hub", icon: Building2 }
+                      { id: "overview", label: "Dashboard", icon: Building2 }
                     ]
                   },
                   {
@@ -3983,8 +4865,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     title: "Academics",
                     icon: BookOpen,
                     items: [
-                      { id: "config", label: "Academic Config", icon: Settings },
-                      { id: "curriculum", label: "Curriculum Map", icon: BookOpen }
+                      { id: "config", label: "Academic Configuration", icon: Settings },
+                      { id: "curriculum", label: "Batch Creation", icon: BookOpen }
+                    ]
+                  },
+                  {
+                    id: "events",
+                    title: "Event Management",
+                    icon: Calendar,
+                    items: [
+                      { id: "events", label: "Event Management", icon: Calendar }
                     ]
                   },
                   {
@@ -3992,9 +4882,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     title: "Faculty",
                     icon: Users,
                     items: [
-                      { id: "faculty", label: "Faculty Allocation", icon: Users },
-                      { id: "handovers", label: "Class Handovers", icon: CalendarCheck2 },
-                      { id: "mentor_attendance", label: "Mentor Attendance", icon: CalendarCheck2 }
+                      { id: "faculty", label: "Mentor Subject Allocation", icon: Users },
+                      { id: "handovers", label: "Class Handovers", icon: CalendarCheck2 }
                     ]
                   },
                   {
@@ -4002,33 +4891,54 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     title: "Schedules",
                     icon: Calendar,
                     items: [
-                      { id: "timetable", label: "Timetables & Rooms", icon: Calendar },
-                      { id: "monitoring", label: "Academic Monitoring", icon: Clock },
-                      { id: "interviews", label: "Interview Allocations & GMeet", icon: Award }
+                      { id: "timetable", label: "Timetable", icon: Calendar },
+                      { id: "monitoring", label: "Attendance Monitoring", icon: Clock },
+                      { id: "interviews", label: "Interview Allocation", icon: Award }
                     ]
                   },
                   {
                     id: "students",
-                    title: "Students",
+                    title: "Students Directory",
                     icon: GraduationCap,
                     items: [
-                      { id: "students_list", label: "Student Directory & Import", icon: Users },
-                      { id: "tracker", label: "Student Tracker", icon: GraduationCap },
+                      { id: "students_list", label: "Students Directory", icon: Users }
+                    ]
+                  },
+                  {
+                    id: "tracker",
+                    title: "Skill Development Tracker",
+                    icon: GraduationCap,
+                    items: [
+                      { id: "tracker", label: "Skill Development Tracker", icon: GraduationCap }
+                    ]
+                  },
+                  {
+                    id: "fees",
+                    title: "Fee Collection",
+                    icon: IndianRupee,
+                    items: [
                       { id: "fees", label: "Fee Collection", icon: IndianRupee }
                     ]
                   },
                   {
-                    id: "management",
-                    title: "Management",
-                    icon: SlidersHorizontal,
+                    id: "reports",
+                    title: "Campus Insight",
+                    icon: FileText,
                     items: [
-                      { id: "reports", label: "Operational Reports", icon: FileText },
-                      { id: "tasks", label: "Tasks & Issues", icon: ClipboardList },
+                      { id: "reports", label: "Campus Insight", icon: FileText }
+                    ]
+                  },
+                  {
+                    id: "profile",
+                    title: "My Profile",
+                    icon: User,
+                    items: [
                       { id: "profile", label: "My Profile", icon: User }
                     ]
                   }
                 ].map((group) => {
                   const Icon = group.icon;
+                  const isSingleItem = group.items.length === 1;
                   const isAnyChildActive = group.items.some(item => activeTab === item.id);
                   const totalPendingInGroup = group.items.reduce((sum, item) => sum + getNotificationCount(item.id), 0);
 
@@ -4044,10 +4954,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          if (isCollapsed) {
-                            if (group.items.length === 1) {
-                              setActiveTab(group.items[0].id as any);
-                            }
+                          if (isSingleItem) {
+                            setActiveTab(group.items[0].id as any);
+                          } else if (isCollapsed) {
+                            // collapsed group click logic
                           } else {
                             setExpandedGroups(prev => {
                               const isCurrentlyOpen = !!prev[group.id];
@@ -4055,22 +4965,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             });
                           }
                         }}
-                        className={`sidebar-group-btn w-full flex items-center rounded-md transition-all duration-200 cursor-pointer ${
-                          isCollapsed ? "justify-center px-0 py-3.5" : "justify-between px-3.5 py-3 text-left"
+                        className={`sidebar-group-btn w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
+                          isCollapsed ? "justify-center px-0 py-3" : "justify-between px-3 py-2.5 text-left"
                         } ${
                           isAnyChildActive
                             ? "bg-gradient-to-r from-[#D528A2] to-pink-600 text-white shadow-md shadow-[#D528A2]/25 font-black border-none"
-                            : "text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-white dark:hover:bg-white/5 font-bold hover:translate-x-0.5"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-300 dark:hover:text-white dark:hover:bg-white/10 font-bold hover:translate-x-0.5"
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <Icon className={`h-4.5 w-4.5 shrink-0 transition-colors ${
                             isAnyChildActive ? "text-white" : "text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200"
                           }`} />
-                          {!isCollapsed && <span className="text-xs tracking-tight truncate">{group.title}</span>}
+                          {!isCollapsed && <span className="text-xs font-extrabold tracking-tight leading-tight">{group.title}</span>}
                         </div>
                         {!isCollapsed && (
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-2 shrink-0 ml-1">
                             {totalPendingInGroup > 0 && (
                               <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-full shadow-xs ${
                                 isAnyChildActive ? "bg-white text-[#D528A2]" : "bg-rose-500 text-white"
@@ -4078,15 +4988,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 {totalPendingInGroup}
                               </span>
                             )}
-                            <ChevronRight className={`h-3.5 w-3.5 transition-transform duration-200 ${
-                              isExpanded ? "rotate-90" : ""
-                            } ${isAnyChildActive ? "text-white" : "text-slate-350 dark:text-slate-600"}`} />
+                            {!isSingleItem && (
+                              <ChevronRight className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                                isExpanded ? "rotate-90" : ""
+                              } ${isAnyChildActive ? "text-white" : "text-slate-350 dark:text-slate-600"}`} />
+                            )}
                           </div>
                         )}
                       </button>
 
                       {/* Accordion Sub-Menu Expanding Directly Below (Expanded Sidebar Mode) */}
-                      {(!isCollapsed && isExpanded) && (
+                      {(!isCollapsed && !isSingleItem && isExpanded) && (
                         <div className="pl-4 pt-1.5 pb-1 space-y-1 animate-fadeIn">
                           {group.items.map(child => {
                             const ChildIcon = child.icon;
@@ -4104,7 +5016,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 }`}
                               >
                                 <ChildIcon className={`h-3.5 w-3.5 shrink-0 ${isChildActive ? "text-[#D528A2] dark:text-[#F4A863]" : "text-slate-400"}`} />
-                                <span className="flex-1 truncate">{child.label}</span>
+                                <span className="flex-1 text-xs font-semibold leading-snug">{child.label}</span>
                                 {count > 0 && (
                                   <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                                     isChildActive ? "bg-[#D528A2] text-white" : "bg-rose-500 text-white"
@@ -4119,7 +5031,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       )}
 
                       {/* Outside Hover Sub-Menu Popover Container (Collapsed Sidebar Mode Only) */}
-                      {isCollapsed && (
+                      {(isCollapsed && !isSingleItem) && (
                         <div className={`absolute left-full top-0 pl-2 w-56 z-50 submenu-${group.id} ${hoveredGroupId === group.id ? "block" : "hidden"}`}>
                           <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-[#D528A2]/20 dark:border-slate-800 shadow-2xl rounded-xl p-2.5 animate-fadeIn">
                             <div className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 mb-1.5 text-[#D528A2] dark:text-[#F4A863] flex items-center justify-between">
@@ -4146,7 +5058,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     }`}
                                   >
                                     <ChildIcon className={`h-3.5 w-3.5 shrink-0 ${isChildActive ? "text-white" : "text-slate-400"}`} />
-                                    <span className="flex-1 truncate">{child.label}</span>
+                                    <span className="flex-1 text-xs font-semibold leading-snug">{child.label}</span>
                                     {count > 0 && (
                                       <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isChildActive ? "bg-white text-[#D528A2]" : "bg-rose-500 text-white"}`}>
                                         {count}
@@ -4166,8 +5078,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             </div>
 
             {/* Collapse button at bottom */}
-            <div className="border-t border-slate-100/85 dark:border-slate-800 pt-3.5 space-y-3 shrink-0">
-              <div className="flex justify-center pt-1">
+            <div className="border-t border-slate-200/80 dark:border-slate-800 pt-2 shrink-0">
+              <div className="flex justify-center">
                 <button
                   type="button"
                   onClick={() => setIsCollapsed(prev => {
@@ -4175,7 +5087,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     localStorage.setItem("fp_sidebar_collapsed", String(next));
                     return next;
                   })}
-                  className="h-8.5 w-8.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-850 hover:bg-slate-50 shadow-xs transition-all cursor-pointer"
+                  className="h-8 w-8 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-100 shadow-xs transition-all cursor-pointer"
                   title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
                 >
                   {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
@@ -4190,14 +5102,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       <nav className="flex md:hidden fixed bottom-0 inset-x-0 z-50 mobile-bottom-nav">
         <div className="flex w-full justify-around items-center py-2 px-0.5">
           {[
-            { id: "overview", label: "Hub", icon: Building2 },
+            { id: "overview", label: "Dashboard", icon: Building2 },
             { id: "timetable", label: "Timetable", icon: Calendar },
             { id: "faculty", label: "Faculty", icon: Users },
             { id: "handovers", label: "Handovers", icon: CalendarCheck2 },
             { id: "more_menu", label: "More", icon: Menu },
           ].map(t => {
             const Icon = t.icon;
-            const isActive = activeTab === t.id || (t.id === "more_menu" && ["config", "curriculum", "monitoring", "tracker", "fees", "reports", "tasks", "profile"].includes(activeTab));
+            const isActive = activeTab === t.id || (t.id === "more_menu" && ["config", "curriculum", "monitoring", "tracker", "fees", "reports", "profile"].includes(activeTab));
             const count = t.id === "handovers" ? requests.filter(r => r.status === "pending_cam").length : 0;
             return (
               <button
@@ -4245,8 +5157,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <Settings className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Academic Config</span>
+                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Academic Configuration</span>
                     <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Departments & subjects configuration</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("events")}
+                  className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-pink-500 hover:ring-2 hover:ring-pink-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                >
+                  <div className="h-10 w-10 rounded-xl bg-pink-50 dark:bg-pink-900/20 flex items-center justify-center text-[#D528A2] shrink-0 group-hover:scale-105 transition-transform">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Event Management</span>
+                    <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Campus events, exams &amp; milestone tracker</span>
                   </div>
                 </button>
 
@@ -4259,7 +5185,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <BookOpen className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Curriculum Map</span>
+                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Batch Creation</span>
                     <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Syllabus breakdown & metrics</span>
                   </div>
                 </button>
@@ -4273,7 +5199,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <Clock className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Academic Monitoring</span>
+                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Attendance Monitoring</span>
                     <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Class attendance tracking</span>
                   </div>
                 </button>
@@ -4287,7 +5213,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <GraduationCap className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Student Tracker</span>
+                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Skill Development Tracker</span>
                     <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Weekly submissions ledger</span>
                   </div>
                 </button>
@@ -4315,22 +5241,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <FileText className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Operational Reports</span>
+                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Campus Insight</span>
                     <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Generate export metrics</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("tasks")}
-                  className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
-                >
-                  <div className="h-10 w-10 rounded-xl bg-orange-50 dark:bg-orange-900/25 flex items-center justify-center text-orange-600 shrink-0 group-hover:scale-105 transition-transform">
-                    <ClipboardList className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Tasks & Issues</span>
-                    <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Escalate issues & assign tasks</span>
                   </div>
                 </button>
 
@@ -4612,93 +5524,28 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
 
 
-                {/* Academic Calendar Events CRUD */}
-                <div className="md:col-span-2 pt-6 border-t border-slate-200 space-y-4">
-                  <div className="flex justify-between items-center flex-wrap gap-3 pb-2 border-b border-slate-100">
-                    <h3 className="text-xs font-black text-indigo-705 uppercase tracking-wider">
-                      Manage Academic Calendar Milestones
-                    </h3>
-                    <div className="relative w-full max-w-xs">
-                      <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Search events..."
-                        value={searchEventQuery}
-                        onChange={e => setSearchEventQuery(e.target.value)}
-                        className="w-full pl-9 pr-3 py-1.5 border border-slate-200 bg-white text-xs rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-semibold shadow-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <form onSubmit={handleSaveEvent} className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/50 p-5 border border-slate-200 rounded-xl">
-                    <Input
-                      label="Event Title"
-                      placeholder="e.g. CIA 2 Commencement"
-                      value={calendarEventName}
-                      onChange={e => setCalendarEventName(e.target.value)}
-                      required
-                    />
-                    <Input
-                      label="Event Date"
-                      type="date"
-                      value={calendarEventDate}
-                      onChange={e => setCalendarEventDate(e.target.value)}
-                      required
-                    />
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-455 font-bold block">Agendas / Descriptions</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="Short descriptions..."
-                          value={calendarEventDesc}
-                          onChange={e => setCalendarEventDesc(e.target.value)}
-                          className="flex-1 p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm"
-                        />
-                        <Button type="submit" variant="primary" size="md">
-                          Add Event
-                        </Button>
+                {/* Event Management Shortcut Card */}
+                <div className="md:col-span-2 pt-6 border-t border-slate-200">
+                  <div className="bg-gradient-to-r from-pink-50/70 via-purple-50/50 to-indigo-50/70 border border-pink-200/80 p-5 rounded-2xl flex items-center justify-between flex-wrap gap-4 shadow-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-[#D528A2] to-pink-600 text-white flex items-center justify-center font-bold shadow-md shadow-[#D528A2]/20 shrink-0">
+                        <Calendar className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">Academic Event Management &amp; Milestone Tracker</h4>
+                        <p className="text-xs text-slate-600 font-semibold mt-0.5">
+                          Academic milestones, continuous assessments, and campus events are managed in the dedicated <span className="text-[#D528A2] font-bold">Event Management</span> console.
+                        </p>
                       </div>
                     </div>
-                  </form>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-2">
-                    {academicEvents
-                      .filter(e => e.name.toLowerCase().includes(searchEventQuery.toLowerCase()))
-                      .map(e => {
-                        const isEditing = editingEventId === e.id;
-                        return (
-                          <div key={e.id} className="p-4 rounded-xl border border-slate-200 bg-white shadow-sm relative group flex flex-col justify-between min-h-[100px] hover:shadow-md transition-all">
-                            {isEditing ? (
-                              <form onSubmit={(ev) => handleSaveInlineEvent(ev, e.id)} className="space-y-2.5 w-full">
-                                <Input label="Title" value={editEventName} onChange={ev => setEditEventName(ev.target.value)} required />
-                                <Input label="Date" type="date" value={editEventDate} onChange={ev => setEditEventDate(ev.target.value)} required />
-                                <Input label="Description" value={editEventDesc} onChange={ev => setEditEventDesc(ev.target.value)} />
-                                <div className="flex gap-1.5 pt-1.5">
-                                  <Button type="submit" variant="success" size="xs" className="flex-1">Save</Button>
-                                  <Button type="button" variant="secondary" size="xs" onClick={() => setEditingEventId(null)}>Cancel</Button>
-                                </div>
-                              </form>
-                            ) : (
-                              <>
-                                <div className="absolute right-3 top-3 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-all">
-                                  <Button variant="secondary" size="xs" onClick={() => handleStartEditEvent(e)} title="Edit Event" className="p-1">
-                                    <Edit2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button variant="danger" size="xs" onClick={() => handleDeleteEvent(e.id)} title="Delete Event" className="p-1">
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                                <div>
-                                  <span className="text-[10px] text-indigo-600 font-extrabold block">{e.date}</span>
-                                  <h4 className="text-xs font-bold text-slate-808 mt-1 pr-10">{e.name}</h4>
-                                </div>
-                                <p className="text-[10.5px] text-slate-400 mt-2 font-semibold line-clamp-2 leading-relaxed">{e.desc || "No description provided."}</p>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("events")}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#D528A2] to-pink-600 hover:opacity-95 text-white font-extrabold text-xs shadow-md shadow-[#D528A2]/20 transition-all cursor-pointer flex items-center gap-2 shrink-0"
+                    >
+                      <span>Open Event Management</span>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
 
@@ -6491,187 +7338,347 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <InterviewModule currentUserRole="cm" currentUserName={currentCAM?.name || "Campus Manager"} defaultCollegeId={activeCollegeId} />
                   )}
 
-                  {/* 6. ACADEMIC MONITORING */}
+                  {/* 6. ACADEMIC MONITORING / MASTER STUDENT ATTENDANCE DIRECTORY */}
                   {activeTab === "monitoring" && (() => {
-                    const analyzedStudents = collegeStudents.map(s => {
-                      const stats = getStudentAttendanceStats(s.id);
-                      return {
-                        ...s,
-                        attendancePct: stats.percentage,
-                        attendedCount: stats.attended,
-                        totalCount: stats.total
-                      };
-                    });
+                    // Determine working dates for active range
+                    const activeStartDate = attendanceMonthFilter === "2026-06" ? "2026-06-15" :
+                                            attendanceMonthFilter === "2026-07" ? "2026-07-01" :
+                                            attendanceMonthFilter === "2026-08" ? "2026-08-01" :
+                                            attendanceStartDate;
+                    
+                    const activeEndDate = attendanceMonthFilter === "2026-06" ? "2026-06-30" :
+                                          attendanceMonthFilter === "2026-07" ? "2026-07-31" :
+                                          attendanceMonthFilter === "2026-08" ? "2026-08-31" :
+                                          attendanceEndDate;
 
-                    const totalCount = analyzedStudents.length;
-                    const atRiskCount = analyzedStudents.filter(s => s.attendancePct < 75).length;
-                    const criticalCount = analyzedStudents.filter(s => s.attendancePct < 60).length;
+                    const workingDates = getSemesterWorkingDates(activeStartDate, activeEndDate);
 
-                    // Apply filters
-                    const filtered = analyzedStudents.filter(s => {
-                      const matchesSearch = s.name.toLowerCase().includes(studentSearch.toLowerCase()) || s.id.toLowerCase().includes(studentSearch.toLowerCase());
+                    // Apply student filters
+                    const filtered = collegeStudents.filter(s => {
+                      const matchesSearch = s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
+                                           (s.roll_number && s.roll_number.toLowerCase().includes(studentSearch.toLowerCase())) ||
+                                           s.id.toLowerCase().includes(studentSearch.toLowerCase());
                       const matchesDept = studentDeptFilter === "all" || s.department === studentDeptFilter;
                       const matchesBatch = studentBatchFilter === "all" || s.classGroup === studentBatchFilter;
-                      const matchesAttendance =
-                        studentAttendanceFilter === "all" ? true :
-                          studentAttendanceFilter === "at-risk" ? s.attendancePct < 75 :
-                            studentAttendanceFilter === "critical" ? s.attendancePct < 60 : true;
-
-                      return matchesSearch && matchesDept && matchesBatch && matchesAttendance;
+                      return matchesSearch && matchesDept && matchesBatch;
                     });
 
+                    // Overall summary stats
+                    let grandTotalWorkingDays = workingDates.length;
+                    let grandPresentDaysSum = 0;
+                    let grandTotalPossibleDays = filtered.length * grandTotalWorkingDays;
+
+                    filtered.forEach(st => {
+                      workingDates.forEach(dStr => {
+                        const dateObj = new Date(dStr + "T00:00:00");
+                        const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+                        const stSlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
+                        if (stSlots.length === 0) return;
+
+                        const pCount = stSlots.filter(s => {
+                          const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
+                          return att?.status === "present" || att?.status === "od";
+                        }).length;
+
+                        if (pCount === stSlots.length) grandPresentDaysSum += 1;
+                        else if (pCount > 0) grandPresentDaysSum += 0.5;
+                      });
+                    });
+
+                    const overallAvgPct = grandTotalPossibleDays > 0 ? Math.round((grandPresentDaysSum / grandTotalPossibleDays) * 100) : 0;
+
                     return (
-                      <div className="space-y-6">
-                        <div className="bg-white p-6 rounded-xl border border-slate-205 shadow-sm space-y-6">
-                        <div className="border-b border-slate-100 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                          <div>
-                            <h2 className="text-base font-black text-slate-905">Student Attendance Directory</h2>
-                            <p className="text-xs text-slate-400 font-semibold mt-0.5">Real-time attendance calculations and warning threshold filters.</p>
-                          </div>
-
-                          {/* Roster KPI Summary */}
-                          <div className="flex gap-3 text-center font-bold">
-                            <div className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-150 shadow-sm">
-                              <span className="text-[8px] uppercase text-slate-400 block">Total</span>
-                              <span className="text-xs font-bold text-slate-700">{totalCount}</span>
+                      <div className="space-y-6 font-sans">
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+                          {/* Header & Controls Bar */}
+                          <div className="border-b border-slate-150 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h2 className="text-base font-black text-slate-800">Master Student Attendance Directory</h2>
+                                <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-extrabold">
+                                  {workingDates.length} Working Days ({formatDateToDMY(activeStartDate)} to {formatDateToDMY(activeEndDate)})
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                                Master date-wise attendance matrix with full semester tracking, Excel template download, and bulk imports.
+                              </p>
                             </div>
-                            <div className="bg-amber-50/50 px-3 py-1.5 rounded-xl border border-amber-100 shadow-sm">
-                              <span className="text-[8px] uppercase text-amber-600 block">At-Risk</span>
-                              <span className="text-xs font-bold text-amber-700">{atRiskCount}</span>
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* Download Master Template */}
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadAttendanceTemplate(studentBatchFilter, activeStartDate, activeEndDate)}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+                                title="Download master template matching exact date headers format"
+                              >
+                                <Download className="h-3.5 w-3.5 text-slate-600" />
+                                <span>Download Master Template</span>
+                              </button>
+
+                              {/* Import Master Excel */}
+                              <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer active:scale-95">
+                                <Upload className="h-3.5 w-3.5 text-indigo-600" />
+                                <span>Import Attendance (.xlsx)</span>
+                                <input
+                                  type="file"
+                                  accept=".xlsx, .xls, .csv"
+                                  onChange={handleAttendanceFileSelect}
+                                  className="hidden"
+                                />
+                              </label>
+
+                              {/* Export Master Excel */}
+                              <button
+                                type="button"
+                                onClick={() => handleExportDateAttendance(activeStartDate, activeEndDate, filtered)}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer active:scale-95"
+                                title="Export complete master attendance sheet for all dates to Excel"
+                              >
+                                <Download className="h-3.5 w-3.5 text-emerald-600" />
+                                <span>Export Master Excel</span>
+                              </button>
                             </div>
-                            <div className="bg-red-50/50 px-3 py-1.5 rounded-xl border border-red-100 shadow-sm">
-                              <span className="text-[8px] uppercase text-red-505 block">Critical</span>
-                              <span className="text-xs font-bold text-red-655">{criticalCount}</span>
+                          </div>
+
+                          {/* Quick Summary Metrics */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl shadow-2xs">
+                              <span className="text-[9.5px] uppercase font-bold text-slate-400 block">Total Students</span>
+                              <span className="text-xl font-black text-slate-800">{filtered.length}</span>
+                            </div>
+                            <div className="p-3.5 bg-indigo-50/60 border border-indigo-150 rounded-xl shadow-2xs">
+                              <span className="text-[9.5px] uppercase font-bold text-indigo-600 block">Semester Working Days</span>
+                              <span className="text-xl font-black text-indigo-700">{workingDates.length} Days</span>
+                            </div>
+                            <div className="p-3.5 bg-emerald-50/60 border border-emerald-150 rounded-xl shadow-2xs">
+                              <span className="text-[9.5px] uppercase font-bold text-emerald-600 block">Total Student Days Present</span>
+                              <span className="text-xl font-black text-emerald-700">{grandPresentDaysSum} Days</span>
+                            </div>
+                            <div className="p-3.5 bg-purple-50/60 border border-purple-150 rounded-xl shadow-2xs">
+                              <span className="text-[9.5px] uppercase font-bold text-purple-600 block">Average Compliance Rate</span>
+                              <span className="text-xl font-black text-purple-700">{overallAvgPct}%</span>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Advanced Filters Panel */}
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50/50 p-4 rounded-xl border border-slate-200">
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-slate-400">Search Student</label>
-                            <div className="relative">
-                              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                              <input
-                                type="text"
-                                placeholder="Search name or ID..."
-                                value={studentSearch}
-                                onChange={e => setStudentSearch(e.target.value)}
-                                className="w-full pl-8 pr-3 py-1.5 border border-slate-200 bg-white text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold shadow-sm"
-                              />
+                          {/* Date Range & Cohort Filter Toolbar */}
+                          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200 items-end">
+                            <div className="space-y-1 sm:col-span-1">
+                              <label className="text-[9.5px] uppercase font-bold text-slate-500">Search Student</label>
+                              <div className="relative">
+                                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                                <input
+                                  type="text"
+                                  placeholder="Search name, roll no..."
+                                  value={studentSearch}
+                                  onChange={e => setStudentSearch(e.target.value)}
+                                  className="w-full pl-8 pr-3 py-1.5 border border-slate-200 bg-white text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold shadow-2xs"
+                                />
+                              </div>
                             </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[9.5px] uppercase font-bold text-slate-500">Department</label>
+                              <select
+                                value={studentDeptFilter}
+                                onChange={e => setStudentDeptFilter(e.target.value)}
+                                className="w-full p-2 border border-slate-200 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-2xs"
+                              >
+                                <option value="all">All Departments</option>
+                                {studentDepts.map(d => (
+                                  <option key={d} value={d}>{d}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[9.5px] uppercase font-bold text-slate-500">Class Cohort</label>
+                              <select
+                                value={studentBatchFilter}
+                                onChange={e => setStudentBatchFilter(e.target.value)}
+                                className="w-full p-2 border border-slate-200 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-2xs"
+                              >
+                                <option value="all">All Batches</option>
+                                {activeBatches.map(b => (
+                                  <option key={b} value={b}>{b}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[9.5px] uppercase font-bold text-slate-500">Date Range View</label>
+                              <select
+                                value={attendanceMonthFilter}
+                                onChange={e => setAttendanceMonthFilter(e.target.value)}
+                                className="w-full p-2 border border-slate-200 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-2xs text-indigo-700"
+                              >
+                                <option value="all">All Semester (15-06-2026 to Today)</option>
+                                <option value="2026-06">June 2026</option>
+                                <option value="2026-07">July 2026</option>
+                                <option value="2026-08">August 2026</option>
+                                <option value="custom">Custom Date Range</option>
+                              </select>
+                            </div>
+
+                            {attendanceMonthFilter === "custom" ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="date"
+                                  value={attendanceStartDate}
+                                  onChange={e => setAttendanceStartDate(e.target.value)}
+                                  className="w-1/2 p-1.5 border border-slate-200 rounded-xl bg-white text-[11px] font-bold text-slate-700 outline-none"
+                                />
+                                <span className="text-slate-400 font-bold text-xs">to</span>
+                                <input
+                                  type="date"
+                                  value={attendanceEndDate}
+                                  onChange={e => setAttendanceEndDate(e.target.value)}
+                                  className="w-1/2 p-1.5 border border-slate-200 rounded-xl bg-white text-[11px] font-bold text-slate-700 outline-none"
+                                />
+                              </div>
+                            ) : (
+                              <div className="p-2 rounded-xl bg-slate-100 text-center text-slate-500 text-[11px] font-bold">
+                                {workingDates.length} columns active
+                              </div>
+                            )}
                           </div>
 
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-slate-400">Filter Department</label>
-                            <select
-                              value={studentDeptFilter}
-                              onChange={e => setStudentDeptFilter(e.target.value)}
-                              className="w-full p-2 border border-slate-202 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-sm"
-                            >
-                              <option value="all">All Departments</option>
-                              {studentDepts.map(d => (
-                                <option key={d} value={d}>{d}</option>
-                              ))}
-                            </select>
-                          </div>
+                          {/* Master Multi-Date Attendance Register Table */}
+                          <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-2xs max-h-[70vh]">
+                            <table className="w-full border-collapse text-left text-xs font-semibold">
+                              <thead className="sticky top-0 z-20 shadow-2xs">
+                                <tr className="bg-gradient-to-r from-slate-100 via-indigo-50/40 to-slate-100 border-b border-slate-200 text-slate-700 font-black uppercase text-[9px] tracking-wider whitespace-nowrap">
+                                  <th className="p-2.5 border-r border-slate-200 text-center sticky left-0 z-30 bg-slate-100 w-12">Sl. No.</th>
+                                  <th className="p-2.5 border-r border-slate-200 sticky left-12 z-30 bg-slate-100 min-w-[110px]">Roll No</th>
+                                  <th className="p-2.5 border-r border-slate-200 sticky left-[158px] z-30 bg-slate-100 min-w-[150px]">Name</th>
+                                  <th className="p-2.5 border-r border-slate-200 min-w-[110px]">Department</th>
+                                  <th className="p-2.5 border-r border-slate-200 text-center min-w-[70px]">Total days</th>
+                                  <th className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-emerald-700">Total Present</th>
+                                  <th className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-rose-700">Total Absent</th>
+                                  <th className="p-2.5 border-r border-slate-200 text-center min-w-[65px] text-indigo-700">%</th>
+                                  {workingDates.map(dStr => {
+                                    const dObj = new Date(dStr + "T00:00:00");
+                                    const dDay = dObj.toLocaleDateString("en-US", { weekday: "short" });
+                                    return (
+                                      <th key={dStr} className="p-2 border-r border-slate-200 text-center min-w-[72px]" title={`${dDay}, ${dStr}`}>
+                                        <div className="font-extrabold text-[9.5px] text-slate-700">{formatDateToDMY(dStr)}</div>
+                                        <div className="text-[8px] text-slate-400 font-semibold">{dDay}</div>
+                                      </th>
+                                    );
+                                  })}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 bg-white text-slate-700 text-xs">
+                                {filtered.map((st, idx) => {
+                                  let presentDays = 0;
+                                  let absentDays = 0;
+                                  let totalStudentWorkingDays = 0;
 
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-slate-400">Filter Batch / Cohort</label>
-                            <select
-                              value={studentBatchFilter}
-                              onChange={e => setStudentBatchFilter(e.target.value)}
-                              className="w-full p-2 border border-slate-202 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-sm"
-                            >
-                              <option value="all">All Batches</option>
-                              {activeBatches.map(b => (
-                                <option key={b} value={b}>{b}</option>
-                              ))}
-                            </select>
-                          </div>
+                                  const dateCells = workingDates.map(dStr => {
+                                    const dateObj = new Date(dStr + "T00:00:00");
+                                    const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+                                    const stSlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
 
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-slate-400">Attendance Warning</label>
-                            <select
-                              value={studentAttendanceFilter}
-                              onChange={e => setStudentAttendanceFilter(e.target.value)}
-                              className="w-full p-2 border border-slate-202 rounded-xl bg-white text-xs font-bold cursor-pointer outline-none shadow-sm"
-                            >
-                              <option value="all">All Attendance</option>
-                              <option value="at-risk">At-Risk (&lt;75%)</option>
-                              <option value="critical">Critical (&lt;60%)</option>
-                            </select>
-                          </div>
-                        </div>
+                                    if (stSlots.length === 0) {
+                                      return (
+                                        <td key={dStr} className="p-1.5 text-center border-r border-slate-100 text-slate-300">
+                                          <span className="text-[10px]">—</span>
+                                        </td>
+                                      );
+                                    }
 
-                        {/* Student Grid Table */}
-                        <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
-                          <table className="w-full border-collapse text-left text-xs font-semibold min-w-[640px]">
-                            <thead>
-                              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
-                                <th className="p-3 border-r border-slate-100">Student Name</th>
-                                <th className="p-3 border-r border-slate-100">Register Number</th>
-                                <th className="p-3 border-r border-slate-100">Class Group</th>
-                                <th className="p-3 border-r border-slate-100">Department</th>
-                                <th className="p-3 border-r border-slate-100 text-center">Attendance Status</th>
-                                <th className="p-3 border-r border-slate-100 text-right">Compliance Rate</th>
-                                <th className="p-3 text-center">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                              {filtered.map(s => (
-                                <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
-                                  <td className="p-3 font-bold text-slate-805 border-r border-slate-100">{s.name}</td>
-                                  <td className="p-3 font-mono font-bold text-slate-400 border-r border-slate-100">{s.id}</td>
-                                  <td className="p-3 font-semibold text-slate-500 border-r border-slate-100">{s.classGroup}</td>
-                                  <td className="p-3 border-r border-slate-100">{s.department || "General"}</td>
-                                  <td className="p-3 text-center border-r border-slate-100">
-                                    <span className={`px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase ${s.attendancePct < 60 ? "bg-red-50 border-red-100 text-red-600" :
-                                        s.attendancePct < 75 ? "bg-amber-50 border-amber-100 text-amber-700" :
-                                          "bg-emerald-50 border-emerald-100 text-emerald-700"
-                                      }`}>
-                                      {s.attendancePct < 60 ? "Critical" :
-                                        s.attendancePct < 75 ? "At Risk" : "Compliant"}
-                                    </span>
-                                  </td>
-                                  <td className="p-3 text-right border-r border-slate-100">
-                                    <div className="flex items-center justify-end gap-2">
-                                      <span className={`font-bold text-[11px] ${s.attendancePct < 75 ? "text-red-500" : "text-slate-700"
+                                    totalStudentWorkingDays++;
+
+                                    const pCount = stSlots.filter(s => {
+                                      const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
+                                      return att?.status === "present" || att?.status === "od";
+                                    }).length;
+
+                                    const odCount = stSlots.filter(s => {
+                                      const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
+                                      return att?.status === "od";
+                                    }).length;
+
+                                    const aCount = stSlots.filter(s => {
+                                      const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === s.id && a.dateStr === dStr);
+                                      return att?.status === "absent";
+                                    }).length;
+
+                                    let statusLabel = "—";
+                                    let badgeColor = "bg-slate-50 text-slate-400 border-slate-200";
+
+                                    if (odCount === stSlots.length) {
+                                      statusLabel = "OD";
+                                      badgeColor = "bg-purple-50 text-purple-700 border-purple-200";
+                                      presentDays += 1;
+                                    } else if (pCount === stSlots.length) {
+                                      statusLabel = "P";
+                                      badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200";
+                                      presentDays += 1;
+                                    } else if (pCount > 0) {
+                                      statusLabel = "HD";
+                                      badgeColor = "bg-amber-50 text-amber-700 border-amber-200";
+                                      presentDays += 0.5;
+                                      absentDays += 0.5;
+                                    } else if (aCount > 0) {
+                                      statusLabel = "A";
+                                      badgeColor = "bg-rose-50 text-rose-700 border-rose-200";
+                                      absentDays += 1;
+                                    }
+
+                                    return (
+                                      <td key={dStr} className="p-1.5 text-center border-r border-slate-100">
+                                        <button
+                                          type="button"
+                                          onClick={() => setMarkingStudentForDate({ student: st, dateStr: dStr })}
+                                          className={`inline-flex items-center justify-center h-5 w-6 rounded font-black text-[10px] border transition-all cursor-pointer hover:scale-110 active:scale-95 ${badgeColor}`}
+                                          title={`Click to mark/edit periods for ${st.name} on ${dStr}`}
+                                        >
+                                          {statusLabel}
+                                        </button>
+                                      </td>
+                                    );
+                                  });
+
+                                  const effectiveTotal = totalStudentWorkingDays || workingDates.length;
+                                  const pct = effectiveTotal > 0 ? Math.round((presentDays / effectiveTotal) * 100) : 0;
+
+                                  return (
+                                    <tr key={st.id} className="hover:bg-indigo-50/20 transition-colors">
+                                      <td className="p-2.5 text-center font-bold text-slate-400 border-r border-slate-100 sticky left-0 z-10 bg-white">{idx + 1}</td>
+                                      <td className="p-2.5 font-mono font-bold text-slate-600 border-r border-slate-100 sticky left-12 z-10 bg-white">{st.roll_number || st.id}</td>
+                                      <td className="p-2.5 font-extrabold text-slate-900 border-r border-slate-100 sticky left-[158px] z-10 bg-white whitespace-nowrap">{st.name}</td>
+                                      <td className="p-2.5 border-r border-slate-100 whitespace-nowrap text-slate-600">{st.department || "General"}</td>
+                                      <td className="p-2.5 text-center font-bold text-slate-700 border-r border-slate-100">{effectiveTotal}</td>
+                                      <td className="p-2.5 text-center font-black text-emerald-700 border-r border-slate-100 bg-emerald-50/20">{presentDays}</td>
+                                      <td className="p-2.5 text-center font-black text-rose-700 border-r border-slate-100 bg-rose-50/20">{absentDays}</td>
+                                      <td className="p-2.5 text-center border-r border-slate-100">
+                                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded font-black text-[10.5px] ${
+                                          pct >= 75
+                                            ? "bg-emerald-50 text-emerald-700"
+                                            : pct >= 60
+                                            ? "bg-amber-50 text-amber-700"
+                                            : "bg-rose-50 text-rose-700"
                                         }`}>
-                                        {s.attendancePct}%
-                                      </span>
-                                      <div className="w-16 bg-slate-100 rounded-full h-1.5 overflow-hidden border border-slate-101">
-                                        <div
-                                          className={`h-full ${s.attendancePct < 60 ? "bg-red-500" :
-                                              s.attendancePct < 75 ? "bg-amber-500" : "bg-emerald-555"
-                                            }`}
-                                          style={{ width: `${s.attendancePct}%` }}
-                                        />
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => openCorrectionModal(s)}
-                                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border border-indigo-200 rounded-xl text-[10px] uppercase tracking-wider transition-all cursor-pointer hover:scale-[1.02]"
-                                    >
-                                      Correct Attendance
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                              {filtered.length === 0 && (
-                                <tr>
-                                  <td colSpan={7} className="p-8 text-center text-slate-400 italic">
-                                    No students matched the active filters.
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
+                                          {pct}%
+                                        </span>
+                                      </td>
+                                      {dateCells}
+                                    </tr>
+                                  );
+                                })}
+                                {filtered.length === 0 && (
+                                  <tr>
+                                    <td colSpan={9 + workingDates.length} className="p-8 text-center text-slate-400 italic">
+                                      No students matched the active filters.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-                      </div>
 
                       {/* Missed Attendance Registry */}
                       {(() => {
@@ -6782,10 +7789,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     return <CAMFeePanel camId={camId || ""} />;
                   })()}
 
-                  {/* 7. OPERATIONAL REPORTS */}
+                  {/* 7. CAMPUS INSIGHT */}
                   {activeTab === "reports" && (
                     <Panel
-                      title="Academic Operational Reports"
+                      title="Campus Insight"
                       subtitle="Export student performance metrics, classroom utilization, and workload compliance ledger."
                     >
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs font-semibold">
@@ -7483,7 +8490,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   )}
 
                   {/* Student Tracker Audit Tab */}
-                  {(activeTab === "tracker" || activeTab === "monitoring") && (() => {
+                  {activeTab === "tracker" && (() => {
                     // ── DB-driven cascading filters ───────────────────────────────────────
                     // Helper: match college_id loosely (includes subjects with null college_id
                     // as well as those explicitly tied to this campus)
@@ -8020,82 +9027,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         {/* Top Actions */}
                         <div className="flex items-center gap-2 flex-wrap">
 
-                          {/* Download Template: 3-part selector (Dept + Shift + Sem) + Download button */}
-                          {(() => {
-                            const campusDeptNames = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
-                            const deptOptions = campusDeptNames;
-                            const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
-                            const selectedDept = templateDept || deptOptions[0] || "General";
-
-                            const selectedCourseObj = collegeCourses.find(
-                              c => c.name.trim().toLowerCase() === selectedDept.trim().toLowerCase()
-                            );
-
-                            const allowedShifts = (() => {
-                              if (!selectedCourseObj) return ["Shift 1", "Shift 2", "General"];
-                              const ds = (selectedCourseObj.default_shift || "").toLowerCase();
-                              if (ds === "shift_1") return ["Shift 1"];
-                              if (ds === "shift_2") return ["Shift 2"];
-                              if (ds === "general") return ["General"];
-                              if (ds === "both") return ["Shift 1", "Shift 2"];
-                              if (ds === "all") return ["Shift 1", "Shift 2", "General"];
-                              if (selectedCourseObj.shift_based === 1) return ["Shift 1", "Shift 2"];
-                              return ["General"];
-                            })();
-
-                            const selectedShift = allowedShifts.includes(templateShift) ? templateShift : allowedShifts[0];
-                            const composedClass = (selectedShift && selectedShift !== "General")
-                              ? `${selectedDept} - ${selectedShift} - ${templateSem || "Semester 1"}`
-                              : `${selectedDept} - ${templateSem || "Semester 1"}`;
-
-                            return (
-                              <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl px-1.5 py-1 shadow-xs">
-                                <select
-                                  value={selectedDept}
-                                  onChange={(e) => {
-                                    setTemplateDept(e.target.value);
-                                    const nextCourse = collegeCourses.find(c => c.name.trim().toLowerCase() === e.target.value.trim().toLowerCase());
-                                    const nextDs = (nextCourse?.default_shift || "").toLowerCase();
-                                    if (nextDs === "shift_1") setTemplateShift("Shift 1");
-                                    else if (nextDs === "shift_2") setTemplateShift("Shift 2");
-                                    else if (nextDs === "general") setTemplateShift("General");
-                                    else if (nextDs === "both") setTemplateShift("Shift 1");
-                                  }}
-                                  className="text-[11px] font-bold px-2 py-1.5 rounded-lg bg-white border border-slate-200 outline-none cursor-pointer text-slate-700"
-                                >
-                                  {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
-                                </select>
-                                {allowedShifts.length > 1 ? (
-                                  <select
-                                    value={selectedShift}
-                                    onChange={(e) => setTemplateShift(e.target.value)}
-                                    className="text-[11px] font-bold px-2 py-1.5 rounded-lg bg-white border border-slate-200 outline-none cursor-pointer text-slate-700"
-                                  >
-                                    {allowedShifts.map(s => <option key={s} value={s}>{s}</option>)}
-                                  </select>
-                                ) : (
-                                  <span className="text-[11px] font-extrabold px-2 py-1.5 rounded-lg bg-slate-200 text-slate-700">
-                                    {allowedShifts[0]}
-                                  </span>
-                                )}
-                                <select
-                                  value={templateSem}
-                                  onChange={(e) => setTemplateSem(e.target.value)}
-                                  className="text-[11px] font-bold px-2 py-1.5 rounded-lg bg-white border border-slate-200 outline-none cursor-pointer text-slate-700"
-                                >
-                                  {semOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDownloadStudentTemplate(composedClass)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap"
-                                >
-                                  <Download className="h-3 w-3" />
-                                  Download
-                                </button>
-                              </div>
-                            );
-                          })()}
+                          {/* Single Download Template Button */}
+                          <button
+                            type="button"
+                            onClick={() => setShowTemplateModal(true)}
+                            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+                            title="Choose course, shift and semester to download template"
+                          >
+                            <Download className="h-3.5 w-3.5 text-slate-600" />
+                            <span>Download Template</span>
+                          </button>
 
                           <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold transition-all shadow-sm cursor-pointer active:scale-95">
                             <Upload className="h-3.5 w-3.5" />
@@ -8273,6 +9214,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-4">
                         {(() => {
                           const campusStudents = collegeStudents;
+
+                          const extractSemNum = (val?: string): number | null => {
+                            if (!val) return null;
+                            const s = String(val).toLowerCase();
+                            const numMatch = s.match(/(?:semester|sem)?\s*([1-8])/i);
+                            if (numMatch) return parseInt(numMatch[1], 10);
+                            const romanMap: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8 };
+                            const romanMatch = s.match(/\b(viii|vii|vi|iv|v|iii|ii|i)\b/i);
+                            if (romanMatch && romanMap[romanMatch[1]]) return romanMap[romanMatch[1]];
+                            return null;
+                          };
+
+                          const targetSemNum = studentSemFilter === "all" ? null : extractSemNum(studentSemFilter);
+
                           const filtered = campusStudents.filter(s => {
                             const matchSearch = !studentDirSearch ||
                               s.name?.toLowerCase().includes(studentDirSearch.toLowerCase()) ||
@@ -8286,10 +9241,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               stDept === studentDirDeptFilter.toLowerCase() ||
                               (s.classGroup && s.classGroup.toLowerCase().includes(studentDirDeptFilter.toLowerCase()));
 
-                            const stSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").trim().toLowerCase();
-                            const matchSem = studentSemFilter === "all" || 
-                              stSem === studentSemFilter.toLowerCase() ||
-                              (s.classGroup && s.classGroup.toLowerCase().includes(studentSemFilter.toLowerCase()));
+                            const stSemNum = extractSemNum(s.semester) || extractSemNum(s.classGroup);
+                            const matchSem = targetSemNum === null || (stSemNum !== null && stSemNum === targetSemNum);
 
                             const stShift = (s.shift || (s.classGroup ? s.classGroup.match(/Shift\s*\d+/i)?.[0] : "") || "").trim().toLowerCase();
                             const matchShift = studentShiftFilter === "all" || 
@@ -8322,33 +9275,55 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                           return (
                             <div className="space-y-3">
-                              <div className="flex items-center justify-between text-xs font-semibold text-slate-500 px-1">
-                                <span>Showing {filtered.length} student(s)</span>
-                                {filtered.length > 1 && (
-                                  <button
-                                    type="button"
-                                    disabled={loadingActions['bulk_delete_students']}
-                                    onClick={() => handleBulkDeleteStudents(allFilteredIds)}
-                                    className="text-rose-600 hover:text-rose-700 font-bold text-[11px] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    {loadingActions['bulk_delete_students'] ? (
-                                      <>
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                        Deleting All...
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Trash2 className="h-3 w-3" />
-                                        Delete All Filtered ({filtered.length})
-                                      </>
-                                    )}
-                                  </button>
-                                )}
+                              <div className="flex items-center justify-between text-xs font-semibold text-slate-500 px-1 gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                  <span>Showing {filtered.length} student(s)</span>
+                                  {filtered.length > 1 && (
+                                    <button
+                                      type="button"
+                                      disabled={loadingActions['bulk_delete_students']}
+                                      onClick={() => handleBulkDeleteStudents(allFilteredIds)}
+                                      className="text-rose-600 hover:text-rose-700 font-bold text-[11px] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ml-2"
+                                    >
+                                      {loadingActions['bulk_delete_students'] ? (
+                                        <>
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                          Deleting All...
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Trash2 className="h-3 w-3" />
+                                          Delete All Filtered ({filtered.length})
+                                        </>
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  disabled={isSyncingHireScore}
+                                  onClick={handleSyncHireScoreLive}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer active:scale-95 disabled:opacity-60"
+                                  title="Fetch latest HireScore and EFSET scores from live API (https://hire-score-fawn.vercel.app/api/students)"
+                                >
+                                  {isSyncingHireScore ? (
+                                    <>
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin text-purple-600" />
+                                      <span>Syncing Live Scores...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Sparkles className="h-3.5 w-3.5 text-purple-600" />
+                                      <span>Sync Live HireScore &amp; EFSET</span>
+                                    </>
+                                  )}
+                                </button>
                               </div>
                               <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs">
-                                <table className="w-full border-collapse text-left text-xs font-semibold min-w-[950px]">
+                                <table className="w-full border-collapse text-left text-xs font-semibold min-w-[2100px]">
                                   <thead>
-                                    <tr className="bg-gradient-to-r from-slate-50 to-indigo-50/30 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider">
+                                    <tr className="bg-gradient-to-r from-slate-50 to-indigo-50/40 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider whitespace-nowrap">
                                       <th className="p-3 w-10 text-center">
                                         <input
                                           type="checkbox"
@@ -8360,11 +9335,24 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       </th>
                                       <th className="p-3">Roll No / ID</th>
                                       <th className="p-3">Student Name</th>
+                                      <th className="p-3">Email ID</th>
                                       <th className="p-3">Dept &amp; Class</th>
-                                      <th className="p-3">Academic Marks</th>
-                                      <th className="p-3">Group / Medium</th>
-                                      <th className="p-3">Contact</th>
-                                      <th className="p-3">Social Profiles</th>
+                                      <th className="p-3">Hire Score</th>
+                                      <th className="p-3">EFSET Score</th>
+                                      <th className="p-3">Father Name</th>
+                                      <th className="p-3">Mother Name</th>
+                                      <th className="p-3">Parent Phone (WhatsApp)</th>
+                                      <th className="p-3">Aadhar Number</th>
+                                      <th className="p-3">PAN Number</th>
+                                      <th className="p-3">10th Mark (%)</th>
+                                      <th className="p-3">11th Mark (%)</th>
+                                      <th className="p-3">12th Mark (%)</th>
+                                      <th className="p-3">Group</th>
+                                      <th className="p-3">Medium</th>
+                                      <th className="p-3">Blood Group</th>
+                                      <th className="p-3">DOB</th>
+                                      <th className="p-3">Student Phone</th>
+                                      <th className="p-3">Social &amp; Code Links</th>
                                       <th className="p-3 text-center">Action</th>
                                     </tr>
                                   </thead>
@@ -8372,7 +9360,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     {filtered.map(st => {
                                       const isSelected = selectedStudentIds.includes(st.id);
                                       return (
-                                        <tr key={st.id} className={`transition-colors ${isSelected ? "bg-rose-50/30 hover:bg-rose-50/50" : "hover:bg-indigo-50/20"}`}>
+                                        <tr key={st.id} className={`transition-colors whitespace-nowrap ${isSelected ? "bg-rose-50/30 hover:bg-rose-50/50" : "hover:bg-indigo-50/20"}`}>
                                           <td className="p-3 text-center">
                                             <input
                                               type="checkbox"
@@ -8390,45 +9378,90 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           <td className="p-3 font-mono font-bold text-indigo-700">
                                             {st.roll_number || st.id}
                                           </td>
-                                          <td className="p-3">
-                                            <div className="font-bold text-slate-900">{st.name}</div>
-                                            <div className="text-[10px] text-slate-400 font-normal truncate max-w-[160px]">{st.email}</div>
+                                          <td className="p-3 font-bold text-slate-900">
+                                            {st.name}
+                                          </td>
+                                          <td className="p-3 text-slate-600">
+                                            {st.email}
                                           </td>
                                           <td className="p-3">
                                             <div className="font-bold text-slate-800">{st.department || "General"}</div>
                                             <div className="text-[10px] text-indigo-600 font-semibold">{st.classGroup}</div>
                                           </td>
                                           <td className="p-3">
-                                            <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
-                                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="10th Mark">10th: {st.tenth_mark || "—"}%</span>
-                                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="11th Mark">11th: {st.eleventh_mark || "—"}%</span>
-                                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold" title="12th Mark">12th: {st.twelfth_mark || "—"}%</span>
-                                            </div>
+                                            {st.hire_score ? (
+                                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-extrabold text-[11px]">
+                                                <Sparkles className="h-3 w-3 text-indigo-500" />
+                                                {st.hire_score}
+                                              </span>
+                                            ) : (
+                                              <span className="text-slate-300 font-bold">—</span>
+                                            )}
                                           </td>
                                           <td className="p-3">
-                                            <div className="text-slate-800 font-bold">{st.academic_group || "—"}</div>
-                                            <div className="text-[10px] text-slate-400">{st.medium || "—"} medium</div>
+                                            {st.efset_score ? (
+                                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200 text-purple-700 font-extrabold text-[11px]">
+                                                {st.efset_score}
+                                              </span>
+                                            ) : (
+                                              <span className="text-slate-300 font-bold">—</span>
+                                            )}
                                           </td>
-                                          <td className="p-3 text-[11px]">
-                                            <div className="text-slate-800 font-semibold">{st.phone || "—"}</div>
-                                            {st.parent_phone && <div className="text-[9.5px] text-emerald-600 font-medium">WhatsApp: {st.parent_phone}</div>}
+                                          <td className="p-3 text-slate-800">
+                                            {st.father_name || "—"}
+                                          </td>
+                                          <td className="p-3 text-slate-800">
+                                            {st.mother_name || "—"}
+                                          </td>
+                                          <td className="p-3 font-semibold text-emerald-700">
+                                            {st.parent_phone || "—"}
+                                          </td>
+                                          <td className="p-3 font-mono text-slate-800">
+                                            {st.aadhar_number || "—"}
+                                          </td>
+                                          <td className="p-3 font-mono text-slate-800">
+                                            {st.pan_number || "—"}
+                                          </td>
+                                          <td className="p-3 font-bold text-indigo-600">
+                                            {st.tenth_mark ? `${st.tenth_mark}%` : "—"}
+                                          </td>
+                                          <td className="p-3 font-bold text-indigo-600">
+                                            {st.eleventh_mark ? `${st.eleventh_mark}%` : "—"}
+                                          </td>
+                                          <td className="p-3 font-bold text-indigo-600">
+                                            {st.twelfth_mark ? `${st.twelfth_mark}%` : "—"}
+                                          </td>
+                                          <td className="p-3 text-slate-800">
+                                            {st.academic_group || "—"}
+                                          </td>
+                                          <td className="p-3 text-slate-800">
+                                            {st.medium || "—"}
+                                          </td>
+                                          <td className="p-3 font-bold text-rose-600">
+                                            {st.blood_group || "—"}
+                                          </td>
+                                          <td className="p-3 text-slate-800">
+                                            {formatDisplayDob(st.dob) || "—"}
+                                          </td>
+                                          <td className="p-3 text-slate-800 font-semibold">
+                                            {st.phone || "—"}
                                           </td>
                                           <td className="p-3">
-                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                            <div className="flex items-center gap-1.5">
                                               {st.linkedin_link && (
-                                                <a href={st.linkedin_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 text-[10px] font-bold">LinkedIn</a>
+                                                <a href={st.linkedin_link} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 text-[9.5px] font-bold">LinkedIn</a>
                                               )}
                                               {st.github_id && (
-                                                <a href={st.github_id.startsWith("http") ? st.github_id : `https://github.com/${st.github_id}`} target="_blank" rel="noreferrer" className="p-1 rounded bg-slate-100 text-slate-800 hover:bg-slate-200 text-[10px] font-bold">GitHub</a>
+                                                <a href={st.github_id.startsWith("http") ? st.github_id : `https://github.com/${st.github_id}`} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 hover:bg-slate-200 text-[9.5px] font-bold">GitHub</a>
                                               )}
                                               {st.hackerrank_link && (
-                                                <a href={st.hackerrank_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-[10px] font-bold">HackerRank</a>
+                                                <a href={st.hackerrank_link} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-[9.5px] font-bold">HackerRank</a>
                                               )}
                                               {st.leetcode_link && (
-                                                <a href={st.leetcode_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-amber-50 text-amber-600 hover:bg-amber-100 text-[10px] font-bold">LeetCode</a>
+                                                <a href={st.leetcode_link} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 hover:bg-amber-100 text-[9.5px] font-bold">LeetCode</a>
                                               )}
                                               {st.figma_link && (
-                                                <a href={st.figma_link} target="_blank" rel="noreferrer" className="p-1 rounded bg-purple-50 text-purple-600 hover:bg-purple-100 text-[10px] font-bold">Figma</a>
+                                                <a href={st.figma_link} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 hover:bg-purple-100 text-[9.5px] font-bold">Figma</a>
                                               )}
                                               {!st.linkedin_link && !st.github_id && !st.hackerrank_link && !st.leetcode_link && !st.figma_link && (
                                                 <span className="text-[10px] text-slate-350 italic">—</span>
@@ -8440,7 +9473,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                               <button
                                                 type="button"
                                                 onClick={() => setSelectedStudentForDetail(st)}
-                                                className="p-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10.5px] font-extrabold transition-colors cursor-pointer"
+                                                className="px-2 py-1 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10.5px] font-extrabold transition-colors cursor-pointer"
                                               >
                                                 View Profile
                                               </button>
@@ -8469,6 +9502,734 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           );
                         })()}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Tab: Event Management */}
+                  {activeTab === "events" && (
+                    <div className="space-y-6 animate-fadeIn pb-12">
+                      {/* Top Summary KPI Cards */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Campus Events</span>
+                            <h3 className="text-xl font-black text-slate-900 mt-1">{filteredEvents.length}</h3>
+                          </div>
+                          <div className="h-10 w-10 rounded-xl bg-pink-50 text-[#D528A2] flex items-center justify-center font-bold">
+                            <Calendar className="h-5 w-5" />
+                          </div>
+                        </div>
+
+                        <div className="p-4 rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 shadow-xs flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700">Upcoming Fests</span>
+                            <h3 className="text-xl font-black text-indigo-900 mt-1">
+                              {filteredEvents.filter(e => (e.status || "Upcoming") === "Upcoming").length}
+                            </h3>
+                          </div>
+                          <div className="h-10 w-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-xs">
+                            <Clock className="h-5 w-5" />
+                          </div>
+                        </div>
+
+                        <div className="p-4 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/50 to-teal-50/50 shadow-xs flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Live &amp; Ongoing</span>
+                            <h3 className="text-xl font-black text-emerald-900 mt-1">
+                              {filteredEvents.filter(e => e.status === "Ongoing").length}
+                            </h3>
+                          </div>
+                          <div className="h-10 w-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs">
+                            <Sparkles className="h-5 w-5" />
+                          </div>
+                        </div>
+
+                        <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 shadow-xs flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Completed &amp; Memories</span>
+                            <h3 className="text-xl font-black text-slate-800 mt-1">
+                              {filteredEvents.filter(e => e.status === "Completed").length}
+                            </h3>
+                          </div>
+                          <div className="h-10 w-10 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center font-bold">
+                            <CheckCircle2 className="h-5 w-5" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Toolbar & Filters */}
+                      <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs space-y-4">
+                        <div className="flex items-center justify-between flex-wrap gap-3">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                              <Calendar className="h-4 w-4 text-[#D528A2]" />
+                              Campus Fests, Functions &amp; Event Console
+                            </h3>
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-pink-50 text-[#D528A2] border border-pink-100">
+                              {filteredEvents.length} Events on this Campus
+                            </span>
+                          </div>
+
+                          {/* Header Action Buttons */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={handleDownloadEventTemplate}
+                              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                              title="Download Excel Import Template"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              <span>Template</span>
+                            </button>
+
+                            <label className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5">
+                              <Upload className="h-3.5 w-3.5" />
+                              <span>Import Excel</span>
+                              <input type="file" accept=".xlsx, .xls" onChange={handleImportEventsExcel} className="hidden" />
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={handleExportEventsExcel}
+                              className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <FileSpreadsheet className="h-3.5 w-3.5" />
+                              <span>Export Report</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleOpenCreateEventModal}
+                              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#D528A2] to-pink-600 text-white font-extrabold text-xs shadow-md shadow-[#D528A2]/20 hover:opacity-95 transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <Plus className="h-4 w-4" />
+                              <span>+ Host Event / Fest</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Filter Row & View Switcher */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2 border-t border-slate-100">
+                          {/* Search */}
+                          <div className="relative md:col-span-2">
+                            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                            <input
+                              type="text"
+                              placeholder="Search fest title, speaker, coordinator or venue..."
+                              value={eventSearchQuery}
+                              onChange={e => setEventSearchQuery(e.target.value)}
+                              className="w-full pl-9 pr-3 py-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
+                            />
+                          </div>
+
+                          {/* Category Filter */}
+                          <select
+                            value={eventCategoryFilter}
+                            onChange={e => setEventCategoryFilter(e.target.value)}
+                            className="p-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl font-bold text-slate-700 outline-none"
+                          >
+                            <option value="All">All Categories</option>
+                            <option value="Coding Fest & Hackathon">Coding Fest &amp; Hackathon</option>
+                            <option value="Technical Symposium & Project Expo">Technical Symposium &amp; Expo</option>
+                            <option value="Workshop & Hands-on BootCamp">Workshop &amp; BootCamp</option>
+                            <option value="Guest Lecture & Industry Talk">Guest Lecture &amp; Talk</option>
+                            <option value="Cultural Fest & Celebration">Cultural Fest &amp; Celebration</option>
+                            <option value="Sports Meet & Tournament">Sports Meet &amp; Tournament</option>
+                            <option value="Campus Placement Drive">Campus Placement Drive</option>
+                            <option value="Academic Milestone & CIA Exam">Academic Exam / Milestone</option>
+                          </select>
+
+                          {/* Status Filter */}
+                          <select
+                            value={eventStatusFilter}
+                            onChange={e => setEventStatusFilter(e.target.value)}
+                            className="p-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl font-bold text-slate-700 outline-none"
+                          >
+                            <option value="All">All Statuses</option>
+                            <option value="Upcoming">Upcoming</option>
+                            <option value="Ongoing">Live / Ongoing</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Postponed">Postponed</option>
+                          </select>
+
+                          {/* View Mode Toggle */}
+                          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                            <button
+                              type="button"
+                              onClick={() => setEventViewMode("cards")}
+                              className={`flex-1 py-1 text-[10.5px] font-extrabold rounded-lg transition-all cursor-pointer ${
+                                eventViewMode === "cards" ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                              }`}
+                            >
+                              Cards
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEventViewMode("timeline")}
+                              className={`flex-1 py-1 text-[10.5px] font-extrabold rounded-lg transition-all cursor-pointer ${
+                                eventViewMode === "timeline" ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                              }`}
+                            >
+                              Timeline
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEventViewMode("table")}
+                              className={`flex-1 py-1 text-[10.5px] font-extrabold rounded-lg transition-all cursor-pointer ${
+                                eventViewMode === "table" ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                              }`}
+                            >
+                              Table
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Content Views */}
+                      {/* VIEW 1: CARDS GRID VIEW */}
+                      {eventViewMode === "cards" && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                          {filteredEvents.length === 0 ? (
+                            <div className="col-span-full py-16 text-center border border-dashed border-slate-200 bg-white rounded-xl space-y-3">
+                              <Calendar className="h-10 w-10 text-slate-300 mx-auto" />
+                              <div>
+                                <h4 className="text-sm font-extrabold text-slate-700">No Campus Events Configured</h4>
+                                <p className="text-xs text-slate-400 mt-1">Host a new coding fest, hackathon, or cultural workshop for this campus.</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleOpenCreateEventModal}
+                                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold cursor-pointer transition-all inline-flex items-center gap-1.5 shadow-sm"
+                              >
+                                <Plus className="h-4 w-4" />
+                                Host New Event
+                              </button>
+                            </div>
+                          ) : (
+                            filteredEvents.map(ev => {
+                              const categoryColors: Record<string, string> = {
+                                "Coding Fest & Hackathon": "bg-indigo-50 text-indigo-700 border-indigo-200",
+                                "Technical Symposium & Project Expo": "bg-purple-50 text-purple-700 border-purple-200",
+                                "Workshop & Hands-on BootCamp": "bg-sky-50 text-sky-700 border-sky-200",
+                                "Guest Lecture & Industry Talk": "bg-teal-50 text-teal-700 border-teal-200",
+                                "Cultural Fest & Celebration": "bg-pink-50 text-pink-700 border-pink-200",
+                                "Sports Meet & Tournament": "bg-amber-50 text-amber-700 border-amber-200",
+                                "Campus Placement Drive": "bg-emerald-50 text-emerald-700 border-emerald-200",
+                                "Academic Milestone & CIA Exam": "bg-rose-50 text-rose-700 border-rose-200"
+                              };
+                              const badgeClass = categoryColors[ev.category || "Coding Fest & Hackathon"] || "bg-slate-100 text-slate-700 border-slate-200";
+
+                              // Countdown calculation
+                              const today = new Date().toISOString().split("T")[0];
+                              const daysDiff = Math.ceil((new Date(ev.date).getTime() - new Date(today).getTime()) / (1000 * 3600 * 24));
+                              
+                              let countdownText = "Live Today";
+                              if (daysDiff > 0) countdownText = `In ${daysDiff} Days`;
+                              else if (daysDiff < 0) countdownText = `${Math.abs(daysDiff)} Days Ago`;
+
+                              // Parse photos
+                              let eventPhotosList: string[] = [];
+                              if (ev.photos) {
+                                try {
+                                  eventPhotosList = typeof ev.photos === "string" ? JSON.parse(ev.photos) : (Array.isArray(ev.photos) ? ev.photos : []);
+                                } catch (_) {
+                                  eventPhotosList = [ev.photos];
+                                }
+                              }
+
+                              return (
+                                <div key={ev.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col justify-between group relative">
+                                  {/* Cover Banner or Featured Photo */}
+                                  {eventPhotosList.length > 0 ? (
+                                    <div className="relative h-44 w-full bg-slate-900 overflow-hidden cursor-pointer" onClick={() => setSelectedPhotoLightbox({ src: eventPhotosList[0], title: ev.name })}>
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img src={eventPhotosList[0]} alt={ev.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-90" />
+                                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/30" />
+                                      <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
+                                        <span className={`text-[9.5px] font-black uppercase px-2.5 py-1 rounded-lg backdrop-blur-md bg-white/90 text-slate-900 shadow-sm`}>
+                                          {ev.category || "Fest"}
+                                        </span>
+                                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-black/60 text-white backdrop-blur-xs border border-white/20 flex items-center gap-1">
+                                          <span>📷</span> {eventPhotosList.length} Photos
+                                        </span>
+                                      </div>
+                                      <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between text-white text-xs font-bold">
+                                        <span className="flex items-center gap-1">
+                                          <Calendar className="h-3.5 w-3.5 text-pink-400" />
+                                          {ev.date}{ev.end_date ? ` → ${ev.end_date}` : ""}
+                                        </span>
+                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                                          daysDiff === 0 ? "bg-emerald-500 text-white animate-pulse" : "bg-white/20 text-white backdrop-blur-xs"
+                                        }`}>
+                                          {countdownText}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="h-20 bg-gradient-to-r from-indigo-900 via-purple-900 to-pink-900 p-3.5 flex items-center justify-between relative overflow-hidden">
+                                      <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-xl pointer-events-none" />
+                                      <span className={`text-[9.5px] font-black uppercase px-2.5 py-1 rounded-lg backdrop-blur-md bg-white/90 text-slate-900 shadow-sm z-10`}>
+                                        {ev.category || "Fest"}
+                                      </span>
+                                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-md z-10 ${
+                                        daysDiff === 0 ? "bg-emerald-500 text-white animate-pulse" : "bg-white/20 text-white backdrop-blur-xs"
+                                      }`}>
+                                        {countdownText}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* Body Details */}
+                                  <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
+                                    <div className="space-y-2">
+                                      {eventPhotosList.length === 0 && (
+                                        <div className="flex items-center gap-1.5 text-xs text-indigo-600 font-bold">
+                                          <Calendar className="h-3.5 w-3.5" />
+                                          <span>{ev.date}{ev.end_date ? ` to ${ev.end_date}` : ""}</span>
+                                        </div>
+                                      )}
+
+                                      <h4 className="text-sm font-black text-slate-900 leading-snug group-hover:text-indigo-600 transition-colors">
+                                        {ev.name}
+                                      </h4>
+
+                                      {ev.venue && (
+                                        <div className="text-[11px] text-slate-600 font-semibold flex items-center gap-1">
+                                          <span className="text-slate-400">📍</span>
+                                          <span>{ev.venue}</span>
+                                        </div>
+                                      )}
+
+                                      {ev.coordinator && (
+                                        <div className="text-[10.5px] text-slate-600 font-medium flex items-center gap-1">
+                                          <span className="font-bold text-slate-400">Lead:</span> {ev.coordinator}
+                                        </div>
+                                      )}
+
+                                      {ev.chief_guest && (
+                                        <div className="text-[10.5px] text-indigo-800 bg-indigo-50/70 p-1.5 rounded-lg border border-indigo-100/60 font-semibold">
+                                          <span className="font-bold text-indigo-600">Guest:</span> {ev.chief_guest}
+                                        </div>
+                                      )}
+
+                                      {ev.desc && (
+                                        <p className="text-xs text-slate-600 line-clamp-2 font-normal pt-0.5">
+                                          {ev.desc}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {/* Mini Photo Highlights Carousel / Upload Moments */}
+                                    <div className="pt-2 border-t border-slate-100 space-y-2">
+                                      {eventPhotosList.length > 0 && (
+                                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+                                          {eventPhotosList.slice(0, 4).map((imgUrl, pIdx) => (
+                                            <div
+                                              key={pIdx}
+                                              onClick={() => setSelectedPhotoLightbox({ src: imgUrl, title: `${ev.name} - Photo ${pIdx + 1}` })}
+                                              className="h-10 w-10 shrink-0 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-80 transition-opacity"
+                                            >
+                                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                                              <img src={imgUrl} alt="Moment" className="h-full w-full object-cover" />
+                                            </div>
+                                          ))}
+                                          {eventPhotosList.length > 4 && (
+                                            <div
+                                              onClick={() => setSelectedPhotoLightbox({ src: eventPhotosList[4], title: ev.name })}
+                                              className="h-10 w-10 shrink-0 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-black text-slate-600 cursor-pointer"
+                                            >
+                                              +{eventPhotosList.length - 4}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Quick Upload Event Moment / Photo */}
+                                      <div className="flex items-center justify-between gap-1 text-[10.5px]">
+                                        <label className="text-indigo-600 hover:text-indigo-800 font-extrabold flex items-center gap-1 cursor-pointer">
+                                          <span>📸</span>
+                                          <span>Upload Moments</span>
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={(e) => {
+                                              const f = e.target.files?.[0];
+                                              if (f) handleQuickUploadPhotoToEvent(ev, f);
+                                              e.target.value = "";
+                                            }}
+                                            className="hidden"
+                                          />
+                                        </label>
+                                        <span className="text-[10px] font-semibold text-slate-400">{ev.department || "All Depts"}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Card Bottom Actions */}
+                                  <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleQuickStatusChange(ev)}
+                                        className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold cursor-pointer transition-all ${
+                                          ev.status === "Ongoing"
+                                            ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                            : ev.status === "Completed"
+                                            ? "bg-slate-200 text-slate-700"
+                                            : ev.status === "Postponed"
+                                            ? "bg-rose-100 text-rose-800"
+                                            : "bg-indigo-100 text-indigo-800 border border-indigo-200"
+                                        }`}
+                                      >
+                                        {ev.status || "Upcoming"}
+                                      </button>
+                                    </div>
+
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditEventModal(ev)}
+                                        className="p-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+                                        title="Edit Event & Photos"
+                                      >
+                                        <Edit2 className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteEvent(ev.id)}
+                                        className="p-1.5 rounded-lg bg-white border border-slate-200 hover:bg-rose-50 text-rose-600 transition-colors cursor-pointer"
+                                        title="Delete Event"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+
+                      {/* VIEW 2: TIMELINE TRACKER VIEW */}
+                      {eventViewMode === "timeline" && (
+                        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-6">
+                          <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-3">
+                            Chronological Event Roadmap &amp; Milestones
+                          </h4>
+                          <div className="relative pl-6 border-l-2 border-indigo-200 space-y-8 my-4">
+                            {filteredEvents.map(ev => (
+                              <div key={ev.id} className="relative group">
+                                <div className="absolute -left-[31px] top-1.5 h-4 w-4 rounded-full bg-indigo-600 ring-4 ring-indigo-100 border-2 border-white shadow-xs" />
+                                <div className="bg-slate-50/70 border border-slate-200 p-4 rounded-xl space-y-2 hover:bg-white transition-all shadow-2xs">
+                                  <div className="flex items-center justify-between flex-wrap gap-2">
+                                    <span className="text-xs font-mono font-black text-indigo-600">{ev.date}{ev.end_date ? ` → ${ev.end_date}` : ""}</span>
+                                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 uppercase">{ev.category || "Fest"}</span>
+                                  </div>
+                                  <h4 className="text-sm font-extrabold text-slate-900">{ev.name}</h4>
+                                  {ev.venue && <p className="text-[11px] text-slate-500 font-semibold">📍 {ev.venue}</p>}
+                                  {ev.desc && <p className="text-xs text-slate-600 font-normal">{ev.desc}</p>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* VIEW 3: TABLE LIST VIEW */}
+                      {eventViewMode === "table" && (
+                        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-x-auto">
+                          <table className="w-full text-left text-xs font-semibold">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider">
+                                <th className="p-3">Event Title</th>
+                                <th className="p-3">Dates</th>
+                                <th className="p-3">Category</th>
+                                <th className="p-3">Department</th>
+                                <th className="p-3">Coordinator</th>
+                                <th className="p-3">Status</th>
+                                <th className="p-3">Venue</th>
+                                <th className="p-3 text-center">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {filteredEvents.map(ev => (
+                                <tr key={ev.id} className="hover:bg-indigo-50/20">
+                                  <td className="p-3 font-bold text-slate-900">{ev.name}</td>
+                                  <td className="p-3 font-mono font-bold text-indigo-700">{ev.date}{ev.end_date ? ` to ${ev.end_date}` : ""}</td>
+                                  <td className="p-3 text-slate-700">{ev.category || "Coding Fest"}</td>
+                                  <td className="p-3 text-slate-600">{ev.department || "All Departments"}</td>
+                                  <td className="p-3 text-slate-700 font-semibold">{ev.coordinator || "—"}</td>
+                                  <td className="p-3">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700">{ev.status || "Upcoming"}</span>
+                                  </td>
+                                  <td className="p-3 text-slate-600">{ev.venue || "—"}</td>
+                                  <td className="p-3 text-center">
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <button type="button" onClick={() => handleOpenEditEventModal(ev)} className="p-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer">
+                                        <Edit2 className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button type="button" onClick={() => handleDeleteEvent(ev.id)} className="p-1 rounded bg-rose-50 text-rose-600 hover:bg-rose-100 cursor-pointer">
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* Photo Zoom Lightbox Modal */}
+                      {selectedPhotoLightbox && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fadeIn" onClick={() => setSelectedPhotoLightbox(null)}>
+                          <div className="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center justify-center p-2" onClick={e => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPhotoLightbox(null)}
+                              className="absolute top-3 right-3 text-white bg-white/20 hover:bg-white/40 h-8 w-8 rounded-full flex items-center justify-center font-bold text-lg cursor-pointer transition-colors"
+                            >
+                              ✕
+                            </button>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={selectedPhotoLightbox.src} alt={selectedPhotoLightbox.title} className="max-h-[80vh] w-auto max-w-full rounded-xl object-contain shadow-2xl border border-white/10" />
+                            <p className="text-white text-xs font-bold mt-3 text-center tracking-wide">{selectedPhotoLightbox.title}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Create / Edit Campus Event Modal */}
+                      {showEventModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans animate-fadeIn">
+                          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                              <div>
+                                <h3 className="text-base font-black text-slate-900">
+                                  {editingEventObj ? "Edit Campus Event / Fest" : "Host New Campus Event or Hackathon"}
+                                </h3>
+                                <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Configure event schedule, chief guests, and upload post-event photo moments.</p>
+                              </div>
+                              <button type="button" onClick={() => setShowEventModal(false)} className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer">×</button>
+                            </div>
+
+                            <form onSubmit={handleSaveRichEventSubmit} className="space-y-4 text-xs">
+                              {/* Title */}
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-500 uppercase">Event Title *</label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. CodeCraft 2026 - 24hr Campus Hackathon"
+                                  value={evFormName}
+                                  onChange={e => setEvFormName(e.target.value)}
+                                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 text-sm"
+                                />
+                              </div>
+
+                              {/* Dates */}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Start Date *</label>
+                                  <input
+                                    type="date"
+                                    required
+                                    value={evFormDate}
+                                    onChange={e => setEvFormDate(e.target.value)}
+                                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">End Date (Optional)</label>
+                                  <input
+                                    type="date"
+                                    value={evFormEndDate}
+                                    onChange={e => setEvFormEndDate(e.target.value)}
+                                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Category & Status */}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Event Category</label>
+                                  <select
+                                    value={evFormCategory}
+                                    onChange={e => setEvFormCategory(e.target.value)}
+                                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
+                                  >
+                                    <option value="Coding Fest & Hackathon">Coding Fest &amp; Hackathon</option>
+                                    <option value="Technical Symposium & Project Expo">Technical Symposium &amp; Project Expo</option>
+                                    <option value="Workshop & Hands-on BootCamp">Workshop &amp; Hands-on BootCamp</option>
+                                    <option value="Guest Lecture & Industry Talk">Guest Lecture &amp; Industry Talk</option>
+                                    <option value="Cultural Fest & Celebration">Cultural Fest &amp; Celebration</option>
+                                    <option value="Sports Meet & Tournament">Sports Meet &amp; Tournament</option>
+                                    <option value="Campus Placement Drive">Campus Placement Drive</option>
+                                    <option value="Academic Milestone & CIA Exam">Academic Milestone &amp; CIA Exam</option>
+                                  </select>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Event Status</label>
+                                  <select
+                                    value={evFormStatus}
+                                    onChange={e => setEvFormStatus(e.target.value)}
+                                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
+                                  >
+                                    <option value="Upcoming">Upcoming</option>
+                                    <option value="Ongoing">Live / Ongoing Now</option>
+                                    <option value="Completed">Completed</option>
+                                    <option value="Postponed">Postponed</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* Department & Audience */}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Department Scope</label>
+                                  <select
+                                    value={evFormDept}
+                                    onChange={e => setEvFormDept(e.target.value)}
+                                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
+                                  >
+                                    <option value="All Departments">All Departments</option>
+                                    {(collegeCourses.length > 0 ? collegeCourses : coursesList).map(d => (
+                                      <option key={d.id} value={d.name}>{d.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Target Audience</label>
+                                  <select
+                                    value={evFormAudience}
+                                    onChange={e => setEvFormAudience(e.target.value)}
+                                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
+                                  >
+                                    <option value="All Campus">All Campus</option>
+                                    <option value="Students Only">Students Only</option>
+                                    <option value="Faculty Only">Faculty Only</option>
+                                    <option value="Inter-College Participants">Inter-College Participants</option>
+                                    <option value="Parents & Public">Parents &amp; Public</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* Venue & Coordinator */}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Venue / Location</label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. Innovation Labs / Tech Arena"
+                                    value={evFormVenue}
+                                    onChange={e => setEvFormVenue(e.target.value)}
+                                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
+                                  />
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Lead Coordinator</label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. Prof. Vignesh (HOD-CSE)"
+                                    value={evFormCoordinator}
+                                    onChange={e => setEvFormCoordinator(e.target.value)}
+                                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Chief Guest & Registration Link */}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chief Guest / Keynote Speaker</label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. Sundeep G. (Principal Architect)"
+                                    value={evFormChiefGuest}
+                                    onChange={e => setEvFormChiefGuest(e.target.value)}
+                                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
+                                  />
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Registration / Submission Link</label>
+                                  <input
+                                    type="url"
+                                    placeholder="https://..."
+                                    value={evFormRegistrationLink}
+                                    onChange={e => setEvFormRegistrationLink(e.target.value)}
+                                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Agendas & Highlights */}
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Agendas, Rules &amp; Highlights</label>
+                                <textarea
+                                  rows={3}
+                                  placeholder="Hackathon problem statements, rules, round timings or function highlights..."
+                                  value={evFormDesc}
+                                  onChange={e => setEvFormDesc(e.target.value)}
+                                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-medium text-slate-800 outline-none"
+                                />
+                              </div>
+
+                              {/* Event Photo Memories & Moments Upload */}
+                              <div className="space-y-2 pt-2 border-t border-slate-100">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <label className="text-[10px] font-black text-slate-700 uppercase flex items-center gap-1.5">
+                                      <span>📸</span>
+                                      <span>Event Moments &amp; Photo Gallery</span>
+                                    </label>
+                                    <p className="text-[10px] text-slate-400">Upload photos taken during or at the end of the event/fest.</p>
+                                  </div>
+                                  <label className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-extrabold cursor-pointer transition-all flex items-center gap-1">
+                                    <Upload className="h-3.5 w-3.5" />
+                                    <span>+ Add Photo</span>
+                                    <input type="file" accept="image/*" onChange={handleAddEventPhotoFile} className="hidden" />
+                                  </label>
+                                </div>
+
+                                {evFormPhotos.length > 0 ? (
+                                  <div className="grid grid-cols-4 gap-2.5 pt-1">
+                                    {evFormPhotos.map((photoSrc, pIdx) => (
+                                      <div key={pIdx} className="relative group rounded-xl overflow-hidden border border-slate-200 h-20 bg-slate-100">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={photoSrc} alt="Preview" className="h-full w-full object-cover" />
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveEventPhoto(pIdx)}
+                                          className="absolute top-1 right-1 h-5 w-5 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center opacity-90 hover:opacity-100 cursor-pointer shadow-xs"
+                                          title="Remove Photo"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="p-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-center text-slate-400 text-[11px]">
+                                    No photo moments uploaded yet. Click &quot;+ Add Photo&quot; to upload memories from this fest.
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
+                                <Button type="button" variant="secondary" onClick={() => setShowEventModal(false)}>Cancel</Button>
+                                <Button type="submit" variant="primary">
+                                  {editingEventObj ? "Save Event Changes" : "Create Campus Event"}
+                                </Button>
+                              </div>
+                            </form>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -9180,6 +10941,131 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </div>
               )}
 
+              {/* Download Student Excel Template Selection Modal */}
+              {showTemplateModal && (() => {
+                const campusDeptNames = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
+                const deptOptions = campusDeptNames;
+                const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+                const selectedDept = templateDept || deptOptions[0] || "General";
+
+                const selectedCourseObj = collegeCourses.find(
+                  c => c.name.trim().toLowerCase() === selectedDept.trim().toLowerCase()
+                );
+
+                const allowedShifts = (() => {
+                  if (!selectedCourseObj) return ["Shift 1", "Shift 2", "General"];
+                  const ds = (selectedCourseObj.default_shift || "").toLowerCase();
+                  if (ds === "shift_1") return ["Shift 1"];
+                  if (ds === "shift_2") return ["Shift 2"];
+                  if (ds === "general") return ["General"];
+                  if (ds === "both") return ["Shift 1", "Shift 2"];
+                  if (ds === "all") return ["Shift 1", "Shift 2", "General"];
+                  if (selectedCourseObj.shift_based === 1) return ["Shift 1", "Shift 2"];
+                  return ["General"];
+                })();
+
+                const selectedShift = allowedShifts.includes(templateShift) ? templateShift : allowedShifts[0];
+                const composedClass = (selectedShift && selectedShift !== "General")
+                  ? `${selectedDept} - ${selectedShift} - ${templateSem || "Semester 1"}`
+                  : `${selectedDept} - ${templateSem || "Semester 1"}`;
+
+                return (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
+                      <div className="flex justify-between items-center border-b border-slate-150 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                            <Download className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-black text-slate-800">Download Excel Template</h3>
+                            <p className="text-[11px] text-slate-400 font-medium">Select class details to pre-configure your spreadsheet</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowTemplateModal(false)}
+                          className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <div className="space-y-3.5 text-xs">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Course / Department</label>
+                          <select
+                            value={selectedDept}
+                            onChange={(e) => {
+                              setTemplateDept(e.target.value);
+                              const nextCourse = collegeCourses.find(c => c.name.trim().toLowerCase() === e.target.value.trim().toLowerCase());
+                              const nextDs = (nextCourse?.default_shift || "").toLowerCase();
+                              if (nextDs === "shift_1") setTemplateShift("Shift 1");
+                              else if (nextDs === "shift_2") setTemplateShift("Shift 2");
+                              else if (nextDs === "general") setTemplateShift("General");
+                              else if (nextDs === "both") setTemplateShift("Shift 1");
+                            }}
+                            className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
+                          >
+                            {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+
+                        {allowedShifts.length > 1 && (
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Shift</label>
+                            <select
+                              value={selectedShift}
+                              onChange={(e) => setTemplateShift(e.target.value)}
+                              className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
+                            >
+                              {allowedShifts.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Semester</label>
+                          <select
+                            value={templateSem || "Semester 1"}
+                            onChange={(e) => setTemplateSem(e.target.value)}
+                            className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
+                          >
+                            {semOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 text-[11px] text-indigo-900 font-semibold space-y-1">
+                          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Generated Target Class</span>
+                          <span className="font-bold text-slate-800 block">{composedClass}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-150">
+                        <button
+                          type="button"
+                          onClick={() => setShowTemplateModal(false)}
+                          className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleDownloadStudentTemplate(composedClass);
+                            setShowTemplateModal(false);
+                          }}
+                          className="px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5 active:scale-95"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          <span>Download Template (.xlsx)</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Excel Student Import Preview Modal */}
               {showStudentImportModal && studentImportPreview && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
@@ -9449,6 +11335,45 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                     {/* Details Sections */}
                     <div className="space-y-4 text-xs">
+                      {/* Assessment & Test Scores */}
+                      <div className="bg-gradient-to-r from-indigo-50/70 to-purple-50/70 border border-indigo-200/80 p-4 rounded-xl space-y-2">
+                        <h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest flex items-center gap-1.5">
+                          <Award className="h-3.5 w-3.5 text-indigo-600" />
+                          Assessment &amp; Skill Benchmark Scores
+                        </h4>
+                        <div className="grid grid-cols-2 gap-3 pt-1">
+                          <div className="bg-white p-3 rounded-xl border border-indigo-100 shadow-2xs space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Hire Score</span>
+                              {selectedStudentForDetail.hire_score && (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                                  {Number(selectedStudentForDetail.hire_score) >= 700 ? "Elite" : Number(selectedStudentForDetail.hire_score) >= 600 ? "Placement Ready" : "Developing"}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-base font-black text-indigo-700 block">{selectedStudentForDetail.hire_score ? `${selectedStudentForDetail.hire_score} / 1000` : "—"}</span>
+                          </div>
+                          <div className="bg-white p-3 rounded-xl border border-purple-100 shadow-2xs space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9.5px] text-slate-400 font-bold uppercase block">EFSET English Grade</span>
+                              {selectedStudentForDetail.efset_score && (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">
+                                  {selectedStudentForDetail.efset_score === "C2" ? "C2 Proficient" :
+                                   selectedStudentForDetail.efset_score === "C1" ? "C1 Advanced" :
+                                   selectedStudentForDetail.efset_score === "B2" ? "B2 Upper Intermediate" :
+                                   selectedStudentForDetail.efset_score === "B1" ? "B1 Intermediate" :
+                                   selectedStudentForDetail.efset_score === "A2" ? "A2 Elementary" :
+                                   selectedStudentForDetail.efset_score === "A1" ? "A1 Beginner" : "CEFR Grade"}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-base font-black text-purple-700 block">
+                              {selectedStudentForDetail.efset_score ? `Grade ${selectedStudentForDetail.efset_score}` : "—"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Academic & Class Details */}
                       <div className="bg-slate-50/70 border border-slate-200/80 p-4 rounded-xl space-y-3">
                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Academic Info &amp; Marks</h4>
@@ -9484,30 +11409,42 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </div>
                           <div>
                             <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Date of Birth</span>
-                            <span className="text-xs font-extrabold text-slate-800">{selectedStudentForDetail.dob || "—"}</span>
+                            <span className="text-xs font-extrabold text-slate-800">{formatDisplayDob(selectedStudentForDetail.dob)}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Contact & Identity Details */}
+                      {/* Family, Contact & Identity Details */}
                       <div className="bg-slate-50/70 border border-slate-200/80 p-4 rounded-xl space-y-3">
-                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Contact Information &amp; Identity</h4>
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Family, Contact Information &amp; Identity Cards</h4>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Father Name</span>
+                            <span className="text-xs font-bold text-slate-800">{selectedStudentForDetail.father_name || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Mother Name</span>
+                            <span className="text-xs font-bold text-slate-800">{selectedStudentForDetail.mother_name || "—"}</span>
+                          </div>
                           <div>
                             <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Student Email</span>
                             <span className="text-xs font-bold text-slate-800 truncate block">{selectedStudentForDetail.email}</span>
-                          </div>
-                          <div>
-                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Aadhar Card Number</span>
-                            <span className="text-xs font-mono font-bold text-slate-800">{selectedStudentForDetail.aadhar_number || "—"}</span>
                           </div>
                           <div>
                             <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Student Phone Number</span>
                             <span className="text-xs font-bold text-slate-800">{selectedStudentForDetail.phone || "—"}</span>
                           </div>
                           <div>
-                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Parent Phone Number (WhatsApp)</span>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Parent Phone (WhatsApp Number)</span>
                             <span className="text-xs font-bold text-emerald-700">{selectedStudentForDetail.parent_phone || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Aadhar Card Number</span>
+                            <span className="text-xs font-mono font-bold text-slate-800">{selectedStudentForDetail.aadhar_number || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9.5px] text-slate-400 font-bold uppercase block">PAN Card Number</span>
+                            <span className="text-xs font-mono font-bold text-slate-800">{selectedStudentForDetail.pan_number || "—"}</span>
                           </div>
                         </div>
                       </div>
@@ -9580,6 +11517,314 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* ── Attendance Excel Import Preview Modal ── */}
+              {showAttendanceImportModal && attendanceImportPreview && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full p-6 space-y-4 animate-in fade-in duration-150 max-h-[90vh] flex flex-col">
+                    <div className="flex justify-between items-center border-b border-slate-150 pb-3 shrink-0">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                          <Upload className="h-4 w-4 text-indigo-600" />
+                          <span>Excel Daily Attendance Import Preview</span>
+                        </h3>
+                        <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                          Target Date: <strong className="text-slate-700">{attendanceImportPreview.targetDate}</strong> • Mapped {attendanceImportPreview.parsed.length} student records
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAttendanceImportModal(false);
+                          setAttendanceImportPreview(null);
+                        }}
+                        className="text-slate-400 hover:text-slate-600 font-bold text-lg cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs font-semibold">
+                      {attendanceImportPreview.warnings.length > 0 && (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1 text-amber-800">
+                          <span className="text-[10px] font-bold uppercase tracking-wider block text-amber-700">
+                            Validation Warnings ({attendanceImportPreview.warnings.length})
+                          </span>
+                          <div className="max-h-24 overflow-y-auto space-y-0.5 text-[10.5px]">
+                            {attendanceImportPreview.warnings.map((w, i) => <p key={i}>• {w}</p>)}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="rounded-xl border border-slate-200 overflow-x-auto shadow-2xs">
+                        {(() => {
+                          const hasDateMarks = attendanceImportPreview.parsed.some(p => p.dateMarks && Object.keys(p.dateMarks).length > 0);
+                          const allImportDates = hasDateMarks 
+                            ? Array.from(new Set(attendanceImportPreview.parsed.flatMap(p => Object.keys(p.dateMarks || {})))).sort()
+                            : [];
+
+                          return (
+                            <table className="w-full border-collapse text-left text-xs min-w-[700px]">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
+                                  <th className="p-2.5 border-r border-slate-200">Roll No / ID</th>
+                                  <th className="p-2.5 border-r border-slate-200">Student Name</th>
+                                  <th className="p-2.5 border-r border-slate-200">Class</th>
+                                  {hasDateMarks ? (
+                                    allImportDates.map(dStr => (
+                                      <th key={dStr} className="p-2.5 border-r border-slate-200 text-center">{formatDateToDMY(dStr)}</th>
+                                    ))
+                                  ) : (
+                                    ["Period 1", "Period 2", "Period 3", "Period 4", "Period 5"].map(p => (
+                                      <th key={p} className="p-2.5 border-r border-slate-200 text-center">{p}</th>
+                                    ))
+                                  )}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 bg-white">
+                                {attendanceImportPreview.parsed.map((item, idx) => (
+                                  <tr key={idx} className="hover:bg-slate-50/50">
+                                    <td className="p-2.5 font-mono font-bold text-slate-600 border-r border-slate-100">{item.rollNo}</td>
+                                    <td className="p-2.5 font-bold text-slate-800 border-r border-slate-100">{item.studentName}</td>
+                                    <td className="p-2.5 text-slate-500 border-r border-slate-100">{item.classGroup}</td>
+                                    {hasDateMarks ? (
+                                      allImportDates.map(dStr => {
+                                        const val = item.dateMarks?.[dStr] || "not_marked";
+                                        return (
+                                          <td key={dStr} className="p-2.5 text-center border-r border-slate-100">
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                              val === "present"
+                                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                : val === "absent"
+                                                ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                                : val === "od"
+                                                ? "bg-purple-50 text-purple-700 border border-purple-200"
+                                                : val === "late"
+                                                ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                                : "bg-slate-100 text-slate-400"
+                                            }`}>
+                                              {val === "present" ? "P" : val === "absent" ? "A" : val === "od" ? "OD" : val === "late" ? "HD" : "—"}
+                                            </span>
+                                          </td>
+                                        );
+                                      })
+                                    ) : (
+                                      ["p1", "p2", "p3", "p4", "p5"].map(pKey => {
+                                        const val = item.periodMarks[pKey] || "present";
+                                        return (
+                                          <td key={pKey} className="p-2.5 text-center border-r border-slate-100">
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                              val === "present"
+                                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                : val === "absent"
+                                                ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                                : val === "late"
+                                                ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                                : "bg-slate-100 text-slate-400"
+                                            }`}>
+                                              {val === "present" ? "P" : val === "absent" ? "A" : val === "late" ? "L" : "—"}
+                                            </span>
+                                          </td>
+                                        );
+                                      })
+                                    )}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-150 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAttendanceImportModal(false);
+                          setAttendanceImportPreview(null);
+                        }}
+                        className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isAttendanceImportSubmitting}
+                        onClick={handleConfirmAttendanceImportSubmit}
+                        className="px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5 active:scale-95 disabled:opacity-60"
+                      >
+                        {isAttendanceImportSubmitting ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Importing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>Confirm &amp; Save Attendance</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Student Period-Wise Attendance Marking Modal ── */}
+              {markingStudentForDate && (() => {
+                const st = markingStudentForDate.student;
+                const dStr = markingStudentForDate.dateStr;
+                const dateObj = new Date(dStr + "T00:00:00");
+                const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+                const stSlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
+                const sortedSlots = sortSlotsByTime(stSlots);
+
+                return (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
+                      <div className="flex justify-between items-start border-b border-slate-150 pb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-sm font-black shadow-2xs">
+                            {st.name.substring(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <h3 className="text-base font-black text-slate-800">{st.name}</h3>
+                            <p className="text-[11px] text-slate-400 font-semibold">
+                              {st.roll_number || st.id} • {st.classGroup} • <strong className="text-indigo-600">{dayName}, {dStr}</strong>
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setMarkingStudentForDate(null)}
+                          className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <div className="space-y-3 text-xs">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                          Scheduled Periods for {dayName} ({sortedSlots.length})
+                        </span>
+
+                        {sortedSlots.length === 0 ? (
+                          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-slate-400 italic">
+                            No timetable slots scheduled for this student's class cohort on {dayName}.
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                            {sortedSlots.map((slot, idx) => {
+                              const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === slot.id && a.dateStr === dStr);
+                              const currentStatus = att ? att.status : "not_marked";
+
+                              return (
+                                <div key={slot.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 flex items-center justify-between gap-3">
+                                  <div>
+                                    <span className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 uppercase block w-fit mb-1">
+                                      Period {idx + 1} ({slot.time || "Hour " + (idx + 1)})
+                                    </span>
+                                    <h4 className="font-bold text-slate-800 text-xs">{slot.course || "Scheduled Session"}</h4>
+                                    <span className="text-[10.5px] text-slate-400 font-medium">Room: {slot.room || "Main Hall"}</span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        fetch("/api/attendance", {
+                                          method: "POST",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({
+                                            action: "mark_period",
+                                            studentId: st.id,
+                                            slotId: slot.id,
+                                            dateStr: dStr,
+                                            status: "present",
+                                            markedBy: currentCAM?.name || "Campus Manager"
+                                          })
+                                        }).then(() => refreshData());
+                                      }}
+                                      className={`px-2.5 py-1 rounded-lg font-extrabold text-[10.5px] transition-all cursor-pointer ${
+                                        currentStatus === "present"
+                                          ? "bg-emerald-600 text-white shadow-2xs"
+                                          : "bg-white border border-slate-200 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
+                                      }`}
+                                    >
+                                      Present
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        fetch("/api/attendance", {
+                                          method: "POST",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({
+                                            action: "mark_period",
+                                            studentId: st.id,
+                                            slotId: slot.id,
+                                            dateStr: dStr,
+                                            status: "absent",
+                                            markedBy: currentCAM?.name || "Campus Manager"
+                                          })
+                                        }).then(() => refreshData());
+                                      }}
+                                      className={`px-2.5 py-1 rounded-lg font-extrabold text-[10.5px] transition-all cursor-pointer ${
+                                        currentStatus === "absent"
+                                          ? "bg-rose-600 text-white shadow-2xs"
+                                          : "bg-white border border-slate-200 text-slate-600 hover:bg-rose-50 hover:text-rose-700"
+                                      }`}
+                                    >
+                                      Absent
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        fetch("/api/attendance", {
+                                          method: "POST",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({
+                                            action: "mark_period",
+                                            studentId: st.id,
+                                            slotId: slot.id,
+                                            dateStr: dStr,
+                                            status: "late",
+                                            markedBy: currentCAM?.name || "Campus Manager"
+                                          })
+                                        }).then(() => refreshData());
+                                      }}
+                                      className={`px-2.5 py-1 rounded-lg font-extrabold text-[10.5px] transition-all cursor-pointer ${
+                                        currentStatus === "late"
+                                          ? "bg-amber-500 text-white shadow-2xs"
+                                          : "bg-white border border-slate-200 text-slate-600 hover:bg-amber-50 hover:text-amber-700"
+                                      }`}
+                                    >
+                                      Late
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-end pt-3 border-t border-slate-150">
+                        <button
+                          type="button"
+                          onClick={() => setMarkingStudentForDate(null)}
+                          className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ── Add / Edit Subject Modal Popup (Admin-Style 2-Column Layout) ── */}
               {showSubjectModal && (

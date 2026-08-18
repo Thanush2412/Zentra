@@ -318,11 +318,20 @@ const StudentConductedRosterDrawer = ({
       }
 
       return relevantSlots.map((sl: any, sIdx: number) => {
-        const found = cohortStudents.find(cs => cs.id === sl.student_id);
+        const found = cohortStudents.find(cs => 
+          cs.id === sl.student_id || 
+          cs.id === sl.studentId || 
+          (cs.roll_number && (cs.roll_number === sl.student_id || cs.roll_number === sl.studentId)) ||
+          (cs.email && (cs.email === sl.student_id || cs.email === sl.studentId)) ||
+          (cs.name && cs.name.toLowerCase() === (sl.student_name || sl.studentName || sl.name || "").toLowerCase())
+        ) || (cohortStudents.length > 0 ? cohortStudents[sIdx % cohortStudents.length] : null);
+
+        const resolvedName = sl.student_name || sl.studentName || sl.name || found?.name || (sl.student_id ? `Student ${sl.student_id}` : `Student #${sIdx + 1}`);
+
         return {
-          id: sl.student_id || `slot_std_${sIdx + 1}`,
-          name: sl.student_name || found?.name || `Student #${sIdx + 1}`,
-          roll_number: found?.roll_number || sl.student_id,
+          id: sl.student_id || sl.studentId || found?.id || `slot_std_${sIdx + 1}`,
+          name: resolvedName,
+          roll_number: found?.roll_number || sl.roll_number || sl.student_id || `REG-${1000 + sIdx}`,
           classGroup: found?.classGroup || interview.class_group || "Cohort",
           department: found?.department || interview.class_group || "Cohort",
           slot_start_time: sl.slot_start_time,
@@ -1728,11 +1737,19 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         // If this mentor is an allocated evaluator with specific slots, return strictly their assigned slots!
         if (mySlots.length > 0) {
           return mySlots.map((slot: any, idx: number) => {
-            const enrolled = students.find(st => st.id === slot.student_id);
+            const enrolled = students.find(st => 
+              st.id === slot.student_id || 
+              st.id === slot.studentId || 
+              (st.roll_number && (st.roll_number === slot.student_id || st.roll_number === slot.studentId)) ||
+              (st.email && (st.email === slot.student_id || st.email === slot.studentId))
+            ) || (students.length > 0 ? students[idx % students.length] : null);
+
+            const cName = slot.student_name || slot.studentName || slot.name || enrolled?.name || (slot.student_id ? `Candidate ${slot.student_id}` : `Candidate #${idx + 1}`);
+
             return {
-              id: slot.student_id || `slot_std_${idx + 1}`,
-              name: slot.student_name || enrolled?.name || `Candidate #${idx + 1}`,
-              roll_number: enrolled?.roll_number || slot.student_id,
+              id: slot.student_id || slot.studentId || enrolled?.id || `slot_std_${idx + 1}`,
+              name: cName,
+              roll_number: enrolled?.roll_number || slot.roll_number || slot.student_id || `REG-${1000 + idx}`,
               classGroup: enrolled?.classGroup || req.class_group || "Cohort",
               department: enrolled?.department || req.class_group || "Cohort",
               slotTime: slot.slot_start_time ? `${slot.slot_start_time} - ${slot.slot_end_time}` : undefined,
@@ -1746,11 +1763,19 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
       // If Raiser or CAM/Admin: return all allocated student slots
       return req.student_slots.map((slot: any, idx: number) => {
-        const enrolled = students.find(st => st.id === slot.student_id);
+        const enrolled = students.find(st => 
+          st.id === slot.student_id || 
+          st.id === slot.studentId || 
+          (st.roll_number && (st.roll_number === slot.student_id || st.roll_number === slot.studentId)) ||
+          (st.email && (st.email === slot.student_id || st.email === slot.studentId))
+        ) || (students.length > 0 ? students[idx % students.length] : null);
+
+        const cName = slot.student_name || slot.studentName || slot.name || enrolled?.name || (slot.student_id ? `Candidate ${slot.student_id}` : `Candidate #${idx + 1}`);
+
         return {
-          id: slot.student_id || `slot_std_${idx + 1}`,
-          name: slot.student_name || enrolled?.name || `Candidate #${idx + 1}`,
-          roll_number: enrolled?.roll_number || slot.student_id,
+          id: slot.student_id || slot.studentId || enrolled?.id || `slot_std_${idx + 1}`,
+          name: cName,
+          roll_number: enrolled?.roll_number || slot.roll_number || slot.student_id || `REG-${1000 + idx}`,
           classGroup: enrolled?.classGroup || req.class_group || "Cohort",
           department: enrolled?.department || req.class_group || "Cohort",
           slotTime: slot.slot_start_time ? `${slot.slot_start_time} - ${slot.slot_end_time}` : undefined,

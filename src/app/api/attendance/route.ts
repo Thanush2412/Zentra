@@ -154,6 +154,85 @@ export async function POST(request: Request) {
         });
     }
 
+    // ── DIRECT PERIOD MARKING (CAM / FACULTY) ──────────────────────────────
+    if (action === "mark_period") {
+      const { studentId, slotId, dateStr, status, markedBy } = body;
+      if (!studentId || !slotId || !dateStr || !status) {
+        return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
+      }
+
+      if (status === "not_marked") {
+        await db.run(
+          "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+          [studentId, slotId, dateStr]
+        );
+      } else {
+        const existing = await db.get(
+          "SELECT id FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+          [studentId, slotId, dateStr]
+        );
+
+        if (existing) {
+          await db.run(
+            "UPDATE student_attendance SET status = ?, markedBy = ?, timestamp = ? WHERE id = ?",
+            [status, markedBy || "Manager", new Date().toISOString(), existing.id]
+          );
+        } else {
+          const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          await db.run(
+            "INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [recordId, studentId, slotId, dateStr, status, markedBy || "Manager", new Date().toISOString()]
+          );
+        }
+      }
+
+      return NextResponse.json({ success: true, message: "Attendance updated." });
+    }
+
+    // ── BULK ATTENDANCE IMPORT (SPREADSHEET / DATE-WISE) ───────────────────
+    if (action === "bulk_import") {
+      const { records, markedBy } = body;
+      if (!records || !Array.isArray(records) || records.length === 0) {
+        return NextResponse.json({ success: false, message: "No attendance records to import" }, { status: 400 });
+      }
+
+      let count = 0;
+      const nowStr = new Date().toISOString();
+
+      for (const item of records) {
+        const { studentId, slotId, dateStr, status } = item;
+        if (!studentId || !slotId || !dateStr || !status) continue;
+
+        if (status === "not_marked") {
+          await db.run(
+            "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+            [studentId, slotId, dateStr]
+          );
+        } else {
+          const existing = await db.get(
+            "SELECT id FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+            [studentId, slotId, dateStr]
+          );
+
+          if (existing) {
+            await db.run(
+              "UPDATE student_attendance SET status = ?, markedBy = ?, timestamp = ? WHERE id = ?",
+              [status, markedBy || "Import", nowStr, existing.id]
+            );
+          } else {
+            const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+            await db.run(
+              "INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [recordId, studentId, slotId, dateStr, status, markedBy || "Import", nowStr]
+            );
+          }
+          count++;
+        }
+      }
+
+      return NextResponse.json({ success: true, message: `Successfully imported ${count} attendance entries.`, count });
+    }
+
     // ── FACULTY ATTENDANCE SUBMISSION ───────────────────────────────
     const {
       slotId,

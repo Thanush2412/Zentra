@@ -97,6 +97,11 @@ export interface Student {
   college_id?: string;
   register_number?: string;
   roll_number?: string;
+  hire_score?: string;
+  efset_score?: string;
+  mother_name?: string;
+  father_name?: string;
+  pan_number?: string;
   tenth_mark?: string;
   eleventh_mark?: string;
   twelfth_mark?: string;
@@ -122,7 +127,7 @@ export interface StudentAttendance {
   studentId: string;
   slotId: string;
   dateStr: string;
-  status: "present" | "absent" | "od";
+  status: "present" | "absent" | "od" | "late" | "not_marked" | string;
   markedBy?: string;
   timestamp: string;
   type?: "Regular" | "Non-Regular";
@@ -412,7 +417,7 @@ interface AppContextProps {
   markAttendance: (
     slotId: string, 
     dateStr: string, 
-    attendanceData: Array<{ studentId: string; status: "present" | "absent" | "od" | "not_marked" }>, 
+    attendanceData: Array<{ studentId: string; status: "present" | "absent" | "od" | "late" | "not_marked" | string }>, 
     coveredSubject?: string,
     type?: "Regular" | "Non-Regular",
     mode?: "Online" | "Offline",
@@ -1571,7 +1576,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const markAttendance = async (
     slotId: string,
     dateStr: string,
-    attendanceData: Array<{ studentId: string; status: "present" | "absent" | "od" | "not_marked" }>,
+    attendanceData: Array<{ studentId: string; status: "present" | "absent" | "od" | "late" | "not_marked" | string }>,
     coveredSubject?: string,
     type: "Regular" | "Non-Regular" = "Regular",
     mode: "Online" | "Offline" = "Offline",
