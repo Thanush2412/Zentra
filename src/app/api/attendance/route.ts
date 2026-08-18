@@ -212,8 +212,8 @@ export async function POST(request: Request) {
                  department = COALESCE(excluded.department, department),
                  classGroup = COALESCE(excluded.classGroup, classGroup),
                  college_id = COALESCE(excluded.college_id, college_id)`,
-              [st.id, st.name, st.roll_number || st.id, st.department || "BCA",
-               st.classGroup || "BCA - Semester 5", st.college_id || "Clg_c", nowStr]
+              [st.id, st.name, st.roll_number || st.id, st.department || "General",
+               st.classGroup || "General Batch", st.college_id || null, nowStr]
             );
           } catch (_) {}
         }
@@ -422,6 +422,8 @@ export async function DELETE(request: NextRequest) {
       targetStudentIds = Array.from(new Set(targetStudentIds));
     }
 
+    const collegeId = searchParams.get("collegeId");
+
     // 1. Date Range Deletion (From ... To ...)
     if (startDate && endDate) {
       if (targetStudentIds.length > 0) {
@@ -433,6 +435,19 @@ export async function DELETE(request: NextRequest) {
         return NextResponse.json({
           success: true,
           message: `Cleared attendance for student (${targetStudentIds.join(", ")}) from ${startDate} to ${endDate}.`,
+          deletedCount: res.changes
+        });
+      } else if (collegeId) {
+        const res = await db.run(
+          `DELETE FROM student_attendance 
+           WHERE dateStr >= ? AND dateStr <= ? 
+             AND (studentId IN (SELECT id FROM students WHERE college_id = ?) 
+                  OR slotId IN (SELECT id FROM slots WHERE college_id = ?))`,
+          [startDate, endDate, collegeId, collegeId]
+        );
+        return NextResponse.json({
+          success: true,
+          message: `Cleared attendance records for college from ${startDate} to ${endDate}.`,
           deletedCount: res.changes
         });
       } else {
@@ -478,11 +493,36 @@ export async function DELETE(request: NextRequest) {
 
     // 4. Single Date
     if (dateStr) {
-      const res = await db.run("DELETE FROM student_attendance WHERE dateStr = ?", [dateStr]);
-      return NextResponse.json({ success: true, message: `Deleted attendance for date ${dateStr}`, deletedCount: res.changes });
+      if (collegeId) {
+        const res = await db.run(
+          `DELETE FROM student_attendance 
+           WHERE dateStr = ? 
+             AND (studentId IN (SELECT id FROM students WHERE college_id = ?) 
+                  OR slotId IN (SELECT id FROM slots WHERE college_id = ?))`,
+          [dateStr, collegeId, collegeId]
+        );
+        return NextResponse.json({ success: true, message: `Deleted attendance for date ${dateStr} in college`, deletedCount: res.changes });
+      } else {
+        const res = await db.run("DELETE FROM student_attendance WHERE dateStr = ?", [dateStr]);
+        return NextResponse.json({ success: true, message: `Deleted attendance for date ${dateStr}`, deletedCount: res.changes });
+      }
     }
 
-    // 5. Default / Full Wipe: Clear all student attendance records
+    // 5. Clear All / Full Wipe for college or global
+    if (collegeId) {
+      const res = await db.run(
+        `DELETE FROM student_attendance 
+         WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) 
+            OR slotId IN (SELECT id FROM slots WHERE college_id = ?)`,
+        [collegeId, collegeId]
+      );
+      return NextResponse.json({
+        success: true,
+        message: "Attendance records for this college have been cleared successfully.",
+        deletedCount: res.changes
+      });
+    }
+
     const res = await db.run("DELETE FROM student_attendance");
     return NextResponse.json({
       success: true,

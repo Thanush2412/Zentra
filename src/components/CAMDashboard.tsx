@@ -1661,36 +1661,51 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           let targetStudentId = "";
           let targetStudentName = stName;
           let targetRollNo = stIdOrRoll;
-          // Priority: 1) matched DB student, 2) Excel sheet columns, 3) filter UI, 4) first student in list
-          let targetClassGroup =
-            stClassGroupFromSheet ||
-            (studentBatchFilter !== "all" ? studentBatchFilter : null) ||
-            collegeStudents.find(s => s.classGroup?.toLowerCase().includes("bca"))?.classGroup ||
-            collegeStudents[0]?.classGroup ||
-            "BCA - Semester 5";
+          let targetDept = "";
+          let targetClassGroup = "";
 
-          let targetDept =
-            stDeptFromSheet ||
-            (studentDeptFilter !== "all" ? studentDeptFilter : null) ||
-            "BCA";
-
+          // 1. Check existing DB student first (by roll number, reg number, ID, or name)
           const matchedStudent = collegeStudents.find(s =>
-            (stIdOrRoll && (s.roll_number?.toLowerCase() === stIdOrRoll.toLowerCase() || s.id?.toLowerCase() === stIdOrRoll.toLowerCase())) ||
-            (stName && s.name?.toLowerCase() === stName.toLowerCase())
+            (stIdOrRoll && (
+              s.roll_number?.toLowerCase() === stIdOrRoll.toLowerCase() ||
+              s.register_number?.toLowerCase() === stIdOrRoll.toLowerCase() ||
+              s.id?.toLowerCase() === stIdOrRoll.toLowerCase()
+            )) ||
+            (stName && s.name?.trim().toLowerCase() === stName.trim().toLowerCase())
           );
 
           if (matchedStudent) {
             targetStudentId = matchedStudent.id;
-            targetStudentName = matchedStudent.name;
-            targetRollNo = matchedStudent.roll_number || matchedStudent.id;
-            targetClassGroup = matchedStudent.classGroup || targetClassGroup;
-            targetDept = matchedStudent.department || targetDept;
+            targetStudentName = matchedStudent.name || stName;
+            targetRollNo = matchedStudent.roll_number || matchedStudent.register_number || stIdOrRoll || matchedStudent.id;
+            targetDept = matchedStudent.department || stDeptFromSheet || (studentDeptFilter !== "all" ? studentDeptFilter : (departmentsList[0]?.name || ""));
+            targetClassGroup = matchedStudent.classGroup || stClassGroupFromSheet || (studentBatchFilter !== "all" ? studentBatchFilter : "");
           } else {
-            // Use roll number directly as id basis (stable — same roll = same id on re-import)
-            const rollBasis = (stIdOrRoll || stName || `st_${idx + 1}`).toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "");
+            // 2. New student: generate stable ID based on roll number or index
+            const rollBasis = (stIdOrRoll || stName || `st_${idx + 1}`)
+              .toLowerCase()
+              .replace(/[^a-z0-9]/g, "_")
+              .replace(/_+/g, "_")
+              .replace(/^_|_$/g, "");
             targetStudentId = `std_${(activeCollegeId || "clg").toLowerCase()}_${rollBasis}`;
             if (!targetStudentName) targetStudentName = stIdOrRoll || `Student ${idx + 1}`;
             if (!targetRollNo) targetRollNo = stIdOrRoll || targetStudentId;
+
+            // Resolve department dynamically from sheet, UI filter, college students, or DB departments
+            targetDept =
+              stDeptFromSheet ||
+              (studentDeptFilter !== "all" ? studentDeptFilter : "") ||
+              collegeStudents[0]?.department ||
+              (departmentsList[0]?.name || "General");
+
+            // Resolve class group dynamically from sheet, UI filter, matching cohort in slots/students, or default
+            targetClassGroup =
+              stClassGroupFromSheet ||
+              (studentBatchFilter !== "all" ? studentBatchFilter : "") ||
+              collegeStudents.find(s => s.department === targetDept)?.classGroup ||
+              collegeSlots.find(s => isCohortMatch(s.classGroup || "", targetDept))?.classGroup ||
+              collegeStudents[0]?.classGroup ||
+              targetDept;
           }
 
           parsedAttendance.push({
@@ -1724,10 +1739,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         console.log("Warnings:", warnings);
         console.groupEnd();
 
+        const displayDateRange = uniqueDates.length > 1
+          ? `${formatDateToDMY(uniqueDates[0])} → ${formatDateToDMY(uniqueDates[uniqueDates.length - 1])}`
+          : (uniqueDates[0] ? formatDateToDMY(uniqueDates[0]) : formatDateToDMY(attendanceDate));
+
         setAttendanceImportPreview({
           parsed: parsedAttendance,
           warnings,
-          targetDate: attendanceDate
+          targetDate: displayDateRange
         });
         setShowAttendanceImportModal(true);
 
@@ -1816,8 +1835,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         id: p.studentId,
         name: p.studentName,
         roll_number: p.rollNo,
-        department: p.department || (studentDeptFilter !== "all" ? studentDeptFilter : "BCA"),
-        classGroup: p.classGroup || (studentBatchFilter !== "all" ? studentBatchFilter : "BCA - Semester 5"),
+        department: p.department || (studentDeptFilter !== "all" ? studentDeptFilter : (collegeStudents[0]?.department || "General")),
+        classGroup: p.classGroup || (studentBatchFilter !== "all" ? studentBatchFilter : (collegeStudents[0]?.classGroup || "General Batch")),
         college_id: activeCollegeId
       }));
 
@@ -1834,7 +1853,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
       const data = await res.json();
       if (data.success) {
-        toast(`Successfully imported ${data.count} attendance entries across ${attendanceImportPreview.parsed.length} students!`, "success");
+        // Expand active date range to encompass all imported dates so they show up immediately
+        const allDates = Array.from(new Set(recordsToPost.map(r => r.dateStr))).sort();
+        if (allDates.length > 0) {
+          const minD = allDates[0];
+          const maxD = allDates[allDates.length - 1];
+          if (minD < attendanceStartDate) setAttendanceStartDate(minD);
+          if (maxD > attendanceEndDate) setAttendanceEndDate(maxD);
+        }
+
+        toast(`Successfully imported ${data.count} attendance entries across ${attendanceImportPreview.parsed.length} students in real-time!`, "success");
         setShowAttendanceImportModal(false);
         setAttendanceImportPreview(null);
         await refreshData();
@@ -1970,12 +1998,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const handleClearAttendanceForRange = async () => {
     setIsClearingAttendance(true);
     try {
-      const res = await fetch(`/api/attendance?startDate=${encodeURIComponent(attendanceStartDate)}&endDate=${encodeURIComponent(attendanceEndDate)}`, {
+      const res = await fetch(`/api/attendance?startDate=${encodeURIComponent(attendanceStartDate)}&endDate=${encodeURIComponent(attendanceEndDate)}&collegeId=${encodeURIComponent(activeCollegeId || "")}`, {
         method: "DELETE"
       });
       const data = await res.json();
       if (data.success) {
-        toast(`Cleared attendance records from ${formatDateToDMY(attendanceStartDate)} to ${formatDateToDMY(attendanceEndDate)}! (${data.deletedCount || 0} entries removed)`, "success");
+        toast(`Cleared attendance records for this campus from ${formatDateToDMY(attendanceStartDate)} to ${formatDateToDMY(attendanceEndDate)}! (${data.deletedCount || 0} entries removed)`, "success");
         setShowClearAttendanceModal(false);
         await refreshData(true);
       } else {
@@ -1991,10 +2019,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const handleClearAllAttendanceEntireSemester = async () => {
     setIsClearingAttendance(true);
     try {
-      const res = await fetch("/api/attendance?all=true", { method: "DELETE" });
+      const res = await fetch(`/api/attendance?all=true&collegeId=${encodeURIComponent(activeCollegeId || "")}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
-        toast(`All student attendance records cleared completely! (${data.deletedCount || 0} entries removed)`, "success");
+        toast(`Student attendance records for this campus cleared completely! (${data.deletedCount || 0} entries removed)`, "success");
         setShowClearAttendanceModal(false);
         await refreshData(true);
       } else {
@@ -12024,8 +12052,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <Upload className="h-4 w-4 text-indigo-600" />
                           <span>Excel Daily Attendance Import Preview</span>
                         </h3>
-                        <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
-                          Target Date: <strong className="text-slate-700">{attendanceImportPreview.targetDate}</strong> • Mapped {attendanceImportPreview.parsed.length} student records
+                        <p className="text-[11px] text-slate-500 font-semibold mt-1 flex items-center gap-2 flex-wrap">
+                          <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">
+                            {attendanceImportPreview.parsed.length} Students
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+                            {Array.from(new Set(attendanceImportPreview.parsed.flatMap(p => Object.keys(p.dateMarks || {})))).length} Dates Detected
+                          </span>
+                          <span className="text-slate-400">
+                            Range: <strong className="text-slate-700">{attendanceImportPreview.targetDate}</strong>
+                          </span>
                         </p>
                       </div>
                       <button
@@ -12392,7 +12428,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </span>
                         </div>
                         <p className="text-[11px] text-rose-600/80">
-                          Completely wipes all recorded student attendance entries for the entire college across all historical and current dates.
+                          Completely wipes recorded student attendance entries for this campus across all historical and current dates. Other campuses remain unaffected.
                         </p>
                         <button
                           type="button"
