@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { sendMail, renderEmailShell } from "@/lib/mail";
 import { dispatchExternalInterviewNotifications } from "@/lib/interview-notifications";
-
+import { checkMentorAvailability } from "@/lib/availability";
 
 export async function POST(request: Request) {
   try {
@@ -27,8 +27,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Interview request not found" }, { status: 404 });
     }
 
-    const now = new Date().toISOString();
     const assignedTimeSlot = time_slot || interview.preferred_start_time || "09:00 AM";
+
+    // Validate mentor availability on target date and time
+    for (const mId of mapped_mentor_ids) {
+      const avail = await checkMentorAvailability(db, {
+        mentorId: mId,
+        dateStr: interview.target_date,
+        timeSlot: assignedTimeSlot,
+        excludeInterviewId: interview_id
+      });
+      if (!avail.available) {
+        const mInfo = await db.get("SELECT name FROM mentors WHERE id = ?", [mId]);
+        const mName = mInfo?.name || mId;
+        return NextResponse.json({
+          success: false,
+          message: `Cannot assign mentor ${mName}: ${avail.reason}`
+        }, { status: 400 });
+      }
+    }
+
+    const now = new Date().toISOString();
     const assigningStudentCount = Number(student_count) || 3;
     const updatedCount = assigningStudentCount;
 

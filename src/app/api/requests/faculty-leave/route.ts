@@ -78,6 +78,7 @@ export async function POST(request: Request) {
       );
 
       // Automatic Sync to mentor_attendance if approved
+      let affectedClasses: any[] = [];
       if (action === "approve") {
         const startDate = new Date(reqRecord.start_date);
         const endDate = new Date(reqRecord.end_date);
@@ -211,6 +212,32 @@ export async function POST(request: Request) {
             }
           }
         }
+
+        // Automatic identification of affected regular teaching classes for this mentor
+        const mentorSlots = await db.all("SELECT * FROM slots WHERE mentorId = ?", [reqRecord.mentor_id]);
+        let curSlotCheck = new Date(startDate);
+        while (curSlotCheck <= endDate) {
+          const dStr = curSlotCheck.toISOString().split("T")[0];
+          const dName = curSlotCheck.toLocaleDateString("en-US", { weekday: "long" });
+          const daySlots = mentorSlots.filter((s: any) => s.day.toLowerCase() === dName.toLowerCase());
+          for (const s of daySlots) {
+            const existingHandover = await db.get(
+              "SELECT id, coverStaffId FROM approved_handovers WHERE slotId = ? AND dateStr = ?",
+              [s.id, dStr]
+            );
+            affectedClasses.push({
+              slotId: s.id,
+              course: s.course,
+              classGroup: s.classGroup,
+              day: s.day,
+              time: s.time,
+              dateStr: dStr,
+              isHandedOver: !!existingHandover,
+              coverStaffId: existingHandover?.coverStaffId || null
+            });
+          }
+          curSlotCheck.setDate(curSlotCheck.getDate() + 1);
+        }
       }
 
       // Trigger Email Notification to Mentor (End 2)
@@ -244,7 +271,8 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
-        message: `Faculty leave request ${newStatus} successfully and notification email sent.`
+        message: `Faculty leave request ${newStatus} successfully and notification email sent.`,
+        affectedClasses
       });
     }
 
@@ -293,10 +321,20 @@ export async function POST(request: Request) {
     );
 
     // Trigger Email Notification to Campus Manager (CM) (End 1)
-    const camUser = await db.get(
-      `SELECT email, name FROM cams WHERE college_id = ? LIMIT 1`,
-      [effectiveCollegeId]
-    );
+    let camUser = null;
+    try {
+      camUser = await db.get(
+        `SELECT email, name FROM campus_managers WHERE college_id = ? LIMIT 1`,
+        [effectiveCollegeId]
+      );
+    } catch (_) {
+      try {
+        camUser = await db.get(
+          `SELECT email, name FROM cams WHERE college_id = ? LIMIT 1`,
+          [effectiveCollegeId]
+        );
+      } catch (_) {}
+    }
 
     const cmEmail = camUser?.email || "cam@zentra.edu";
     if (cmEmail) {

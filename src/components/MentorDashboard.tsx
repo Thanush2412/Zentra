@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useDeferredValue, useRef, useTransition, useCallback } from "react";
 import { useApp, Slot, Mentor, ApprovedHandover, Holiday } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -364,7 +364,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
 };
 
 /* ─── Faculty Leave & Permission Request Panel ─── */
-const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
+const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({ mentor, slots = [] }) => {
   const { toast } = useToast();
   const [panelTab, setPanelTab] = useState<"leave_apps" | "punch_history">("leave_apps");
 
@@ -400,6 +400,28 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("11:00");
   const [reason, setReason] = useState("");
+
+  // Dynamically calculate scheduled classes in the selected leave/permission window
+  const affectedSlots = useMemo(() => {
+    if (!slots || !startDate) return [];
+    const mentorSlots = slots.filter(s => s.mentorId === mentor.id);
+    const affected: { dateStr: string; slot: Slot }[] = [];
+
+    const start = new Date(startDate + "T00:00:00");
+    const end = requestType === "Permission" ? start : new Date((endDate || startDate) + "T00:00:00");
+
+    let cur = new Date(start);
+    while (cur <= end) {
+      const dStr = cur.toISOString().split("T")[0];
+      const weekday = cur.toLocaleDateString("en-US", { weekday: "long" });
+      const daySlots = mentorSlots.filter(s => s.day.toLowerCase() === weekday.toLowerCase());
+      for (const s of daySlots) {
+        affected.push({ dateStr: dStr, slot: s });
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return affected;
+  }, [slots, mentor.id, startDate, endDate, requestType]);
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -806,6 +828,32 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
                   className="w-full text-xs font-medium p-3 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
                 />
               </div>
+
+              {/* Dynamic Timetable Scheduled Classes Alert & Swap Guidance */}
+              {affectedSlots.length > 0 ? (
+                <div className="p-3.5 rounded-xl bg-amber-50/90 border border-amber-250 text-amber-900 text-xs space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-amber-900">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>You have {affectedSlots.length} scheduled class{affectedSlots.length > 1 ? "es" : ""} during this period:</span>
+                  </div>
+                  <div className="space-y-1 pl-6">
+                    {affectedSlots.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-[11px] font-semibold text-amber-850">
+                        <span>• {item.slot.course} ({item.slot.classGroup})</span>
+                        <span className="font-mono text-slate-500">{item.dateStr} | {item.slot.time}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10.5px] text-amber-800 font-medium pt-1.5 border-t border-amber-200/70 leading-relaxed">
+                    💡 <strong>Kindly arrange a class swap:</strong> Please assign covering faculty via <em>My Schedule → Handover Class</em>. If the CM rejects your leave request, all scheduled classes will remain assigned to you as usual.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200/90 text-emerald-800 text-[11px] font-medium flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>No regular timetable classes scheduled during this selected time window.</span>
+                </div>
+              )}
             </div>
 
             {/* Modal Action Buttons Footer */}
@@ -875,7 +923,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     demoSwapRequests,
     resolveDemoSwap,
     requestDemoSwap,
-    colleges
+    colleges,
+    isDataLoading
   } = useApp();
   const { toast, confirm: showConfirm } = useToast();
 
@@ -925,14 +974,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   };
 
   useEffect(() => {
-    fetchStudentLeaveRequests();
-  }, [currentMentor?.college_id]);
+    if ((!leaveRequests || leaveRequests.length === 0) && currentMentor?.college_id) {
+      fetchStudentLeaveRequests();
+    }
+  }, [currentMentor?.college_id, leaveRequests]);
 
-  // Fetch fresh data on mount so generated timetables are immediately visible
+  // Reset week offset on mount
   useEffect(() => {
-    refreshData();
     setWeekOffset(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -946,7 +995,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         })
         .catch(err => console.error("Error fetching daily configs:", err));
     }
-  }, [currentMentor]);
+  }, [currentMentor?.college_id]);
 
 
 
@@ -976,6 +1025,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [lateAttendanceReason, setLateAttendanceReason] = useState("");
   const [isSubmittingLateReq, setIsSubmittingLateReq] = useState(false);
   const [formError, setFormError] = useState("");
+  const [isCamEditRequestModalOpen, setIsCamEditRequestModalOpen] = useState(false);
+  const [camRequestReason, setCamRequestReason] = useState("");
   const [modalSemester, setModalSemester] = useState<string>("Semester 1");
   const [handoverSubject, setHandoverSubject] = useState<string>("original"); // "original" | "substitute_own" | "custom"
   const [selectedSubjName, setSelectedSubjName] = useState<string>("");
@@ -1143,7 +1194,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   // Active Dashboard Tab State
   const [localActiveTab, setLocalActiveTab] = useState<"home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu" | "interviews">("home");
   const activeTab = propActiveTab || localActiveTab;
-  const setActiveTab = onTabChange || setLocalActiveTab;
+
+  // useTransition: marks tab switches as non-urgent so the current UI stays
+  // responsive while React prepares the new tab content in the background.
+  const [isTabPending, startTabTransition] = useTransition();
+
+  const handleTabChange = useCallback((tab: typeof localActiveTab) => {
+    startTabTransition(() => {
+      if (onTabChange) onTabChange(tab);
+      else setLocalActiveTab(tab);
+    });
+  }, [onTabChange]);
+
+  const setActiveTab = handleTabChange;
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   useEffect(() => {
@@ -1153,11 +1216,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
   }, []);
 
-  // Fetch interviews assigned to this mentor
+  // Fetch interviews assigned to this mentor (Fetched on-demand once, not on every tab switch)
   const [mentorInterviews, setMentorInterviews] = useState<any[]>([]);
 
   useEffect(() => {
-    if (currentMentor?.id) {
+    if (currentMentor?.id && (activeTab === "tracker" || activeTab === "demo_evaluations")) {
       fetch(`/api/interviews?role=mentor&mentorId=${currentMentor.id}`)
         .then((res) => res.json())
         .then((data) => {
@@ -1167,7 +1230,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         })
         .catch(() => { });
     }
-  }, [currentMentor?.id, activeTab]);
+  }, [currentMentor?.id, activeTab === "tracker"]);
 
   // Student Tracker filter and management states
   const [trackerSubView, setTrackerSubView] = useState<"tracker" | "interviews">("tracker");
@@ -1286,6 +1349,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [trackerTaskPdf, setTrackerTaskPdf] = useState("");
   const [editingTask, setEditingTask] = useState(false);
   const [trackerSearchTerm, setTrackerSearchTerm] = useState("");
+  const deferredTrackerSearch = useDeferredValue(trackerSearchTerm);
   const [trackerStatusFilter, setTrackerStatusFilter] = useState("all");
   const [trackerPage, setTrackerPage] = useState<number>(1);
   const [trackerPageSize, setTrackerPageSize] = useState<number>(10);
@@ -1344,13 +1408,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
   // Attendance Search and Range Select States
   const [attendanceSearchTerm, setAttendanceSearchTerm] = useState("");
+  const deferredAttendanceSearch = useDeferredValue(attendanceSearchTerm);
   const [attendanceHistorySearch, setAttendanceHistorySearch] = useState("");
+  const deferredAttendanceHistorySearch = useDeferredValue(attendanceHistorySearch);
 
-  // End of Semester Calculator States
-  const [calcCohort, setCalcCohort] = useState("");
-  const [calcStartDate, setCalcStartDate] = useState("2026-06-01");
-  const [calcEndDate, setCalcEndDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [attendanceLogsSubTab, setAttendanceLogsSubTab] = useState<"history" | "calculator">("history");
+  // Attendance calendar view state
+  const [attCalendarMonth, setAttCalendarMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [attCalendarClassFilter, setAttCalendarClassFilter] = useState<string>("all");
 
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [lastCheckedId, setLastCheckedId] = useState<string | null>(null);
@@ -1360,28 +1427,41 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
 
 
-  // Helper to parse class group name and semester
+  // High-performance O(1) caches for class group & course resolution
+  const classGroupParsedCache = useRef(new Map<string, { name: string; sem: string }>());
+  const courseMatchCache = useRef(new Map<string, any>());
+  const classGroupMatchCache = useRef(new Map<string, boolean>());
+
+  // Helper to parse class group name and semester (O(1) memoized)
   const parseClassGroup = (classGroup?: string) => {
     if (!classGroup) return { name: "General Class", sem: "" };
+    const cached = classGroupParsedCache.current.get(classGroup);
+    if (cached) return cached;
     const { department, semester } = resolveClassGroupDetailsFromState(classGroup, subjectsList, coursesList);
     const num = parseInt(semester.replace(/[^0-9]/g, ""), 10);
     const roman = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII"][num] || "";
     const semDisplay = roman ? `SEM ${roman}` : semester;
-    return { name: department, sem: semDisplay };
+    const res = { name: department, sem: semDisplay };
+    classGroupParsedCache.current.set(classGroup, res);
+    return res;
   };
 
-  // Helper to dynamically match class group to DB course
+  // Helper to dynamically match class group to DB course (O(1) memoized)
   const findCourseForClassGroup = (classGroup?: string) => {
     if (!classGroup) return null;
+    if (courseMatchCache.current.has(classGroup)) {
+      return courseMatchCache.current.get(classGroup);
+    }
     const cgLower = classGroup.toLowerCase().trim();
-    const sortedCourses = [...coursesList].sort((a, b) => b.name.length - a.name.length);
-    for (const course of sortedCourses) {
+    for (const course of coursesList) {
       const courseNameLower = course.name.toLowerCase().trim();
       const courseCodeLower = (course.code || "").toLowerCase().trim();
       if (cgLower.includes(courseNameLower) || (courseCodeLower && cgLower.includes(courseCodeLower))) {
+        courseMatchCache.current.set(classGroup, course);
         return course;
       }
     }
+    courseMatchCache.current.set(classGroup, null);
     return null;
   };
 
@@ -1412,7 +1492,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     return roman ? `Sem ${roman}` : semester;
   };
 
-  // Helper to match class group names with normalized comparison
+  // Helper to match class group names with normalized comparison (O(1) memoized)
   const isClassGroupMatch = (cg1?: string, cg2?: string) => {
     if (!cg1 || !cg2) return false;
 
@@ -1421,10 +1501,18 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
     if (clean1 === clean2) return true;
 
+    const cacheKey = `${clean1}___${clean2}`;
+    if (classGroupMatchCache.current.has(cacheKey)) {
+      return classGroupMatchCache.current.get(cacheKey)!;
+    }
+
     const norm1 = clean1.replace(/[^a-z0-9]/g, "");
     const norm2 = clean2.replace(/[^a-z0-9]/g, "");
 
-    if (norm1 === norm2 || (norm1.length > 5 && norm2.length > 5 && (norm1.includes(norm2) || norm2.includes(norm1)))) return true;
+    if (norm1 === norm2 || (norm1.length > 5 && norm2.length > 5 && (norm1.includes(norm2) || norm2.includes(norm1)))) {
+      classGroupMatchCache.current.set(cacheKey, true);
+      return true;
+    }
 
     const course1 = findCourseForClassGroup(cg1);
     const course2 = findCourseForClassGroup(cg2);
@@ -1434,6 +1522,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
     if (course1 && course2 && course1.id === course2.id) {
       if (!s1 || !s2 || s1.toLowerCase() === s2.toLowerCase()) {
+        classGroupMatchCache.current.set(cacheKey, true);
         return true;
       }
     }
@@ -1442,11 +1531,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     const { name: name2 } = getShortClassGroup(cg2);
     if (name1 && name2 && (name1.toLowerCase() === name2.toLowerCase() || isCohortMatching(cg1, cg2))) {
       if (!s1 || !s2 || s1.toLowerCase() === s2.toLowerCase()) {
+        classGroupMatchCache.current.set(cacheKey, true);
         return true;
       }
     }
 
-    return isCohortMatching(cg1, cg2);
+    const res = isCohortMatching(cg1, cg2);
+    classGroupMatchCache.current.set(cacheKey, res);
+    return res;
   };
 
   const getShortSemLabel = (semStr: string): string => {
@@ -1832,146 +1924,44 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     return match ? match.name : cleaned;
   };
 
-  // Find unique class groups this mentor teaches
-  const mentorClassGroups = useMemo(() => {
-    const groups = new Set<string>();
-    slots.forEach(s => {
-      if (s.mentorId === currentMentor?.id && s.classGroup) {
-        groups.add(s.classGroup);
-      }
-    });
-    return Array.from(groups);
-  }, [slots, currentMentor?.id]);
-
-  useEffect(() => {
-    if (!calcCohort && mentorClassGroups.length > 0) {
-      setCalcCohort(mentorClassGroups[0]);
-    }
-  }, [mentorClassGroups, calcCohort]);
-
-  // End of Semester Cumulative Attendance Calculation with Holiday Factor
-  const semesterReports = useMemo(() => {
-    if (!calcCohort) return [];
-
-    // Get all students in this cohort
-    const cohortStudents = students.filter(s => isClassGroupMatch(s.classGroup, calcCohort));
-
-    // Get all slots for this cohort
-    const cohortSlots = slots.filter(s => s.classGroup && isClassGroupMatch(s.classGroup, calcCohort));
-
-    // Find all holidays in this date range
-    const collegeHolidays = holidays.filter(h => {
-      return h.date >= calcStartDate && h.date <= calcEndDate;
-    });
-    const holidayDates = new Set(collegeHolidays.map(h => h.date));
-
-    // Generate dates in range (excluding weekends and holidays)
-    const activeDates: string[] = [];
-    let cur = new Date(calcStartDate);
-    const end = new Date(calcEndDate);
-    while (cur <= end) {
-      const dateStr = cur.toISOString().slice(0, 10);
-      const dayIndex = cur.getDay(); // 0 is Sunday, 6 is Saturday
-
-      if (dayIndex !== 0 && dayIndex !== 6 && !holidayDates.has(dateStr)) {
-        activeDates.push(dateStr);
-      }
-      cur.setDate(cur.getDate() + 1);
-    }
-
-    // For each student, compute attendance
-    return cohortStudents.map(student => {
-      let conducted = 0;
-      let present = 0;
-      let absent = 0;
-
-      activeDates.forEach(dateStr => {
-        const d = new Date(dateStr);
-        const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-        const dayName = dayNames[d.getDay()];
-
-        // Find slots scheduled on this weekday
-        const daySlots = cohortSlots.filter(s => s.day === dayName);
-
-        daySlots.forEach(slot => {
-          // Check if attendance was marked for this slot on this date
-          const marked = studentAttendance.filter(a => a.slotId === slot.id && a.dateStr === dateStr);
-          if (marked.length > 0) {
-            conducted++;
-            const record = marked.find(a => a.studentId === student.id);
-            if (record) {
-              if (record.status === "present") {
-                present++;
-              } else {
-                // Check if student has approved leave request for this date
-                const hasLeave = leaveRequests.some(l =>
-                  l.studentId === student.id &&
-                  l.status === "approved" &&
-                  l.dateStr === dateStr
-                );
-                if (hasLeave) {
-                  present++; // Excused count as present
-                } else {
-                  absent++;
-                }
-              }
-            } else {
-              absent++;
-            }
-          }
-        });
-      });
-
-      const percentage = conducted > 0 ? Math.round((present / conducted) * 100) : 100;
-
-      return {
-        student,
-        conducted,
-        present,
-        absent,
-        percentage
-      };
-    });
-  }, [calcCohort, calcStartDate, calcEndDate, students, slots, holidays, studentAttendance, leaveRequests]);
-
-  // Split subjects and classes strings
-  const subjectsArray = currentMentor.subjects
-    ? currentMentor.subjects.split(/\n|\/|,|;/).map(s => getCanonicalSubjectName(s)).filter(Boolean)
-    : [];
+  // Split subjects and classes strings — used locally inside allMentorSubjects useMemo
   // Filter slots for the current mentor — show ALL their slots regardless of shift
   // (timetable may have been generated under any shift label; we display them all)
-  const mySlots = slots.filter((s) => s.mentorId === currentMentor.id);
+  const mySlots = useMemo(() => slots.filter((s) => s.mentorId === currentMentor.id), [slots, currentMentor.id]);
+
+  // O(1) slot lookup map — must be defined before derived useMemos that use it
+  const slotsByIdMap = useMemo(() => new Map(slots.map(s => [s.id, s])), [slots]);
 
   // Filter slots for the current mentor (already declared above)
-  const myRequests = requests.filter((r) => r.requestorId === currentMentor.id);
-  const myCoverageRequests = requests.filter((r) => r.targetStaffId === currentMentor.id && r.status !== "pending_cam");
+  const myRequests = useMemo(() => requests.filter((r) => r.requestorId === currentMentor.id), [requests, currentMentor.id]);
+  const myCoverageRequests = useMemo(() => requests.filter((r) => r.targetStaffId === currentMentor.id && r.status !== "pending_cam"), [requests, currentMentor.id]);
 
   // Timetable hours (own slots)
-  const targetMinutes = mySlots.reduce((acc, s) => acc + parseSlotMinutes(s.time), 0);
+  const targetMinutes = useMemo(() => mySlots.reduce((acc, s) => acc + parseSlotMinutes(s.time), 0), [mySlots]);
 
   // Extra coverage hours for the current week (from approved handovers scheduled in this week's dates)
-  const currentWeekDateStrings = weekDates.map(d => d.dateStr);
-  const currentWeekCoveredHandovers = approvedHandovers.filter(
+  const currentWeekDateStrings = useMemo(() => weekDates.map(d => d.dateStr), [weekDates]);
+  const currentWeekCoveredHandovers = useMemo(() => approvedHandovers.filter(
     h => h.coverStaffId === currentMentor.id && currentWeekDateStrings.includes(h.dateStr)
-  );
-  const currentWeekCoveredSlots = currentWeekCoveredHandovers
-    .map(h => slots.find(s => s.id === h.slotId))
-    .filter(Boolean) as Slot[];
-  const coveredMinutes = currentWeekCoveredSlots.reduce((acc, s) => acc + parseSlotMinutes(s.time), 0);
+  ), [approvedHandovers, currentMentor.id, currentWeekDateStrings]);
+  const currentWeekCoveredSlots = useMemo(() => currentWeekCoveredHandovers
+    .map(h => slotsByIdMap.get(h.slotId))
+    .filter(Boolean) as Slot[], [currentWeekCoveredHandovers, slotsByIdMap]);
+  const coveredMinutes = useMemo(() => currentWeekCoveredSlots.reduce((acc, s) => acc + parseSlotMinutes(s.time), 0), [currentWeekCoveredSlots]);
 
   // Handed-over hours for the current week (original mentor is current mentor and handover is approved)
-  const currentWeekHandedOverHandovers = approvedHandovers.filter(
+  const currentWeekHandedOverHandovers = useMemo(() => approvedHandovers.filter(
     h => h.originalMentorId === currentMentor.id && currentWeekDateStrings.includes(h.dateStr)
-  );
-  const currentWeekHandedOverSlots = currentWeekHandedOverHandovers
-    .map(h => slots.find(s => s.id === h.slotId))
-    .filter(Boolean) as Slot[];
-  const handedOverMinutes = currentWeekHandedOverSlots.reduce((acc, s) => acc + parseSlotMinutes(s.time), 0);
+  ), [approvedHandovers, currentMentor.id, currentWeekDateStrings]);
+  const currentWeekHandedOverSlots = useMemo(() => currentWeekHandedOverHandovers
+    .map(h => slotsByIdMap.get(h.slotId))
+    .filter(Boolean) as Slot[], [currentWeekHandedOverHandovers, slotsByIdMap]);
+  const handedOverMinutes = useMemo(() => currentWeekHandedOverSlots.reduce((acc, s) => acc + parseSlotMinutes(s.time), 0), [currentWeekHandedOverSlots]);
 
-  const totalMinutes = targetMinutes - handedOverMinutes + coveredMinutes;
+  const totalMinutes = useMemo(() => targetMinutes - handedOverMinutes + coveredMinutes, [targetMinutes, handedOverMinutes, coveredMinutes]);
 
   // Calculate unique active semesters in this teacher's timetable
-  const activeSemesters = Array.from(
+  const activeSemesters = useMemo(() => Array.from(
     new Set(
       [
         ...mySlots.map(s => getSemesterFromSlot(s)),
@@ -1985,22 +1975,23 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     const numA = parseInt(a.replace(/^\D+/g, ''), 10) || 0;
     const numB = parseInt(b.replace(/^\D+/g, ''), 10) || 0;
     return numA - numB;
-  });
+  }), [mySlots, slots, approvedHandovers, currentMentor.id, currentShift]);
 
   // Calculate unique active semesters in this teacher's department & college
-  const deptMentors = mentors.filter(
-    (m) => m.college_id === currentMentor.college_id && m.mentor_group === currentMentor.mentor_group
-  );
-  const deptMentorIds = new Set(deptMentors.map((m) => m.id));
-  const deptSlots = slots.filter((s) => deptMentorIds.has(s.mentorId));
-
-  const deptSemestersWithTimetable = Array.from(
-    new Set(deptSlots.map((s) => getSemesterFromSlot(s)).filter(Boolean))
-  ).sort((a, b) => {
-    const numA = parseInt(a.replace(/^\D+/g, ""), 10) || 0;
-    const numB = parseInt(b.replace(/^\D+/g, ""), 10) || 0;
-    return numA - numB;
-  });
+  const deptSemestersWithTimetable = useMemo(() => {
+    const deptMentors = mentors.filter(
+      (m) => m.college_id === currentMentor.college_id && m.mentor_group === currentMentor.mentor_group
+    );
+    const deptMentorIds = new Set(deptMentors.map((m) => m.id));
+    const deptSlots = slots.filter((s) => deptMentorIds.has(s.mentorId));
+    return Array.from(
+      new Set(deptSlots.map((s) => getSemesterFromSlot(s)).filter(Boolean))
+    ).sort((a, b) => {
+      const numA = parseInt(a.replace(/^\D+/g, ""), 10) || 0;
+      const numB = parseInt(b.replace(/^\D+/g, ""), 10) || 0;
+      return numA - numB;
+    });
+  }, [mentors, slots, currentMentor.college_id, currentMentor.mentor_group]);
 
   const getCohortLabelForSemester = (semLabel: string) => {
     const mentorDept = currentMentor?.mentor_group;
@@ -2023,28 +2014,48 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   };
 
   // Calculate target and covered minutes per subject dynamically
-  const subjectTargetMinutesMap: Record<string, number> = {};
-  mySlots.forEach((slot) => {
-    const course = getCanonicalSubjectName(slot.course || "General");
-    subjectTargetMinutesMap[course] = (subjectTargetMinutesMap[course] || 0) + parseSlotMinutes(slot.time);
-  });
+  const subjectTargetMinutesMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    mySlots.forEach((slot) => {
+      const course = getCanonicalSubjectName(slot.course || "General");
+      map[course] = (map[course] || 0) + parseSlotMinutes(slot.time);
+    });
+    return map;
+  }, [mySlots, subjectsList]);
 
-  const subjectCoveredMinutesMap: Record<string, number> = {};
-  currentWeekCoveredSlots.forEach((slot) => {
-    const course = getCanonicalSubjectName(slot.course || "General");
-    subjectCoveredMinutesMap[course] = (subjectCoveredMinutesMap[course] || 0) + parseSlotMinutes(slot.time);
-  });
+  const subjectCoveredMinutesMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    currentWeekCoveredSlots.forEach((slot) => {
+      const course = getCanonicalSubjectName(slot.course || "General");
+      map[course] = (map[course] || 0) + parseSlotMinutes(slot.time);
+    });
+    return map;
+  }, [currentWeekCoveredSlots, subjectsList]);
 
-  const weeklyCoveredSubjects = currentWeekCoveredSlots.map(s => getCanonicalSubjectName(s.course || "General"));
-  const allMentorSubjects = Array.from(new Set([
-    ...subjectsArray,
-    ...mySlots.map(s => getCanonicalSubjectName(s.course || "General")),
-    ...weeklyCoveredSubjects
-  ]));
+  const allMentorSubjects = useMemo(() => {
+    const subjectsArray = currentMentor.subjects
+      ? currentMentor.subjects.split(/\n|\/|,|;/).map(s => getCanonicalSubjectName(s)).filter(Boolean)
+      : [];
+    const weeklyCoveredSubjects = currentWeekCoveredSlots.map(s => getCanonicalSubjectName(s.course || "General"));
+    return Array.from(new Set([
+      ...subjectsArray,
+      ...mySlots.map(s => getCanonicalSubjectName(s.course || "General")),
+      ...weeklyCoveredSubjects
+    ]));
+  }, [currentMentor.subjects, mySlots, currentWeekCoveredSlots, subjectsList]);
 
-  // Helper to resolve the active day for a calendar date, accounting for CAM Day Order overrides
+  // O(1) Lookup Map for Daily Configs (Eliminates repeated array scans)
+  const dailyConfigsMap = useMemo(() => {
+    const m = new Map<string, any>();
+    (dailyConfigsList || []).forEach((c: any) => {
+      if (c && c.dateStr) m.set(c.dateStr, c);
+    });
+    return m;
+  }, [dailyConfigsList]);
+
+  // Helper to resolve the active day for a calendar date, accounting for CAM Day Order overrides (O(1))
   const getMappedDayForDate = (dateStr: string, defaultDay: string) => {
-    const dailyConfig = dailyConfigsList.find((c: any) => c.dateStr === dateStr);
+    const dailyConfig = dailyConfigsMap.get(dateStr);
 
     // If it's a holiday, return a special holiday flag
     if (dailyConfig && dailyConfig.day_type === "holiday") {
@@ -2054,7 +2065,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     if (dailyConfig && dailyConfig.day_order && dailyConfig.day_order !== "None") {
       const match = dailyConfig.day_order.match(/^Day (\d+)$/);
       if (match) {
-        const orderNum = parseInt(match[1]);
+        const orderNum = parseInt(match[1], 10);
         const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
         if (orderNum >= 1 && orderNum <= dayNames.length) {
           return dayNames[orderNum - 1];
@@ -2074,7 +2085,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
 
     // 1. Own slots for this day (all shifts — show everything assigned to this mentor)
-    const ownSlots = slots.filter(s => s.mentorId === currentMentor.id && s.day === queryDay);
+    const ownSlots = mySlots.filter(s => s.day === queryDay);
 
     // Filter out slots that have been handed over to someone else on this date
     const activeOwnClasses = ownSlots.map(slot => {
@@ -2148,38 +2159,34 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   };
 
   // Get unique locations from mySlots and covering slots for filtering
-  const uniqueLocations = Array.from(
+  const uniqueLocations = useMemo(() => Array.from(
     new Set([
       ...mySlots.map((s) => s.location),
-      ...slots.filter((slot) =>
-        approvedHandovers.some((h) => h.coverStaffId === currentMentor.id && h.slotId === slot.id)
-      ).map((s) => s.location)
+      ...currentWeekCoveredSlots.map((s) => s.location)
     ].filter(Boolean))
-  );
+  ), [mySlots, currentWeekCoveredSlots]);
 
   // Get unique class display labels from mySlots and covering slots for filtering dynamically from scheduled slots
-  const uniqueClassLabels = Array.from(
+  const uniqueClassLabels = useMemo(() => Array.from(
     new Set(
       [
         ...mySlots.map((s) => s.classGroup),
-        ...slots.filter((slot) =>
-          approvedHandovers.some((h) => h.coverStaffId === currentMentor.id && h.slotId === slot.id)
-        ).map((s) => s.classGroup)
+        ...currentWeekCoveredSlots.map((s) => s.classGroup)
       ]
         .filter(Boolean)
         .map((cg) => getClassGroupLabel(cg))
     )
-  );
+  ), [mySlots, currentWeekCoveredSlots]);
 
   const isTimeMatch = (t1?: string, t2?: string) => {
     if (!t1 || !t2) return false;
     if (t1 === t2) return true;
-    const clean = (t: string) => t.toLowerCase().replace(/\./g, ":").replace(/\s+/g, " ").trim();
-    const norm = (t: string) => clean(t).replace(/\b0(\d:\d\d)/g, "$1");
-    return norm(t1) === norm(t2);
+    const n1 = t1.toLowerCase().replace(/\./g, ":").replace(/\s+/g, " ").replace(/\b0(\d:\d\d)/g, "$1").trim();
+    const n2 = t2.toLowerCase().replace(/\./g, ":").replace(/\s+/g, " ").replace(/\b0(\d:\d\d)/g, "$1").trim();
+    return n1 === n2;
   };
 
-  // Helper to find slot for a day & time slot, and check if it's owned or covered on a specific date
+  // Helper to find slot for a day & time slot, and check if it's owned or covered on a specific date (O(1) lookups)
   const getSlotAt = (day: string, dateStr: string, time: string) => {
     const queryDay = getMappedDayForDate(dateStr, day);
     if (queryDay === "holiday") {
@@ -2187,7 +2194,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
 
     // 1. Check if the logged-in mentor has their own slot assigned at this (queryDay, time)
-    const ownSlot = slots.find((s) => s.mentorId === currentMentor.id && s.day === queryDay && isTimeMatch(s.time, time));
+    const ownSlot = mySlots.find((s) => s.day === queryDay && isTimeMatch(s.time, time));
 
     // Check Handover state for this slot on this date
     const pendingReq = ownSlot ? requests.find(r => r.slotId === ownSlot.id && r.dateStr === dateStr && r.status === "pending") : null;
@@ -2196,11 +2203,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     // 2. Check if another mentor handed over their slot to this logged-in mentor on this date (approved)
     const coverHandover = approvedHandovers.find(
       (h) => h.dateStr === dateStr && h.coverStaffId === currentMentor.id && (() => {
-        const slotOfHandover = slots.find(s => s.id === h.slotId);
+        const slotOfHandover = slotsByIdMap.get(h.slotId);
         return slotOfHandover && slotOfHandover.day === queryDay && isTimeMatch(slotOfHandover.time, time);
       })()
     );
-    const coverSlot = coverHandover ? slots.find((s) => s.id === coverHandover.slotId) : null;
+    const coverSlot = coverHandover ? slotsByIdMap.get(coverHandover.slotId) : null;
 
     // 3. Check if mentor has a Demo Session booked on this date & time slot
     const demoForSlot = (demoSessions || []).find(
@@ -2308,8 +2315,161 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     return list;
   };
 
+  // Memoize agenda classes for the selected day
+  const agendaClasses = useMemo(() => getAgendaClassesForDay(agendaDay), [
+    agendaDay, mySlots, approvedHandovers, requests, studentAttendance, demoSessions,
+    weekDates, currentMentor.id, dailyConfigsMap
+  ]);
+
+  // Pre-computed late attendance CAM request lookup sets — avoid per-cell array scans in timetable JSX
+  const lateAttendanceCamApprovedSet = useMemo(() => {
+    const s = new Set<string>(); // key: "slotId|dateStr"
+    requests.forEach(r => {
+      if (r.status === "approved" &&
+        (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))) {
+        s.add(`${r.slotId}|${r.dateStr}`);
+      }
+    });
+    return s;
+  }, [requests]);
+
+  const lateAttendanceCamPendingSet = useMemo(() => {
+    const s = new Set<string>(); // key: "slotId|dateStr"
+    requests.forEach(r => {
+      if ((r.status === "pending" || r.status === "pending_cam") &&
+        (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))) {
+        s.add(`${r.slotId}|${r.dateStr}`);
+      }
+    });
+    return s;
+  }, [requests]);
+  // Key: "dateStr|time"  → cell data object
+  const timetableCellMap = useMemo(() => {
+    const map = new Map<string, {
+      slot: any;
+      type: "own" | "covering" | "demo" | null;
+      cellStatus: "active" | "pending" | "handover" | null;
+      hasAttendance: boolean;
+      pendingReq: any | null;
+      approvedReq: any | null;
+      demoSession: any | null;
+      originalMentorId?: string;
+    }>();
+
+    // Build fast lookup maps
+    const attendanceKeySet = new Set<string>();
+    studentAttendance.forEach(a => attendanceKeySet.add(`${a.slotId}|${a.dateStr}`));
+
+    const pendingReqBySlotDate = new Map<string, any>();
+    const approvedReqBySlotDate = new Map<string, any>();
+    requests.forEach(r => {
+      if (r.status === "pending") pendingReqBySlotDate.set(`${r.slotId}|${r.dateStr}`, r);
+    });
+    approvedHandovers.forEach(h => {
+      approvedReqBySlotDate.set(`${h.slotId}|${h.dateStr}`, h);
+    });
+
+    const coverHandoverByDateForMentor = new Map<string, any>();
+    approvedHandovers.forEach(h => {
+      if (h.coverStaffId === currentMentor.id) {
+        coverHandoverByDateForMentor.set(`${h.dateStr}|${h.slotId}`, h);
+      }
+    });
+
+    const demoByDateSlot = new Map<string, any>();
+    (demoSessions || []).forEach(ds => {
+      if (ds.mentorId === currentMentor.id && ds.status !== "not_conducted") {
+        demoByDateSlot.set(`${ds.dateStr}|${ds.timeSlot}`, ds);
+      }
+    });
+
+    weekDates.forEach(date => {
+      timeSlots.forEach(time => {
+        const queryDay = getMappedDayForDate(date.dateStr, date.day);
+        if (queryDay === "holiday") {
+          map.set(`${date.dateStr}|${time}`, { slot: null, type: null, cellStatus: null, hasAttendance: false, pendingReq: null, approvedReq: null, demoSession: null });
+          return;
+        }
+
+        // 1. Own slot
+        const ownSlot = mySlots.find(s => s.day === queryDay && isTimeMatch(s.time, time));
+        if (ownSlot) {
+          const pendingReq = pendingReqBySlotDate.get(`${ownSlot.id}|${date.dateStr}`) || null;
+          const approvedReq = approvedReqBySlotDate.get(`${ownSlot.id}|${date.dateStr}`) || null;
+          const hasAttendance = attendanceKeySet.has(`${ownSlot.id}|${date.dateStr}`);
+
+          // Apply filters
+          if (selectedClassFilter && !doesClassMatchFilter(ownSlot.classGroup, selectedClassFilter)) {
+            map.set(`${date.dateStr}|${time}`, { slot: null, type: null, cellStatus: null, hasAttendance: false, pendingReq: null, approvedReq: null, demoSession: null });
+            return;
+          }
+
+          let cellStatus: "active" | "pending" | "handover" = approvedReq ? "handover" : pendingReq ? "pending" : "active";
+          if (selectedStatusFilter && cellStatus !== selectedStatusFilter) {
+            map.set(`${date.dateStr}|${time}`, { slot: null, type: null, cellStatus: null, hasAttendance: false, pendingReq: null, approvedReq: null, demoSession: null });
+            return;
+          }
+          if (selectedLocationFilter && ownSlot.location !== selectedLocationFilter) {
+            map.set(`${date.dateStr}|${time}`, { slot: null, type: null, cellStatus: null, hasAttendance: false, pendingReq: null, approvedReq: null, demoSession: null });
+            return;
+          }
+
+          map.set(`${date.dateStr}|${time}`, { slot: ownSlot, type: "own", cellStatus, hasAttendance, pendingReq, approvedReq, demoSession: null });
+          return;
+        }
+
+        // 2. Cover slot
+        const coverHandover = approvedHandovers.find(h =>
+          h.coverStaffId === currentMentor.id &&
+          h.dateStr === date.dateStr &&
+          (() => { const s = slotsByIdMap.get(h.slotId); return s && s.day === queryDay && isTimeMatch(s.time, time); })()
+        );
+        if (coverHandover) {
+          const coverSlot = slotsByIdMap.get(coverHandover.slotId);
+          if (coverSlot) {
+            if (selectedClassFilter && !doesClassMatchFilter(coverSlot.classGroup, selectedClassFilter)) {
+              map.set(`${date.dateStr}|${time}`, { slot: null, type: null, cellStatus: null, hasAttendance: false, pendingReq: null, approvedReq: null, demoSession: null });
+              return;
+            }
+            if (selectedStatusFilter && selectedStatusFilter !== "handover") {
+              map.set(`${date.dateStr}|${time}`, { slot: null, type: null, cellStatus: null, hasAttendance: false, pendingReq: null, approvedReq: null, demoSession: null });
+              return;
+            }
+            if (selectedLocationFilter && coverSlot.location !== selectedLocationFilter) {
+              map.set(`${date.dateStr}|${time}`, { slot: null, type: null, cellStatus: null, hasAttendance: false, pendingReq: null, approvedReq: null, demoSession: null });
+              return;
+            }
+            const hasAttendance = attendanceKeySet.has(`${coverSlot.id}|${date.dateStr}`);
+            map.set(`${date.dateStr}|${time}`, { slot: coverSlot, type: "covering", cellStatus: "handover", hasAttendance, pendingReq: null, approvedReq: coverHandover, demoSession: null, originalMentorId: coverHandover.originalMentorId });
+            return;
+          }
+        }
+
+        // 3. Demo slot
+        const demo = demoByDateSlot.get(`${date.dateStr}|${time}`);
+        if (demo) {
+          const demoSlot = { id: `demo_${demo.id}`, mentorId: demo.mentorId, college_id: currentMentor.college_id || "", day: queryDay, time: demo.timeSlot, course: demo.subject, classGroup: demo.stream || "Demo Cohort", location: "SME Presentation Room", shift: "general" };
+          map.set(`${date.dateStr}|${time}`, { slot: demoSlot, type: "demo", cellStatus: "active", hasAttendance: false, pendingReq: null, approvedReq: null, demoSession: demo });
+          return;
+        }
+
+        map.set(`${date.dateStr}|${time}`, { slot: null, type: null, cellStatus: null, hasAttendance: false, pendingReq: null, approvedReq: null, demoSession: null });
+      });
+    });
+    return map;
+  }, [weekDates, timeSlots, mySlots, approvedHandovers, requests, studentAttendance, demoSessions,
+    currentMentor.id, currentMentor.college_id, slotsByIdMap, dailyConfigsMap,
+    selectedClassFilter, selectedStatusFilter, selectedLocationFilter]);
+
+  // Pre-computed today string (avoid re-creating every render)
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
   const isFilterActive = selectedClassFilter !== null || selectedStatusFilter !== null || selectedLocationFilter !== null;
-  const filteredSlotsList = isFilterActive ? getFilteredSlotsList() : [];
+  const filteredSlotsList = useMemo(() => isFilterActive ? getFilteredSlotsList() : [], [
+    isFilterActive, weekDates, timeSlots, mySlots, requests, approvedHandovers, demoSessions,
+    selectedClassFilter, selectedStatusFilter, selectedLocationFilter, slotsByIdMap,
+    currentMentor.id, dailyConfigsMap
+  ]);
 
   const hasMatchingSlotInRow = (time: string) => {
     return weekDates.some((date) => {
@@ -2414,32 +2574,23 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     setIsDayConfigSet(true);
     setDayConfigDetails(null);
 
-    // Fetch daily config asynchronously to resolve type & mode preset by CAM
-    if (currentMentor?.college_id) {
-      fetch(`/api/daily-configs?college_id=${currentMentor.college_id}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.configs) {
-            const configForDate = data.configs.find((c: any) => c.dateStr === dateStr);
-            if (configForDate && configForDate.day_type && configForDate.day_type !== "None") {
-              setIsDayConfigSet(true);
-              setDayConfigDetails(configForDate);
-              if (configForDate.day_type === "event" || configForDate.day_type === "exam_day") {
-                setAttendanceType("Non-Regular");
-                setAttendanceTypeSub(configForDate.day_type === "event" ? "Event" : "Exam");
-              } else {
-                setAttendanceType("Regular");
-              }
-              setAttendanceMode(configForDate.session_mode === "Online" ? "Online" : "Offline");
-            } else {
-              if (!firstExisting) {
-                setIsDayConfigSet(false);
-                setDayConfigDetails(null);
-              }
-            }
-          }
-        })
-        .catch(err => console.error("Error fetching daily config on click:", err));
+    // Use already-cached daily config map instead of a duplicate fetch on every cell click
+    const configForDate = dailyConfigsMap.get(dateStr);
+    if (configForDate && configForDate.day_type && configForDate.day_type !== "None") {
+      setIsDayConfigSet(true);
+      setDayConfigDetails(configForDate);
+      if (configForDate.day_type === "event" || configForDate.day_type === "exam_day") {
+        setAttendanceType("Non-Regular");
+        setAttendanceTypeSub(configForDate.day_type === "event" ? "Event" : "Exam");
+      } else {
+        setAttendanceType("Regular");
+      }
+      setAttendanceMode(configForDate.session_mode === "Online" ? "Online" : "Offline");
+    } else {
+      if (!firstExisting) {
+        setIsDayConfigSet(false);
+        setDayConfigDetails(null);
+      }
     }
 
     // Go straight to Roster Grid (Step 2) as configured by CAM daily
@@ -2505,12 +2656,223 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
   };
 
+  // --- PERFORMANCE OPTIMIZATIONS ---
+  // Memoize heavy filtering used across the dashboard
+  const memoizedSelectedCellStudents = useMemo(() => {
+    if (!selectedCell?.slot) return [];
+    return students.filter((student) => {
+      if (isClassGroupMatch(student.classGroup, selectedCell.slot!.classGroup)) return true;
+      if (isClassGroupMatch(student.department, selectedCell.slot!.department || selectedCell.slot!.classGroup)) return true;
+      if (student.college_id && selectedCell.slot!.college_id && student.college_id === selectedCell.slot!.college_id) return true;
+      return false;
+    });
+  }, [students, selectedCell?.slot]);
+
+  const memoizedSelectedCellAttendance = useMemo(() => {
+    if (!selectedCell?.slot) return [];
+    return studentAttendance.filter(
+      (a) => a.slotId === selectedCell.slot!.id && a.dateStr === selectedCell.dateStr
+    );
+  }, [studentAttendance, selectedCell?.slot, selectedCell?.dateStr]);
+
+  const memoizedCoveringStaff = useMemo(() => {
+    if (!selectedCell?.slot) return [];
+    const { sorted, classGroupMentorIds, classGroupMentorSubjects } = getCoveringStaffOptions(selectedCell.slot);
+    return sorted.map(m => {
+      const isClassGroup = classGroupMentorIds.has(m.id);
+      const isOccupied = isMentorOccupied(
+        m.id,
+        selectedCell.slot!.day,
+        selectedCell.slot!.time,
+        selectedCell.slot!.shift,
+        selectedCell.dateStr
+      );
+      let badge = "";
+      if (isClassGroup) {
+        const subs = classGroupMentorSubjects.get(m.id) || [];
+        badge = subs.length > 0 ? ` (${subs.join(", ")})` : "";
+      }
+      return { ...m, isOccupied, badge };
+    });
+  }, [selectedCell?.slot, selectedCell?.dateStr, currentMentor, mentors, slots, modalSemester, approvedHandovers]);
+
+  const memoizedProfileMyAttendance = useMemo(() => {
+    return studentAttendance.filter(a => a.markedBy === currentMentor?.id);
+  }, [studentAttendance, currentMentor?.id]);
+
+  const memoizedMyRequestsCount = useMemo(() => {
+    return requests.filter(r => r.requestorId === currentMentor?.id).length;
+  }, [requests, currentMentor?.id]);
+
+  const memoizedMyCoveringApprovedCount = useMemo(() => {
+    return requests.filter(r => r.targetStaffId === currentMentor?.id && r.status === "approved").length;
+  }, [requests, currentMentor?.id]);
+
+  const memoizedTrackerClassStudents = useMemo(() => {
+    if (activeTab !== "tracker") return [];
+    // Derive active class group using same logic as tracker tab
+    const campusDepts = Array.from(new Set(coursesList.filter(c => !c.college_id || c.college_id === currentMentor?.college_id).map(c => c.name.trim()).filter(Boolean))).sort();
+    const deptOptions = campusDepts.length > 0 ? campusDepts : Array.from(new Set(mentorClasses.map(c => getDeptFromClassGroup(c) || c))).filter(Boolean);
+    const activeDept = trackerDept || deptOptions[0] || currentMentor?.mentor_group || "";
+    const semesterOptions = Array.from(new Set(
+      subjectsList.filter(s => {
+        if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+        const d = (s.department || "").toLowerCase().trim();
+        const mg = (s.mentor_group || "").toLowerCase().trim();
+        const act = activeDept.toLowerCase().trim();
+        return d === act || mg === act || (d.length > 2 && act.includes(d)) || (act.length > 2 && d.includes(act));
+      }).map(s => s.semester).filter(Boolean)
+    )).sort((a, b) => parseInt((a || "").replace(/\D/g, "") || "0") - parseInt((b || "").replace(/\D/g, "") || "0"));
+    const defaultSems = ["Semester 5", "Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 6", "Semester 7", "Semester 8"];
+    const finalSemOptions = semesterOptions.length > 0 ? semesterOptions : defaultSems;
+    const activeSem = trackerSem || finalSemOptions[0] || "Semester 5";
+    const activeClassGroup = `${activeDept} - ${activeSem}`;
+
+    return students.filter(s => {
+      if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+      if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
+      const sDept = (s.department || "").toLowerCase().trim();
+      const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
+      return sDept === activeDept.toLowerCase().trim() && sSem === activeSem.toLowerCase().trim();
+    });
+  }, [activeTab, students, currentMentor, trackerDept, trackerSem, coursesList, mentorClasses, subjectsList]);
+
+  // --- Attendance Tab Memoizations — lifts IIFE work out of JSX ---
+  // Match by slot ownership — markedBy is optional so we match slotId to mentor's slots
+  const mySlotIds = useMemo(() => new Set(mySlots.map(s => s.id)), [mySlots]);
+
+  const memoizedMentorAtt = useMemo(() => {
+    return studentAttendance.filter(a =>
+      mySlotIds.has(a.slotId) ||
+      a.markedBy === currentMentor?.id
+    );
+  }, [studentAttendance, mySlotIds, currentMentor?.id]);
+
+  const memoizedMarkedSessions = useMemo(() => {
+    const groups: Record<string, {
+      slotId: string; dateStr: string; timestamp: string; records: typeof studentAttendance;
+    }> = {};
+    memoizedMentorAtt.forEach(att => {
+      const key = `${att.slotId}_${att.dateStr}`;
+      if (!groups[key]) {
+        groups[key] = { slotId: att.slotId, dateStr: att.dateStr, timestamp: att.timestamp, records: [] };
+      }
+      groups[key].records.push(att);
+    });
+    return Object.values(groups).map(g => {
+      const slot = slotsByIdMap.get(g.slotId);
+      const presentCount = g.records.filter(r => r.status === "present").length;
+      const absentCount = g.records.filter(r => r.status === "absent").length;
+      const totalMarked = g.records.length;
+      const percent = totalMarked > 0 ? Math.round((presentCount / totalMarked) * 100) : 100;
+      return { ...g, slot, presentCount, absentCount, totalMarked, percent };
+    }).sort((a, b) => b.dateStr.localeCompare(a.dateStr) || b.timestamp.localeCompare(a.timestamp));
+  }, [memoizedMentorAtt, slotsByIdMap]);
+
+  // Notification count for sidebar — memoized to avoid re-scanning on every render
+  const sidebarNotificationCount = useMemo(() => {
+    return requests.filter(r => r.targetStaffId === currentMentor.id && r.status === "pending").length;
+  }, [requests, currentMentor.id]);
+
+  // Tracker tab — class stats (submissions, marks, current week) — expensive nested loop
+  const memoizedTrackerStats = useMemo(() => {
+    const classStudents = memoizedTrackerClassStudents;
+    if (classStudents.length === 0 || activeTab !== "tracker") return null;
+
+    // We need activeSubj from tracker state — derive it the same way the tracker tab does
+    const campusDepts = Array.from(new Set(coursesList.filter(c => !c.college_id || c.college_id === currentMentor?.college_id).map(c => c.name.trim()).filter(Boolean))).sort();
+    const deptOptions = campusDepts.length > 0 ? campusDepts : Array.from(new Set(mentorClasses.map(c => getDeptFromClassGroup(c) || c))).filter(Boolean);
+    const activeDept = trackerDept || deptOptions[0] || currentMentor?.mentor_group || "";
+    const semOpts = Array.from(new Set(subjectsList.filter(s => {
+      if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+      const d = (s.department || "").toLowerCase().trim();
+      const mg = (s.mentor_group || "").toLowerCase().trim();
+      const act = activeDept.toLowerCase().trim();
+      return d === act || mg === act || (d.length > 2 && act.includes(d)) || (act.length > 2 && d.includes(act));
+    }).map(s => s.semester).filter(Boolean))).sort((a, b) => parseInt((a || "").replace(/\D/g, "") || "0") - parseInt((b || "").replace(/\D/g, "") || "0"));
+    const activeSem = trackerSem || (semOpts.length > 0 ? semOpts[0] : "Semester 5");
+    const activeClassGroup = `${activeDept} - ${activeSem}`;
+
+    const subjectObjs = subjectsList.filter(s => {
+      if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+      const d = (s.department || "").toLowerCase().trim();
+      const mg = (s.mentor_group || "").toLowerCase().trim();
+      const act = activeDept.toLowerCase().trim();
+      const matchDept = d === act || mg === act || (d.length > 2 && act.includes(d)) || (act.length > 2 && d.includes(act));
+      const semNum = (s.semester || "").replace(/\D/g, "");
+      const actSemNum = activeSem.replace(/\D/g, "");
+      const matchSem = s.semester?.toLowerCase().trim() === activeSem.toLowerCase().trim() || (semNum && actSemNum && semNum === actSemNum);
+      return matchDept && matchSem;
+    });
+    const mentorSubjectNames = new Set(mentorSubjects.map(s => s.toLowerCase().trim()));
+    const mentorFilteredSubjectObjs = subjectObjs.filter(s => mentorSubjectNames.has(s.name.toLowerCase().trim()));
+    const subjectOptions = mentorFilteredSubjectObjs.length > 0 ? mentorFilteredSubjectObjs.map(s => s.name) : subjectObjs.length > 0 ? subjectObjs.map(s => s.name) : mentorSubjects.length > 0 ? mentorSubjects : ["General Subject"];
+    const activeSubj = trackerSubject || subjectOptions[0] || "";
+
+    const assignedWeeksCount = Array.from({ length: 15 }, (_, i) => i + 1).filter(wk =>
+      weeklyTasks.some(t => isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) && t.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() && t.week_number === wk)
+    ).length;
+
+    let totalSubmissionsCount = 0;
+    let totalMarksSum = 0;
+    let totalGradedEntriesCount = 0;
+
+    // Build a fast lookup map for studentTracker
+    const trackerByStudentSubject = new Map<string, any[]>();
+    studentTracker.forEach(e => {
+      const key = `${e.student_id}|${e.subject.toLowerCase().trim()}`;
+      if (!trackerByStudentSubject.has(key)) trackerByStudentSubject.set(key, []);
+      trackerByStudentSubject.get(key)!.push(e);
+    });
+
+    classStudents.forEach(st => {
+      const entries = trackerByStudentSubject.get(`${st.id}|${activeSubj.toLowerCase().trim()}`) || [];
+      entries.forEach(entry => {
+        if (entry.submission_url) totalSubmissionsCount++;
+        if (entry.marks !== undefined && entry.marks !== null && !isNaN(entry.marks)) {
+          totalMarksSum += entry.marks;
+          totalGradedEntriesCount++;
+        }
+      });
+    });
+
+    const currentWeekSubmittedCount = classStudents.filter(s => {
+      const entries = trackerByStudentSubject.get(`${s.id}|${activeSubj.toLowerCase().trim()}`) || [];
+      return entries.some(e => e.week_number === trackerWeek && !!e.submission_url);
+    }).length;
+
+    const totalPossible = classStudents.length * (assignedWeeksCount || 1);
+    const overallPct = totalPossible > 0 ? Math.round((totalSubmissionsCount / totalPossible) * 100) : 0;
+    const avgScore = totalGradedEntriesCount > 0 ? (totalMarksSum / totalGradedEntriesCount).toFixed(1) : "—";
+
+    return { overallPct, avgScore, assignedWeeksCount, currentWeekSubmittedCount, totalStudents: classStudents.length };
+  }, [activeTab, memoizedTrackerClassStudents, studentTracker, weeklyTasks, trackerWeek, trackerSubject, trackerDept, trackerSem, coursesList, subjectsList, mentorSubjects, mentorClasses, currentMentor]);
+
+  // Swap modal — the target mentor's slots (only computed when modal is open)
+  const memoizedSwapTargetSlots = useMemo(() => {
+    if (!swapModalOpen || !swapTarget) return [];
+    return slots.filter(s => s.mentorId === swapTarget.otherMentorId);
+  }, [swapModalOpen, swapTarget, slots]);
+
+  // Attendance studio — filtered student list (depends on search + filter + localAttendance)
+  const memoizedFilteredStudents = useMemo(() => {
+    if (!isAttendanceStudioOpen || !memoizedSelectedCellStudents.length) return memoizedSelectedCellStudents;
+    const q = (deferredAttendanceSearch || "").toLowerCase().trim();
+    return memoizedSelectedCellStudents.filter(s => {
+      const matchesSearch = !q || s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q);
+      if (!matchesSearch) return false;
+      const stStatus = localAttendance[s.id] || "present";
+      if (attendanceFilterStatus !== "all" && stStatus !== attendanceFilterStatus) return false;
+      return true;
+    });
+  }, [memoizedSelectedCellStudents, deferredAttendanceSearch, localAttendance, attendanceFilterStatus, isAttendanceStudioOpen]);
+
   return (
     <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 font-sans h-full overflow-hidden">
       {(() => {
         const getNotificationCount = (tabId: string) => {
           if (tabId === "handovers" && currentMentor) {
-            return requests.filter(r => r.targetStaffId === currentMentor.id && r.status === "pending").length;
+            return sidebarNotificationCount;
           }
           return 0;
         };
@@ -2598,7 +2960,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 const Icon = t.icon;
                 const isActive = activeTab === t.id || (t.id === "more_menu" && ["handovers", "profile", "demo_evaluations"].includes(activeTab));
                 const count = t.id === "more_menu" && currentMentor
-                  ? requests.filter(r => r.targetStaffId === currentMentor.id && r.status === "pending").length
+                  ? sidebarNotificationCount
                   : 0;
                 return (
                   <button
@@ -2629,7 +2991,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         );
       })()}
 
-      <main className="flex-grow overflow-x-hidden overflow-y-auto h-full floating-main-panel p-4 md:p-6 space-y-6 pb-20 md:pb-6 scroll-touch">
+      <main className="flex-grow overflow-x-hidden overflow-y-auto h-full floating-main-panel p-4 md:p-6 space-y-6 pb-20 md:pb-6 scroll-touch relative">
+        {/* Tab-switch pending indicator — shows instantly on click while React prepares the new tab */}
+        {isTabPending && (
+          <div className="absolute inset-x-0 top-0 h-0.5 z-40 overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-indigo-500 via-[#D528A2] to-indigo-500 animate-pulse w-full" />
+          </div>
+        )}
         {/* Tab More Menu: Grid of remaining tabs */}
         {activeTab === "more_menu" && (
           <div className="space-y-6 animate-fadeIn pb-10">
@@ -2775,7 +3143,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                   {/* Agenda List */}
                   {(() => {
-                    const agendaClasses = getAgendaClassesForDay(agendaDay);
                     const dateObj = weekDates.find(d => d.day === agendaDay);
                     const dateFormatted = dateObj ? dateObj.formatted : "";
                     const dateStr = dateObj ? dateObj.dateStr : "";
@@ -3560,12 +3927,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                           if (col.type !== "slot") return null;
                           const time = col.time;
-                          const slotResult = getSlotAt(date.day, date.dateStr, time);
-                          const slot = slotResult?.slot;
-                          const isOwn = slotResult?.type === "own";
-                          const isCovering = slotResult?.type === "covering";
-                          const isDemo = slotResult?.type === "demo";
-                          const demoSession = (slotResult as any)?.demoSession;
+                          const cellData = timetableCellMap.get(`${date.dateStr}|${time}`);
+                          const slotResult = cellData?.slot ? { slot: cellData.slot, type: cellData.type, demoSession: cellData.demoSession, originalMentorId: cellData.originalMentorId, handover: cellData.approvedReq } : null;
+                          const slot = cellData?.slot;
+                          const isOwn = cellData?.type === "own";
+                          const isCovering = cellData?.type === "covering";
+                          const isDemo = cellData?.type === "demo";
+                          const demoSession = cellData?.demoSession;
 
                           if (isDemo && demoSession) {
                             return (
@@ -3598,26 +3966,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             );
                           }
 
-                          // Check Handover state for this slot on this date
-                          const pendingReq = requests.find(r => r.slotId === slot?.id && r.dateStr === date.dateStr && r.status === "pending");
-                          const approvedReq = approvedHandovers.find(h => h.slotId === slot?.id && h.dateStr === date.dateStr);
-                          const hasAttendance = slot ? studentAttendance.some(a => a.slotId === slot.id && a.dateStr === date.dateStr) : false;
+                          // Check Handover state for this slot on this date — use pre-computed values
+                          const pendingReq = cellData?.pendingReq ?? null;
+                          const approvedReq = cellData?.approvedReq ?? null;
+                          const hasAttendance = cellData?.hasAttendance ?? false;
 
-                          let cellStatus: "active" | "pending" | "handover" | null = null;
-                          if (slot) {
-                            if (approvedReq || isCovering) cellStatus = "handover";
-                            else if (pendingReq) cellStatus = "pending";
-                            else cellStatus = "active";
-                          }
+                          let cellStatus: "active" | "pending" | "handover" | null = cellData?.cellStatus ?? null;
 
-                          // Apply filters if filter active
-                          const isFilteredOut = isFilterActive && (
-                            (selectedClassFilter && (!slot || !doesClassMatchFilter(slot.classGroup, selectedClassFilter))) ||
-                            (selectedStatusFilter && cellStatus !== selectedStatusFilter) ||
-                            (selectedLocationFilter && (!slot || slot.location !== selectedLocationFilter))
-                          );
+                          // Filters already applied in timetableCellMap — no need to re-check
+                          const isFilteredOut = !slot;
 
-                          const todayStr = new Date().toISOString().slice(0, 10);
                           const isFuture = date.dateStr > todayStr || (date.dateStr === todayStr && (() => {
                             const periodStart = parseSlotStartTime(time);
                             return periodStart ? new Date() < periodStart : false;
@@ -3688,18 +4046,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       </span>
                                     ) : (() => {
                                       const windowCheck = checkAttendanceWindow(date.dateStr, time);
-                                      const approvedLateCamReq = requests.find(r =>
-                                        r.slotId === slot.id &&
-                                        r.dateStr === date.dateStr &&
-                                        r.status === "approved" &&
-                                        (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))
-                                      );
-                                      const pendingLateCamReq = requests.find(r =>
-                                        r.slotId === slot.id &&
-                                        r.dateStr === date.dateStr &&
-                                        (r.status === "pending" || r.status === "pending_cam") &&
-                                        (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))
-                                      );
+                                      const camKey = `${slot.id}|${date.dateStr}`;
+                                      const approvedLateCamReq = lateAttendanceCamApprovedSet.has(camKey);
+                                      const pendingLateCamReq = lateAttendanceCamPendingSet.has(camKey);
                                       const isDeadlineExpired = !windowCheck.open && windowCheck.reason === "expired" && !approvedLateCamReq;
 
                                       if (pendingLateCamReq) {
@@ -3726,7 +4075,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       if (isCovering) {
                                         return (
                                           <span className="text-blue-600 flex items-center gap-0.5 truncate">
-                                            Cover: {mentors.find(m => m.id === slotResult.originalMentorId)?.name?.split(" ")[0] || "Staff"}
+                                            Cover: {mentors.find(m => m.id === cellData?.originalMentorId)?.name?.split(" ")[0] || "Staff"}
                                           </span>
                                         );
                                       }
@@ -4335,25 +4684,25 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
                 <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                   <span className="text-3xl font-extrabold text-slate-900">
-                    {slots.filter(s => s.mentorId === currentMentor.id).length}
+                    {mySlots.length}
                   </span>
                   <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Weekly Teaching Slots</span>
                 </div>
                 <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                   <span className="text-3xl font-extrabold text-slate-900">
-                    {requests.filter(r => r.requestorId === currentMentor.id).length}
+                    {memoizedMyRequestsCount}
                   </span>
                   <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Handovers Requested</span>
                 </div>
                 <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                   <span className="text-3xl font-extrabold text-slate-900">
-                    {requests.filter(r => r.targetStaffId === currentMentor.id && r.status === "approved").length}
+                    {memoizedMyCoveringApprovedCount}
                   </span>
                   <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Substitution Duties Covered</span>
                 </div>
                 <div className="p-4 bg-white/80 rounded-xl border border-slate-105/40">
                   <span className="text-3xl font-extrabold text-slate-900">
-                    {studentAttendance.filter(a => a.markedBy === currentMentor.id).length}
+                    {memoizedProfileMyAttendance.length}
                   </span>
                   <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Attendance Records Marked</span>
                 </div>
@@ -4362,368 +4711,297 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           </div>
         )}
 
-        {/* Tab 3.5: Attendance Logs */}
+        {/* Tab: Student Attendance — Daily Feed View */}
         {activeTab === "attendance" && (() => {
-          // Group attendance marked by this mentor
-          const mentorAtt = studentAttendance.filter(a => a.markedBy === currentMentor.id);
+          const markedSessions = memoizedMarkedSessions;
 
-          // Group by slotId + "_" + dateStr
-          const groups: Record<string, {
-            slotId: string;
-            dateStr: string;
-            timestamp: string;
-            records: typeof studentAttendance;
-          }> = {};
+          // Unique months from all sessions
+          const allMonths = Array.from(new Set(
+            markedSessions.map(s => s.dateStr.slice(0, 7))
+          )).sort((a, b) => b.localeCompare(a));
 
-          mentorAtt.forEach(att => {
-            const key = `${att.slotId}_${att.dateStr}`;
-            if (!groups[key]) {
-              groups[key] = {
-                slotId: att.slotId,
-                dateStr: att.dateStr,
-                timestamp: att.timestamp,
-                records: []
-              };
-            }
-            groups[key].records.push(att);
+          // Unique class groups
+          const allClassGroups = Array.from(new Set(
+            markedSessions.map(s => s.slot?.classGroup).filter(Boolean)
+          )) as string[];
+
+          // Apply filters
+          const filtered = markedSessions.filter(s => {
+            if (attCalendarClassFilter !== "all" && s.slot?.classGroup !== attCalendarClassFilter) return false;
+            if (attCalendarMonth && !s.dateStr.startsWith(attCalendarMonth)) return false;
+            return true;
           });
 
-          const markedSessions = Object.values(groups).map(g => {
-            const slot = slots.find(s => s.id === g.slotId);
-            const presentCount = g.records.filter(r => r.status === "present").length;
-            const absentCount = g.records.filter(r => r.status === "absent").length;
-            const totalMarked = g.records.length;
-            const percent = totalMarked > 0 ? Math.round((presentCount / totalMarked) * 100) : 100;
-
-            return {
-              ...g,
-              slot,
-              presentCount,
-              absentCount,
-              totalMarked,
-              percent
-            };
-          }).sort((a, b) => b.dateStr.localeCompare(a.dateStr) || b.timestamp.localeCompare(a.timestamp));
-
-          const filteredSessions = markedSessions.filter(s => {
-            const q = attendanceHistorySearch.toLowerCase().trim();
-            if (!q) return true;
-            const courseName = s.slot?.course?.toLowerCase() || "";
-            const classGroup = s.slot?.classGroup?.toLowerCase() || "";
-            const date = s.dateStr?.toLowerCase() || "";
-            return courseName.includes(q) || classGroup.includes(q) || date.includes(q);
+          // Group by date for timeline view
+          const groupedByDate = new Map<string, typeof markedSessions>();
+          filtered.forEach(s => {
+            const arr = groupedByDate.get(s.dateStr) || [];
+            arr.push(s);
+            groupedByDate.set(s.dateStr, arr);
           });
+          const sortedDates = Array.from(groupedByDate.keys()).sort((a, b) => b.localeCompare(a));
 
-          // Active holidays in the calculator range
-          const activeHolidays = holidays.filter(h => h.date >= calcStartDate && h.date <= calcEndDate);
+          // Month summary
+          const monthPresent = filtered.reduce((a, s) => a + s.presentCount, 0);
+          const monthAbsent = filtered.reduce((a, s) => a + s.absentCount, 0);
+          const monthTotal = monthPresent + monthAbsent;
+          const monthAvg = monthTotal > 0 ? Math.round((monthPresent / monthTotal) * 100) : 0;
+
+          const selectedMonthLabel = attCalendarMonth
+            ? new Date(attCalendarMonth + "-01").toLocaleString("default", { month: "long", year: "numeric" })
+            : "All Time";
 
           return (
-            <div className="space-y-6 font-sans">
-              {/* Sub-navigation tabs */}
-              <div className="flex gap-5 border-b border-slate-200 pb-px">
-                <button
-                  type="button"
-                  onClick={() => setAttendanceLogsSubTab("history")}
-                  className={`pb-3 text-xs font-black uppercase tracking-wider transition-all relative cursor-pointer ${attendanceLogsSubTab === "history"
-                      ? "text-indigo-600 border-b-2 border-indigo-600"
-                      : "text-slate-400 hover:text-slate-700"
-                    }`}
-                >
-                  Marked Session History
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAttendanceLogsSubTab("calculator")}
-                  className={`pb-3 text-xs font-black uppercase tracking-wider transition-all relative cursor-pointer ${attendanceLogsSubTab === "calculator"
-                      ? "text-indigo-600 border-b-2 border-indigo-600"
-                      : "text-slate-400 hover:text-slate-700"
-                    }`}
-                >
-                  Semester Audit Calculator
-                </button>
+            <div className="space-y-4 font-sans">
+
+              {/* Top control bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+                <div>
+                  <h2 className="text-base font-black text-slate-900">Student Attendance</h2>
+                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                    {filtered.length} session{filtered.length !== 1 ? "s" : ""} · {monthAvg}% avg · {monthPresent}P / {monthAbsent}A
+                    {attCalendarClassFilter !== "all" && <span className="ml-1 text-indigo-600">· {attCalendarClassFilter}</span>}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Class filter */}
+                  <select
+                    value={attCalendarClassFilter}
+                    onChange={e => setAttCalendarClassFilter(e.target.value)}
+                    className="text-[11px] font-bold px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-indigo-400 cursor-pointer shadow-xs"
+                  >
+                    <option value="all">All Classes</option>
+                    {allClassGroups.map(cg => (
+                      <option key={cg} value={cg}>{cg}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              {attendanceLogsSubTab === "history" ? (
-                <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                      <h2 className="text-base font-black text-slate-905">Student Attendance</h2>
-                    </div>
+              {/* Month filter chips — horizontal scroll */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                <button
+                  type="button"
+                  onClick={() => setAttCalendarMonth("")}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer border ${!attCalendarMonth ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-500 border-slate-200 hover:border-slate-400"}`}
+                >
+                  All Time
+                </button>
+                {allMonths.map(m => {
+                  const label = new Date(m + "-01").toLocaleString("default", { month: "short", year: "2-digit" });
+                  const isActive = attCalendarMonth === m;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setAttCalendarMonth(isActive ? "" : m)}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer border ${isActive ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600"}`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
 
-                    {/* Search Log Bar */}
-                    <div className="relative w-full sm:w-72">
-                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                        <Search className="h-4 w-4 text-slate-400" />
-                      </span>
-                      <input
-                        type="text"
-                        placeholder="Search course or cohort..."
-                        value={attendanceHistorySearch}
-                        onChange={(e) => setAttendanceHistorySearch(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 border border-slate-205 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-slate-800 outline-none shadow-xs"
-                      />
-                    </div>
+              {/* Empty state */}
+              {sortedDates.length === 0 && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-12 flex flex-col items-center gap-3 text-center shadow-xs">
+                  <div className="h-14 w-14 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center">
+                    <ClipboardList className="h-6 w-6 text-slate-300" />
                   </div>
-
-                  {/* Table */}
-                  <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
-                    <table className="w-full border-collapse text-left text-xs font-semibold">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9.5px]">
-                          <th className="p-3.5 border-r border-slate-100">Session Date</th>
-                          <th className="p-3.5 border-r border-slate-100">Course Name / Period</th>
-                          <th className="p-3.5 border-r border-slate-100">Class Group (Cohort)</th>
-                          <th className="p-3.5 border-r border-slate-100">Classroom</th>
-                          <th className="p-3.5 border-r border-slate-100 text-center">Marked Count</th>
-                          <th className="p-3.5 border-r border-slate-100 text-center">Present / Absent</th>
-                          <th className="p-3.5 border-r border-slate-100 text-center">Attendance %</th>
-                          <th className="p-3.5 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                        {filteredSessions.map((session, idx) => {
-                          if (!session.slot) return null;
-                          return (
-                            <tr key={idx} className="hover:bg-slate-55/35 transition-colors">
-                              <td className="p-3.5 font-bold text-slate-805 border-r border-slate-100">
-                                {session.dateStr}
-                              </td>
-                              <td className="p-3.5 border-r border-slate-100">
-                                <div className="font-bold text-slate-805">{session.slot.course}</div>
-                                <div className="text-[10px] text-slate-400">{session.slot.time}</div>
-                              </td>
-                              <td className="p-3.5 font-bold text-slate-805 border-r border-slate-100">
-                                {session.slot.classGroup}
-                              </td>
-                              <td className="p-3.5 text-slate-500 border-r border-slate-100">
-                                <span className="bg-slate-100 px-2 py-0.5 rounded text-[10px] font-bold">
-                                  {session.slot.location}
-                                </span>
-                              </td>
-                              <td className="p-3.5 text-center font-bold border-r border-slate-100">
-                                {session.totalMarked} students
-                              </td>
-                              <td className="p-3.5 text-center border-r border-slate-100">
-                                <span className="text-emerald-600 font-bold">{session.presentCount} P</span>
-                                <span className="text-slate-355 mx-1">•</span>
-                                <span className="text-rose-650 font-bold">{session.absentCount} A</span>
-                              </td>
-                              <td className="p-3.5 text-center border-r border-slate-100">
-                                <span className={`px-2 py-0.5 rounded font-black text-[10px] ${session.percent >= 75
-                                    ? "bg-emerald-50 text-emerald-705 border border-emerald-100"
-                                    : "bg-rose-50 text-rose-705 border border-rose-100"
-                                  }`}>
-                                  {session.percent}%
-                                </span>
-                              </td>
-                              <td className="p-3.5 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const weekday = new Date(session.dateStr).toLocaleDateString("en-US", { weekday: "long" });
-                                    const dateFormatted = new Date(session.dateStr).toLocaleDateString("en-US", {
-                                      weekday: "long",
-                                      year: "numeric",
-                                      month: "long",
-                                      day: "numeric"
-                                    });
-                                    handleCellClick(weekday, session.dateStr, dateFormatted, session.slot!.time);
-                                  }}
-                                  className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-705 rounded-lg text-[9.5px] font-bold shadow-xs transition-colors cursor-pointer"
-                                >
-                                  View & Edit
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {filteredSessions.length === 0 && (
-                          <tr>
-                            <td colSpan={8} className="p-8 text-center text-xs text-slate-400 italic">
-                              No marked attendance logs found.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-6">
-                  <div>
-                    <h2 className="text-base font-black text-slate-905">Semester Attendance Audit</h2>
-                    <p className="text-xs text-slate-400 font-semibold mt-0.5">Calculate dynamic cumulative student attendance averages, automatically excluding holidays.</p>
-                  </div>
-
-                  {/* Filters */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/50 p-5 rounded-xl border border-slate-150">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Select Cohort (Class Group)</label>
-                      <select
-                        value={calcCohort}
-                        onChange={(e) => setCalcCohort(e.target.value)}
-                        className="w-full p-2.5 bg-white border border-slate-205 rounded-xl text-xs font-bold outline-none cursor-pointer"
-                      >
-                        <option value="" disabled>Choose cohort...</option>
-                        {mentorClassGroups.map(cg => (
-                          <option key={cg} value={cg}>{cg}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Semester Start Date</label>
-                      <input
-                        type="date"
-                        value={calcStartDate}
-                        onChange={(e) => setCalcStartDate(e.target.value)}
-                        className="w-full p-2.5 bg-white border border-slate-205 rounded-xl text-xs font-semibold outline-none"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Semester End Date</label>
-                      <input
-                        type="date"
-                        value={calcEndDate}
-                        onChange={(e) => setCalcEndDate(e.target.value)}
-                        className="w-full p-2.5 bg-white border border-slate-205 rounded-xl text-xs font-semibold outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Holiday Status Notification Banner */}
-                  <div className="bg-indigo-50/50 border border-indigo-150 p-4 rounded-xl space-y-2">
-                    <div className="flex items-center gap-2 text-indigo-850 font-bold text-[11px]">
-                      <AlertCircle className="h-4.5 w-4.5 text-indigo-600 shrink-0" />
-                      <span>Holiday Marking Policy Active</span>
-                    </div>
-                    <p className="text-[10px] text-indigo-700 leading-normal font-medium">
-                      Conducted slot denominators exclude all Saturdays, Sundays, and campus-scheduled holidays. If any holiday dates fall within the audit range, no periods are counted on those dates.
-                    </p>
-
-                    {activeHolidays.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5 pt-1.5 border-t border-indigo-100/50">
-                        <span className="text-[9px] font-bold text-indigo-500 uppercase self-center mr-1">Holidays in range:</span>
-                        {activeHolidays.map(hol => (
-                          <span key={hol.id} className="px-2 py-0.5 rounded-md bg-white border border-indigo-200 text-[9.5px] font-black text-indigo-700" title={hol.type}>
-                            {hol.title} ({hol.date})
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-[9px] text-indigo-400 italic pt-1 border-t border-indigo-100/30">
-                        No public holidays configured in this date range.
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Calculation Results Table */}
-                  <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
-                    <table className="w-full border-collapse text-left text-xs font-semibold">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9.5px]">
-                          <th className="p-3.5 border-r border-slate-100">Student Name</th>
-                          <th className="p-3.5 border-r border-slate-100">Student ID</th>
-                          <th className="p-3.5 border-r border-slate-100 text-center">Periods Conducted</th>
-                          <th className="p-3.5 border-r border-slate-100 text-center">Periods Attended (Excused)</th>
-                          <th className="p-3.5 border-r border-slate-100 text-center">Periods Absent</th>
-                          <th className="p-3.5 border-r border-slate-100 text-center">Cumulative %</th>
-                          <th className="p-3.5 text-center">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                        {semesterReports.map(({ student, conducted, present, absent, percentage }, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="p-3.5 font-bold text-slate-805 border-r border-slate-100">
-                              {student.name}
-                            </td>
-                            <td className="p-3.5 font-mono text-slate-500 border-r border-slate-100">
-                              {student.id}
-                            </td>
-                            <td className="p-3.5 text-center font-bold border-r border-slate-100">
-                              {conducted}
-                            </td>
-                            <td className="p-3.5 text-center text-emerald-600 font-bold border-r border-slate-100">
-                              {present}
-                            </td>
-                            <td className="p-3.5 text-center text-rose-600 font-bold border-r border-slate-100">
-                              {absent}
-                            </td>
-                            <td className="p-3.5 text-center border-r border-slate-100">
-                              <span className={`px-2 py-0.5 rounded font-black text-[10px] ${percentage >= 75
-                                  ? "bg-emerald-50 text-emerald-705 border border-emerald-100"
-                                  : "bg-rose-50 text-rose-705 border border-rose-100"
-                                }`}>
-                                {percentage}%
-                              </span>
-                            </td>
-                            <td className="p-3.5 text-center">
-                              <span className={`px-2 py-0.5 rounded text-[9.5px] font-black uppercase tracking-wider ${percentage >= 75
-                                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                  : "bg-rose-100 text-rose-800 border border-rose-200"
-                                }`}>
-                                {percentage >= 75 ? "Eligible" : "Shortage"}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                        {semesterReports.length === 0 && (
-                          <tr>
-                            <td colSpan={7} className="p-8 text-center text-slate-400 italic">
-                              Select a class group above to calculate cumulative semester attendance.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Audit lock actions */}
-                  {semesterReports.length > 0 && (
-                    <div className="flex justify-end gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const csvRows = [
-                            ["Student Name", "Student ID", "Conducted", "Attended", "Absent", "Percentage", "Status"],
-                            ...semesterReports.map(r => [
-                              r.student.name,
-                              r.student.id,
-                              r.conducted,
-                              r.present,
-                              r.absent,
-                              `${r.percentage}%`,
-                              r.percentage >= 75 ? "ELIGIBLE" : "SHORTAGE"
-                            ])
-                          ];
-                          const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(e => e.join(",")).join("\n");
-                          const encodedUri = encodeURI(csvContent);
-                          const link = document.createElement("a");
-                          link.setAttribute("href", encodedUri);
-                          link.setAttribute("download", `attendance_semester_report_${calcCohort.replace(/\s+/g, "_")}.csv`);
-                          document.body.appendChild(link);
-                          link.click();
-                          document.body.removeChild(link);
-                        }}
-                        className="px-4 py-2 rounded-xl border border-slate-205 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
-                      >
-                        Export CSV Report
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          toast(`Semester Attendance Audited & Locked for "${calcCohort}". Total: ${semesterReports.length} students — Eligible: ${semesterReports.filter(r => r.percentage >= 75).length}, Shortage: ${semesterReports.filter(r => r.percentage < 75).length}.`, "success");
-                        }}
-                        className="px-4 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95 border-none"
-                      >
-                        Verify & Lock Semester Record
-                      </button>
-                    </div>
-                  )}
+                  <p className="text-sm font-bold text-slate-500">No attendance sessions found</p>
+                  <p className="text-xs text-slate-400">Mark attendance from the timetable to see data here.</p>
                 </div>
               )}
+
+              {/* Daily timeline feed */}
+              <div className="space-y-5">
+                {sortedDates.map(dateStr => {
+                  const sessions = groupedByDate.get(dateStr)!;
+                  const dateObj = new Date(dateStr + "T00:00:00");
+                  const isToday = dateStr === todayStr;
+                  const dayLabel = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+                  const dateLabel = dateObj.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
+                  const dayPresent = sessions.reduce((a, s) => a + s.presentCount, 0);
+                  const dayAbsent = sessions.reduce((a, s) => a + s.absentCount, 0);
+                  const dayPct = (dayPresent + dayAbsent) > 0 ? Math.round((dayPresent / (dayPresent + dayAbsent)) * 100) : 0;
+
+                  return (
+                    <div key={dateStr}>
+                      {/* Date section header */}
+                      <div className="flex items-center gap-3 mb-2.5">
+                        <div className={`shrink-0 flex flex-col items-center justify-center w-10 h-10 rounded-xl border font-black text-sm leading-none
+                          ${isToday ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-800 border-slate-200 shadow-xs"}`}>
+                          <span className="text-base">{dateObj.getDate()}</span>
+                          <span className={`text-[8px] uppercase font-black tracking-wider ${isToday ? "text-indigo-200" : "text-slate-400"}`}>
+                            {dateObj.toLocaleString("default", { month: "short" })}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-black text-slate-800">{dayLabel}</span>
+                            {isToday && <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[9px] font-black">Today</span>}
+                            <span className="text-[10px] text-slate-400 font-semibold">{dateLabel}</span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5 text-[10px] font-bold">
+                            <span className="text-emerald-600">{dayPresent} present</span>
+                            <span className="text-rose-500">{dayAbsent} absent</span>
+                            <span className={`font-black ${dayPct >= 75 ? "text-emerald-700" : "text-rose-600"}`}>{dayPct}% avg</span>
+                          </div>
+                        </div>
+                        <span className="shrink-0 text-[10px] text-slate-400 font-bold">
+                          {sessions.length} period{sessions.length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+
+                      {/* Period cards for this date */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">{sessions.map((session, idx) => {
+                          if (!session.slot) return null;
+                          const pct = session.percent;
+                          const isGood = pct >= 75;
+                          const { name: deptName, sem } = getShortClassGroup(session.slot.classGroup);
+                          const circumference = 2 * Math.PI * 16; // r=16
+                          const dashOffset = circumference - (pct / 100) * circumference;
+
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => {
+                                const weekday = new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+                                const dateFormatted = new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+                                
+                                // Set selected cell data
+                                setSelectedCell({
+                                  day: weekday,
+                                  dateStr,
+                                  dateFormatted,
+                                  time: session.slot!.time,
+                                  slot: session.slot,
+                                  type: "own"
+                                });
+                                
+                                // Directly open attendance studio in read-only view mode
+                                setIsAttendanceStudioOpen(true);
+                                setModalTab("attendance");
+                              }}
+                              className={`group relative bg-white border rounded-2xl p-4 cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 shadow-xs
+                                ${isGood ? "border-emerald-200 hover:border-emerald-400" : "border-rose-200 hover:border-rose-400"}`}
+                            >
+                              {/* Top row: subject + status dot */}
+                              <div className="flex items-start justify-between gap-2 mb-3">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-black text-slate-900 truncate leading-tight" title={session.slot.course}>
+                                    {session.slot.course}
+                                  </p>
+                                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                    <span className="px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[9px] font-black border border-indigo-100 truncate max-w-[80px]" title={deptName}>
+                                      {deptName}
+                                    </span>
+                                    {sem && (
+                                      <span className="px-1.5 py-0.5 rounded-md bg-teal-50 text-teal-700 text-[9px] font-black border border-teal-100">
+                                        {sem}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* SVG circular progress ring */}
+                                <div className="shrink-0 relative w-11 h-11">
+                                  <svg className="w-11 h-11 -rotate-90" viewBox="0 0 40 40">
+                                    <circle cx="20" cy="20" r="16" fill="none" stroke={isGood ? "#d1fae5" : "#fee2e2"} strokeWidth="4" />
+                                    <circle
+                                      cx="20" cy="20" r="16" fill="none"
+                                      stroke={isGood ? "#10b981" : "#f43f5e"}
+                                      strokeWidth="4"
+                                      strokeDasharray={circumference}
+                                      strokeDashoffset={dashOffset}
+                                      strokeLinecap="round"
+                                    />
+                                  </svg>
+                                  <span className={`absolute inset-0 flex items-center justify-center text-[10px] font-black ${isGood ? "text-emerald-700" : "text-rose-600"}`}>
+                                    {pct}%
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Present/Absent split bar */}
+                              <div className="mb-2.5">
+                                <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100">
+                                  <div className="bg-emerald-400 transition-all" style={{ width: `${pct}%` }} />
+                                  <div className="bg-rose-400 transition-all" style={{ width: `${100 - pct}%` }} />
+                                </div>
+                                <div className="flex justify-between mt-1 text-[9.5px] font-bold">
+                                  <span className="text-emerald-600">{session.presentCount} present</span>
+                                  <span className="text-rose-500">{session.absentCount} absent</span>
+                                </div>
+                              </div>
+
+                              {/* Bottom row: time + room + edit button */}
+                              <div className="flex items-center justify-between pt-2.5 border-t border-slate-100">
+                                <div className="flex items-center gap-2 text-[10px] text-slate-500 font-semibold">
+                                  <Clock className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{session.slot.time}</span>
+                                  {session.slot.location && (
+                                    <>
+                                      <span className="text-slate-300">·</span>
+                                      <MapPin className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">{session.slot.location}</span>
+                                    </>
+                                  )}
+                                </div>
+                                {/* View + Edit button: Click to view, Edit for CAM request if expired */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const weekday = new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+                                    const dateFormatted = new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+                                    
+                                    // Check if attendance window is expired
+                                    const windowCheck = checkAttendanceWindow(dateStr, session.slot!.time);
+                                    const isExpired = !windowCheck.open && windowCheck.reason === "expired";
+                                    
+                                    // Check if already has CAM approval
+                                    const camKey = `${session.slot!.id}|${dateStr}`;
+                                    const hasApproval = lateAttendanceCamApprovedSet.has(camKey);
+                                    
+                                    if (isExpired && !hasApproval) {
+                                      // Show CAM request modal
+                                      setSelectedCell({
+                                        day: weekday,
+                                        dateStr,
+                                        dateFormatted,
+                                        time: session.slot!.time,
+                                        slot: session.slot,
+                                        type: "own"
+                                      });
+                                      setIsCamEditRequestModalOpen(true);
+                                      setCamRequestReason("");
+                                      setFormError("");
+                                    } else {
+                                      // Open attendance studio for editing (window open or has CAM approval)
+                                      handleCellClick(weekday, dateStr, dateFormatted, session.slot!.time);
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] transition-all opacity-0 group-hover:opacity-100 flex items-center gap-1"
+                                >
+                                  <span>Edit</span>
+                                  <ChevronRight className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           );
         })()}
+
+
 
         {/* ══════════════════════════════════════════════════════════════════════ */}
         {/* POPUP 1: COMPACT PERIOD ACTIONS (MARK ATTENDANCE VS HANDOVER)          */}
@@ -4733,16 +5011,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const yearStr = getYearForClass(selectedCell.slot.classGroup);
           const shiftLabel = selectedCell.slot.shift === "shift_1" ? "Shift 1" : selectedCell.slot.shift === "shift_2" ? "Shift 2" : "General";
 
-          const classStudents = students.filter((student) => {
-            if (isClassGroupMatch(student.classGroup, selectedCell.slot!.classGroup)) return true;
-            if (isClassGroupMatch(student.department, selectedCell.slot!.department || selectedCell.slot!.classGroup)) return true;
-            if (student.college_id && selectedCell.slot!.college_id && student.college_id === selectedCell.slot!.college_id) return true;
-            return false;
-          });
-
-          const existingAttendance = studentAttendance.filter(
-            (a) => a.slotId === selectedCell.slot!.id && a.dateStr === selectedCell.dateStr
-          );
+          const classStudents = memoizedSelectedCellStudents;
+          const existingAttendance = memoizedSelectedCellAttendance;
           const alreadyMarked = existingAttendance.length > 0;
           const prevPresent = existingAttendance.filter(a => a.status === "present").length;
           const prevAbsent = existingAttendance.filter(a => a.status === "absent").length;
@@ -4899,29 +5169,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-medium focus:outline-none focus:border-slate-900"
                       >
                         <option value="">-- Choose Covering Staff --</option>
-                        {(() => {
-                          const { sorted, classGroupMentorIds, classGroupMentorSubjects } = getCoveringStaffOptions(selectedCell.slot!);
-                          return sorted.map(m => {
-                            const isClassGroup = classGroupMentorIds.has(m.id);
-                            const isOccupied = isMentorOccupied(
-                              m.id,
-                              selectedCell.slot!.day,
-                              selectedCell.slot!.time,
-                              selectedCell.slot!.shift,
-                              selectedCell.dateStr
-                            );
-                            let badge = "";
-                            if (isClassGroup) {
-                              const subs = classGroupMentorSubjects.get(m.id) || [];
-                              badge = subs.length > 0 ? ` (${subs.join(", ")})` : "";
-                            }
-                            return (
-                              <option key={m.id} value={m.id} disabled={isOccupied}>
-                                {isOccupied ? `[Occupied] ` : ""}{m.name}{badge}
-                              </option>
-                            );
-                          });
-                        })()}
+                        {memoizedCoveringStaff.map(m => (
+                          <option key={m.id} value={m.id} disabled={m.isOccupied}>
+                            {m.isOccupied ? `[Occupied] ` : ""}{m.name}{m.badge}
+                          </option>
+                        ))}
                       </select>
                     </div>
 
@@ -4987,12 +5239,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const { name: deptShort, sem } = getShortClassGroup(selectedCell.slot.classGroup);
           const yearStr = getYearForClass(selectedCell.slot.classGroup);
 
-          const classStudents = students.filter((student) => {
-            if (isClassGroupMatch(student.classGroup, selectedCell.slot!.classGroup)) return true;
-            if (isClassGroupMatch(student.department, selectedCell.slot!.department || selectedCell.slot!.classGroup)) return true;
-            if (student.college_id && selectedCell.slot!.college_id && student.college_id === selectedCell.slot!.college_id) return true;
-            return false;
-          });
+          const classStudents = memoizedSelectedCellStudents;
 
           const today = new Date();
           const y = today.getFullYear();
@@ -5002,21 +5249,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
           const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
           const isLocked = !windowCheck.open && windowCheck.reason === "expired";
-          const isPastDay = selectedCell.dateStr < todayStr || isLocked;
+          
+          // Check if CAM has approved late attendance edit for this session
+          const camKey = `${selectedCell.slot.id}|${selectedCell.dateStr}`;
+          const hasCAMApproval = lateAttendanceCamApprovedSet.has(camKey);
+          
+          // Allow editing if: window is open OR has CAM approval for late edit
+          const isPastDay = (selectedCell.dateStr < todayStr || isLocked) && !hasCAMApproval;
 
           const presentCount = Object.values(localAttendance).filter(v => v === "present").length;
           const absentCount = Object.values(localAttendance).filter(v => v === "absent").length;
           const odCount = Object.values(localAttendance).filter(v => v === "od").length;
 
-          const filteredStudents = classStudents.filter(s => {
-            const matchesSearch = !attendanceSearchTerm ||
-              s.name.toLowerCase().includes(attendanceSearchTerm.toLowerCase()) ||
-              s.id.toLowerCase().includes(attendanceSearchTerm.toLowerCase());
-            if (!matchesSearch) return false;
-            const stStatus = localAttendance[s.id] || "present";
-            if (attendanceFilterStatus !== "all" && stStatus !== attendanceFilterStatus) return false;
-            return true;
-          });
+          const filteredStudents = memoizedFilteredStudents;
 
           const setStudentStatus = (studentId: string, status: "present" | "absent" | "od") => {
             if (isPastDay) return;
@@ -5097,7 +5342,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
               <div className="relative w-full max-w-5xl h-[90vh] bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
 
-                {/* Studio Header - Sleek Minimalist */}
+                {/* Full-modal saving overlay — blocks UI during re-render after attendance submit */}
+                {isSubmittingAttendance && (
+                  <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/80 backdrop-blur-xs rounded-2xl gap-3">
+                    <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+                    <p className="text-sm font-bold text-slate-700">Saving attendance records…</p>
+                    <p className="text-xs text-slate-400">Please wait, updating {classStudents.length} students</p>
+                  </div>
+                )}
                 <div className="px-5 py-3.5 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-3">
                     <div>
@@ -5105,6 +5357,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <h3 className="text-base font-bold text-slate-900 leading-tight">
                           Attendance — {selectedCell.slot.course}
                         </h3>
+                        {isPastDay && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-100 text-amber-700 border border-amber-200 uppercase tracking-wider">
+                            View Only
+                          </span>
+                        )}
+                        {!isPastDay && hasCAMApproval && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
+                            CAM Approved
+                          </span>
+                        )}
                         <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
                           {deptShort || "Class"}
                         </span>
@@ -5329,6 +5591,173 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           );
         })()}
 
+        {/* ══════════════════════════════════════════════════════════════════════ */}
+        {/* POPUP 3: REQUEST CAM EDIT PERMISSION FOR LATE ATTENDANCE              */}
+        {/* ══════════════════════════════════════════════════════════════════════ */}
+        {isCamEditRequestModalOpen && selectedCell && selectedCell.slot && (() => {
+          const { name: deptShort, sem } = getShortClassGroup(selectedCell.slot.classGroup);
+
+          const handleSubmitCamRequest = async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (!camRequestReason.trim()) {
+              setFormError("Please provide a reason for requesting edit permission.");
+              return;
+            }
+
+            setSwapSubmitting(true);
+            setFormError("");
+
+            try {
+              // Submit as a handover request with special markers for CAM late attendance approval
+              await requestHandover(
+                currentMentor.id,
+                selectedCell.slot!.id,
+                selectedCell.dateStr,
+                selectedCell.dateFormatted,
+                "CAM-APPROVAL", // Special targetStaffId marker
+                `Late Attendance Edit Request: ${camRequestReason.trim()}`
+              );
+
+              setIsCamEditRequestModalOpen(false);
+              setCamRequestReason("");
+              toast("CAM edit permission request submitted successfully!", "success");
+            } catch (err: any) {
+              setFormError(err.message || "Something went wrong.");
+            } finally {
+              setSwapSubmitting(false);
+            }
+          };
+
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+              <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+                {/* Header */}
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 leading-tight flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5 text-amber-600" />
+                      Request Edit Permission
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium mt-1">
+                      This attendance record is locked. Request CAM approval to edit.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setIsCamEditRequestModalOpen(false);
+                      setCamRequestReason("");
+                      setFormError("");
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Session Details Card */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-slate-900 truncate">{selectedCell.slot.course}</span>
+                    <span className="text-[11px] font-semibold px-2 py-1 rounded-md bg-indigo-100 text-indigo-700 shrink-0">
+                      {deptShort || "Class"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-600 font-medium flex-wrap">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5" />
+                      {selectedCell.dateFormatted}
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3.5 w-3.5" />
+                      {formatTimeLabel(selectedCell.time)}
+                    </span>
+                    {selectedCell.slot.location && (
+                      <>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <MapPin className="h-3.5 w-3.5" />
+                          {selectedCell.slot.location}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Info Banner */}
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-900">
+                    <p className="font-bold mb-1">Attendance window has expired</p>
+                    <p className="text-amber-700">
+                      This session is past the standard edit window. Your request will be sent to the Campus Academic Manager (CAM) for approval.
+                    </p>
+                  </div>
+                </div>
+
+                {formError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-600 mb-4">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {/* Form */}
+                <form onSubmit={handleSubmitCamRequest} className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Reason for Edit Request <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      rows={4}
+                      placeholder="e.g., Student reported technical issues during online class, need to update attendance..."
+                      value={camRequestReason}
+                      onChange={(e) => setCamRequestReason(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                      required
+                    />
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      Provide a clear justification for why this attendance record needs to be modified after the deadline.
+                    </p>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCamEditRequestModalOpen(false);
+                        setCamRequestReason("");
+                        setFormError("");
+                      }}
+                      className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={swapSubmitting || !camRequestReason.trim()}
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {swapSubmitting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Submitting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          <span>Submit Request to CAM</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          );
+        })()}
+
         {(activeTab === "tracker") && (() => {
           const campusDepts = Array.from(new Set(
             coursesList
@@ -5395,13 +5824,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim()))
           );
 
-          const classStudents = students.filter(s => {
-            if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
-            if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
-            const sDept = (s.department || "").toLowerCase().trim();
-            const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
-            return sDept === activeDept.toLowerCase().trim() && sSem === activeSem.toLowerCase().trim();
-          });
+          const classStudents = memoizedTrackerClassStudents;
 
           const exportTrackerData = async () => {
             try {
@@ -5706,53 +6129,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </h3>
                   </div>
                   {(() => {
-                    const classStudents = students.filter(s => {
-                      if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
-                      if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
-                      const sDept = (s.department || "").toLowerCase().trim();
-                      const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
-                      return sDept === activeDept.toLowerCase().trim() && sSem === activeSem.toLowerCase().trim();
-                    });
+                    // Use pre-computed memoized tracker stats — no inline nested loops
+                    const stats = memoizedTrackerStats;
+                    if (!stats || stats.totalStudents === 0) return null;
+                    const { overallPct, avgScore, assignedWeeksCount, currentWeekSubmittedCount, totalStudents } = stats;
 
-                    // Calculate 15-week class metrics
-                    const assignedWeeksList = Array.from({ length: 15 }, (_, i) => i + 1).filter(wk =>
-                      weeklyTasks.some(t => isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) && t.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() && t.week_number === wk)
-                    );
-                    const assignedWeeksCount = assignedWeeksList.length;
-
-                    let totalSubmissionsCount = 0;
-                    let totalMarksSum = 0;
-                    let totalGradedEntriesCount = 0;
-
-                    classStudents.forEach(st => {
-                      for (let wk = 1; wk <= 15; wk++) {
-                        const entry = studentTracker.find(
-                          e => e.student_id === st.id &&
-                            e.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() &&
-                            e.week_number === wk
-                        );
-                        if (entry?.submission_url) totalSubmissionsCount++;
-                        if (entry?.marks !== undefined && entry?.marks !== null && !isNaN(entry.marks)) {
-                          totalMarksSum += entry.marks;
-                          totalGradedEntriesCount++;
-                        }
-                      }
-                    });
-
-                    const totalPossible = classStudents.length * (assignedWeeksCount || 1);
-                    const overallPct = totalPossible > 0 ? Math.round((totalSubmissionsCount / totalPossible) * 100) : 0;
-                    const avgScore = totalGradedEntriesCount > 0 ? (totalMarksSum / totalGradedEntriesCount).toFixed(1) : "—";
-
-                    const currentWeekSubmittedCount = classStudents.filter(s => {
-                      const entry = studentTracker.find(
-                        e => e.student_id === s.id &&
-                          e.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() &&
-                          e.week_number === trackerWeek
-                      );
-                      return entry && !!entry.submission_url;
-                    }).length;
-
-                    return classStudents.length > 0 ? (
+                    return (
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[10px] font-bold">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full border border-indigo-150 flex items-center gap-1.5">
@@ -5766,27 +6148,20 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             Tasks Assigned: <strong className="text-amber-900">{assignedWeeksCount} / 15 Weeks</strong>
                           </span>
                         </div>
-
                         <div className="flex items-center gap-2">
                           <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full border border-emerald-200">
-                            W{trackerWeek} Submitted: {currentWeekSubmittedCount} / {classStudents.length}
+                            W{trackerWeek} Submitted: {currentWeekSubmittedCount} / {totalStudents}
                           </span>
                           <span className="bg-rose-100 text-rose-700 px-3 py-1.5 rounded-full border border-rose-200">
-                            Not Submitted: {classStudents.length - currentWeekSubmittedCount}
+                            Not Submitted: {totalStudents - currentWeekSubmittedCount}
                           </span>
                         </div>
                       </div>
-                    ) : null;
+                    );
                   })()}
                 </div>
                 {(() => {
-                  const classStudents = students.filter(s => {
-                    if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
-                    if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
-                    const sDept = (s.department || "").toLowerCase().trim();
-                    const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
-                    return sDept === activeDept.toLowerCase().trim() && sSem === activeSem.toLowerCase().trim();
-                  });
+                  const classStudents = memoizedTrackerClassStudents;
                   const assignedWeeksCount = Array.from({ length: 15 }, (_, i) => i + 1).filter(wk =>
                     weeklyTasks.some(t => isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) && t.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() && t.week_number === wk)
                   ).length;
@@ -5802,10 +6177,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     );
                   }
 
-                  // 1. Filter the classStudents based on trackerSearchTerm and trackerStatusFilter
+                  // 1. Filter the classStudents based on deferredTrackerSearch and trackerStatusFilter
+                  const qTracker = (deferredTrackerSearch || "").toLowerCase().trim();
                   const filteredClassStudents = classStudents.filter(student => {
-                    const matchesSearch = student.name.toLowerCase().includes(trackerSearchTerm.toLowerCase()) ||
-                      student.id.toLowerCase().includes(trackerSearchTerm.toLowerCase());
+                    const matchesSearch = !qTracker || student.name.toLowerCase().includes(qTracker) ||
+                      student.id.toLowerCase().includes(qTracker);
 
                     const entry = studentTracker.find(
                       e => e.student_id === student.id &&
@@ -6592,6 +6968,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
 
 
+        {/* Tab: Leave & Permissions */}
+        {activeTab === "leave_requests" && currentMentor && (
+          <div className="space-y-6 font-sans">
+            <MentorFacultyLeavePanel mentor={currentMentor} slots={slots} />
+          </div>
+        )}
+
       </main>
 
       <MentorProfileModal
@@ -6620,8 +7003,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           });
         }
         const todayStr = new Date().toISOString().slice(0, 10);
-        // Show the OTHER mentor's timetable — you are offering to cover one of THEIR classes
-        const theirSlots = slots.filter(s => s.mentorId === target.otherMentorId);
+        // Show the OTHER mentor's timetable — use pre-computed memoized slots
+        const theirSlots = memoizedSwapTargetSlots;
         const swapGridRows = rows; // reuse computed time-column structure from main timetable
 
         return (

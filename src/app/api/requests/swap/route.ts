@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { sendMail, renderDemoSwapEmail } from "@/lib/mail";
+import { checkMentorAvailability } from "@/lib/availability";
 
 export async function POST(request: Request) {
   try {
@@ -41,24 +42,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "You can only offer to cover future slots as compensation." }, { status: 400 });
     }
 
-    // Clash checks for requestor (since requestor is covering the class)
-    const slotClash = await db.get(
-      "SELECT id FROM slots WHERE mentorId = ? AND day = ? AND time = ? AND shift = ?",
-      requestorId, offerSlot.day, offerSlot.time, offerSlot.shift
-    );
-    const coverClash = await db.get(
-      `SELECT ah.id FROM approved_handovers ah JOIN slots s ON s.id = ah.slotId WHERE ah.coverStaffId = ? AND ah.dateStr = ? AND s.day = ? AND s.time = ? AND s.shift = ?`,
-      requestorId, offerDateStr, offerSlot.day, offerSlot.time, offerSlot.shift
-    );
-    const absentClash = await db.get(
-      `SELECT ah.id FROM approved_handovers ah JOIN slots s ON s.id = ah.slotId WHERE ah.originalMentorId = ? AND ah.dateStr = ? AND s.day = ? AND s.time = ? AND s.shift = ?`,
-      requestorId, offerDateStr, offerSlot.day, offerSlot.time, offerSlot.shift
-    );
+    // Unified Availability check for the requestor (they must be free to cover)
+    const requestorAvailability = await checkMentorAvailability(db, {
+      mentorId: requestorId,
+      dateStr: offerDateStr,
+      timeSlot: offerSlot.time,
+      shift: offerSlot.shift
+    });
 
-    if (slotClash || coverClash || absentClash) {
+    if (!requestorAvailability.available) {
       return NextResponse.json({
         success: false,
-        message: `You are already occupied or unavailable to cover at this time on ${offerDateFormatted}.`
+        message: `You are unavailable to cover at this time on ${offerDateFormatted}: ${requestorAvailability.reason}`
       }, { status: 400 });
     }
 

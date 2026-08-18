@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from "react";
 import { useApp, Slot, Mentor, Student, Subject } from "../context/AppContext";
 import { useToast } from "../context/ToastContext";
 import { gsap } from "gsap";
@@ -1052,6 +1052,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [showClearAttendanceModal, setShowClearAttendanceModal] = useState(false);
   const [isClearingAttendance, setIsClearingAttendance] = useState(false);
   const [markingStudentForDate, setMarkingStudentForDate] = useState<{ student: any; dateStr: string } | null>(null);
+  const [activePeriodChange, setActivePeriodChange] = useState<{ slotId: string; newStatus: "present" | "absent" | "late" | "od"; reason: string } | null>(null);
+  const [isSubmittingPeriodCorrection, setIsSubmittingPeriodCorrection] = useState(false);
 
   // Event Management Module States
   const [eventSearchQuery, setEventSearchQuery] = useState("");
@@ -2772,9 +2774,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
   // 5. Academic Monitoring states
   const [studentSearch, setStudentSearch] = useState("");
+  const deferredStudentSearch = useDeferredValue(studentSearch);
   const [studentDeptFilter, setStudentDeptFilter] = useState("all");
   const [studentBatchFilter, setStudentBatchFilter] = useState("all");
   const [studentAttendanceFilter, setStudentAttendanceFilter] = useState("all");
+  const [attendancePage, setAttendancePage] = useState(1);
+  const [attendancePageSize, setAttendancePageSize] = useState(50);
 
   // 6. Tasks & Issues states
   const localTasks = localTasksFromDB;
@@ -7733,11 +7738,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* 6. ACADEMIC MONITORING / MASTER STUDENT ATTENDANCE DIRECTORY */}
                   {activeTab === "monitoring" && (() => {
-                    // Use ONLY actual attendance dates present in the database (never synthesize dummy calendar dates)
+                    const todayStr = new Date().toISOString().split("T")[0];
                     const attendanceDateSet = new Set<string>();
                     (studentAttendance || []).forEach(a => {
                       if (a.dateStr) attendanceDateSet.add(a.dateStr);
                     });
+                    // Always ensure today is present if within selected range so CM can view and mark up to today
+                    if (todayStr >= attendanceStartDate && todayStr <= attendanceEndDate) {
+                      attendanceDateSet.add(todayStr);
+                    }
                     const workingDates = Array.from(attendanceDateSet)
                       .filter(d => d >= attendanceStartDate && d <= attendanceEndDate)
                       .sort();
@@ -7761,15 +7770,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       return res;
                     };
 
-                    // Apply student filters
+                    // Apply student filters with deferred search for 60fps typing
+                    const q = (deferredStudentSearch || "").trim().toLowerCase();
                     const filtered = collegeStudents.filter(s => {
-                      const matchesSearch = s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
-                                           (s.roll_number && s.roll_number.toLowerCase().includes(studentSearch.toLowerCase())) ||
-                                           s.id.toLowerCase().includes(studentSearch.toLowerCase());
+                      const matchesSearch = !q || s.name.toLowerCase().includes(q) || 
+                                           (s.roll_number && s.roll_number.toLowerCase().includes(q)) ||
+                                           s.id.toLowerCase().includes(q);
                       const matchesDept = studentDeptFilter === "all" || s.department === studentDeptFilter;
                       const matchesBatch = studentBatchFilter === "all" || s.classGroup === studentBatchFilter;
                       return matchesSearch && matchesDept && matchesBatch;
                     });
+
+                    // Pagination calculations to avoid rendering thousands of DOM nodes at once
+                    const totalPages = attendancePageSize > 0 ? Math.max(1, Math.ceil(filtered.length / attendancePageSize)) : 1;
+                    const safePage = Math.min(Math.max(1, attendancePage), totalPages);
+                    const paginatedStudents = attendancePageSize > 0 
+                      ? filtered.slice((safePage - 1) * attendancePageSize, safePage * attendancePageSize) 
+                      : filtered;
 
                     // Overall summary stats
                     // Compute actual dates with ANY attendance in the attendanceMap (for compliance denominator)
@@ -8000,20 +8017,46 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   {workingDates.map(dStr => {
                                     const dObj = new Date(dStr + "T00:00:00");
                                     const dDay = dObj.toLocaleDateString("en-US", { weekday: "short" });
+                                    const todayStr = new Date().toISOString().split("T")[0];
+                                    const isToday = dStr === todayStr;
+                                    const holidayObj = (holidays || []).find((h: any) => h?.date === dStr || h?.dateStr === dStr);
+                                    const dayTypeLabel = holidayObj ? "Holiday" : (dDay === "Sat" || dDay === "Sun") ? "Weekend" : "Regular";
+
                                     return (
-                                      <th key={dStr} className="p-2 border-r border-slate-200 text-center min-w-[72px]" title={`${dDay}, ${dStr}`}>
-                                        <div className="font-extrabold text-[9.5px] text-slate-700">{formatDateToDMY(dStr)}</div>
-                                        <div className="text-[8px] text-slate-400 font-semibold">{dDay}</div>
+                                      <th
+                                        key={dStr}
+                                        className={`p-2 border-r border-slate-200 text-center min-w-[76px] transition-colors ${
+                                          isToday ? "bg-indigo-50/80 border-b-2 border-b-indigo-600" : ""
+                                        }`}
+                                        title={`${dDay}, ${formatDateToDMY(dStr)} • Type: ${dayTypeLabel}`}
+                                      >
+                                        {isToday && (
+                                          <span className="inline-block px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[7.5px] font-black uppercase tracking-wider mb-0.5 shadow-2xs">
+                                            TODAY
+                                          </span>
+                                        )}
+                                        <div className={`font-extrabold text-[9.5px] ${isToday ? "text-indigo-900 font-black" : "text-slate-700"}`}>
+                                          {formatDateToDMY(dStr)}
+                                        </div>
+                                        <div className="flex items-center justify-center gap-1 mt-0.5">
+                                          <span className="text-[8px] text-slate-400 font-semibold">{dDay}</span>
+                                          <span className={`text-[7px] font-extrabold px-1 py-0.2 rounded uppercase ${
+                                            holidayObj ? "bg-rose-100 text-rose-700" : "bg-slate-200/70 text-slate-600"
+                                          }`}>
+                                            {dayTypeLabel}
+                                          </span>
+                                        </div>
                                       </th>
                                     );
                                   })}
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 bg-white text-slate-700 text-xs">
-                                {filtered.map((st, idx) => {
+                                {paginatedStudents.map((st, idx) => {
                                   let presentDays = 0;
                                   let absentDays = 0;
                                   let totalStudentWorkingDays = 0;
+                                  const rowSerial = attendancePageSize > 0 ? ((safePage - 1) * attendancePageSize) + idx + 1 : idx + 1;
 
                                   const dateCells = workingDates.map(dStr => {
                                     const dateObj = new Date(dStr + "T00:00:00");
@@ -8085,7 +8128,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                                   return (
                                     <tr key={st.id} className="hover:bg-indigo-50/20 transition-colors">
-                                      <td className="p-2.5 text-center font-bold text-slate-400 border-r border-slate-100 sticky left-0 z-10 bg-white">{idx + 1}</td>
+                                      <td className="p-2.5 text-center font-bold text-slate-400 border-r border-slate-100 sticky left-0 z-10 bg-white">{rowSerial}</td>
                                       <td className="p-2.5 font-mono font-bold text-slate-600 border-r border-slate-100 sticky left-12 z-10 bg-white">{st.roll_number || st.id}</td>
                                       <td className="p-2.5 font-extrabold text-slate-900 border-r border-slate-100 sticky left-[158px] z-10 bg-white whitespace-nowrap">{st.name}</td>
                                       <td className="p-2.5 border-r border-slate-100 whitespace-nowrap text-slate-600">{st.department || "General"}</td>
@@ -8116,6 +8159,56 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 )}
                               </tbody>
                             </table>
+                          </div>
+
+                          {/* Pagination Footer Controls */}
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-150 text-xs font-semibold text-slate-600">
+                            <div className="flex items-center gap-2">
+                              <span>
+                                Showing <strong className="text-slate-900">{filtered.length === 0 ? 0 : ((safePage - 1) * (attendancePageSize || filtered.length)) + 1}</strong> to <strong className="text-slate-900">{Math.min(safePage * (attendancePageSize || filtered.length), filtered.length)}</strong> of <strong className="text-slate-900">{filtered.length}</strong> students
+                              </span>
+                              <span className="text-slate-300">|</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-slate-400 text-[11px]">Rows per page:</span>
+                                <select
+                                  value={attendancePageSize}
+                                  onChange={(e) => {
+                                    setAttendancePageSize(Number(e.target.value));
+                                    setAttendancePage(1);
+                                  }}
+                                  className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                >
+                                  <option value={25}>25</option>
+                                  <option value={50}>50</option>
+                                  <option value={100}>100</option>
+                                  <option value={0}>All ({filtered.length})</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {totalPages > 1 && (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={safePage <= 1}
+                                  onClick={() => setAttendancePage(p => Math.max(1, p - 1))}
+                                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold cursor-pointer transition-all"
+                                >
+                                  Previous
+                                </button>
+                                <span className="px-2 py-1 text-slate-500 font-bold text-[11px]">
+                                  Page {safePage} of {totalPages}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={safePage >= totalPages}
+                                  onClick={() => setAttendancePage(p => Math.min(totalPages, p + 1))}
+                                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold cursor-pointer transition-all"
+                                >
+                                  Next
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -12203,15 +12296,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </div>
               )}
 
-              {/* ── Student Period-Wise Attendance Marking Modal ── */}
+              {/* ── Student Period-Wise Attendance Marking Modal (With 2-Change Limit & Mandatory Reason) ── */}
               {markingStudentForDate && (() => {
                 const st = markingStudentForDate.student;
                 const dStr = markingStudentForDate.dateStr;
                 const dateObj = new Date(dStr + "T00:00:00");
                 const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
                 const stSlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
-                // Deduplicate: keep only one slot per unique time+course combination
-                // Prefer exact classGroup match over wildcard match to get the right slotId for attendance
+                
                 const slotDedupeMap = new Map<string, typeof stSlots[0]>();
                 stSlots.forEach(s => {
                   const key = `${s.time || ""}__${(s.course || "").toLowerCase()}`;
@@ -12219,39 +12311,116 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   if (!existing) {
                     slotDedupeMap.set(key, s);
                   } else {
-                    // Prefer exact classGroup match
                     const exactMatch = s.classGroup && st.classGroup && s.classGroup.trim().toLowerCase() === st.classGroup.trim().toLowerCase();
                     const existingExact = existing.classGroup && st.classGroup && existing.classGroup.trim().toLowerCase() === st.classGroup.trim().toLowerCase();
                     if (exactMatch && !existingExact) slotDedupeMap.set(key, s);
                   }
                 });
                 const sortedSlots = sortSlotsByTime(Array.from(slotDedupeMap.values()));
+                const correctionCount = st.correction_count || 0;
+                const isLimitReached = correctionCount >= 2;
+
+                const handleApplyPeriodCorrection = async (slotId: string, newStatus: "present" | "absent" | "late" | "od", reasonText: string) => {
+                  if (!reasonText.trim()) {
+                    toast("Please enter a mandatory reason for changing student attendance.", "warning");
+                    return;
+                  }
+
+                  setIsSubmittingPeriodCorrection(true);
+                  try {
+                    const res = await fetch("/api/attendance", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        action: "correct",
+                        studentId: st.id,
+                        slotId,
+                        dateStr: dStr,
+                        newStatus,
+                        reason: reasonText.trim(),
+                        changedBy: currentCAM?.name || "Campus Manager",
+                        changedByRole: "Campus Manager",
+                        isAdminOverride: false
+                      })
+                    });
+
+                    const data = await res.json();
+                    if (data.success) {
+                      toast(`Attendance updated to ${newStatus.toUpperCase()}! (Logged to audit trail, ${data.newCount || correctionCount + 1}/2 used)`, "success");
+                      st.correction_count = (st.correction_count || 0) + 1;
+                      setActivePeriodChange(null);
+                      await refreshData(true);
+                    } else {
+                      toast(data.message || "Failed to update attendance.", "error");
+                    }
+                  } catch (err: any) {
+                    toast("Error updating attendance: " + err.message, "error");
+                  } finally {
+                    setIsSubmittingPeriodCorrection(false);
+                  }
+                };
 
                 return (
                   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
-                    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
-                      <div className="flex justify-between items-start border-b border-slate-150 pb-3">
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 animate-in fade-in zoom-in-95 max-h-[90vh] flex flex-col">
+                      {/* Header */}
+                      <div className="flex justify-between items-start border-b border-slate-150 pb-3 shrink-0">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center text-sm font-black shadow-2xs">
                             {st.name.substring(0, 2).toUpperCase()}
                           </div>
                           <div>
-                            <h3 className="text-base font-black text-slate-800">{st.name}</h3>
-                            <p className="text-[11px] text-slate-400 font-semibold">
-                              {st.roll_number || st.id} • {st.classGroup} • <strong className="text-indigo-600">{dayName}, {dStr}</strong>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-base font-black text-slate-800">{st.name}</h3>
+                              {isLimitReached ? (
+                                <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase tracking-wider">
+                                  Limit Reached (2/2 Used)
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold">
+                                  {correctionCount}/2 CM Corrections Used
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 font-semibold mt-0.5 flex items-center gap-2 flex-wrap">
+                              <span>{st.roll_number || st.id} • {st.classGroup}</span>
+                              <span>•</span>
+                              <strong className="text-indigo-600">{dayName}, {formatDateToDMY(dStr)}</strong>
+                              <span className={`px-2 py-0.2 rounded font-bold text-[9.5px] uppercase ${
+                                (holidays || []).some((h: any) => h?.date === dStr || h?.dateStr === dStr)
+                                  ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                  : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              }`}>
+                                {(holidays || []).some((h: any) => h?.date === dStr || h?.dateStr === dStr) ? "Holiday / Event Day" : "Regular Class Day"}
+                              </span>
                             </p>
                           </div>
                         </div>
                         <button
                           type="button"
-                          onClick={() => setMarkingStudentForDate(null)}
+                          onClick={() => {
+                            setMarkingStudentForDate(null);
+                            setActivePeriodChange(null);
+                          }}
                           className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
                         >
                           ×
                         </button>
                       </div>
 
-                      <div className="space-y-3 text-xs">
+                      {/* Limit Warning Banner */}
+                      {isLimitReached && (
+                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-semibold flex items-start gap-2.5 shrink-0">
+                          <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                          <div>
+                            <strong className="block text-rose-900 font-extrabold text-[11.5px]">CM Attendance Modification Locked</strong>
+                            <span>This student has reached the maximum 2 corrections allowed for Campus Managers. Any further adjustments must be approved and executed by a Key Account Manager (KAM) or Administrator.</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Periods List */}
+                      <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs font-semibold">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                           Scheduled Periods for {dayName} ({sortedSlots.length})
                         </span>
@@ -12261,111 +12430,137 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             No timetable slots scheduled for this student's class cohort on {dayName}.
                           </div>
                         ) : (
-                          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                            {sortedSlots.map((slot, idx) => {
-                              const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === slot.id && a.dateStr === dStr);
-                              const currentStatus = att ? att.status : "not_marked";
+                          sortedSlots.map((slot, idx) => {
+                            const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === slot.id && a.dateStr === dStr);
+                            const currentStatus = att ? att.status : "not_marked";
+                            const isBeingEdited = activePeriodChange?.slotId === slot.id;
 
-                              return (
-                                <div key={slot.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 flex items-center justify-between gap-3">
+                            return (
+                              <div key={slot.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2.5">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
                                   <div>
-                                    <span className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 uppercase block w-fit mb-1">
-                                      Period {idx + 1} ({slot.time || "Hour " + (idx + 1)})
-                                    </span>
-                                    <h4 className="font-bold text-slate-800 text-xs">{slot.course || "Scheduled Session"}</h4>
-                                    <span className="text-[10.5px] text-slate-400 font-medium">Room: {slot.room || "Main Hall"}</span>
-                                  </div>
-
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        fetch("/api/attendance", {
-                                          method: "POST",
-                                          headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({
-                                            action: "mark_period",
-                                            studentId: st.id,
-                                            slotId: slot.id,
-                                            dateStr: dStr,
-                                            status: "present",
-                                            markedBy: currentCAM?.name || "Campus Manager"
-                                          })
-                                        }).then(() => refreshData());
-                                      }}
-                                      className={`px-2.5 py-1 rounded-lg font-extrabold text-[10.5px] transition-all cursor-pointer ${
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 uppercase">
+                                        Period {idx + 1}
+                                      </span>
+                                      <span className="text-[10.5px] text-slate-500 font-bold">{slot.time || "Hour " + (idx + 1)}</span>
+                                      <span className={`px-2 py-0.5 rounded text-[9.5px] font-black uppercase ${
                                         currentStatus === "present"
-                                          ? "bg-emerald-600 text-white shadow-2xs"
-                                          : "bg-white border border-slate-200 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
-                                      }`}
-                                    >
-                                      Present
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        fetch("/api/attendance", {
-                                          method: "POST",
-                                          headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({
-                                            action: "mark_period",
-                                            studentId: st.id,
-                                            slotId: slot.id,
-                                            dateStr: dStr,
-                                            status: "absent",
-                                            markedBy: currentCAM?.name || "Campus Manager"
-                                          })
-                                        }).then(() => refreshData());
-                                      }}
-                                      className={`px-2.5 py-1 rounded-lg font-extrabold text-[10.5px] transition-all cursor-pointer ${
-                                        currentStatus === "absent"
-                                          ? "bg-rose-600 text-white shadow-2xs"
-                                          : "bg-white border border-slate-200 text-slate-600 hover:bg-rose-50 hover:text-rose-700"
-                                      }`}
-                                    >
-                                      Absent
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        fetch("/api/attendance", {
-                                          method: "POST",
-                                          headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({
-                                            action: "mark_period",
-                                            studentId: st.id,
-                                            slotId: slot.id,
-                                            dateStr: dStr,
-                                            status: "late",
-                                            markedBy: currentCAM?.name || "Campus Manager"
-                                          })
-                                        }).then(() => refreshData());
-                                      }}
-                                      className={`px-2.5 py-1 rounded-lg font-extrabold text-[10.5px] transition-all cursor-pointer ${
-                                        currentStatus === "late"
-                                          ? "bg-amber-500 text-white shadow-2xs"
-                                          : "bg-white border border-slate-200 text-slate-600 hover:bg-amber-50 hover:text-amber-700"
-                                      }`}
-                                    >
-                                      Late
-                                    </button>
+                                          ? "bg-emerald-100 text-emerald-800"
+                                          : currentStatus === "absent"
+                                          ? "bg-rose-100 text-rose-800"
+                                          : currentStatus === "late"
+                                          ? "bg-amber-100 text-amber-800"
+                                          : currentStatus === "od"
+                                          ? "bg-purple-100 text-purple-800"
+                                          : "bg-slate-200 text-slate-600"
+                                      }`}>
+                                        Current: {currentStatus === "not_marked" ? "Not Marked" : currentStatus.toUpperCase()}
+                                      </span>
+                                    </div>
+                                    <h4 className="font-bold text-slate-800 text-xs mt-1">{slot.course || "Scheduled Session"}</h4>
                                   </div>
+
+                                  {!isLimitReached && (
+                                    <div className="flex items-center gap-1">
+                                      {(["present", "absent", "late", "od"] as const).map(stOpt => (
+                                        <button
+                                          key={stOpt}
+                                          type="button"
+                                          disabled={isSubmittingPeriodCorrection}
+                                          onClick={() => {
+                                            if (currentStatus === stOpt) {
+                                              toast(`Period is already marked as ${stOpt.toUpperCase()}`, "info");
+                                              return;
+                                            }
+                                            setActivePeriodChange({
+                                              slotId: slot.id,
+                                              newStatus: stOpt,
+                                              reason: ""
+                                            });
+                                          }}
+                                          className={`px-2.5 py-1 rounded-lg font-extrabold text-[10px] uppercase transition-all cursor-pointer ${
+                                            currentStatus === stOpt
+                                              ? stOpt === "present"
+                                                ? "bg-emerald-600 text-white shadow-2xs"
+                                                : stOpt === "absent"
+                                                ? "bg-rose-600 text-white shadow-2xs"
+                                                : stOpt === "late"
+                                                ? "bg-amber-500 text-white shadow-2xs"
+                                                : "bg-purple-600 text-white shadow-2xs"
+                                              : isBeingEdited && activePeriodChange?.newStatus === stOpt
+                                              ? "bg-indigo-600 text-white shadow-2xs"
+                                              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                          }`}
+                                        >
+                                          {stOpt === "present" ? "Present" : stOpt === "absent" ? "Absent" : stOpt === "late" ? "Late" : "OD"}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
-                              );
-                            })}
-                          </div>
+
+                                {/* Inline Mandatory Reason Input Card */}
+                                {isBeingEdited && activePeriodChange && (
+                                  <div className="p-3 bg-white rounded-xl border-2 border-indigo-200 shadow-xs space-y-2 animate-in fade-in">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider">
+                                        Changing Status to: <strong className="uppercase underline">{activePeriodChange.newStatus}</strong> ({correctionCount}/2 corrections used)
+                                      </span>
+                                      <span className="text-[9.5px] text-rose-500 font-bold">* Reason Mandatory</span>
+                                    </div>
+                                    <input
+                                      type="text"
+                                      required
+                                      autoFocus
+                                      placeholder="e.g. Medical certificate verified / Biometric sync correction / OD approved"
+                                      value={activePeriodChange.reason}
+                                      onChange={e => setActivePeriodChange({ ...activePeriodChange, reason: e.target.value })}
+                                      className="w-full p-2 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50"
+                                    />
+                                    <div className="flex items-center justify-end gap-2 pt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setActivePeriodChange(null)}
+                                        className="px-2.5 py-1 rounded-lg text-[10.5px] font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={isSubmittingPeriodCorrection || !activePeriodChange.reason.trim()}
+                                        onClick={() => handleApplyPeriodCorrection(slot.id, activePeriodChange.newStatus, activePeriodChange.reason)}
+                                        className="px-3 py-1 rounded-lg text-[10.5px] font-extrabold btn-gradient text-white shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                      >
+                                        {isSubmittingPeriodCorrection ? (
+                                          <>
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                            <span>Saving &amp; Logging...</span>
+                                          </>
+                                        ) : (
+                                          <span>Confirm &amp; Log Change</span>
+                                        )}
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
                         )}
                       </div>
 
-                      <div className="flex items-center justify-end pt-3 border-t border-slate-150">
+                      {/* Footer */}
+                      <div className="flex items-center justify-end pt-3 border-t border-slate-150 shrink-0">
                         <button
                           type="button"
-                          onClick={() => setMarkingStudentForDate(null)}
+                          onClick={() => {
+                            setMarkingStudentForDate(null);
+                            setActivePeriodChange(null);
+                          }}
                           className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
                         >
-                          Done
+                          Close
                         </button>
                       </div>
                     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useApp, Role } from "@/context/AppContext";
 import {
@@ -183,26 +183,51 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   }, []);
 
   // Handle route protection cleanly without premature logouts
+  const hasCompletedInitialLoad = useRef(false);
+  const routeProtectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
-    if (isLoading || isDataLoading) return;
+    if (!isLoading && !isDataLoading) {
+      hasCompletedInitialLoad.current = true;
+    }
+  }, [isLoading, isDataLoading]);
 
-    const isLoggedIn =
-      (typeof window !== "undefined" && localStorage.getItem("fp_logged_in") === "true") ||
-      (typeof window !== "undefined" && sessionStorage.getItem("fp_logged_in") === "true");
-
-    if (!isLoggedIn) {
-      router.replace("/");
-      return;
+  useEffect(() => {
+    // Clear any existing timeout
+    if (routeProtectionTimeoutRef.current) {
+      clearTimeout(routeProtectionTimeoutRef.current);
     }
 
-    const storedRole = typeof window !== "undefined" ? (localStorage.getItem("fp_current_role") || sessionStorage.getItem("fp_current_role")) : null;
-    const activeRole = currentRole || storedRole;
+    // Debounce route protection to avoid race conditions during data load
+    routeProtectionTimeoutRef.current = setTimeout(() => {
+      // Only run protection after initial load is complete
+      if (!hasCompletedInitialLoad.current) return;
+      if (isLoading || isDataLoading) return;
 
-    if (!isSuperAdminEmail && activeRole && activeRole !== requiredRole && !isLoading && !isDataLoading) {
-      const targetPath = "/" + (activeRole === "fee_manager" ? "fee-manager" : activeRole);
-      router.replace(targetPath);
-    }
-  }, [isLoading, isDataLoading, currentRole, requiredRole, router, isSuperAdminEmail]);
+      const isLoggedIn =
+        (typeof window !== "undefined" && localStorage.getItem("fp_logged_in") === "true") ||
+        (typeof window !== "undefined" && sessionStorage.getItem("fp_logged_in") === "true");
+
+      if (!isLoggedIn) {
+        router.replace("/");
+        return;
+      }
+
+      const storedRole = typeof window !== "undefined" ? (localStorage.getItem("fp_current_role") || sessionStorage.getItem("fp_current_role")) : null;
+      const activeRole = currentRole || storedRole;
+
+      if (!isSuperAdminEmail && activeRole && activeRole !== requiredRole && !isLoading && !isDataLoading) {
+        const targetPath = "/" + (activeRole === "fee_manager" ? "fee-manager" : activeRole);
+        router.replace(targetPath);
+      }
+    }, 300); // Wait 300ms before running protection to avoid race conditions
+
+    return () => {
+      if (routeProtectionTimeoutRef.current) {
+        clearTimeout(routeProtectionTimeoutRef.current);
+      }
+    };
+  }, [isLoading, isDataLoading, requiredRole, router, isSuperAdminEmail]);
 
   const handleLogout = async () => {
     try {

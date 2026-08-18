@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { sendMail, renderHandoverRequestEmail } from "@/lib/mail";
+import { checkMentorAvailability } from "@/lib/availability";
 
 export async function POST(request: Request) {
   try {
@@ -58,30 +59,19 @@ export async function POST(request: Request) {
 
 
 
-    // 1. Check if covering teacher has a regular slot clash
-    const slotClash = await db.get(
-      "SELECT id FROM slots WHERE mentorId = ? AND day = ? AND time = ? AND shift = ?",
-      targetStaffId, slot.day, slot.time, slot.shift
-    );
+    // Unified Availability Validation for covering faculty
+    const availability = await checkMentorAvailability(db, {
+      mentorId: targetStaffId,
+      dateStr,
+      timeSlot: slot.time,
+      shift: slot.shift
+    });
 
-    // 2. Check if covering teacher is already covering another class at this time on this date
-    const coverClash = await db.get(
-      `SELECT ah.id FROM approved_handovers ah
-       JOIN slots s ON s.id = ah.slotId
-       WHERE ah.coverStaffId = ? AND ah.dateStr = ? AND s.day = ? AND s.time = ? AND s.shift = ?`,
-      targetStaffId, dateStr, slot.day, slot.time, slot.shift
-    );
-
-    // 3. Check if covering teacher has handed over their own slot at this time on this date (absent)
-    const absentClash = await db.get(
-      `SELECT ah.id FROM approved_handovers ah
-       JOIN slots s ON s.id = ah.slotId
-       WHERE ah.originalMentorId = ? AND ah.dateStr = ? AND s.day = ? AND s.time = ? AND s.shift = ?`,
-      targetStaffId, dateStr, slot.day, slot.time, slot.shift
-    );
-
-    if (slotClash || coverClash || absentClash) {
-      return NextResponse.json({ success: false, message: `${coverStaff.name} is occupied or unavailable during this period.` }, { status: 400 });
+    if (!availability.available) {
+      return NextResponse.json({
+        success: false,
+        message: `${coverStaff.name} is unavailable: ${availability.reason}`
+      }, { status: 400 });
     }
 
     const newId = "r_" + Date.now();

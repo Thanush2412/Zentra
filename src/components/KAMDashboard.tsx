@@ -987,6 +987,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
     requests,
     approvedHandovers,
     refreshData,
+    isDataLoading,
     kamTasks: tasks,
     campusIssues: escalations,
     saveKamTask,

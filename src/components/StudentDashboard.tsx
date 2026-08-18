@@ -458,25 +458,27 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     }
   }, [studentSubjects, studentTrackerSubject]);
 
-  // 2. Get all attendance records for this student
-  const myAttendance = studentAttendance.filter((a) => a.studentId === currentStudent.id);
+  // 2. Get all attendance records for this student (Memoized)
+  const myAttendance = useMemo(() => {
+    return studentAttendance.filter((a) => a.studentId === currentStudent.id);
+  }, [studentAttendance, currentStudent.id]);
 
-  // 3. Filter leave requests for this student
-  const myLeaveRequests = (leaveRequests || []).filter((r) => r.studentId === currentStudent.id);
+  // 3. Filter leave requests for this student (Memoized)
+  const myLeaveRequests = useMemo(() => {
+    return (leaveRequests || []).filter((r) => r.studentId === currentStudent.id);
+  }, [leaveRequests, currentStudent.id]);
 
   // Stats Calculations
   const totalClasses = myAttendance.length;
-  const presentClasses = myAttendance.filter((a) => a.status === "present").length;
-  const absentClasses = myAttendance.filter((a) => a.status === "absent").length;
+  const presentClasses = useMemo(() => myAttendance.filter((a) => a.status === "present").length, [myAttendance]);
+  const absentClasses = useMemo(() => myAttendance.filter((a) => a.status === "absent").length, [myAttendance]);
   const overallPercentage = totalClasses > 0 ? (presentClasses / totalClasses) * 100 : 100;
 
-  // Compute Bunk / Attendance Projection calculations
-  const calculateBunkStats = () => {
+  // Compute Bunk / Attendance Projection calculations (Memoized)
+  const bunkStats = useMemo(() => {
     if (totalClasses === 0) return { status: "no_data", value: 0 };
     
     if (overallPercentage >= bunkTarget) {
-      // How many classes can be skipped:
-      // presentClasses / (totalClasses + x) >= target / 100 => x = Math.floor(presentClasses * 100 / target) - totalClasses
       const targetRatio = bunkTarget / 100;
       const maxTotal = Math.floor(presentClasses / targetRatio);
       const safeSkip = maxTotal - totalClasses;
@@ -485,9 +487,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         value: safeSkip >= 0 ? safeSkip : 0
       };
     } else {
-      // How many classes must be attended consecutively:
-      // (presentClasses + y) / (totalClasses + y) >= target / 100
-      // => y = Math.ceil((target * totalClasses - 100 * presentClasses) / (100 - target))
       const targetPct = bunkTarget;
       const numerator = targetPct * totalClasses - 100 * presentClasses;
       const denominator = 100 - targetPct;
@@ -497,35 +496,35 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         value: requiredConsecutive >= 0 ? requiredConsecutive : 0
       };
     }
-  };
+  }, [totalClasses, overallPercentage, presentClasses, bunkTarget]);
 
-  const bunkStats = calculateBunkStats();
-
-  // Group attendance by Course
-  const courseStats: Record<string, { present: number; absent: number; total: number }> = {};
-  
-  // Initialize with subjects mapped to their timetable slots
-  myClassSlots.forEach((slot) => {
-    if (slot.course && !courseStats[slot.course]) {
-      courseStats[slot.course] = { present: 0, absent: 0, total: 0 };
-    }
-  });
-
-  // Populate stats from attendance
-  myAttendance.forEach((att) => {
-    const slot = slots.find((s) => s.id === att.slotId);
-    if (slot && slot.course) {
-      if (!courseStats[slot.course]) {
-        courseStats[slot.course] = { present: 0, absent: 0, total: 0 };
+  // Group attendance by Course (Memoized)
+  const courseStats = useMemo(() => {
+    const statsObj: Record<string, { present: number; absent: number; total: number }> = {};
+    
+    myClassSlots.forEach((slot) => {
+      if (slot.course && !statsObj[slot.course]) {
+        statsObj[slot.course] = { present: 0, absent: 0, total: 0 };
       }
-      if (att.status === "present") {
-        courseStats[slot.course].present++;
-      } else {
-        courseStats[slot.course].absent++;
+    });
+
+    myAttendance.forEach((att) => {
+      const slot = slots.find((s) => s.id === att.slotId);
+      if (slot && slot.course) {
+        if (!statsObj[slot.course]) {
+          statsObj[slot.course] = { present: 0, absent: 0, total: 0 };
+        }
+        if (att.status === "present") {
+          statsObj[slot.course].present++;
+        } else {
+          statsObj[slot.course].absent++;
+        }
+        statsObj[slot.course].total++;
       }
-      courseStats[slot.course].total++;
-    }
-  });
+    });
+
+    return statsObj;
+  }, [myClassSlots, myAttendance, slots]);
 
 
 
@@ -1065,11 +1064,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     </div>
                   </div>
                   <p className="text-[11px] text-slate-450 font-semibold leading-relaxed mt-4">
-                    {bunkStats.status === "safe" ? (
-                      <>You can safely skip the next <span className="font-extrabold text-slate-800 underline">{bunkStats.value} classes</span> consecutively without drops.</>
-                    ) : (
-                      <>You must attend the next <span className="font-bold text-slate-800 underline">{bunkStats.value} classes</span> to reach your {bunkTarget}% goal.</>
-                    )}
+                    {overallPercentage >= 75
+                      ? "Maintaining strong on-time consistency and attendance eligibility for semester assessments."
+                      : `Maintain regular attendance to meet the institutional ${bunkTarget}% compliance threshold.`}
                   </p>
                 </div>
 

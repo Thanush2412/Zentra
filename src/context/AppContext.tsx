@@ -1094,7 +1094,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     const data = await res.json();
     if (data.success) {
-      await refreshData();
+      // Surgical update: add the new request to state without full reload
+      const targetMentor = mentors.find(m => m.id === targetStaffId);
+      const requestorMentor = mentors.find(m => m.id === mentorId);
+      const reqSlot = slots.find(s => s.id === slotId);
+      const newRequest: HandoverRequest = {
+        id: data.requestId || `req_${Date.now()}`,
+        requestorId: mentorId,
+        requestorName: requestorMentor?.name || currentMentor?.name || "",
+        slotId,
+        dateStr,
+        dateFormatted,
+        targetStaffId,
+        targetStaffName: targetMentor?.name || "",
+        reason,
+        course: subjectName || reqSlot?.course || "",
+        classGroup: reqSlot?.classGroup || "",
+        day: reqSlot?.day || "",
+        time: reqSlot?.time || "",
+        status: "pending",
+        timestamp: new Date().toISOString()
+      };
+      setRequests(prev => [newRequest, ...prev]);
     } else {
       throw new Error(data.message || "Failed to request handover");
     }
@@ -1122,7 +1143,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     const data = await res.json();
     if (data.success) {
-      await refreshData();
+      // Surgical update: add the new swap request to state
+      const targetMentor = mentors.find(m => m.id === targetStaffId);
+      const requestorMentor = mentors.find(m => m.id === requestorId);
+      const offerSlot = slots.find(s => s.id === offerSlotId);
+      const newRequest: HandoverRequest = {
+        id: data.requestId || `req_swap_${Date.now()}`,
+        requestorId,
+        requestorName: requestorMentor?.name || "",
+        slotId: offerSlotId,
+        dateStr: offerDateStr,
+        dateFormatted: offerDateFormatted,
+        targetStaffId,
+        targetStaffName: targetMentor?.name || "",
+        reason: reason || "",
+        course: originalSubject || offerSlot?.course || "",
+        classGroup: offerSlot?.classGroup || "",
+        day: offerSlot?.day || "",
+        time: offerSlot?.time || "",
+        status: "pending",
+        timestamp: new Date().toISOString(),
+        request_type: "swap_compensate"
+      };
+      setRequests(prev => [newRequest, ...prev]);
       return { success: true, message: data.message || "Swap offer sent!" };
     } else {
       return { success: false, message: data.message || "Failed to send swap offer." };
@@ -1452,7 +1495,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     const data = await res.json();
     if (data.success) {
-      await refreshData();
+      // Surgical update: add new slot to state
+      if (data.slot) {
+        setSlots(prev => [...prev, data.slot]);
+      } else {
+        await refreshData();
+      }
       return { success: true };
     } else {
       return { success: false, message: data.message || "Failed to book slot." };
@@ -1467,7 +1515,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!data.success) {
         return { success: false, message: data.message || "Failed to cancel request" };
       }
-      await refreshData();
+      // Surgical update: remove the cancelled request from state
+      setRequests(prev => prev.filter(r => r.id !== requestId));
       return { success: true, message: "Request cancelled successfully!" };
     } catch (error) {
       console.error(error);
@@ -1486,7 +1535,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     const data = await res.json();
     if (data.success) {
-      await refreshData();
+      // Surgical update: update request status in-place
+      setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status } : r));
+
+      // If approved, construct and add the approved handover locally (no re-fetch needed)
+      if (status === "approved") {
+        const req = requests.find(r => r.id === requestId);
+        if (req && req.status === "pending") {
+          const isSwap = req.request_type === "swap_compensate";
+          const newHandover: ApprovedHandover = {
+            requestId,
+            slotId: req.slotId,
+            dateStr: req.dateStr,
+            originalMentorId: isSwap ? req.targetStaffId : req.requestorId,
+            coverStaffId: isSwap ? req.requestorId : req.targetStaffId,
+            coverStaffName: isSwap ? (mentors.find(m => m.id === req.requestorId)?.name || "") : (req.targetStaffName || ""),
+            course: course || req.course || "",
+            ledger_month: req.dateStr?.slice(0, 7) || ""
+          };
+          setApprovedHandovers(prev => [...prev, newHandover]);
+        }
+      }
     } else {
       throw new Error(data.message || "Failed to process request");
     }
@@ -1606,7 +1675,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setStudentAttendance(prev => {
+          const updated = [...prev];
+          attendanceData.forEach(item => {
+            const idx = updated.findIndex(a => a.studentId === item.studentId && a.slotId === slotId && a.dateStr === dateStr);
+            if (idx >= 0) {
+              updated[idx] = { ...updated[idx], status: item.status as any, type, mode, attendanceTypeSub };
+            } else {
+              updated.push({
+                id: `att_${Date.now()}_${item.studentId}`,
+                studentId: item.studentId,
+                slotId,
+                dateStr,
+                status: item.status as any,
+                type,
+                mode,
+                attendanceTypeSub,
+                markedBy: actorName,
+                timestamp: new Date().toISOString()
+              });
+            }
+          });
+          return updated;
+        });
         return { success: true, message: "Attendance marked successfully." };
       } else {
         return { success: false, message: data.message || "Failed to mark attendance." };

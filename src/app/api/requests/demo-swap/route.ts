@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { checkMentorAvailability, checkSmeAvailability } from "@/lib/availability";
 
 export async function GET() {
   try {
@@ -42,6 +43,42 @@ export async function POST(request: Request) {
 
       if (!sessionId || !mentorId || !smeId || !dateStr || !timeSlot || !subject || !stream || !reason || !swapType) {
         return NextResponse.json({ success: false, message: "Missing required fields for swap request" }, { status: 400 });
+      }
+
+      // Check Dual Availability: Proposed Mentor
+      if (proposedMentorId) {
+        const targetDate = proposedDateStr || dateStr;
+        const targetTime = proposedTimeSlot || timeSlot;
+        const mentorAvail = await checkMentorAvailability(db, {
+          mentorId: proposedMentorId,
+          dateStr: targetDate,
+          timeSlot: targetTime
+        });
+
+        if (!mentorAvail.available) {
+          return NextResponse.json({
+            success: false,
+            message: `Proposed mentor ${proposedMentorName || proposedMentorId} is unavailable: ${mentorAvail.reason}`
+          }, { status: 400 });
+        }
+      }
+
+      // Check Dual Availability: Proposed SME
+      if (proposedSmeId) {
+        const targetDate = proposedDateStr || dateStr;
+        const targetTime = proposedTimeSlot || timeSlot;
+        const smeAvail = await checkSmeAvailability(db, {
+          smeId: proposedSmeId,
+          dateStr: targetDate,
+          timeSlot: targetTime
+        });
+
+        if (!smeAvail.available) {
+          return NextResponse.json({
+            success: false,
+            message: `Proposed SME ${proposedSmeName || proposedSmeId} is unavailable: ${smeAvail.reason}`
+          }, { status: 400 });
+        }
       }
 
       // Check if there is already a pending swap request for this session
