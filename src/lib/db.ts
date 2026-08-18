@@ -1,4 +1,4 @@
-import { createClient, Client } from "@libsql/client";
+import { createClient, type Client } from "@libsql/client";
 
 export interface TursoDbAdapter {
   get: (sql: string, ...params: any[]) => Promise<any>;

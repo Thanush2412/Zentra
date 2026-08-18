@@ -189,20 +189,43 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: "Attendance updated." });
     }
 
-    // ── BULK ATTENDANCE IMPORT (SPREADSHEET / DATE-WISE) ───────────────────
+    // ── BULK ATTENDANCE IMPORT (HIGH-PERFORMANCE BATCH SQL) ───────────────
     if (action === "bulk_import") {
-      const { records, markedBy } = body;
+      const { records, students: incomingStudents, markedBy } = body;
       if (!records || !Array.isArray(records) || records.length === 0) {
         return NextResponse.json({ success: false, message: "No attendance records to import" }, { status: 400 });
       }
 
       const nowStr = new Date().toISOString();
-      const statements: Array<{ sql: string; args: any[] }> = [];
 
-      // Pre-fetch all valid slot IDs and student IDs to prevent foreign key errors
+      // ── STEP 1: Auto-upsert any new students so they persist after refresh ──
+      if (incomingStudents && Array.isArray(incomingStudents) && incomingStudents.length > 0) {
+        for (const st of incomingStudents) {
+          if (!st.id || !st.name) continue;
+          try {
+            await db.run(
+              `INSERT INTO students (id, name, roll_number, department, classGroup, college_id, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)
+               ON CONFLICT(id) DO UPDATE SET
+                 name = COALESCE(excluded.name, name),
+                 roll_number = COALESCE(excluded.roll_number, roll_number),
+                 department = COALESCE(excluded.department, department),
+                 classGroup = COALESCE(excluded.classGroup, classGroup),
+                 college_id = COALESCE(excluded.college_id, college_id)`,
+              [st.id, st.name, st.roll_number || st.id, st.department || "BCA",
+               st.classGroup || "BCA - Semester 5", st.college_id || "Clg_c", nowStr]
+            );
+          } catch (_) {}
+        }
+      }
+
+      // Pre-fetch all valid slot IDs once
       const validSlots = await db.all("SELECT id FROM slots");
       const validSlotIds = new Set(validSlots.map((s: any) => s.id));
       const fallbackSlotId = validSlots.length > 0 ? validSlots[0].id : null;
+
+      const deleteItems: Array<{ studentId: string; slotId: string; dateStr: string }> = [];
+      const upsertRows: any[] = [];
 
       for (const item of records) {
         const { studentId, slotId, dateStr, status } = item;
@@ -212,37 +235,86 @@ export async function POST(request: Request) {
         if (!effectiveSlotId) continue;
 
         if (status === "not_marked") {
-          statements.push({
-            sql: "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
-            args: [studentId, effectiveSlotId, dateStr]
-          });
+          deleteItems.push({ studentId, slotId: effectiveSlotId, dateStr });
         } else {
           const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-          statements.push({
-            sql: `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
-                  VALUES (?, ?, ?, ?, ?, ?, ?)
-                  ON CONFLICT(studentId, slotId, dateStr) 
-                  DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp`,
-            args: [recordId, studentId, effectiveSlotId, dateStr, status, markedBy || "Master Import", nowStr]
+          upsertRows.push({
+            id: recordId,
+            studentId,
+            slotId: effectiveSlotId,
+            dateStr,
+            status,
+            markedBy: markedBy || "Master Import",
+            timestamp: nowStr
           });
         }
       }
 
-      // Execute in chunks of 500 statements using client.batch
-      const CHUNK_SIZE = 500;
       let count = 0;
 
-      for (let i = 0; i < statements.length; i += CHUNK_SIZE) {
-        const chunk = statements.slice(i, i + CHUNK_SIZE);
-        if (db.client && typeof db.client.batch === "function") {
-          await db.client.batch(chunk, "write");
-        } else {
-          await Promise.all(chunk.map(stmt => db.run(stmt.sql, stmt.args)));
+      // 1. Process deletes in fast chunks
+      if (deleteItems.length > 0) {
+        const DELETE_CHUNK = 50;
+        for (let i = 0; i < deleteItems.length; i += DELETE_CHUNK) {
+          const chunk = deleteItems.slice(i, i + DELETE_CHUNK);
+          await Promise.all(
+            chunk.map(d =>
+              db.run(
+                "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+                [d.studentId, d.slotId, d.dateStr]
+              )
+            )
+          );
+          count += chunk.length;
         }
-        count += chunk.length;
       }
 
-      return NextResponse.json({ success: true, message: `Successfully imported ${count} attendance entries.`, count });
+      // 2. Process upserts in high-speed multi-row batches (100 rows per query = 700 params)
+      if (upsertRows.length > 0) {
+        const BATCH_SIZE = 80;
+        for (let i = 0; i < upsertRows.length; i += BATCH_SIZE) {
+          const chunk = upsertRows.slice(i, i + BATCH_SIZE);
+          const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
+          const params: any[] = [];
+          
+          chunk.forEach(r => {
+            params.push(r.id, r.studentId, r.slotId, r.dateStr, r.status, r.markedBy, r.timestamp);
+          });
+
+          const sql = `
+            INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
+            VALUES ${placeholders}
+            ON CONFLICT(studentId, slotId, dateStr)
+            DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp
+          `;
+
+          try {
+            await db.run(sql, params);
+            count += chunk.length;
+          } catch (batchErr) {
+            console.warn("[BULK_IMPORT] Multi-row batch fallback:", batchErr);
+            // Fallback to individual inserts if batch fails
+            for (const r of chunk) {
+              try {
+                await db.run(
+                  `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(studentId, slotId, dateStr)
+                   DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp`,
+                  [r.id, r.studentId, r.slotId, r.dateStr, r.status, r.markedBy, r.timestamp]
+                );
+                count++;
+              } catch (_) {}
+            }
+          }
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `Successfully imported ${count} attendance entries.`,
+        count
+      });
     }
 
     // ── FACULTY ATTENDANCE SUBMISSION ───────────────────────────────

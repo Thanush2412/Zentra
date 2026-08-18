@@ -25,7 +25,41 @@ export function isCohortMatch(c1?: string, c2?: string): boolean {
   if (c1 === c2) return true;
   const norm1 = c1.toLowerCase().replace(/[^a-z0-9]/g, "");
   const norm2 = c2.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return norm1 === norm2 || norm1.includes(norm2) || norm2.includes(norm1);
+  if (norm1 === norm2 || norm1.includes(norm2) || norm2.includes(norm1)) return true;
+
+  // Extract base department/course names
+  const extractBase = (s: string) => {
+    let clean = s.toLowerCase()
+      .replace(/^([ivxlcdm]+)[\s\-_]+/i, "") // strip leading III, II, I
+      .replace(/\s*-\s*(semester|sem|year|yr|shift|batch)\s*([0-9]+|[ivxlcdm]+)/gi, "")
+      .replace(/\s*(semester|sem|year|yr|shift|batch)\s*([0-9]+|[ivxlcdm]+)/gi, "")
+      .replace(/[^a-z0-9]/g, "")
+      .trim();
+    return clean;
+  };
+
+  const b1 = extractBase(c1);
+  const b2 = extractBase(c2);
+
+  // If base dept matches (e.g. bca vs bca, or becse vs becse)
+  if (b1 && b2 && (b1 === b2 || b1.includes(b2) || b2.includes(b1))) {
+    // Check semester / year compatibility
+    const extractYear = (s: string): number => {
+      const lower = s.toLowerCase();
+      if (lower.startsWith("iii ") || lower.includes("year 3") || lower.includes("3rd year") || lower.includes("sem 5") || lower.includes("sem 6") || lower.includes("semester 5") || lower.includes("semester 6") || lower.includes("sem v") || lower.includes("sem vi")) return 3;
+      if (lower.startsWith("ii ") || lower.includes("year 2") || lower.includes("2nd year") || lower.includes("sem 3") || lower.includes("sem 4") || lower.includes("semester 3") || lower.includes("semester 4") || lower.includes("sem iii") || lower.includes("sem iv")) return 2;
+      if (lower.startsWith("i ") || lower.includes("year 1") || lower.includes("1st year") || lower.includes("sem 1") || lower.includes("sem 2") || lower.includes("semester 1") || lower.includes("semester 2") || lower.includes("sem i") || lower.includes("sem ii")) return 1;
+      if (lower.startsWith("iv ") || lower.includes("year 4") || lower.includes("4th year") || lower.includes("sem 7") || lower.includes("sem 8") || lower.includes("semester 7") || lower.includes("semester 8") || lower.includes("sem vii") || lower.includes("sem viii")) return 4;
+      return 0;
+    };
+
+    const y1 = extractYear(c1);
+    const y2 = extractYear(c2);
+
+    if (y1 === 0 || y2 === 0 || y1 === y2) return true;
+  }
+
+  return false;
 }
 
 export function isDeptSubjectMatch(subDept?: string, dName?: string, dCode?: string): boolean {
@@ -128,12 +162,22 @@ export function parseDateToYMD(val?: any): string {
   if (!val) return "";
   if (val instanceof Date) {
     if (!isNaN(val.getTime())) {
-      return val.toISOString().split("T")[0];
+      const yr = val.getFullYear();
+      const mo = String(val.getMonth() + 1).padStart(2, "0");
+      const da = String(val.getDate()).padStart(2, "0");
+      return `${yr}-${mo}-${da}`;
     }
     return "";
   }
   const str = String(val).trim();
   if (!str) return "";
+
+  const monthNames: Record<string, string> = {
+    jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+    jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+    january: "01", february: "02", march: "03", april: "04", june: "06",
+    july: "07", august: "08", september: "09", october: "10", november: "11", december: "12"
+  };
 
   // If it's a numeric Excel serial (e.g. 38456 or 39164 or 44560)
   if (/^\d{4,6}$/.test(str)) {
@@ -142,7 +186,10 @@ export function parseDateToYMD(val?: any): string {
       // Excel epoch starts at 1899-12-30 (25569 days to 1970-01-01)
       const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
       if (!isNaN(date.getTime())) {
-        return date.toISOString().split("T")[0];
+        const yr = date.getUTCFullYear();
+        const mo = String(date.getUTCMonth() + 1).padStart(2, "0");
+        const da = String(date.getUTCDate()).padStart(2, "0");
+        return `${yr}-${mo}-${da}`;
       }
     }
   }
@@ -154,14 +201,41 @@ export function parseDateToYMD(val?: any): string {
     if (serial > 10000 && serial < 100000) {
       const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
       if (!isNaN(date.getTime())) {
-        return date.toISOString().split("T")[0];
+        const yr = date.getUTCFullYear();
+        const mo = String(date.getUTCMonth() + 1).padStart(2, "0");
+        const da = String(date.getUTCDate()).padStart(2, "0");
+        return `${yr}-${mo}-${da}`;
       }
     }
   }
 
+  // Handle DD-MMM-YYYY or DD MMM YYYY (e.g. "07-Jul-2026", "7 Jul 2026", "07-July-26")
+  const namedMonthMatch = str.match(/^(\d{1,2})[\s\-_/]+([a-zA-Z]{3,9})[\s\-_/]+(\d{2,4})/);
+  if (namedMonthMatch) {
+    const day = namedMonthMatch[1].padStart(2, "0");
+    const mStr = namedMonthMatch[2].toLowerCase();
+    const mo = monthNames[mStr];
+    if (mo) {
+      let yr = namedMonthMatch[3];
+      if (yr.length === 2) yr = parseInt(yr, 10) > 40 ? `19${yr}` : `20${yr}`;
+      return `${yr}-${mo}-${day}`;
+    }
+  }
+
+  // Handle MMM-DD-YYYY (e.g. "Jul-07-2026", "July 7, 2026")
+  const namedMonthFirstMatch = str.match(/^([a-zA-Z]{3,9})[\s\-_/]+(\d{1,2})[,\s\-_/]+(\d{2,4})/);
+  if (namedMonthFirstMatch) {
+    const mStr = namedMonthFirstMatch[1].toLowerCase();
+    const mo = monthNames[mStr];
+    if (mo) {
+      const day = namedMonthFirstMatch[2].padStart(2, "0");
+      let yr = namedMonthFirstMatch[3];
+      if (yr.length === 2) yr = parseInt(yr, 10) > 40 ? `19${yr}` : `20${yr}`;
+      return `${yr}-${mo}-${day}`;
+    }
+  }
+
   // Handle malformed Excel CSV dates like "2/726" or "3/726"
-  // These are D/MMYY where the slash between M and YY is missing
-  // e.g. "2/726" = day=2, month=7, year=26 = 2026-07-02
   const malformedMatch = str.match(/^(\d{1,2})\/(\d)(\d{2})$/);
   if (malformedMatch) {
     const day = malformedMatch[1].padStart(2, "0");
@@ -196,7 +270,10 @@ export function parseDateToYMD(val?: any): string {
   try {
     const d = new Date(str);
     if (!isNaN(d.getTime()) && d.getFullYear() > 1900 && d.getFullYear() < 2100) {
-      return d.toISOString().split("T")[0];
+      const yr = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, "0");
+      const da = String(d.getDate()).padStart(2, "0");
+      return `${yr}-${mo}-${da}`;
     }
   } catch (_) {}
 

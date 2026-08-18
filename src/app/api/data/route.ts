@@ -63,10 +63,10 @@ export async function GET(request: Request) {
     const announcementParams = collegeId ? [collegeId] : [];
 
     const attendanceSql = (role === "student" && userId)
-      ? "SELECT * FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 500"
+      ? "SELECT * FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 1000"
       : collegeId
-        ? "SELECT * FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) ORDER BY dateStr DESC LIMIT 1500"
-        : "SELECT * FROM student_attendance ORDER BY dateStr DESC LIMIT 3000";
+        ? "SELECT * FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) ORDER BY dateStr ASC LIMIT 10000"
+        : "SELECT * FROM student_attendance ORDER BY dateStr ASC LIMIT 10000";
     const attendanceParams = (role === "student" && userId) ? [userId] : collegeId ? [collegeId] : [];
 
     const isStudentOrMentor = role === "student" || role === "mentor";

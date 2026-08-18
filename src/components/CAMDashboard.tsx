@@ -1571,10 +1571,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       try {
         const XLSX = await import("xlsx");
         const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: "binary" });
+        const wb = XLSX.read(bstr, { type: "binary", cellDates: true, dateNF: "yyyy-mm-dd" });
         const wsName = wb.SheetNames[0];
         const ws = wb.Sheets[wsName];
-        const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+        // Get column header row separately to handle date cells properly
+        const headerRow: any[] = (XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[][])[0] || [];
+        const rawRows: any[] = XLSX.utils.sheet_to_json(ws, {
+          defval: "",
+          raw: false,   // format dates as strings (e.g. "2026-06-16") instead of serial numbers
+          dateNF: "yyyy-mm-dd"
+        });
 
         if (rawRows.length === 0) {
           toast("Uploaded attendance sheet is empty.", "warning");
@@ -1588,19 +1595,40 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         rawRows.forEach((row, idx) => {
           let stIdOrRoll = "";
           let stName = "";
+          let stDeptFromSheet = "";
+          let stClassGroupFromSheet = "";
           const dateMarks: Record<string, string> = {};
           const periodMarks: Record<string, string> = {};
+
+          // Build skip set once (only pure summary/serial columns, NOT dept/classGroup)
+          const skipColumns = new Set([
+            "slno", "sno", "serialno", "serialnumber", "no",
+            "degree",
+            "totaldays", "totalworkingdays", "totalday", "total",
+            "totalofpresentdays", "totalpresent", "presentdays", "totalpresentdays",
+            "totalofabsentdays", "totalabsent", "absentdays", "totalabsentdays",
+            "percentage", "pct", "percent", "attendancepercentage", "attendancepct", "overallpct",
+            "email", "phone", "contact", "remarks", "comments"
+          ]);
 
           Object.keys(row).forEach(col => {
             const rawCol = col.trim();
             const norm = rawCol.toLowerCase().replace(/[^a-z0-9]/g, "");
+            // val: use row[col] which is already formatted as string because raw:false was set
             const val = String(row[col]).trim();
-            if (!val) return;
+
+            if (skipColumns.has(norm) || norm.startsWith("total") || norm.includes("presentday") || norm.includes("absentday") || norm.includes("percent")) {
+              return; // Ignored — auto-calculated dynamically by the system
+            }
 
             if (norm === "rollno" || norm === "rollnumber" || norm === "regno" || norm === "id" || norm === "studentid" || norm === "rollnostudentid") {
               stIdOrRoll = val;
             } else if (norm === "name" || norm === "studentname") {
               stName = val;
+            } else if (norm === "department" || norm === "dept" || norm === "course") {
+              if (val) stDeptFromSheet = val;  // e.g. "BCA"
+            } else if (norm === "classgroup" || norm === "class" || norm === "batch" || norm === "section" || norm === "semester" || norm === "sem") {
+              if (val) stClassGroupFromSheet = val;  // e.g. "III BCA"
             } else {
               const parsedColDate = parseDateToYMD(rawCol);
               if (parsedColDate && parsedColDate.length === 10) {
@@ -1630,21 +1658,48 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             }
           });
 
+          let targetStudentId = "";
+          let targetStudentName = stName;
+          let targetRollNo = stIdOrRoll;
+          // Priority: 1) matched DB student, 2) Excel sheet columns, 3) filter UI, 4) first student in list
+          let targetClassGroup =
+            stClassGroupFromSheet ||
+            (studentBatchFilter !== "all" ? studentBatchFilter : null) ||
+            collegeStudents.find(s => s.classGroup?.toLowerCase().includes("bca"))?.classGroup ||
+            collegeStudents[0]?.classGroup ||
+            "BCA - Semester 5";
+
+          let targetDept =
+            stDeptFromSheet ||
+            (studentDeptFilter !== "all" ? studentDeptFilter : null) ||
+            "BCA";
+
           const matchedStudent = collegeStudents.find(s =>
             (stIdOrRoll && (s.roll_number?.toLowerCase() === stIdOrRoll.toLowerCase() || s.id?.toLowerCase() === stIdOrRoll.toLowerCase())) ||
             (stName && s.name?.toLowerCase() === stName.toLowerCase())
           );
 
-          if (!matchedStudent) {
-            warnings.push(`Row ${idx + 2}: Student not found matching ID "${stIdOrRoll}" / Name "${stName}".`);
-            return;
+          if (matchedStudent) {
+            targetStudentId = matchedStudent.id;
+            targetStudentName = matchedStudent.name;
+            targetRollNo = matchedStudent.roll_number || matchedStudent.id;
+            targetClassGroup = matchedStudent.classGroup || targetClassGroup;
+            targetDept = matchedStudent.department || targetDept;
+          } else {
+            // Use roll number directly as id basis (stable — same roll = same id on re-import)
+            const rollBasis = (stIdOrRoll || stName || `st_${idx + 1}`).toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "");
+            targetStudentId = `std_${(activeCollegeId || "clg").toLowerCase()}_${rollBasis}`;
+            if (!targetStudentName) targetStudentName = stIdOrRoll || `Student ${idx + 1}`;
+            if (!targetRollNo) targetRollNo = stIdOrRoll || targetStudentId;
           }
 
           parsedAttendance.push({
-            studentId: matchedStudent.id,
-            studentName: matchedStudent.name,
-            rollNo: matchedStudent.roll_number || matchedStudent.id,
-            classGroup: matchedStudent.classGroup,
+            studentId: targetStudentId,
+            studentName: targetStudentName,
+            rollNo: targetRollNo,
+            department: targetDept,
+            classGroup: targetClassGroup,
+            collegeId: activeCollegeId,
             dateMarks,
             periodMarks,
             targetDate: Object.keys(dateMarks)[0] || attendanceDate
@@ -1660,12 +1715,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           if (maxDate > attendanceEndDate) setAttendanceEndDate(maxDate);
         }
 
+        // ── DEBUG: open browser console (F12) to see what was parsed ──
+        const uniqueDates = Array.from(new Set(allDetectedDates)).sort();
+        console.group("[Attendance Import Debug]");
+        console.log("Rows parsed:", parsedAttendance.length);
+        console.log("Detected dates (" + uniqueDates.length + "):", uniqueDates);
+        console.log("Sample parsed student:", parsedAttendance[0]);
+        console.log("Warnings:", warnings);
+        console.groupEnd();
+
         setAttendanceImportPreview({
           parsed: parsedAttendance,
           warnings,
           targetDate: attendanceDate
         });
         setShowAttendanceImportModal(true);
+
       } catch (err: any) {
         toast("Failed to parse attendance file: " + err.message, "error");
       }
@@ -1688,23 +1753,31 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             const status = item.dateMarks[dStr];
             if (!status || status === "not_marked") return;
 
-            const dateObj = new Date(dStr + "T00:00:00");
-            const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
-            let daySlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, item.classGroup)));
+            const standardDateStr = parseDateToYMD(dStr) || dStr;
+            const dateObj = new Date(standardDateStr + "T00:00:00");
+            const dayName = !isNaN(dateObj.getTime())
+              ? dateObj.toLocaleDateString("en-US", { weekday: "long" })
+              : "";
+            let daySlots = collegeSlots.filter(s => s.day === dayName && isCohortMatch(s.classGroup, item.classGroup));
 
+            // If no day-specific match, try without day filter (get any slot for this cohort on any day)
             if (daySlots.length === 0) {
-              // Find any slot for this student's cohort or default to any valid slot in collegeSlots
-              const cohortSlot = collegeSlots.find(s => isCohortMatch(s.classGroup, item.classGroup)) || collegeSlots[0];
-              if (cohortSlot) {
-                daySlots = [cohortSlot];
-              }
+              daySlots = collegeSlots.filter(s => isCohortMatch(s.classGroup, item.classGroup));
+            }
+
+            // If still none, try the global slots list
+            if (daySlots.length === 0) {
+              daySlots = slots.filter(s => s.day === dayName && isCohortMatch(s.classGroup, item.classGroup));
+            }
+            if (daySlots.length === 0) {
+              daySlots = slots.filter(s => isCohortMatch(s.classGroup, item.classGroup));
             }
 
             daySlots.forEach(slot => {
               recordsToPost.push({
                 studentId: item.studentId,
                 slotId: slot.id,
-                dateStr: dStr,
+                dateStr: standardDateStr,
                 status: status,
                 markedBy: currentCAM?.name || "Master Import"
               });
@@ -1739,12 +1812,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         return;
       }
 
+      const studentsToSync = (attendanceImportPreview.parsed || []).map(p => ({
+        id: p.studentId,
+        name: p.studentName,
+        roll_number: p.rollNo,
+        department: p.department || (studentDeptFilter !== "all" ? studentDeptFilter : "BCA"),
+        classGroup: p.classGroup || (studentBatchFilter !== "all" ? studentBatchFilter : "BCA - Semester 5"),
+        college_id: activeCollegeId
+      }));
+
       const res = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "bulk_import",
           records: recordsToPost,
+          students: studentsToSync,
           markedBy: currentCAM?.name || "Master Import"
         })
       });
@@ -7622,15 +7705,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* 6. ACADEMIC MONITORING / MASTER STUDENT ATTENDANCE DIRECTORY */}
                   {activeTab === "monitoring" && (() => {
-                    // Use ONLY actual attendance dates (not calendar working days)
-                    // This gives exactly the 48 dates from the imported CSV, not 60 calendar days
+                    // Use ONLY actual attendance dates present in the database (never synthesize dummy calendar dates)
                     const attendanceDateSet = new Set<string>();
                     (studentAttendance || []).forEach(a => {
                       if (a.dateStr) attendanceDateSet.add(a.dateStr);
                     });
-                    const workingDates = attendanceDateSet.size > 0
-                      ? Array.from(attendanceDateSet).filter(d => d >= attendanceStartDate && d <= attendanceEndDate).sort()
-                      : getSemesterWorkingDates(attendanceStartDate, attendanceEndDate);
+                    const workingDates = Array.from(attendanceDateSet)
+                      .filter(d => d >= attendanceStartDate && d <= attendanceEndDate)
+                      .sort();
 
                     // High-Performance O(1) Precomputed Maps (Eliminates all table lag)
                     const attendanceMap = new Map<string, any[]>();
