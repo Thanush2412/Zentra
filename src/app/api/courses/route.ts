@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
 // Helper to generate slugs for IDs
-function getSlug(text: string): string {
-  return "dept_" + text.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").replace(/(^_+|_+$)/g, "");
+function getSlug(text: string, collegeId?: string): string {
+  const clean = text.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").replace(/(^_+|_+$)/g, "");
+  return collegeId ? `dept_${collegeId.replace(/[^a-z0-9]/gi, "_")}_${clean}` : `dept_${clean}`;
 }
 
 export async function POST(request: Request) {
@@ -17,26 +18,63 @@ export async function POST(request: Request) {
     }
 
     const cleanName = name.trim();
+    const targetCollegeId = college_id || null;
 
-    // Check uniqueness (case-insensitive)
-    const existing = await db.get("SELECT * FROM courses WHERE LOWER(name) = LOWER(?)", cleanName);
-    if (existing) {
-      return NextResponse.json({ success: false, message: `Course "${cleanName}" already exists.` }, { status: 400 });
+    // Check uniqueness scoped to college
+    let existing;
+    if (targetCollegeId) {
+      existing = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)", cleanName, targetCollegeId);
+    } else {
+      existing = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND college_id IS NULL", cleanName);
     }
 
-    const id = getSlug(cleanName);
+    if (existing) {
+      // Gracefully ensure it is assigned to this college and active
+      await db.run(
+        "UPDATE courses SET college_id = ?, code = COALESCE(NULLIF(?, ''), code), description = COALESCE(NULLIF(?, ''), description), default_shift = COALESCE(NULLIF(?, ''), default_shift), shift_based = ? WHERE id = ?",
+        targetCollegeId || existing.college_id || "college_1",
+        code || "",
+        description || "",
+        default_shift || null,
+        shift_based === undefined ? (existing.shift_based || 0) : Number(shift_based),
+        existing.id
+      );
+
+      try {
+        await db.run(
+          "INSERT OR REPLACE INTO departments (id, name, college_id, code, description) VALUES (?, ?, ?, ?, ?)",
+          existing.id, cleanName, targetCollegeId || "college_1", code || existing.code || "", description || existing.description || ""
+        );
+      } catch (_) {}
+
+      return NextResponse.json({
+        success: true,
+        message: "Department registered successfully.",
+        course: {
+          ...existing,
+          name: cleanName,
+          college_id: targetCollegeId || existing.college_id || "college_1",
+          code: code || existing.code || "",
+          description: description || existing.description || "",
+          default_shift: default_shift || existing.default_shift || null,
+          shift_based: shift_based === undefined ? (existing.shift_based || 0) : Number(shift_based)
+        }
+      });
+    }
+
+    let id = getSlug(cleanName, targetCollegeId || undefined);
 
     // Ensure ID uniqueness just in case
     const existingId = await db.get("SELECT * FROM courses WHERE id = ?", id);
     if (existingId) {
-      return NextResponse.json({ success: false, message: "A course with a similar name already exists (ID conflict)." }, { status: 400 });
+      id = `${id}_${Date.now().toString(36)}`;
     }
 
     await db.run(
       "INSERT INTO courses (id, name, college_id, code, description, hod_name, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       id,
       cleanName,
-      college_id || "college_1",
+      targetCollegeId || "college_1",
       code || "",
       description || "",
       "",
@@ -52,13 +90,20 @@ export async function POST(request: Request) {
       shift_based === undefined ? 0 : Number(shift_based)
     );
 
+    try {
+      await db.run(
+        "INSERT OR REPLACE INTO departments (id, name, college_id, code, description) VALUES (?, ?, ?, ?, ?)",
+        id, cleanName, targetCollegeId || "college_1", code || "", description || ""
+      );
+    } catch (_) {}
+
     return NextResponse.json({
       success: true,
       message: "Course created successfully.",
       course: {
         id,
         name: cleanName,
-        college_id: college_id || "college_1",
+        college_id: targetCollegeId || "college_1",
         code: code || "",
         description: description || "",
         established_year: established_year || "",
@@ -97,10 +142,17 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: false, message: "Course not found." }, { status: 404 });
     }
 
-    // Check name uniqueness among other courses
-    const duplicate = await db.get("SELECT * FROM courses WHERE LOWER(name) = LOWER(?) AND id != ?", cleanName, id);
+    const targetCollegeId = college_id || currentCourse.college_id;
+
+    // Check name uniqueness among other courses in the same college
+    let duplicate;
+    if (targetCollegeId) {
+      duplicate = await db.get("SELECT * FROM courses WHERE LOWER(name) = LOWER(?) AND id != ? AND college_id = ?", cleanName, id, targetCollegeId);
+    } else {
+      duplicate = await db.get("SELECT * FROM courses WHERE LOWER(name) = LOWER(?) AND id != ? AND college_id IS NULL", cleanName, id);
+    }
     if (duplicate) {
-      return NextResponse.json({ success: false, message: `Another course named "${cleanName}" already exists.` }, { status: 400 });
+      return NextResponse.json({ success: false, message: `Another course named "${cleanName}" already exists for this campus.` }, { status: 400 });
     }
 
     const oldName = currentCourse.name;
