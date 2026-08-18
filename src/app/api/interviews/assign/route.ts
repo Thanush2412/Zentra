@@ -79,13 +79,25 @@ export async function POST(request: Request) {
     // Populate student-level slot records for individual student tracking
     const mentorSchedule = Array.isArray(body.mentor_schedule) ? body.mentor_schedule : [];
     if (mentorSchedule.length > 0) {
-      await db.run("DELETE FROM student_interview_slots WHERE interview_id = ?", [interview_id]);
-      const enrolledStudents = await db.all(
-        `SELECT id, name, email FROM students 
-         WHERE (LOWER(classGroup) = LOWER(?) OR LOWER(department) = LOWER(?))
-         ORDER BY id ASC`,
-        [interview.class_group || "", interview.class_group || ""]
-      );
+      const cleanCG = (interview.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
+      const colId = interview.college_id || null;
+      let enrolledStudents = [];
+      if (colId) {
+        enrolledStudents = await db.all(
+          `SELECT id, name, email, register_number FROM students 
+           WHERE college_id = ? AND (LOWER(classGroup) = LOWER(?) OR LOWER(department) = LOWER(?) OR classGroup LIKE ? OR department LIKE ?)
+           ORDER BY register_number ASC, id ASC`,
+          [colId, cleanCG, cleanCG, `%${cleanCG}%`, `%${cleanCG}%`]
+        );
+      }
+      if (enrolledStudents.length === 0) {
+        enrolledStudents = await db.all(
+          `SELECT id, name, email, register_number FROM students 
+           WHERE (LOWER(classGroup) = LOWER(?) OR LOWER(department) = LOWER(?) OR classGroup LIKE ? OR department LIKE ?)
+           ORDER BY register_number ASC, id ASC`,
+          [cleanCG, cleanCG, `%${cleanCG}%`, `%${cleanCG}%`]
+        );
+      }
 
       let sIndex = 0;
       for (const ms of mentorSchedule) {

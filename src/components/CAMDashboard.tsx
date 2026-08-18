@@ -19,7 +19,7 @@ import {
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,
   PlusCircle, Check, ArrowRight, Settings, MessageSquare, ShieldAlert,
   Award, TrendingUp, FileText, FileSpreadsheet, RefreshCw, Plus, Trash2, Edit2, Download, Upload, ChevronDown, Loader2, Save,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle, User, SlidersHorizontal, CalendarCheck2, IndianRupee, BadgePercent, X, Mail, Lock, Menu, Briefcase
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle, User, SlidersHorizontal, CalendarCheck2, IndianRupee, BadgePercent, X, Mail, Lock, Menu, Briefcase, Layers
 } from "lucide-react";
 
 
@@ -2069,6 +2069,27 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   });
   const [emailSendingId, setEmailSendingId] = useState<string | null>(null);
 
+  // Full Course / Batch Modal States (Admin-Grade Modal)
+  const [showDeptModal, setShowDeptModal] = useState(false);
+  const [editingDept, setEditingDept] = useState(false);
+  const [isDeptSubmitting, setIsDeptSubmitting] = useState(false);
+  const [deptForm, setDeptForm] = useState({
+    id: "",
+    name: "",
+    college_id: "",
+    code: "",
+    description: "",
+    status: "Active",
+    years: 3,
+    start_date: "",
+    end_date: "",
+    start_year: "",
+    end_year: "",
+    default_room: "",
+    default_shift: "shift_1",
+    shift_based: 0
+  });
+
   const handleSendWarningEmail = async (item: any) => {
     if (!item.mentor?.email) {
       toast("Mentor does not have a valid email configured.", "error");
@@ -3558,93 +3579,165 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   };
 
-  // --- ACTIONS: DEPARTMENTS / COURSES CRUD ---
-  const handleSaveDept = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!deptName.trim()) return;
-
-    const autoCode = deptCode.trim() || deptName.replace(/with|and|for/gi, "").split(/\s+/).filter(Boolean).map(w => {
-      const clean = w.replace(/[^a-zA-Z]/g, "");
-      if (!clean) return "";
-      if (clean.toLowerCase() === "bsc") return "BSC";
-      if (clean.toLowerCase() === "bba") return "BBA";
-      if (clean.toLowerCase() === "bcom") return "BCOM";
-      return clean[0].toUpperCase();
-    }).filter(Boolean).join("-");
-
-    const deptData = {
-      name: deptName.trim(),
-      code: autoCode,
-      description: deptDesc.trim(),
-      college_id: activeCollegeId,
-      hod_name: "",
-      established_year: "",
-      status: "Active",
-      years: 4,
-      start_date: "",
-      end_date: "",
-      start_year: "",
-      end_year: "",
-      default_shift: deptShift,
-      shift_based: deptShift === "both" || deptShift === "general" ? 1 : 0
-    };
-
-    const res = await createCourse(deptData);
-    if (res.success) {
-      setDeptName("");
-      setDeptCode("");
-      setDeptDesc("");
-      setDeptShift("shift_1");
-      toast("Department created in database successfully.", "success");
+  // --- ACTIONS: DEPARTMENTS / COURSES & BATCH CRUD (FULL ADMIN-GRADE MODAL) ---
+  const handleOpenDeptModal = (dept?: any) => {
+    setModalError(null);
+    if (dept) {
+      setDeptForm({
+        id: dept.id,
+        name: dept.name,
+        college_id: dept.college_id || activeCollegeId,
+        code: dept.code || "",
+        description: dept.description || "",
+        status: dept.status || "Active",
+        years: dept.years ? Number(dept.years) : 3,
+        start_date: dept.start_date || "",
+        end_date: dept.end_date || "",
+        start_year: dept.start_year || "",
+        end_year: dept.end_year || "",
+        default_room: dept.default_room || "",
+        default_shift: dept.default_shift || (dept.shift_based ? "both" : "shift_1"),
+        shift_based: dept.shift_based !== undefined ? Number(dept.shift_based) : (dept.default_shift === "both" || dept.default_shift === "general" ? 1 : 0)
+      });
+      setEditingDept(true);
     } else {
-      toast("Error creating department: " + res.message, "error");
+      setDeptForm({
+        id: "",
+        name: "",
+        college_id: activeCollegeId,
+        code: "",
+        description: "",
+        status: "Active",
+        years: 3,
+        start_date: "",
+        end_date: "",
+        start_year: "",
+        end_year: "",
+        default_room: "",
+        default_shift: "shift_1",
+        shift_based: 0
+      });
+      setEditingDept(false);
     }
+    setShowDeptModal(true);
   };
 
-  const handleStartEditDept = (dept: any) => {
-    setEditingDeptId(dept.id);
-    setEditDeptName(dept.name);
-    setEditDeptCode(dept.code || "");
-    setEditDeptDesc(dept.description || "");
-    setEditDeptShift(dept.default_shift || (dept.shift_based ? "both" : "shift_1"));
+  const autoCalculateCourseDates = (startDateStr: string, durationYears: number) => {
+    if (!startDateStr) return {};
+    const startDate = new Date(startDateStr);
+    if (isNaN(startDate.getTime())) return {};
+
+    const endDate = new Date(startDate);
+    endDate.setFullYear(startDate.getFullYear() + durationYears);
+
+    const endYearStr = endDate.getFullYear().toString();
+    const endMonthStr = String(endDate.getMonth() + 1).padStart(2, '0');
+    const endDayStr = String(endDate.getDate()).padStart(2, '0');
+    const endDateStr = `${endYearStr}-${endMonthStr}-${endDayStr}`;
+
+    const startYearStr = startDate.getFullYear().toString();
+
+    return {
+      end_date: endDateStr,
+      start_year: startYearStr,
+      end_year: endYearStr
+    };
   };
 
-  const handleSaveInlineDept = async (e: React.FormEvent, id: string) => {
-    e.preventDefault();
-    if (!editDeptName.trim()) return;
+  const handleCourseStartDateChange = (val: string) => {
+    const years = deptForm.years || 3;
+    const calculated = autoCalculateCourseDates(val, years);
+    setDeptForm(prev => ({
+      ...prev,
+      start_date: val,
+      ...calculated
+    }));
+  };
 
-    const autoCode = editDeptCode.trim() || editDeptName.replace(/with|and|for/gi, "").split(/\s+/).filter(Boolean).map(w => {
-      const clean = w.replace(/[^a-zA-Z]/g, "");
-      if (!clean) return "";
-      if (clean.toLowerCase() === "bsc") return "BSC";
-      if (clean.toLowerCase() === "bba") return "BBA";
-      if (clean.toLowerCase() === "bcom") return "BCOM";
-      return clean[0].toUpperCase();
-    }).filter(Boolean).join("-");
+  const handleCourseYearsChange = (val: number) => {
+    const calculated = deptForm.start_date ? autoCalculateCourseDates(deptForm.start_date, val) : {};
+    setDeptForm(prev => ({
+      ...prev,
+      years: val,
+      ...calculated
+    }));
+  };
 
-    const res = await updateCourse({
-      id,
-      name: editDeptName.trim(),
-      code: autoCode,
-      description: editDeptDesc.trim(),
-      college_id: activeCollegeId,
-      hod_name: "",
-      established_year: "",
-      status: "Active",
-      years: 4,
-      start_date: "",
-      end_date: "",
-      start_year: "",
-      end_year: "",
-      default_shift: editDeptShift,
-      shift_based: editDeptShift === "both" || editDeptShift === "general" ? 1 : 0
+  const handleYearRoomChange = (yearNum: number, roomVal: string) => {
+    setDeptForm(prev => {
+      let roomObj: Record<string, string> = {};
+      try {
+        if (prev.default_room && prev.default_room.startsWith("{")) {
+          roomObj = JSON.parse(prev.default_room);
+        } else if (prev.default_room) {
+          roomObj = { "1": prev.default_room };
+        }
+      } catch (_) { }
+
+      if (roomVal.trim()) {
+        roomObj[yearNum.toString()] = roomVal.trim();
+      } else {
+        delete roomObj[yearNum.toString()];
+      }
+
+      return {
+        ...prev,
+        default_room: JSON.stringify(roomObj)
+      };
     });
+  };
 
-    if (res.success) {
-      setEditingDeptId(null);
-      toast("Department updated in database successfully.", "success");
-    } else {
-      toast("Error updating department: " + res.message, "error");
+  const handleDeptSubmitModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setModalError(null);
+    if (!deptForm.name.trim()) {
+      setModalError("Course name is required.");
+      return;
+    }
+
+    setIsDeptSubmitting(true);
+    try {
+      const autoCode = deptForm.code.trim() || deptForm.name.replace(/with|and|for/gi, "").split(/\s+/).filter(Boolean).map(w => {
+        const clean = w.replace(/[^a-zA-Z]/g, "");
+        if (!clean) return "";
+        if (clean.toLowerCase() === "bsc") return "BSC";
+        if (clean.toLowerCase() === "bba") return "BBA";
+        if (clean.toLowerCase() === "bcom") return "BCOM";
+        return clean[0].toUpperCase();
+      }).filter(Boolean).join("-");
+
+      const payload = {
+        ...deptForm,
+        name: deptForm.name.trim(),
+        code: autoCode,
+        description: deptForm.description.trim(),
+        college_id: deptForm.college_id || activeCollegeId,
+        shift_based: deptForm.default_shift === "both" || deptForm.default_shift === "general" ? 1 : 0
+      };
+
+      if (editingDept && deptForm.id) {
+        const res = await updateCourse(payload);
+        if (res.success) {
+          setShowDeptModal(false);
+          toast("Course & Batch details updated successfully.", "success");
+          refreshData();
+        } else {
+          setModalError(res.message || "Failed to update course.");
+        }
+      } else {
+        const res = await createCourse(payload);
+        if (res.success) {
+          setShowDeptModal(false);
+          toast("Course & Batch created successfully.", "success");
+          refreshData();
+        } else {
+          setModalError(res.message || "Failed to create course.");
+        }
+      }
+    } catch (err: any) {
+      setModalError("An error occurred: " + err.message);
+    } finally {
+      setIsDeptSubmitting(false);
     }
   };
 
@@ -5843,32 +5936,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <Button variant="primary" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => handleOpenSubjectModal()}>
                       + Subject
                     </Button>
-                    <Button variant="secondary" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowAddDeptForm(v => !v)}>
-                      {showAddDeptForm ? "Cancel" : "+ Department"}
+                    <Button variant="secondary" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => handleOpenDeptModal()}>
+                      + Department / Course
                     </Button>
                   </>
                 }
               >
-                {/* Add Department Form */}
-                {showAddDeptForm && (
-                  <div className="mb-5 bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-sm animate-fade-in">
-                    <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 pb-2 mb-3">Register New Department</h3>
-                    <form onSubmit={async (e) => { await handleSaveDept(e); setShowAddDeptForm(false); }} className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                      <Input label="Department Name" placeholder="e.g. Information Technology" value={deptName} onChange={e => setDeptName(e.target.value)} required />
-                      <Input label="Department Code" placeholder="e.g. IT (Auto-generated if blank)" value={deptCode} onChange={e => setDeptCode(e.target.value)} />
-                      <Select label="Shift Scope" value={deptShift} onChange={e => setDeptShift(e.target.value)} options={[{value:"shift_1",label:"Shift 1 (Day)"},{value:"shift_2",label:"Shift 2 (Evening)"},{value:"both",label:"Both Shifts (Shift 1 & 2)"},{value:"general",label:"General Shift"},{value:"all",label:"Both Shifts + General (Shift 1, 2 & General)"}]} />
-                      <div className="sm:col-span-3 lg:col-span-4 space-y-1">
-                        <label className="text-slate-400 text-[10px] uppercase font-bold">Description</label>
-                        <input type="text" placeholder="Brief summary..." value={deptDesc} onChange={e => setDeptDesc(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm" />
-                      </div>
-                      <div className="sm:col-span-3 lg:col-span-4 flex gap-2 pt-1">
-                        <Button type="submit" variant="primary" size="md" className="flex-1">Add Department</Button>
-                        <Button type="button" variant="secondary" size="md" onClick={() => setShowAddDeptForm(false)}>Cancel</Button>
-                      </div>
-                    </form>
-                  </div>
-                )}
-
                 {/* ===== UNIFIED TREE: Department → Year → Semester → Subjects ===== */}
                 {(() => {
                   const YEAR_SEM_MAP: Record<string, string[]> = {
@@ -5935,7 +6008,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="py-12 text-center border rounded-xl bg-white">
                           <GraduationCap className="h-8 w-8 text-slate-300 mx-auto mb-3" />
                           <p className="text-sm font-semibold text-slate-400">No departments or subjects found</p>
-                          <p className="text-[10px] text-slate-300 mt-1">Use <strong>+ Department</strong> and <strong>+ Subject</strong> above to get started.</p>
+                          <p className="text-[10px] text-slate-300 mt-1">Use <strong>+ Department / Course</strong> and <strong>+ Subject</strong> above to get started.</p>
                         </div>
                       ) : (
                         <div className="space-y-4 text-xs font-semibold">
@@ -5959,7 +6032,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         };
 
                         const deptSubjects = filteredSubs.filter(s => isDeptSubjectMatch(s.department, deptName, registeredDept?.code));
-                        const isEditingDept = editingDeptId === registeredDept?.id;
                         const isDeptExpanded = !!expandedDepts[deptName];
 
                         const getSemNum = (semStr?: string) => {
@@ -5998,68 +6070,55 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <div key={deptName} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden transition-all duration-200">
 
                             {/* ── DEPARTMENT HEADER (Collapsible Card Style) ── */}
-                            {isEditingDept ? (
-                              <div className="bg-indigo-50/40 border-b border-indigo-100 p-4">
-                                <form onSubmit={(ev) => handleSaveInlineDept(ev, registeredDept!.id)} className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                                  <Input label="Dept Name" value={editDeptName} onChange={ev => setEditDeptName(ev.target.value)} required />
-                                  <Input label="Dept Code" placeholder="Auto-generated if blank" value={editDeptCode} onChange={ev => setEditDeptCode(ev.target.value)} />
-                                  <Select label="Shift Scope" value={editDeptShift} onChange={ev => setEditDeptShift(ev.target.value)} options={[{value:"shift_1",label:"Shift 1 (Day)"},{value:"shift_2",label:"Shift 2 (Evening)"},{value:"both",label:"Both Shifts (Shift 1 & 2)"},{value:"general",label:"General Shift"},{value:"all",label:"Both Shifts + General (Shift 1, 2 & General)"}]} />
-                                  <div className="space-y-1">
-                                    <label className="text-[9px] uppercase font-bold text-slate-400">Description</label>
-                                    <input type="text" value={editDeptDesc} onChange={ev => setEditDeptDesc(ev.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold outline-none" />
-                                  </div>
-                                  <div className="sm:col-span-3 lg:col-span-4 flex gap-2">
-                                    <Button type="submit" variant="success" size="xs" className="flex-1">Save</Button>
-                                    <Button type="button" variant="secondary" size="xs" onClick={() => setEditingDeptId(null)}>Cancel</Button>
-                                  </div>
-                                </form>
-                              </div>
-                            ) : (
-                              <div
-                                onClick={() => setExpandedDepts(prev => ({ ...prev, [deptName]: !prev[deptName] }))}
-                                className="flex items-center justify-between px-5 py-4 bg-slate-50 hover:bg-slate-100/70 border-b border-slate-200/50 cursor-pointer select-none transition-all duration-200 group"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <GraduationCap className="h-4 w-4 text-slate-400 shrink-0" />
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[12px] font-black text-slate-800">{deptName}</span>
-                                      {registeredDept?.code && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 border border-indigo-150 text-indigo-700 rounded font-bold uppercase">{registeredDept.code}</span>}
-                                      {registeredDept && (
-                                        <span className={`text-[9px] px-2 py-0.5 border rounded font-bold uppercase ${
-                                          registeredDept.default_shift === "both" || registeredDept.shift_based === 1
-                                            ? "bg-purple-50 border-purple-200 text-purple-700"
-                                            : registeredDept.default_shift === "shift_1"
-                                            ? "bg-teal-50 border-teal-200 text-teal-700"
-                                            : registeredDept.default_shift === "shift_2"
-                                            ? "bg-amber-50 border-amber-200 text-amber-700"
-                                            : "bg-slate-100 border-slate-200 text-slate-700"
-                                        }`}>
-                                          {registeredDept.default_shift === "both" || registeredDept.shift_based === 1
-                                            ? "Shift 1 & 2 (Both Shifts)"
-                                            : registeredDept.default_shift === "shift_1"
-                                            ? "Shift 1 (Day)"
-                                            : registeredDept.default_shift === "shift_2"
-                                            ? "Shift 2 (Eve)"
-                                            : "General (Full Day)"}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {registeredDept?.description && <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{registeredDept.description}</p>}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
-                                  <span className="text-[9px] font-bold px-2.5 py-0.5 bg-slate-200 text-slate-600 rounded-full">{deptSubjects.length} subjects</span>
-                                  <div className="flex gap-1">
-                                    {registeredDept && (
-                                      <Button variant="ghost" size="xs" onClick={() => handleStartEditDept(registeredDept)} title="Edit Department" className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"><Edit2 className="h-3 w-3" /></Button>
+                            <div
+                              onClick={() => setExpandedDepts(prev => ({ ...prev, [deptName]: !prev[deptName] }))}
+                              className="flex items-center justify-between px-5 py-4 bg-slate-50 hover:bg-slate-100/70 border-b border-slate-200/50 cursor-pointer select-none transition-all duration-200 group"
+                            >
+                              <div className="flex items-center gap-3">
+                                <GraduationCap className="h-4 w-4 text-slate-400 shrink-0" />
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-[12px] font-black text-slate-800">{deptName}</span>
+                                    {registeredDept?.code && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 border border-indigo-150 text-indigo-700 rounded font-bold uppercase">{registeredDept.code}</span>}
+                                    {registeredDept?.start_year && registeredDept?.end_year && (
+                                      <span className="text-[9px] px-1.5 py-0.5 bg-purple-50 border border-purple-150 text-purple-700 rounded font-bold">
+                                        {registeredDept.start_year}–{registeredDept.end_year}
+                                      </span>
                                     )}
-                                    <Button variant="ghost" size="xs" onClick={() => handleDeleteDept(deptName, registeredDept?.id)} title="Delete Department" className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50"><Trash2 className="h-3 w-3" /></Button>
+                                    {registeredDept && (
+                                      <span className={`text-[9px] px-2 py-0.5 border rounded font-bold uppercase ${
+                                        registeredDept.default_shift === "both" || registeredDept.shift_based === 1
+                                          ? "bg-purple-50 border-purple-200 text-purple-700"
+                                          : registeredDept.default_shift === "shift_1"
+                                          ? "bg-teal-50 border-teal-200 text-teal-700"
+                                          : registeredDept.default_shift === "shift_2"
+                                          ? "bg-amber-50 border-amber-200 text-amber-700"
+                                          : "bg-slate-100 border-slate-200 text-slate-700"
+                                      }`}>
+                                        {registeredDept.default_shift === "both" || registeredDept.shift_based === 1
+                                          ? "Shift 1 & 2 (Both Shifts)"
+                                          : registeredDept.default_shift === "shift_1"
+                                          ? "Shift 1 (Day)"
+                                          : registeredDept.default_shift === "shift_2"
+                                          ? "Shift 2 (Eve)"
+                                          : "General (Full Day)"}
+                                      </span>
+                                    )}
                                   </div>
-                                  <ChevronDown className={`h-4.5 w-4.5 text-slate-400 transition-transform duration-200 ml-1 ${isDeptExpanded ? "rotate-180 text-indigo-500" : ""}`} onClick={() => setExpandedDepts(prev => ({ ...prev, [deptName]: !prev[deptName] }))} />
+                                  {registeredDept?.description && <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{registeredDept.description}</p>}
                                 </div>
                               </div>
-                            )}
+                              <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+                                <span className="text-[9px] font-bold px-2.5 py-0.5 bg-slate-200 text-slate-600 rounded-full">{deptSubjects.length} subjects</span>
+                                <div className="flex gap-1">
+                                  {registeredDept && (
+                                    <Button variant="ghost" size="xs" onClick={() => handleOpenDeptModal(registeredDept)} title="Edit Course & Batch Details" className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"><Edit2 className="h-3 w-3" /></Button>
+                                  )}
+                                  <Button variant="ghost" size="xs" onClick={() => handleDeleteDept(deptName, registeredDept?.id)} title="Delete Department" className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50"><Trash2 className="h-3 w-3" /></Button>
+                                </div>
+                                <ChevronDown className={`h-4.5 w-4.5 text-slate-400 transition-transform duration-200 ml-1 ${isDeptExpanded ? "rotate-180 text-indigo-500" : ""}`} />
+                              </div>
+                            </div>
 
                             {/* ── COLLAPSIBLE DEPARTMENT CONTENT (ADMIN-STYLE OVERVIEW + YEAR-WISE CARDS) ── */}
                             {isDeptExpanded && (
@@ -12439,6 +12498,247 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
                 </div>
               )}
+
+        {/* ── COURSE & BATCH MODAL (ADMIN-GRADE POPUP) ── */}
+        {showDeptModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fadeIn">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden animate-slideUp">
+              {/* Header (Fixed) */}
+              <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
+                <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                    <Layers className="h-4 w-4 text-indigo-650" />
+                  </div>
+                  {editingDept ? "Edit Course & Batch Details" : "Add Course / Department"}
+                </h3>
+                <button onClick={() => setShowDeptModal(false)} className="p-1.5 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer text-slate-500 hover:text-slate-800">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Scrollable Form Body */}
+              <form onSubmit={handleDeptSubmitModal} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-semibold">
+                {modalError && (
+                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    {modalError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Course / Department Name</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Bachelor of Computer Applications (BCA)"
+                      value={deptForm.name}
+                      onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Course Duration</label>
+                    <select
+                      value={deptForm.years || 3}
+                      onChange={(e) => handleCourseYearsChange(Number(e.target.value))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-slate-800"
+                    >
+                      <option value={1}>1 Year (2 Semesters)</option>
+                      <option value={2}>2 Years (4 Semesters)</option>
+                      <option value={3}>3 Years (6 Semesters)</option>
+                      <option value={4}>4 Years (8 Semesters)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Status</label>
+                    <select
+                      value={deptForm.status || "Active"}
+                      onChange={(e) => setDeptForm({ ...deptForm, status: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-slate-800"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+
+                  {/* Batch Dates & Batch Years */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Batch Start Date</label>
+                    <input
+                      type="date"
+                      value={deptForm.start_date}
+                      onChange={(e) => handleCourseStartDateChange(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Batch End Date</label>
+                    <input
+                      type="date"
+                      value={deptForm.end_date}
+                      onChange={(e) => setDeptForm({ ...deptForm, end_date: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Batch Start Year</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 2024"
+                      value={deptForm.start_year}
+                      onChange={(e) => setDeptForm({ ...deptForm, start_year: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Batch End Year</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 2027"
+                      value={deptForm.end_year}
+                      onChange={(e) => setDeptForm({ ...deptForm, end_year: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs"
+                    />
+                  </div>
+
+                  {/* Year-wise Classroom Allocations */}
+                  <div className="space-y-3 sm:col-span-2 border-t border-slate-150 pt-4 mt-2">
+                    <h4 className="text-[10px] font-black text-indigo-650 uppercase tracking-wider">
+                      Classroom Allocations (Year-wise)
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {(() => {
+                        const campus = colleges.find(c => c.id === deptForm.college_id);
+                        const campusRooms = campus && campus.rooms ? campus.rooms.split(",").map(r => r.trim()).filter(Boolean) : [];
+
+                        const suggestions = new Set<string>(campusRooms);
+                        coursesList
+                          .filter(d => d.college_id === deptForm.college_id && d.id !== deptForm.id)
+                          .forEach(d => {
+                            if (d.default_room) {
+                              if (d.default_room.startsWith("{")) {
+                                try {
+                                  const parsed = JSON.parse(d.default_room);
+                                  Object.values(parsed).forEach((r: any) => {
+                                    if (r && typeof r === 'string' && r.trim()) {
+                                      suggestions.add(r.trim());
+                                    }
+                                  });
+                                } catch (_) { }
+                              } else {
+                                suggestions.add(d.default_room.trim());
+                              }
+                            }
+                          });
+
+                        const suggestionArray = Array.from(suggestions);
+
+                        return (
+                          <>
+                            {Array.from({ length: Number(deptForm.years || 3) }, (_, idx) => {
+                              const yearNum = idx + 1;
+                              let currentRoom = "";
+                              try {
+                                if (deptForm.default_room && deptForm.default_room.startsWith("{")) {
+                                  const parsed = JSON.parse(deptForm.default_room);
+                                  currentRoom = parsed[yearNum] || "";
+                                } else if (deptForm.default_room && yearNum === 1) {
+                                  currentRoom = deptForm.default_room;
+                                }
+                              } catch (_) { }
+
+                              return (
+                                <div key={yearNum} className="space-y-1">
+                                  <label className="text-[9.5px] text-slate-400 font-bold block uppercase tracking-wider">
+                                    Year {yearNum} Room
+                                  </label>
+                                  <input
+                                    type="text"
+                                    list={`rooms-suggest-modal-${deptForm.college_id || 'none'}`}
+                                    placeholder={`e.g. Room for Year ${yearNum}`}
+                                    value={currentRoom}
+                                    onChange={(e) => handleYearRoomChange(yearNum, e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs font-semibold"
+                                  />
+                                </div>
+                              );
+                            })}
+
+                            {suggestionArray.length > 0 && (
+                              <datalist id={`rooms-suggest-modal-${deptForm.college_id || 'none'}`}>
+                                {suggestionArray.map(r => (
+                                  <option key={r} value={r} />
+                                ))}
+                              </datalist>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Shift Offering</label>
+                    <select
+                      value={deptForm.default_shift || "shift_1"}
+                      onChange={(e) => setDeptForm({ ...deptForm, default_shift: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-slate-800"
+                    >
+                      <option value="shift_1">Shift 1 (Day)</option>
+                      <option value="shift_2">Shift 2 (Evening)</option>
+                      <option value="both">Both Shifts (Shift 1 & 2)</option>
+                      <option value="general">General Shift</option>
+                      <option value="all">Both Shifts + General (Shift 1, 2 & General)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Description</label>
+                    <textarea
+                      placeholder="Enter course summary or notes..."
+                      value={deptForm.description || ""}
+                      onChange={(e) => setDeptForm({ ...deptForm, description: e.target.value })}
+                      rows={2}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 resize-none font-semibold"
+                    />
+                  </div>
+                </div>
+
+                {/* Sticky Footer */}
+                <div className="flex justify-end gap-2.5 pt-4 mt-4 border-t border-slate-100 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowDeptModal(false)}
+                    className="px-4 py-2 hover:bg-slate-100 text-slate-500 rounded-xl transition-all font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDeptSubmitting}
+                    className={`btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer flex items-center justify-center gap-2 ${isDeptSubmitting ? "opacity-75 cursor-not-allowed" : "hover:opacity-95 active:scale-95"
+                      }`}
+                  >
+                    {isDeptSubmitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin text-white shrink-0" />
+                        <span>{editingDept ? "Saving Changes..." : "Creating Course..."}</span>
+                      </>
+                    ) : (
+                      <span>{editingDept ? "Save Changes" : "Create Course"}</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
         {/* ── FACULTY BULK IMPORT PREVIEW MODAL ── */}
         {showFacultyImportModal && facultyImportPreview && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">

@@ -137,7 +137,14 @@ export async function PUT(request: Request) {
     const cleanName = name.trim();
 
     // Find the current course details
-    const currentCourse = await db.get("SELECT * FROM courses WHERE id = ?", id);
+    // Find the current course details
+    let currentCourse = await db.get("SELECT * FROM courses WHERE id = ?", id);
+    if (!currentCourse) {
+      currentCourse = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)", cleanName, college_id || "college_1");
+    }
+    if (!currentCourse) {
+      currentCourse = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))", cleanName);
+    }
     if (!currentCourse) {
       return NextResponse.json({ success: false, message: "Course not found." }, { status: 404 });
     }
@@ -147,9 +154,9 @@ export async function PUT(request: Request) {
     // Check name uniqueness among other courses in the same college
     let duplicate;
     if (targetCollegeId) {
-      duplicate = await db.get("SELECT * FROM courses WHERE LOWER(name) = LOWER(?) AND id != ? AND college_id = ?", cleanName, id, targetCollegeId);
+      duplicate = await db.get("SELECT * FROM courses WHERE LOWER(name) = LOWER(?) AND id != ? AND college_id = ?", cleanName, currentCourse.id, targetCollegeId);
     } else {
-      duplicate = await db.get("SELECT * FROM courses WHERE LOWER(name) = LOWER(?) AND id != ? AND college_id IS NULL", cleanName, id);
+      duplicate = await db.get("SELECT * FROM courses WHERE LOWER(name) = LOWER(?) AND id != ? AND college_id IS NULL", cleanName, currentCourse.id);
     }
     if (duplicate) {
       return NextResponse.json({ success: false, message: `Another course named "${cleanName}" already exists for this campus.` }, { status: 400 });
@@ -162,7 +169,7 @@ export async function PUT(request: Request) {
     await db.run(
       "UPDATE courses SET name = ?, college_id = ?, code = ?, description = ?, hod_name = ?, established_year = ?, status = ?, years = ?, start_date = ?, end_date = ?, start_year = ?, end_year = ?, default_room = ?, default_shift = ?, shift_based = ? WHERE id = ?",
       cleanName,
-      college_id || currentCourse.college_id,
+      targetCollegeId || "college_1",
       code || "",
       description || "",
       "",
@@ -176,8 +183,15 @@ export async function PUT(request: Request) {
       default_room || null,
       default_shift || null,
       shift_based === undefined ? (currentCourse.shift_based || 0) : Number(shift_based),
-      id
+      currentCourse.id
     );
+
+    try {
+      await db.run(
+        "INSERT OR REPLACE INTO departments (id, name, college_id, code, description) VALUES (?, ?, ?, ?, ?)",
+        currentCourse.id, cleanName, targetCollegeId || "college_1", code || "", description || ""
+      );
+    } catch (_) {}
 
     // 2. Cascade rename to mentors table
     await db.run("UPDATE mentors SET department = ? WHERE department = ?", cleanName, oldName);
@@ -189,7 +203,6 @@ export async function PUT(request: Request) {
     await db.run("UPDATE slots SET department = ? WHERE department = ?", cleanName, oldName);
 
     // 5. Cascade rename to handover_requests.classGroup where it contains the old department (Bug #26 fix)
-    // classGroup format: "<CourseName> - SEM X" — update if starts with old name
     await db.run(
       "UPDATE handover_requests SET classGroup = REPLACE(classGroup, ?, ?) WHERE classGroup LIKE ?",
       oldName, cleanName, `${oldName}%`
@@ -198,7 +211,26 @@ export async function PUT(request: Request) {
     // 6. Cascade rename in students table department field
     await db.run("UPDATE students SET department = ? WHERE department = ?", cleanName, oldName);
 
-    return NextResponse.json({ success: true, message: "Course updated and cascaded successfully." });
+    return NextResponse.json({
+      success: true,
+      message: "Course updated and cascaded successfully.",
+      course: {
+        id: currentCourse.id,
+        name: cleanName,
+        college_id: targetCollegeId || "college_1",
+        code: code || "",
+        description: description || "",
+        status: status || "Active",
+        years: years !== undefined ? Number(years) : 4,
+        start_date: start_date || "",
+        end_date: end_date || "",
+        start_year: start_year || "",
+        end_year: end_year || "",
+        default_room: default_room || null,
+        default_shift: default_shift || null,
+        shift_based: shift_based === undefined ? (currentCourse.shift_based || 0) : Number(shift_based)
+      }
+    });
   } catch (error: any) {
     console.error("API PUT Courses error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

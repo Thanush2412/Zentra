@@ -30,40 +30,11 @@ export interface StructuredQuestion {
   notes?: string;
 }
 
-// ─── Subject Question Preset Generator ─────────────────────────────────────
+// ─── Question Initialization (Clean & User-Typed) ──────────────────────────
 
-const getSubjectQuestionsPreset = (subjectName: string): StructuredQuestion[] => {
-  const s = (subjectName || "").toLowerCase();
-
-  if (s.includes("react") || s.includes("web") || s.includes("frontend") || s.includes("html") || s.includes("javascript")) {
-    return [
-      { id: "q1", question: "Component Architecture, Props & State Management", maxScore: 10, score: 7, notes: "" },
-      { id: "q2", question: "Async JavaScript, Promises & API Integration", maxScore: 10, score: 7, notes: "" },
-      { id: "q3", question: "DOM Manipulation, Hooks & Lifecycle", maxScore: 10, score: 8, notes: "" },
-      { id: "q4", question: "CSS Layouts, Flexbox/Grid & Responsive Design", maxScore: 10, score: 7, notes: "" }
-    ];
-  }
-  if (s.includes("java") || s.includes("python") || s.includes("backend") || s.includes("cpp") || s.includes("c++") || s.includes("dsa") || s.includes("data structure")) {
-    return [
-      { id: "q1", question: "Object-Oriented Programming (OOP) Principles & Abstraction", maxScore: 10, score: 8, notes: "" },
-      { id: "q2", question: "Data Structures Complexity & Algorithm Design", maxScore: 10, score: 7, notes: "" },
-      { id: "q3", question: "Database Querying, Indexing & Joins", maxScore: 10, score: 7, notes: "" },
-      { id: "q4", question: "Exception Handling, Memory Management & Edge Cases", maxScore: 10, score: 7, notes: "" }
-    ];
-  }
-  if (s.includes("aptitude") || s.includes("reasoning") || s.includes("math") || s.includes("quant")) {
-    return [
-      { id: "q1", question: "Quantitative Problem Solving & Numerical Accuracy", maxScore: 10, score: 7, notes: "" },
-      { id: "q2", question: "Logical Deductions, Puzzles & Pattern Recognition", maxScore: 10, score: 8, notes: "" },
-      { id: "q3", question: "Structured Step-by-Step Problem Solving Approach", maxScore: 10, score: 7, notes: "" },
-      { id: "q4", question: "Speed, Time Management & Analytical Clarity", maxScore: 10, score: 7, notes: "" }
-    ];
-  }
+const getSubjectQuestionsPreset = (subjectName?: string): StructuredQuestion[] => {
   return [
-    { id: "q1", question: "Core Fundamental Concepts & Theory", maxScore: 10, score: 7, notes: "" },
-    { id: "q2", question: "Practical Understanding & Real-World Application", maxScore: 10, score: 7, notes: "" },
-    { id: "q3", question: "Problem Solving, Logic & Technical Depth", maxScore: 10, score: 8, notes: "" },
-    { id: "q4", question: "Code / Solution Presentation & Clarity", maxScore: 10, score: 7, notes: "" }
+    { id: `q_${Date.now()}_1`, question: "", maxScore: 10, score: 7, notes: "" }
   ];
 };
 
@@ -1160,8 +1131,20 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     if (!currentMentor?.classes) {
       return Array.from(new Set(students.map(s => s.classGroup).filter(Boolean))).sort().slice(0, 10);
     }
-    const raw = (currentMentor.classes || "").split(/,|\n/).map(c => c.trim()).filter(Boolean);
-    return Array.from(new Set(raw));
+    const rawStr = currentMentor.classes.trim();
+    let classList: string[] = [];
+    if (rawStr.startsWith("[") && rawStr.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(rawStr);
+        if (Array.isArray(parsed)) {
+          classList = parsed.map(c => String(c).trim()).filter(Boolean);
+        }
+      } catch (_) {}
+    }
+    if (classList.length === 0) {
+      classList = rawStr.split(/,|\n/).map(c => c.replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim()).filter(Boolean);
+    }
+    return Array.from(new Set(classList));
   }, [currentMentor, students]);
 
   const isOnlyTamil = useMemo(() => {
@@ -1751,18 +1734,23 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
             const enrolled = students.find(st => 
               st.id === slot.student_id || 
               st.id === slot.studentId || 
-              (st.roll_number && (st.roll_number === slot.student_id || st.roll_number === slot.studentId)) ||
-              (st.email && (st.email === slot.student_id || st.email === slot.studentId))
+              (st.register_number && (st.register_number === slot.student_id || st.register_number === slot.studentId || st.register_number === slot.roll_number)) ||
+              (st.roll_number && (st.roll_number === slot.student_id || st.roll_number === slot.studentId || st.roll_number === slot.roll_number)) ||
+              ((st as any).roll_no && ((st as any).roll_no === slot.student_id || (st as any).roll_no === slot.studentId || (st as any).roll_no === slot.roll_number)) ||
+              (st.email && (st.email === slot.student_id || st.email === slot.studentId)) ||
+              (st.name && slot.student_name && st.name.toLowerCase().trim() === slot.student_name.toLowerCase().trim())
             ) || (students.length > 0 ? students[idx % students.length] : null);
 
             const cName = slot.student_name || slot.studentName || slot.name || enrolled?.name || (slot.student_id ? `Candidate ${slot.student_id}` : `Candidate #${idx + 1}`);
+            const regNo = enrolled?.register_number || enrolled?.roll_number || (enrolled as any)?.roll_no || slot.register_number || slot.roll_number || slot.student_id || enrolled?.id || `REG-${1000 + idx}`;
 
             return {
               id: slot.student_id || slot.studentId || enrolled?.id || `slot_std_${idx + 1}`,
               name: cName,
-              roll_number: enrolled?.roll_number || slot.roll_number || slot.student_id || `REG-${1000 + idx}`,
-              classGroup: enrolled?.classGroup || req.class_group || "Cohort",
-              department: enrolled?.department || req.class_group || "Cohort",
+              register_number: regNo,
+              roll_number: regNo,
+              classGroup: enrolled?.classGroup || req.class_group || "BCA - Semester 5",
+              department: enrolled?.department || req.class_group || "BCA",
               slotTime: slot.slot_start_time ? `${slot.slot_start_time} - ${slot.slot_end_time}` : undefined,
               gmeetLink: slot.gmeet_link || req.gmeet_link,
               mentorId: slot.mentor_id,
@@ -1777,18 +1765,23 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         const enrolled = students.find(st => 
           st.id === slot.student_id || 
           st.id === slot.studentId || 
-          (st.roll_number && (st.roll_number === slot.student_id || st.roll_number === slot.studentId)) ||
-          (st.email && (st.email === slot.student_id || st.email === slot.studentId))
+          (st.register_number && (st.register_number === slot.student_id || st.register_number === slot.studentId || st.register_number === slot.roll_number)) ||
+          (st.roll_number && (st.roll_number === slot.student_id || st.roll_number === slot.studentId || st.roll_number === slot.roll_number)) ||
+          ((st as any).roll_no && ((st as any).roll_no === slot.student_id || (st as any).roll_no === slot.studentId || (st as any).roll_no === slot.roll_number)) ||
+          (st.email && (st.email === slot.student_id || st.email === slot.studentId)) ||
+          (st.name && slot.student_name && st.name.toLowerCase().trim() === slot.student_name.toLowerCase().trim())
         ) || (students.length > 0 ? students[idx % students.length] : null);
 
         const cName = slot.student_name || slot.studentName || slot.name || enrolled?.name || (slot.student_id ? `Candidate ${slot.student_id}` : `Candidate #${idx + 1}`);
+        const regNo = enrolled?.register_number || enrolled?.roll_number || (enrolled as any)?.roll_no || slot.register_number || slot.roll_number || slot.student_id || enrolled?.id || `REG-${1000 + idx}`;
 
         return {
           id: slot.student_id || slot.studentId || enrolled?.id || `slot_std_${idx + 1}`,
           name: cName,
-          roll_number: enrolled?.roll_number || slot.roll_number || slot.student_id || `REG-${1000 + idx}`,
-          classGroup: enrolled?.classGroup || req.class_group || "Cohort",
-          department: enrolled?.department || req.class_group || "Cohort",
+          register_number: regNo,
+          roll_number: regNo,
+          classGroup: enrolled?.classGroup || req.class_group || "BCA - Semester 5",
+          department: enrolled?.department || req.class_group || "BCA",
           slotTime: slot.slot_start_time ? `${slot.slot_start_time} - ${slot.slot_end_time}` : undefined,
           gmeetLink: slot.gmeet_link || req.gmeet_link,
           mentorId: slot.mentor_id,
@@ -1798,7 +1791,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     }
 
     // 2. Fallback when student_slots table has not been populated yet:
-    let assignedCount = Math.max(1, Number(req?.allocated_students || req?.student_count || 10));
+    let assignedCount = Math.max(1, Number(req?.allocated_students || req?.student_count || 46));
 
     // If mentor is an assigned evaluator, check mentor's batch slice (e.g. 3 candidates)
     if (isMentor && currentMentor?.id) {
@@ -1808,19 +1801,36 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         const batchSize = 3;
         const startIdx = myIndex * batchSize;
         const cohortList = req.class_group
-          ? students.filter(s => (s.classGroup || "").toLowerCase().trim() === (req.class_group || "").toLowerCase().trim())
+          ? students.filter(s => {
+              if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+              const sCG = (s.classGroup || "").toLowerCase().trim();
+              const sDept = (s.department || "").toLowerCase().trim();
+              const reqCG = (req.class_group || "").toLowerCase().trim();
+              return sCG === reqCG || sDept === reqCG || sCG.includes(reqCG) || reqCG.includes(sCG);
+            })
           : students;
         const pool = cohortList.length > 0 ? cohortList : students;
-        return pool.slice(startIdx, startIdx + batchSize);
+        return pool.slice(startIdx, startIdx + batchSize).map((s: any) => ({
+          ...s,
+          register_number: s.register_number || s.roll_number || s.id,
+          roll_number: s.register_number || s.roll_number || s.id
+        }));
       }
     }
 
-    if (!req?.class_group) return students.slice(0, assignedCount);
-    const filtered = students.filter(s =>
-      (s.classGroup || "").toLowerCase().trim() === (req.class_group || "").toLowerCase().trim()
-    );
+    const filtered = students.filter(s => {
+      if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+      const sCG = (s.classGroup || "").toLowerCase().trim();
+      const sDept = (s.department || "").toLowerCase().trim();
+      const reqCG = (req.class_group || "").toLowerCase().trim();
+      return sCG === reqCG || sDept === reqCG || sCG.includes(reqCG) || reqCG.includes(sCG);
+    });
     const listToSlice = filtered.length > 0 ? filtered : students;
-    return listToSlice.slice(0, assignedCount);
+    return listToSlice.slice(0, assignedCount).map((s: any) => ({
+      ...s,
+      register_number: s.register_number || s.roll_number || s.id,
+      roll_number: s.register_number || s.roll_number || s.id
+    }));
   };
 
   const subjectMentorsForReq = (req: any) =>
@@ -2029,7 +2039,10 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                     onChange={e => setSelectedClassGroup(e.target.value)}
                     className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
                   >
-                    {mentorClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                    {mentorClasses.map(c => {
+                      const formatted = c === "III BCA" ? "BCA - Semester 5" : (c.includes("Sem") || c.includes("Year") ? c : `${c} - Semester 5`);
+                      return <option key={c} value={c}>{formatted}</option>;
+                    })}
                   </select>
                 </div>
 
@@ -2056,7 +2069,16 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                   <div>
                     <span className="text-slate-500 text-[10px] uppercase font-bold block">Enrolled Roster</span>
                     <span className="text-slate-900 font-black">
-                      {students.filter(s => s.classGroup === selectedClassGroup || s.department === selectedClassGroup).length || 25} Students in Cohort
+                      {(() => {
+                        const count = students.filter(s => {
+                          if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+                          const cleanSel = (selectedClassGroup || "").trim().toLowerCase();
+                          const sCG = (s.classGroup || "").trim().toLowerCase();
+                          const sDept = (s.department || "").trim().toLowerCase();
+                          return sCG === cleanSel || sDept === cleanSel || sCG.includes(cleanSel) || cleanSel.includes(sCG);
+                        }).length;
+                        return `${count} Students in Cohort`;
+                      })()}
                     </span>
                   </div>
                 </div>
@@ -2657,7 +2679,10 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                         </div>
                                         <div className="truncate">
                                           <div className="font-bold text-slate-800 text-xs truncate">{st.name}</div>
-                                          <div className="text-[10px] text-slate-400 font-medium">{st.classGroup || "Cohort"}</div>
+                                          <div className="text-[10px] text-indigo-600 font-bold font-mono">
+                                            {st.register_number || st.roll_number || st.id}
+                                            <span className="text-slate-400 font-medium font-sans ml-1.5">• {st.classGroup || "BCA - Semester 5"}</span>
+                                          </div>
                                         </div>
                                       </div>
 
@@ -2691,12 +2716,15 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                               <form onSubmit={handleSaveEval} className="space-y-4">
 
                                 {/* Selected Student Header */}
-                                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
                                   <div>
-                                    <h4 className="font-black text-slate-800 text-sm flex items-center gap-2">
+                                    <h4 className="font-black text-slate-800 text-sm flex items-center gap-2 flex-wrap">
                                       Evaluating: {selectedStudent.name}
+                                      <span className="text-xs px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-150 text-indigo-700 font-mono font-bold">
+                                        {selectedStudent.register_number || selectedStudent.roll_number || selectedStudent.id}
+                                      </span>
                                     </h4>
-                                    <p className="text-[11px] text-slate-500 font-medium">{req.subject} • {selectedStudent.classGroup}</p>
+                                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">{req.subject} • {selectedStudent.classGroup || "BCA - Semester 5"}</p>
                                   </div>
 
                                   {/* Attendance Selector */}
@@ -2726,29 +2754,36 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                     <span className="text-[10px] text-slate-400 font-bold">{evalQuestions.length} Questions</span>
                                   </div>
 
-                                  {/* List of Dynamic Questions */}
+                                  {/* List of Dynamic Typed Questions */}
                                   <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                                     {evalQuestions.map((qItem, idx) => (
-                                      <div key={qItem.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2">
-                                        <div className="flex items-start justify-between gap-2">
+                                      <div key={qItem.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50/80 space-y-2.5">
+                                        <div className="flex items-center gap-2">
+                                          <span className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 text-[10px] font-black flex items-center justify-center shrink-0">
+                                            Q{idx + 1}
+                                          </span>
                                           <input
                                             type="text"
                                             value={qItem.question}
+                                            placeholder={`Type question #${idx + 1} asked to student...`}
                                             onChange={e => handleUpdateQuestion(qItem.id, "question", e.target.value)}
-                                            className="font-bold text-xs text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none w-full"
+                                            className="font-bold text-xs text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-1.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none w-full"
                                           />
-                                          <button
-                                            type="button"
-                                            onClick={() => handleRemoveQuestion(qItem.id)}
-                                            className="text-slate-400 hover:text-rose-500 transition-colors p-1"
-                                            title="Remove Question"
-                                          >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          </button>
+                                          {evalQuestions.length > 1 && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleRemoveQuestion(qItem.id)}
+                                              className="text-slate-400 hover:text-rose-500 transition-colors p-1 shrink-0"
+                                              title="Remove Question"
+                                            >
+                                              <Trash2 className="w-4 h-4" />
+                                            </button>
+                                          )}
                                         </div>
 
                                         {/* Question Score Slider */}
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-3 px-1">
+                                          <span className="text-[10px] text-slate-400 font-bold uppercase shrink-0">Rating:</span>
                                           <input
                                             type="range" min={1} max={10} value={qItem.score}
                                             onChange={e => handleUpdateQuestion(qItem.id, "score", Number(e.target.value))}
@@ -2760,21 +2795,23 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                     ))}
                                   </div>
 
-                                  {/* Add Custom Question Button */}
-                                  <div className="flex gap-2 pt-1">
-                                    <input
-                                      type="text"
-                                      placeholder="Add custom question (e.g. Asked about REST APIs)..."
-                                      value={newQuestionText}
-                                      onChange={e => setNewQuestionText(e.target.value)}
-                                      className="flex-1 px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-1 focus:ring-indigo-500"
-                                    />
+                                  {/* Add Question Button */}
+                                  <div className="pt-1">
                                     <button
                                       type="button"
-                                      onClick={handleAddQuestion}
-                                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer transition-all shrink-0"
+                                      onClick={() => {
+                                        const newQ: StructuredQuestion = {
+                                          id: `q_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                                          question: "",
+                                          maxScore: 10,
+                                          score: 7,
+                                          notes: ""
+                                        };
+                                        setEvalQuestions(prev => [...prev, newQ]);
+                                      }}
+                                      className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-black rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border border-indigo-200/80 transition-all"
                                     >
-                                      <Plus className="w-3.5 h-3.5" /> Add
+                                      <Plus className="w-3.5 h-3.5" /> + Add Another Question Asked
                                     </button>
                                   </div>
                                 </div>
