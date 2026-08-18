@@ -3725,7 +3725,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         if (res.success) {
           setShowDeptModal(false);
           toast("Course & Batch details updated successfully.", "success");
-          refreshData();
+          await refreshData();
         } else {
           setModalError(res.message || "Failed to update course.");
         }
@@ -3734,7 +3734,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         if (res.success) {
           setShowDeptModal(false);
           toast("Course & Batch created successfully.", "success");
-          refreshData();
+          await refreshData();
         } else {
           setModalError(res.message || "Failed to create course.");
         }
@@ -4032,13 +4032,19 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setGenSuccess("");
   };
 
-  const handleClearTimetableClick = async () => {
-    if (!viewerClassGroup) return;
-    if (await showConfirm({ title: "Clear Timetable", message: `Are you sure you want to delete and clear the entire timetable for "${viewerClassGroup}"? This will permanently release all scheduled periods and cannot be undone.`, danger: true, confirmLabel: "Clear Timetable" })) {
+  const handleClearTimetableClick = async (targetGroupArg?: string) => {
+    const isGenTab = timetableSubTab === "generate";
+    const targetGroup = targetGroupArg || (isGenTab ? (genClassGroup || viewerClassGroup) : viewerClassGroup);
+    if (!targetGroup) {
+      toast("Please select a course or cohort name first.", "warning");
+      return;
+    }
+    if (await showConfirm({ title: "Clear Timetable", message: `Are you sure you want to delete and clear the entire timetable for "${targetGroup}"? This will permanently release all scheduled periods and cannot be undone.`, danger: true, confirmLabel: "Clear Timetable" })) {
       try {
-        const res = await clearTimetable(viewerClassGroup);
+        const res = await clearTimetable(targetGroup);
         if (res.success) {
-          toast(`Successfully cleared all slots for ${viewerClassGroup}.`, "success");
+          toast(`Successfully cleared all slots for ${targetGroup}.`, "success");
+          refreshData();
         } else {
           toast(`Error clearing timetable: ${res.message}`, "error");
         }
@@ -6687,43 +6693,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 )}
 
                                 {viewerClassGroup && (
-                                  <div className="flex gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={handleDownloadGridTemplate}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-150 bg-emerald-50/50 text-emerald-700 text-xs font-bold hover:bg-emerald-50 hover:text-emerald-850 hover:border-emerald-200 transition-all cursor-pointer shadow-sm active:scale-95 duration-150"
-                                      title="Download Excel Template for editing"
-                                    >
-                                      <Download className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                                      <span>Download Template</span>
-                                    </button>
-
-                                    <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-150 bg-blue-50/50 text-blue-700 text-xs font-bold hover:bg-blue-50 hover:text-blue-850 hover:border-blue-200 transition-all cursor-pointer shadow-sm active:scale-95 duration-150 select-none">
-                                      <Upload className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                                      <span>Upload Timetable</span>
-                                      <input
-                                        type="file"
-                                        accept=".xlsx, .xls"
-                                        onChange={handleUploadGrid}
-                                        className="hidden"
-                                      />
-                                    </label>
-
+                                  <div className="flex items-center gap-2">
                                     <button
                                       type="button"
                                       onClick={handleRegenerateClick}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-150 bg-indigo-50/50 text-indigo-700 text-xs font-bold hover:bg-indigo-50 hover:text-indigo-850 hover:border-indigo-200 transition-all cursor-pointer shadow-sm active:scale-95 duration-150"
+                                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 text-indigo-700 text-xs font-black hover:bg-indigo-100 hover:border-indigo-300 transition-all cursor-pointer shadow-xs active:scale-95 duration-150"
+                                      title="Open in Timetable Generator Engine to edit, regenerate, download templates, or clear timetable"
                                     >
                                       <Sparkles className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                      <span>Regenerate</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={handleClearTimetableClick}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-150 bg-rose-50/50 text-rose-700 text-xs font-bold hover:bg-rose-50 hover:text-rose-850 hover:border-rose-200 transition-all cursor-pointer shadow-sm active:scale-95 duration-150"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5 text-rose-600 shrink-0" />
-                                      <span>Clear Timetable</span>
+                                      <span>Timetable Engine &amp; Actions →</span>
                                     </button>
                                   </div>
                                 )}
@@ -6900,6 +6878,119 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </div>
                         ) : (
                           <div className="space-y-6">
+                            {/* ── TIMETABLE GENERATOR ENGINE ACTION BAR & TOOLTIPS ── */}
+                            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 animate-fadeIn">
+                              <div className="flex items-center gap-3">
+                                <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                                  <Sparkles className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Timetable Engine Controls</h3>
+                                  <p className="text-[11px] text-slate-500 font-medium">
+                                    Target Cohort: <span className="font-bold text-indigo-650">{genClassGroup || (genSelectedCourse ? `${genSelectedCourse} - ${genSelectedSemester}` : "Select Course Below")}</span>
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                {/* Download Template Button with auto-tooltip */}
+                                <div className="relative group">
+                                  <button
+                                    type="button"
+                                    onClick={handleDownloadGridTemplate}
+                                    disabled={!genSelectedCourse || !genClassGroup}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-xs cursor-pointer select-none active:scale-95 duration-150 ${
+                                      !genSelectedCourse || !genClassGroup
+                                        ? "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
+                                        : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                    }`}
+                                  >
+                                    <Download className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                    <span>Download Template</span>
+                                  </button>
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none min-w-[210px] animate-fadeIn">
+                                    <div className="bg-slate-900 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl border border-slate-700 text-center leading-tight">
+                                      📥 Download pre-filled Excel template to edit class schedule offline.
+                                    </div>
+                                    <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700"></div>
+                                  </div>
+                                </div>
+
+                                {/* Upload Timetable Button with auto-tooltip */}
+                                <div className="relative group">
+                                  <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-xs cursor-pointer select-none active:scale-95 duration-150 ${
+                                    !genSelectedCourse || !genClassGroup
+                                      ? "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
+                                      : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                  }`}>
+                                    <Upload className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                                    <span>Upload Timetable</span>
+                                    {genSelectedCourse && genClassGroup && (
+                                      <input
+                                        type="file"
+                                        accept=".xlsx, .xls"
+                                        onChange={handleUploadGrid}
+                                        className="hidden"
+                                      />
+                                    )}
+                                  </label>
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none min-w-[210px] animate-fadeIn">
+                                    <div className="bg-slate-900 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl border border-slate-700 text-center leading-tight">
+                                      📤 Upload completed Excel spreadsheet to instantly sync scheduled slots.
+                                    </div>
+                                    <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700"></div>
+                                  </div>
+                                </div>
+
+                                {/* Auto Regenerate Button with auto-tooltip */}
+                                <div className="relative group">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (genStep === 1) {
+                                        handleTransitionToStep2();
+                                      } else {
+                                        handleGeneratePreview();
+                                      }
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-bold hover:bg-indigo-100 transition-all cursor-pointer shadow-xs active:scale-95 duration-150"
+                                  >
+                                    <Sparkles className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                                    <span>Regenerate</span>
+                                  </button>
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none min-w-[210px] animate-fadeIn">
+                                    <div className="bg-slate-900 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl border border-slate-700 text-center leading-tight">
+                                      ✨ Calculate and place conflict-free faculty and room schedules automatically.
+                                    </div>
+                                    <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700"></div>
+                                  </div>
+                                </div>
+
+                                {/* Clear Timetable Button with auto-tooltip */}
+                                <div className="relative group">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleClearTimetableClick(genClassGroup || viewerClassGroup)}
+                                    disabled={!genClassGroup && !viewerClassGroup}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-xs cursor-pointer select-none active:scale-95 duration-150 ${
+                                      !genClassGroup && !viewerClassGroup
+                                        ? "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
+                                        : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                    }`}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                                    <span>Clear Timetable</span>
+                                  </button>
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none min-w-[210px] animate-fadeIn">
+                                    <div className="bg-slate-900 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl border border-slate-700 text-center leading-tight">
+                                      🗑️ Permanently clear all scheduled periods for this cohort to start fresh.
+                                    </div>
+                                    <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700"></div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
                             {/* TIMETABLE AUTO GENERATOR ENGINE STEPS */}
                             {genStep === 1 && (
                               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6 animate-fadeIn">

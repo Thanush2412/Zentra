@@ -2,16 +2,21 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { seedDatabase } from "@/lib/seed";
 
+let isDatabaseInitialized = false;
+
 export async function GET(request: Request) {
   try {
     const db = await getDb();
 
-    // Check if table structure exists by querying admin_users; if not, initialize database.
-    try {
-      await db.get("SELECT COUNT(*) as count FROM admin_users");
-    } catch (_) {
-      // Table doesn't exist, run seed database to initialize structure
-      await seedDatabase();
+    // Check if table structure exists only once on first boot
+    if (!isDatabaseInitialized) {
+      try {
+        await db.get("SELECT COUNT(*) as count FROM admin_users");
+        isDatabaseInitialized = true;
+      } catch (_) {
+        await seedDatabase();
+        isDatabaseInitialized = true;
+      }
     }
 
     const { searchParams } = new URL(request.url);
@@ -60,8 +65,8 @@ export async function GET(request: Request) {
     const attendanceSql = (role === "student" && userId)
       ? "SELECT * FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 500"
       : collegeId
-        ? "SELECT sa.* FROM student_attendance sa JOIN students s ON sa.studentId = s.id WHERE s.college_id = ? ORDER BY sa.dateStr ASC"
-        : "SELECT * FROM student_attendance ORDER BY dateStr ASC LIMIT 5000";
+        ? "SELECT * FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) ORDER BY dateStr DESC LIMIT 1500"
+        : "SELECT * FROM student_attendance ORDER BY dateStr DESC LIMIT 3000";
     const attendanceParams = (role === "student" && userId) ? [userId] : collegeId ? [collegeId] : [];
 
     const isStudentOrMentor = role === "student" || role === "mentor";
@@ -81,36 +86,48 @@ export async function GET(request: Request) {
     ] = await Promise.all([
       db.all(mentorSql, ...mentorParams),
       db.all(slotSql, ...slotParams),
-      db.all("SELECT * FROM handover_requests ORDER BY timestamp DESC LIMIT 300"),
-      db.all("SELECT * FROM approved_handovers"),
-      db.all("SELECT id, type, description, actorName, actorRole, timestamp, old_status, new_status, reason, changed_by FROM audit_logs ORDER BY timestamp DESC LIMIT 100"),
+      collegeId
+        ? db.all("SELECT * FROM handover_requests WHERE requestorId IN (SELECT id FROM mentors WHERE college_id = ?) OR targetStaffId IN (SELECT id FROM mentors WHERE college_id = ?) ORDER BY timestamp DESC LIMIT 150", collegeId, collegeId).catch(() => [])
+        : db.all("SELECT * FROM handover_requests ORDER BY timestamp DESC LIMIT 200"),
+      db.all("SELECT * FROM approved_handovers LIMIT 200"),
+      db.all("SELECT id, type, description, actorName, actorRole, timestamp, old_status, new_status, reason, changed_by FROM audit_logs ORDER BY timestamp DESC LIMIT 60"),
       db.all(subjectSql, ...subjectParams),
       db.all(courseSql, ...courseParams),
       db.all(studentSql, ...studentParams),
       db.all(attendanceSql, ...attendanceParams),
-      db.all("SELECT * FROM leave_requests ORDER BY timestamp DESC LIMIT 200"),
+      collegeId
+        ? db.all("SELECT * FROM leave_requests WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) ORDER BY timestamp DESC LIMIT 100", collegeId).catch(() => [])
+        : db.all("SELECT * FROM leave_requests ORDER BY timestamp DESC LIMIT 150"),
       db.all("SELECT * FROM colleges"),
-      db.all("SELECT id, user_id, title, message, is_read, link, type, created_at FROM notifications ORDER BY created_at DESC LIMIT 50"),
+      userId
+        ? db.all("SELECT id, user_id, title, message, is_read, link, type, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 30", userId).catch(() => [])
+        : db.all("SELECT id, user_id, title, message, is_read, link, type, created_at FROM notifications ORDER BY created_at DESC LIMIT 30"),
       db.all(announcementSql, ...announcementParams),
       db.all(holidaySql, ...holidayParams),
-      db.all("SELECT id, user_id, login_time, logout_time, ip, device FROM login_history ORDER BY login_time DESC LIMIT 50"),
-      db.all("SELECT id, email, role, reference_id, status, plain_password, must_change_password, last_login, created_at, updated_at FROM users"),
-      db.all("SELECT * FROM weekly_tasks LIMIT 500"),
-      db.all("SELECT * FROM student_tracker ORDER BY updated_at DESC LIMIT 500"),
-      !isStudentOrMentor ? db.all("SELECT * FROM sme_users") : Promise.resolve([]),
-      !isStudentOrMentor ? db.all("SELECT * FROM demo_sessions ORDER BY created_at DESC LIMIT 200") : Promise.resolve([]),
-      db.all("SELECT * FROM subject_groups ORDER BY name ASC"),
-      !isStudentOrMentor ? db.all("SELECT * FROM demo_rules ORDER BY created_at DESC") : Promise.resolve([]),
-      role === "admin" ? db.all("SELECT * FROM signup_requests ORDER BY created_at DESC LIMIT 100") : Promise.resolve([]),
-      !isStudentOrMentor ? db.all("SELECT * FROM demo_swap_requests ORDER BY created_at DESC LIMIT 100").catch(() => []) : Promise.resolve([]),
-      isAdminOrKAM ? db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC LIMIT 100").catch(() => []) : Promise.resolve([]),
-      isAdminOrKAM ? db.all("SELECT * FROM campus_issues ORDER BY created_at DESC LIMIT 100").catch(() => []) : Promise.resolve([]),
+      role === "admin" ? db.all("SELECT id, user_id, login_time, logout_time, ip, device FROM login_history ORDER BY login_time DESC LIMIT 40").catch(() => []) : Promise.resolve([]),
+      role === "admin" ? db.all("SELECT id, email, role, reference_id, status, plain_password, must_change_password, last_login, created_at, updated_at FROM users") : Promise.resolve([]),
+      collegeId
+        ? db.all("SELECT * FROM weekly_tasks WHERE mentor_id IN (SELECT id FROM mentors WHERE college_id = ?) LIMIT 300", collegeId).catch(() => [])
+        : db.all("SELECT * FROM weekly_tasks LIMIT 300"),
+      collegeId
+        ? db.all("SELECT * FROM student_tracker WHERE student_id IN (SELECT id FROM students WHERE college_id = ?) ORDER BY updated_at DESC LIMIT 300", collegeId).catch(() => [])
+        : db.all("SELECT * FROM student_tracker ORDER BY updated_at DESC LIMIT 300"),
+      !isStudentOrMentor ? db.all("SELECT * FROM sme_users").catch(() => []) : Promise.resolve([]),
+      !isStudentOrMentor ? db.all("SELECT * FROM demo_sessions ORDER BY created_at DESC LIMIT 100").catch(() => []) : Promise.resolve([]),
+      db.all("SELECT * FROM subject_groups ORDER BY name ASC").catch(() => []),
+      !isStudentOrMentor ? db.all("SELECT * FROM demo_rules ORDER BY created_at DESC").catch(() => []) : Promise.resolve([]),
+      role === "admin" ? db.all("SELECT * FROM signup_requests ORDER BY created_at DESC LIMIT 50").catch(() => []) : Promise.resolve([]),
+      !isStudentOrMentor ? db.all("SELECT * FROM demo_swap_requests ORDER BY created_at DESC LIMIT 50").catch(() => []) : Promise.resolve([]),
+      isAdminOrKAM ? db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC LIMIT 60").catch(() => []) : Promise.resolve([]),
+      isAdminOrKAM ? db.all("SELECT * FROM campus_issues ORDER BY created_at DESC LIMIT 60").catch(() => []) : Promise.resolve([]),
       db.all("SELECT * FROM academic_years").catch(() => []),
       db.all("SELECT * FROM academic_events ORDER BY date ASC").catch(() => []),
-      db.all("SELECT * FROM student_interviews ORDER BY created_at DESC LIMIT 200").catch(() => []),
-      db.all("SELECT * FROM interview_evaluations ORDER BY created_at DESC LIMIT 300").catch(() => []),
-      db.all("SELECT * FROM approvals ORDER BY created_at DESC LIMIT 100").catch(() => []),
-      db.all("SELECT * FROM leave_balances").catch(() => []),
+      collegeId
+        ? db.all("SELECT * FROM student_interviews WHERE origin_college_id = ? OR target_college_id = ? OR college_id = ? ORDER BY created_at DESC LIMIT 100", collegeId, collegeId, collegeId).catch(() => [])
+        : db.all("SELECT * FROM student_interviews ORDER BY created_at DESC LIMIT 100").catch(() => []),
+      db.all("SELECT * FROM interview_evaluations ORDER BY created_at DESC LIMIT 100").catch(() => []),
+      db.all("SELECT * FROM approvals ORDER BY created_at DESC LIMIT 60").catch(() => []),
+      db.all("SELECT * FROM leave_balances LIMIT 100").catch(() => []),
       db.all(departmentSql, ...departmentParams).catch(() => [])
     ]);
 
@@ -199,7 +216,7 @@ export async function GET(request: Request) {
       leaveBalances: leaveBalances || []
     }, {
       headers: {
-        "Cache-Control": "private, max-age=30, stale-while-revalidate=60"
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate"
       }
     });
   } catch (error: any) {

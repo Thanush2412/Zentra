@@ -666,7 +666,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       else if (role === "mentor") userId = localStorage.getItem("fp_mentor_id") || "";
       else if (role === "student") userId = localStorage.getItem("fp_student_id") || "";
 
-      const res = await fetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}`);
+      const res = await fetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}&_t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" }
+      });
       const data = await res.json();
       if (data.success) {
         setSlots(data.slots || []);

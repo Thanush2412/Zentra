@@ -239,7 +239,14 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   }
 
   return (
-    <div className="h-screen flex flex-col font-sans bg-warm-canvas text-gray-800 transition-colors duration-200 overflow-hidden">
+    <div className="h-screen flex flex-col font-sans bg-warm-canvas text-gray-800 transition-colors duration-200 overflow-hidden relative">
+      {/* Top indeterminate sync progress line */}
+      {isDataLoading && (
+        <div className="absolute top-0 left-0 right-0 h-0.5 z-50 overflow-hidden bg-indigo-100">
+          <div className="h-full bg-gradient-to-r from-indigo-500 via-[#D528A2] to-indigo-500 animate-pulse w-full" />
+        </div>
+      )}
+
       {/* Balanced Centered Global Header + Compact Right Floating Team Attendance Pill */}
       <div className="relative w-[92%] sm:w-[82%] md:w-[74%] lg:w-[66%] max-w-[1040px] mx-auto self-center mt-2.5 md:mt-4 z-30 shrink-0">
         <header className="floating-header w-full px-3 sm:px-6 py-2.5 md:py-4 flex items-center justify-between transition-all rounded-xl border border-slate-200/80 shadow-md bg-white/80 backdrop-blur-md">
@@ -262,7 +269,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
         </div>
 
         {/* Right: Profile trigger + Logout */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
 
           {/* Profile Dropdown trigger */}
           {/* Interactive Refresh Loader Button */}
@@ -278,7 +285,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
               }
             }}
             disabled={isManualRefreshing || isDataLoading}
-            className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-indigo-600 transition-all cursor-pointer shadow-xs disabled:opacity-70"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-indigo-600 transition-all cursor-pointer shadow-xs disabled:opacity-70"
             title="Click to reload latest data from server"
           >
             {isManualRefreshing || isDataLoading ? (
@@ -286,7 +293,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
             ) : (
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             )}
-            <span>{isManualRefreshing || isDataLoading ? "Syncing data..." : `Refreshed at ${refreshedAtTime || "Just now"}`}</span>
+            <span className="truncate max-w-[140px] sm:max-w-none">
+              {isManualRefreshing || isDataLoading ? "Syncing..." : `Synced: ${refreshedAtTime || "Just now"}`}
+            </span>
           </button>
 
           {/* Master Multi-Role Switcher (Restricted to thanush@faceprep.in) */}
