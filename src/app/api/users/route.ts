@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     const role = (searchParams.get("role") || "").toLowerCase().trim();
 
     const offset = (page - 1) * limit;
-    let query = "SELECT id, email, role, reference_id, status, last_login, created_at, updated_at FROM users WHERE 1=1";
+    let query = "SELECT id, email, role, reference_id, status, plain_password, must_change_password, last_login, created_at, updated_at FROM users WHERE 1=1";
     let countQuery = "SELECT COUNT(*) as count FROM users WHERE 1=1";
     const params: any[] = [];
     const countParams: any[] = [];
@@ -72,14 +72,15 @@ export async function POST(request: Request) {
       const userRole = (role || "mentor").toLowerCase().trim();
       const refId = (reference_id || "").trim() || `${userRole}_${Date.now()}`;
       const newId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-      const passHash = hashPassword(password ? password.trim() : "password123");
+      const rawPassword = password ? password.trim() : "password123";
+      const passHash = hashPassword(rawPassword);
       const userStatus = status || "Active";
       const nowStr = new Date().toISOString();
 
       await db.run(
-        `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [newId, cleanEmail, passHash, userRole, refId, userStatus, nowStr, nowStr]
+        `INSERT INTO users (id, email, password_hash, plain_password, role, reference_id, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [newId, cleanEmail, passHash, rawPassword, userRole, refId, userStatus, nowStr, nowStr]
       );
 
       // Auto-sync into role-specific tables so new KAMs, CAMs, Mentors appear in dropdowns instantly
@@ -104,83 +105,51 @@ export async function POST(request: Request) {
       }
       if (!safeKamId) {
         const firstKam = await db.get("SELECT id FROM kam_users ORDER BY rowid ASC LIMIT 1");
-        if (!firstKam) {
-          await db.run(
-            "INSERT INTO kam_users (id, name, email, title) VALUES (?, ?, ?, ?)",
-            ["kam_default", "Default Key Account Manager", "kam.default@faceprep.in", "Key Account Manager"]
-          );
-          safeKamId = "kam_default";
-        } else {
-          safeKamId = firstKam.id;
-        }
+        safeKamId = firstKam ? firstKam.id : null;
       }
 
       if (userRole === "kam") {
-        const existingKam = await db.get("SELECT id FROM kam_users WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
-        if (!existingKam) {
-          await db.run(
-            "INSERT INTO kam_users (id, name, email, title) VALUES (?, ?, ?, ?)",
-            [refId, displayName + " (KAM)", cleanEmail, "Key Account Manager"]
-          );
-        }
-      } else if (userRole === "cam") {
-        const existingCam = await db.get("SELECT id FROM campus_managers WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
-        if (!existingCam && safeColId && safeKamId) {
-          await db.run(
-            "INSERT INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)",
-            [refId, displayName + " (CM)", cleanEmail, safeColId, safeKamId]
-          );
-        }
+        await db.run(
+          `INSERT OR IGNORE INTO kam_users (id, name, email, title) VALUES (?, ?, ?, ?)`,
+          [refId, displayName, cleanEmail, body.title || "Key Account Manager"]
+        );
+      } else if (userRole === "cam" || userRole === "cm") {
+        await db.run(
+          `INSERT OR IGNORE INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)`,
+          [refId, displayName, cleanEmail, safeColId, safeKamId]
+        );
       } else if (userRole === "mentor") {
-        const existingMentor = await db.get("SELECT id FROM mentors WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
-        if (!existingMentor && safeColId) {
-          await db.run(
-            `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, college_id, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              refId,
-              displayName,
-              cleanEmail,
-              body.department || "Computer Science",
-              "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-              body.subjects || "General Subjects",
-              body.classes || "All Classes",
-              safeColId,
-              userStatus,
-              nowStr,
-              nowStr
-            ]
-          );
-        }
+        await db.run(
+          `INSERT OR IGNORE INTO mentors (id, name, email, college_id, department, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'Active', ?, ?)`,
+          [refId, displayName, cleanEmail, safeColId, body.department || "Engineering", nowStr, nowStr]
+        );
       } else if (userRole === "sme") {
-        const existingSme = await db.get("SELECT id FROM sme_users WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
-        if (!existingSme) {
-          await db.run(
-            "INSERT INTO sme_users (id, name, email) VALUES (?, ?, ?)",
-            [refId, displayName, cleanEmail]
-          );
-        }
+        await db.run(
+          `INSERT OR IGNORE INTO sme_users (id, name, email, department) VALUES (?, ?, ?, ?)`,
+          [refId, displayName, cleanEmail, body.department || "Subject Matter Expert"]
+        );
       } else if (userRole === "student") {
-        const existingStudent = await db.get("SELECT id FROM students WHERE id = ? OR LOWER(email) = ?", [refId, cleanEmail]);
-        if (!existingStudent && safeColId) {
-          await db.run(
-            "INSERT INTO students (id, name, email, classGroup, college_id) VALUES (?, ?, ?, ?, ?)",
-            [refId, displayName, cleanEmail, body.classGroup || "General", safeColId]
-          );
-        }
+        await db.run(
+          `INSERT OR IGNORE INTO students (id, name, email, college_id, department, classGroup, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?)`,
+          [refId, displayName, cleanEmail, safeColId, body.department || "Engineering", body.classGroup || "General", nowStr, nowStr]
+        );
       }
 
-      return NextResponse.json({ success: true, message: "User credential created successfully.", id: newId });
+      return NextResponse.json({
+        success: true,
+        message: `User credential created successfully with initial password '${rawPassword}'.`,
+        user: { id: newId, email: cleanEmail, role: userRole, reference_id: refId, status: userStatus, plain_password: rawPassword }
+      });
     }
 
     // Actions targeting an existing user by userId / reference_id
-    if (!userId || !action) {
-      return NextResponse.json({ success: false, message: "Missing userId or action" }, { status: 400 });
+    if (!userId) {
+      return NextResponse.json({ success: false, message: "Missing userId" }, { status: 400 });
     }
 
-    const user = await db.get("SELECT * FROM users WHERE id = ? OR reference_id = ?", [userId, userId]);
+    const user = await db.get("SELECT * FROM users WHERE id = ?", userId);
     if (!user) {
-      return NextResponse.json({ success: false, message: "User credential not found" }, { status: 404 });
+      return NextResponse.json({ success: false, message: "User not found" }, { status: 404 });
     }
 
     if (action === "toggle_status") {
@@ -200,10 +169,14 @@ export async function POST(request: Request) {
     }
 
     if (action === "reset_password") {
-      const defaultPasswordHash = hashPassword("password123");
+      const defaultPassword = "password123";
+      const defaultPasswordHash = hashPassword(defaultPassword);
       const nowStr = new Date().toISOString();
 
-      await db.run("UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = ? WHERE id = ?", [defaultPasswordHash, nowStr, user.id]);
+      await db.run(
+        "UPDATE users SET password_hash = ?, plain_password = ?, must_change_password = 1, updated_at = ? WHERE id = ?",
+        [defaultPasswordHash, defaultPassword, nowStr, user.id]
+      );
 
       // Sync password to role specific tables
       if (user.role === "student" && user.reference_id) {
@@ -244,17 +217,19 @@ export async function PUT(request: Request) {
     const nowStr = new Date().toISOString();
 
     let passHash = existingUser.password_hash;
+    let plainPass = existingUser.plain_password || "password123";
     let mustChange = existingUser.must_change_password || 0;
     if (newPassword && newPassword.trim()) {
-      passHash = hashPassword(newPassword.trim());
+      plainPass = newPassword.trim();
+      passHash = hashPassword(plainPass);
       mustChange = 0;
     }
 
     await db.run(
       `UPDATE users
-       SET email = ?, role = ?, reference_id = ?, status = ?, password_hash = ?, must_change_password = ?, updated_at = ?
+       SET email = ?, role = ?, reference_id = ?, status = ?, password_hash = ?, plain_password = ?, must_change_password = ?, updated_at = ?
        WHERE id = ?`,
-      [cleanEmail, userRole, refId, userStatus, passHash, mustChange, nowStr, id]
+      [cleanEmail, userRole, refId, userStatus, passHash, plainPass, mustChange, nowStr, id]
     );
 
     return NextResponse.json({ success: true, message: "User credential updated successfully." });

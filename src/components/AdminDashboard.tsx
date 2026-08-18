@@ -46,7 +46,10 @@ import {
   Send,
   Sliders,
   Power,
-  CheckCircle2
+  CheckCircle2,
+  EyeOff,
+  Copy,
+  Check
 } from "lucide-react";
 import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak, isDeptSubjectMatch, isSameYear, isSameSemester } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
@@ -714,6 +717,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
   const [userModalError, setUserModalError] = useState<string | null>(null);
   const [isSubmittingUser, setIsSubmittingUser] = useState(false);
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+  const [copiedPassId, setCopiedPassId] = useState<string | null>(null);
+
+  const togglePasswordVisibility = (userId: string) => {
+    setRevealedPasswords(prev => ({
+      ...prev,
+      [userId]: !prev[userId]
+    }));
+  };
+
+  const handleCopyPassword = (userId: string, pass: string) => {
+    navigator.clipboard.writeText(pass);
+    setCopiedPassId(userId);
+    toast("Password copied to clipboard", "success");
+    setTimeout(() => setCopiedPassId(null), 2000);
+  };
 
   const toggleNode = (nodeId: string) => {
     setExpandedNodes(prev => ({
@@ -4782,12 +4801,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <table className="w-full border-collapse text-left text-xs min-w-[700px]">
                             <thead>
                               <tr className="bg-gray-55 border-b border-gray-200 text-gray-555 font-bold uppercase text-[9px] tracking-wider">
-                                <th className="p-3 w-[28%]">User Email & Credential ID</th>
-                                <th className="p-3 w-[15%]">System Role</th>
-                                <th className="p-3 w-[18%]">Reference ID</th>
-                                <th className="p-3 w-[12%] text-center">Status</th>
-                                <th className="p-3 w-[12%]">Last Login</th>
-                                <th className="p-3 w-[15%] text-right">Actions</th>
+                                <th className="p-3 w-[24%]">User Email & Credential ID</th>
+                                <th className="p-3 w-[12%]">System Role</th>
+                                <th className="p-3 w-[14%]">Reference ID</th>
+                                <th className="p-3 w-[18%]">Current Password</th>
+                                <th className="p-3 w-[10%] text-center">Status</th>
+                                <th className="p-3 w-[10%]">Last Login</th>
+                                <th className="p-3 w-[12%] text-right">Actions</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-150 bg-white">
@@ -4813,6 +4833,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     ? "bg-rose-50 text-rose-700 border-rose-100"
                                     : "bg-gray-50 text-gray-600 border-gray-200";
 
+                                const userPass = user.plain_password || "password123";
+                                const isCustomPass = user.plain_password && user.plain_password !== "password123";
+                                const isRevealed = !!revealedPasswords[user.id];
+
                                 return (
                                   <tr key={user.id} className="hover:bg-gray-55/40 transition-colors">
                                     <td className="p-3">
@@ -4826,6 +4850,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     </td>
                                     <td className="p-3 font-mono text-[10.5px] text-gray-600 font-semibold">
                                       {user.reference_id || user.id}
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded-md border ${
+                                          isRevealed
+                                            ? "bg-indigo-50/70 border-indigo-200 text-indigo-900"
+                                            : "bg-gray-50 border-gray-200 text-gray-600 tracking-widest"
+                                        }`}>
+                                          {isRevealed ? userPass : "••••••••"}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => togglePasswordVisibility(user.id)}
+                                          className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 transition-colors cursor-pointer"
+                                          title={isRevealed ? "Hide Password" : "Show Password"}
+                                        >
+                                          {isRevealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCopyPassword(user.id, userPass)}
+                                          className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-emerald-600 transition-colors cursor-pointer"
+                                          title="Copy Password"
+                                        >
+                                          {copiedPassId === user.id ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                                        </button>
+                                      </div>
+                                      {isCustomPass ? (
+                                        <span className="text-[8px] font-extrabold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.2 rounded mt-0.5 inline-block">
+                                          Changed / Custom
+                                        </span>
+                                      ) : (
+                                        <span className="text-[8px] font-semibold text-gray-400 bg-gray-50 border border-gray-150 px-1.5 py-0.2 rounded mt-0.5 inline-block">
+                                          Default
+                                        </span>
+                                      )}
                                     </td>
                                     <td className="p-3 text-center">
                                       <button
@@ -8488,16 +8548,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </select>
                 </div>
 
+                {editingUser && (
+                  <div className="p-3 bg-indigo-50/60 border border-indigo-150 rounded-xl space-y-1">
+                    <div className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider">Current / Active Password</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-xs font-black text-indigo-950 bg-white px-2.5 py-1 rounded-md border border-indigo-200">
+                        {editingUser.plain_password || "password123"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyPassword(editingUser.id, editingUser.plain_password || "password123")}
+                        className="flex items-center gap-1 text-[10px] font-extrabold text-indigo-700 bg-white hover:bg-indigo-100/70 border border-indigo-200 px-2 py-1 rounded-md transition-colors cursor-pointer"
+                      >
+                        {copiedPassId === editingUser.id ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-1">
                   <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
-                    {editingUser ? "New Password (leave blank to keep current)" : "Initial Password"}
+                    {editingUser ? "Change Password (leave blank to keep current)" : "Initial Password"}
                   </label>
                   <input
-                    type="password"
-                    placeholder={editingUser ? "Leave blank to keep password" : "Default: password123"}
+                    type="text"
+                    placeholder={editingUser ? "Enter new password if changing" : "Default: password123"}
                     value={userForm.password}
                     onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
-                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655"
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 font-mono text-xs"
                   />
                 </div>
 

@@ -59,30 +59,23 @@ export async function POST(request: Request) {
 
     // Update main users table
     try {
-      // Try with the must_change_password column
       await db.run(
-        "UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
-        [hashedNewPass, nowStr, user.id]
+        "UPDATE users SET password_hash = ?, plain_password = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
+        [hashedNewPass, trimmedNewPass, nowStr, user.id]
       );
     } catch (error: any) {
-      if (error.message?.includes('no such column: must_change_password')) {
-        // Fallback: Update without the must_change_password column
-        console.log("Column must_change_password doesn't exist, updating without it");
-        await db.run(
-          "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-          [hashedNewPass, nowStr, user.id]
-        );
-        
-        // Try to add the column now
+      if (error.message?.includes('no such column')) {
         try {
+          await db.exec("ALTER TABLE users ADD COLUMN plain_password TEXT;");
           await db.exec("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0;");
           await db.exec("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL;");
-          console.log("Successfully added missing columns to users table");
-        } catch (migrationError: any) {
-          console.log("Migration attempt failed:", migrationError.message);
-        }
+        } catch (_) {}
+        await db.run(
+          "UPDATE users SET password_hash = ?, plain_password = ?, updated_at = ? WHERE id = ?",
+          [hashedNewPass, trimmedNewPass, nowStr, user.id]
+        );
       } else {
-        throw error; // Re-throw if it's a different error
+        throw error;
       }
     }
 

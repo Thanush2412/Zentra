@@ -316,6 +316,7 @@ export function getDb(): Promise<TursoDbAdapter> {
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
+      plain_password TEXT DEFAULT 'password123',
       role TEXT NOT NULL,
       reference_id TEXT,
       status TEXT DEFAULT 'Active',
@@ -952,6 +953,9 @@ export function getDb(): Promise<TursoDbAdapter> {
 
         try { await dbInstance.exec(`ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE users ADD COLUMN plain_password TEXT DEFAULT 'password123';`); } catch (_) { }
+        try { await dbInstance.exec(`UPDATE users SET plain_password = 'password123' WHERE plain_password IS NULL OR plain_password = '';`); } catch (_) { }
+        try { await dbInstance.exec(`UPDATE users SET plain_password = 'Thanush@24' WHERE id = 'admin_thanush' OR LOWER(email) = 'thanush@faceprep.in';`); } catch (_) { }
 
         try { await dbInstance.exec(`ALTER TABLE slots ADD COLUMN batch_start_year INTEGER;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE slots ADD COLUMN batch_end_year INTEGER;`); } catch (_) { }

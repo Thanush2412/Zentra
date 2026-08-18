@@ -29,17 +29,18 @@ const getCourseFromClassGroup = (cg: string): string => {
   if (!cg) return "";
   let cleaned = cg.replace(/\s*-\s*(Semester|Sem|Year|Yr|Shift|Batch)\s*([0-9]+|[IVXLCDM]+)/gi, "");
   cleaned = cleaned.replace(/\s*(Semester|Sem|Year|Yr|Shift|Batch)\s*([0-9]+|[IVXLCDM]+)/gi, "");
+  cleaned = cleaned.replace(/^([IVXLCDM]+)[\s\-_]+/i, ""); // Strip leading Roman numerals (e.g. "III BCA" -> "BCA")
   return cleaned.trim();
 };
 
 const getSemesterFromClassGroup = (cg: string): string => {
   const lower = cg.toLowerCase();
   if (lower.includes("sem vi") || lower.includes("semester vi") || lower.includes("sem 6") || lower.includes("semester 6")) return "Semester 6";
-  if (lower.includes("sem v") || lower.includes("semester v") || lower.includes("sem 5") || lower.includes("semester 5")) return "Semester 5";
+  if (lower.includes("sem v") || lower.includes("semester v") || lower.includes("sem 5") || lower.includes("semester 5") || lower.startsWith("iii ") || lower.includes(" 3rd ") || lower.includes("year 3") || lower.includes("3rd year")) return "Semester 5";
   if (lower.includes("sem iv") || lower.includes("semester iv") || lower.includes("sem 4") || lower.includes("semester 4")) return "Semester 4";
-  if (lower.includes("sem iii") || lower.includes("semester iii") || lower.includes("sem 3") || lower.includes("semester 3")) return "Semester 3";
+  if (lower.includes("sem iii") || lower.includes("semester iii") || lower.includes("sem 3") || lower.includes("semester 3") || lower.startsWith("ii ") || lower.includes(" 2nd ") || lower.includes("year 2") || lower.includes("2nd year")) return "Semester 3";
   if (lower.includes("sem ii") || lower.includes("semester ii") || lower.includes("sem 2") || lower.includes("semester 2")) return "Semester 2";
-  if (lower.includes("sem i") || lower.includes("semester i") || lower.includes("sem 1") || lower.includes("semester 1")) return "Semester 1";
+  if (lower.includes("sem i") || lower.includes("semester i") || lower.includes("sem 1") || lower.includes("semester 1") || lower.startsWith("i ") || lower.includes(" 1st ") || lower.includes("year 1") || lower.includes("1st year")) return "Semester 1";
   return "All Semesters";
 };
 

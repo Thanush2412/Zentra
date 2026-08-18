@@ -94,7 +94,7 @@ export async function GET(request: Request) {
       db.all(announcementSql, ...announcementParams),
       db.all(holidaySql, ...holidayParams),
       db.all("SELECT id, user_id, login_time, logout_time, ip, device FROM login_history ORDER BY login_time DESC LIMIT 50"),
-      db.all("SELECT id, email, role, reference_id, status, must_change_password, last_login, created_at, updated_at FROM users"),
+      db.all("SELECT id, email, role, reference_id, status, plain_password, must_change_password, last_login, created_at, updated_at FROM users"),
       db.all("SELECT * FROM weekly_tasks LIMIT 500"),
       db.all("SELECT * FROM student_tracker ORDER BY updated_at DESC LIMIT 500"),
       !isStudentOrMentor ? db.all("SELECT * FROM sme_users") : Promise.resolve([]),

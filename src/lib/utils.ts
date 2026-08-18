@@ -717,17 +717,25 @@ export function resolveClassGroupDetailsFromState(
     }
   }
 
-  // If no semester found in classGroup, check for a Year indicator (e.g. "Year II", "Year 2", "2nd Year")
+  // If no semester found in classGroup, check for a Year indicator (e.g. "Year II", "Year 2", "2nd Year", "III BCA", "III Year")
   let resolvedYear = "";
   if (!resolvedSemester) {
-    const yearMatch = cgLower.match(/year[\s\-_]*([ivxldc\d]+)/i) || cgLower.match(/([1234])(?:st|nd|rd|th)?[\s\-_]*year/i);
+    const yearMatch =
+      cgLower.match(/year[\s\-_]*([ivxldc\d]+)/i) ||
+      cgLower.match(/([1234])(?:st|nd|rd|th)?[\s\-_]*year/i) ||
+      cgLower.match(/^([ivx]+)[\s\-_]+[a-z0-9]/i) ||
+      cgLower.match(/[\s\-_]+([ivx]+)[\s\-_]*(?:year|yr|bca|bsc|bcom|ba|be|btech)/i);
+
     if (yearMatch) {
       const yrVal = yearMatch[1].toLowerCase();
       const yrNum = parseInt(yrVal, 10) || romanMap[yrVal];
       if (yrNum) {
         resolvedYear = `Year ${yrNum}`;
-        const defaultSemNum = yrNum * 2 - 1;
-        const matchedSem = uniqueSemesters.find((s: any) => s.toLowerCase().includes(String(defaultSemNum)));
+        const defaultSemNum = yrNum * 2 - 1; // Year 1 -> Sem 1, Year 2 -> Sem 3, Year 3 -> Sem 5, Year 4 -> Sem 7
+        const matchedSem = uniqueSemesters.find((s: any) => {
+          const sNum = parseInt(String(s).replace(/\D/g, ""), 10);
+          return sNum === defaultSemNum;
+        });
         if (matchedSem) {
           resolvedSemester = matchedSem;
         } else {
@@ -738,7 +746,7 @@ export function resolveClassGroupDetailsFromState(
   }
 
   if (!resolvedSemester) {
-    resolvedSemester = "Semester 1";
+    resolvedSemester = "Semester 5";
   }
 
   // 3. Resolve Year

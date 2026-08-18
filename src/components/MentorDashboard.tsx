@@ -1478,10 +1478,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     if (cg.includes("2025-2028")) return "2nd Year";
     if (cg.includes("2024-2027")) return "3rd Year";
 
-    // 3. Fallback to explicit year strings
-    if (cg.includes("3rd year") || cg.includes("3rdyr") || cg.includes("3rd yr") || cg.includes("3nd year") || cg.includes("3ndyr")) return "3rd Year";
-    if (cg.includes("2nd year") || cg.includes("2ndyr") || cg.includes("2nd yr")) return "2nd Year";
-    if (cg.includes("1st year") || cg.includes("1styr") || cg.includes("1st yr") || cg.includes("1nd year") || cg.includes("1ndyr")) return "1st Year";
+    // 3. Fallback to explicit year strings and Roman numeral prefixes (e.g. III BCA, II BCA)
+    if (cg.includes("3rd year") || cg.includes("3rdyr") || cg.includes("3rd yr") || cg.includes("3nd year") || cg.includes("3ndyr") || cg.startsWith("iii ") || cg.startsWith("iii-") || cg.includes(" iii ") || cg.endsWith(" iii")) return "3rd Year";
+    if (cg.includes("2nd year") || cg.includes("2ndyr") || cg.includes("2nd yr") || cg.startsWith("ii ") || cg.startsWith("ii-") || cg.includes(" ii ") || cg.endsWith(" ii")) return "2nd Year";
+    if (cg.includes("1st year") || cg.includes("1styr") || cg.includes("1st yr") || cg.includes("1nd year") || cg.includes("1ndyr") || cg.startsWith("i ") || cg.startsWith("i-") || cg.includes(" i ") || cg.endsWith(" i")) return "1st Year";
+    if (cg.includes("4th year") || cg.includes("4thyr") || cg.includes("4th yr") || cg.startsWith("iv ") || cg.startsWith("iv-") || cg.includes(" iv ") || cg.endsWith(" iv")) return "4th Year";
 
     return "";
   };
@@ -5344,8 +5345,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
           const semesterOptions = Array.from(new Set(
             subjectsList
-              .filter(s => (!s.college_id || s.college_id === currentMentor?.college_id) &&
-                s.mentor_group?.toLowerCase().trim() === activeDept.toLowerCase().trim())
+              .filter(s => {
+                if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+                const d = (s.department || "").toLowerCase().trim();
+                const mg = (s.mentor_group || "").toLowerCase().trim();
+                const act = activeDept.toLowerCase().trim();
+                return d === act || mg === act || (d.length > 2 && act.includes(d)) || (act.length > 2 && d.includes(act));
+              })
               .map(s => s.semester)
               .filter(Boolean)
           )).sort((a, b) => {
@@ -5354,15 +5360,21 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             return na - nb;
           });
 
-          const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+          const defaultSems = ["Semester 5", "Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 6", "Semester 7", "Semester 8"];
           const finalSemOptions = semesterOptions.length > 0 ? semesterOptions : defaultSems;
-          const activeSem = trackerSem || finalSemOptions[0] || "Semester 1";
+          const activeSem = trackerSem || finalSemOptions[0] || "Semester 5";
 
-          const subjectObjs = subjectsList.filter(s =>
-            (!s.college_id || s.college_id === currentMentor?.college_id) &&
-            s.mentor_group?.toLowerCase().trim() === activeDept.toLowerCase().trim() &&
-            s.semester?.toLowerCase().trim() === activeSem.toLowerCase().trim()
-          );
+          const subjectObjs = subjectsList.filter(s => {
+            if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+            const d = (s.department || "").toLowerCase().trim();
+            const mg = (s.mentor_group || "").toLowerCase().trim();
+            const act = activeDept.toLowerCase().trim();
+            const matchDept = d === act || mg === act || (d.length > 2 && act.includes(d)) || (act.length > 2 && d.includes(act));
+            const semNum = (s.semester || "").replace(/\D/g, "");
+            const actSemNum = activeSem.replace(/\D/g, "");
+            const matchSem = s.semester?.toLowerCase().trim() === activeSem.toLowerCase().trim() || (semNum && actSemNum && semNum === actSemNum);
+            return matchDept && matchSem;
+          });
           // Only show subjects THIS mentor actually handles (from their slots or profile subjects)
           // mentorSubjects contains the mentor's actual subjects derived from slots + profile
           const mentorSubjectNames = new Set(mentorSubjects.map(s => s.toLowerCase().trim()));
