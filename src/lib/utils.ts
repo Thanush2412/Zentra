@@ -625,12 +625,17 @@ export const calculateShiftSchedule = (params: ShiftParams): {
 
 export function resolveClassGroupDetailsFromState(
   classGroup: string,
-  subjectsList: any[],
-  coursesList: any[]
+  listA: any[] = [],
+  listB: any[] = []
 ) {
   if (!classGroup) {
-    return { department: "General", semester: "Semester 1", year: "Year 1" };
+    return { department: "General", semester: "Semester 5", year: "Year 3" };
   }
+
+  // Detect which list is coursesList (has .code or .established_year or .start_year) and which is subjectsList (has .weekly_hours or .type)
+  const isCourses = (item: any) => item && ("code" in item || "start_year" in item || "hod_name" in item);
+  const coursesList = (Array.isArray(listA) && listA.some(isCourses)) ? listA : (Array.isArray(listB) && listB.some(isCourses)) ? listB : (Array.isArray(listB) && listB.length > 0 ? listB : listA || []);
+  const subjectsList = coursesList === listA ? (listB || []) : (listA || []);
 
   const cleanCG = classGroup.trim();
   const cgLower = cleanCG.toLowerCase();
@@ -815,8 +820,8 @@ export function isCohortMatching(cg1?: string, cg2?: string, coursesList: any[] 
   const norm2 = clean2.replace(/[^a-z0-9]/g, "");
   if (norm1 === norm2) return true;
 
-  const d1 = resolveClassGroupDetailsFromState(cg1, coursesList, subjectsList);
-  const d2 = resolveClassGroupDetailsFromState(cg2, coursesList, subjectsList);
+  const d1 = resolveClassGroupDetailsFromState(cg1, subjectsList, coursesList);
+  const d2 = resolveClassGroupDetailsFromState(cg2, subjectsList, coursesList);
 
   if (d1.department && d2.department && d1.department.toLowerCase().trim() === d2.department.toLowerCase().trim()) {
     if (d1.semester && d2.semester && d1.semester.toLowerCase().trim() === d2.semester.toLowerCase().trim()) {
