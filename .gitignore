@@ -83,3 +83,7 @@ zentra_timetable.db
 .vercel
 FEE_DASHBOARD_REDESIGN.md
 PERFORMANCE_AUDIT_REPORT.md
+docs/generate_manuals.js
+.gitignore
+docs/CAM_Dashboard_Module_Guide.md
+docs/Mentor_Dashboard_Module_Guide.md

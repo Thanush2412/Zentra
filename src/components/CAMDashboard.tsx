@@ -175,6 +175,769 @@ const CAMFeePanel: React.FC<{ camId: string }> = ({ camId }) => {
   );
 };
 
+/* ─── CAM Campus Insight & Downloadable Reports Panel ─── */
+const CAMCampusInsightPanel: React.FC<{
+  activeCollegeId: string;
+  activeCollegeName: string;
+  collegeMentors: Mentor[];
+  campusSlots: Slot[];
+  collegeStudents: Student[];
+  collegeSubjects: Subject[];
+}> = ({
+  activeCollegeId,
+  activeCollegeName,
+  collegeMentors,
+  campusSlots = [],
+  collegeStudents,
+  collegeSubjects
+}) => {
+  const { toast } = useToast();
+  const [selectedSubTab, setSelectedSubTab] = useState<"all" | "workload" | "attendance" | "syllabus" | "demos">("all");
+  const [selectedCohort, setSelectedCohort] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [studentAttendance, setStudentAttendance] = useState<any[]>([]);
+  const [demoSessions, setDemoSessions] = useState<any[]>([]);
+
+  // Fetch Attendance records
+  useEffect(() => {
+    if (!activeCollegeId) return;
+    fetch(`/api/attendance?college_id=${encodeURIComponent(activeCollegeId)}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.records) setStudentAttendance(d.records);
+        else if (Array.isArray(d)) setStudentAttendance(d);
+      })
+      .catch(() => {});
+
+    fetch(`/api/demo-sessions?college_id=${encodeURIComponent(activeCollegeId)}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.records) setDemoSessions(d.records);
+        else if (Array.isArray(d)) setDemoSessions(d);
+      })
+      .catch(() => {});
+  }, [activeCollegeId]);
+
+  // Distinct Class Groups / Cohorts in Campus
+  const campusCohorts = useMemo(() => {
+    const fromStudents = collegeStudents.map(s => s.classGroup).filter(Boolean);
+    const fromSlots = campusSlots.map(s => s.classGroup).filter(Boolean);
+    return Array.from(new Set([...fromStudents, ...fromSlots])).sort();
+  }, [collegeStudents, campusSlots]);
+
+  // Export helpers
+  const exportToCSV = (fileName: string, headers: string[], rows: any[][]) => {
+    const csvRows = [
+      headers,
+      ...rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`))
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(e => e.join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `${fileName}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast(`Exported "${fileName}.csv" successfully!`, "success");
+  };
+
+  const exportToExcel = async (fileName: string, sheetName: string, headers: string[], rows: any[][]) => {
+    try {
+      const XLSX = await import("xlsx");
+      const wsData = [headers, ...rows];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      XLSX.writeFile(wb, `${fileName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast(`Exported "${fileName}.xlsx" successfully!`, "success");
+    } catch (err: any) {
+      toast("Failed to export Excel: " + err.message, "error");
+    }
+  };
+
+  const exportToPrintablePDF = (title: string, subtitle: string, headers: string[], rows: any[][]) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast("Pop-up blocked. Please allow pop-ups to print PDF.", "warning");
+      return;
+    }
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${title} - ${activeCollegeName}</title>
+          <style>
+            body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; padding: 28px; color: #0f172a; margin: 0; background: #fff; }
+            .header-box { border-bottom: 2px solid #4f46e5; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-end; }
+            h1 { font-size: 18px; font-weight: 900; margin: 0 0 4px 0; color: #1e1b4b; }
+            p.sub { font-size: 11px; color: #64748b; margin: 0; font-weight: 500; }
+            .meta-badge { font-size: 10px; color: #4338ca; background: #e0e7ff; padding: 4px 8px; border-radius: 6px; font-weight: 700; }
+            .meta-row { display: flex; gap: 20px; font-size: 10.5px; color: #475569; margin-bottom: 16px; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #e2e8f0; }
+            table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+            th { background: #f1f5f9; color: #334155; font-weight: 800; text-align: left; padding: 8px 10px; border: 1px solid #cbd5e1; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; }
+            td { padding: 7px 10px; border: 1px solid #e2e8f0; vertical-align: middle; }
+            tr:nth-child(even) { background: #fcfcfd; }
+            .warn-tag { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-weight: 800; font-size: 9px; }
+            .good-tag { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 800; font-size: 9px; }
+            .neutral-tag { background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 9px; }
+            .footer { margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 9.5px; color: #94a3b8; display: flex; justify-content: space-between; }
+            @media print {
+              body { padding: 0; }
+              @page { margin: 1.2cm; size: landscape; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header-box">
+            <div>
+              <h1>${title}</h1>
+              <p class="sub">${subtitle}</p>
+            </div>
+            <span class="meta-badge">${activeCollegeName || "Campus Report"}</span>
+          </div>
+          <div class="meta-row">
+            <span>Campus: <strong>${activeCollegeName}</strong></span>
+            <span>Generated On: <strong>${new Date().toLocaleDateString('en-US', { dateStyle: 'full' })}</strong></span>
+            <span>Total Records: <strong>${rows.length}</strong></span>
+          </div>
+          <table>
+            <thead>
+              <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+            </thead>
+            <tbody>
+              ${rows.map(r => `<tr>${r.map(cell => `<td>${cell ?? '—'}</td>`).join('')}</tr>`).join('')}
+            </tbody>
+          </table>
+          <div class="footer">
+            <span>Official Academic Report — FACE Prep E-Campus Operations</span>
+            <span>Confidential</span>
+          </div>
+          <script>
+            window.onload = () => { window.print(); };
+          </script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // REPORT 1: Faculty Workload & Allocation Ledger
+  // ─────────────────────────────────────────────────────────────────────────────
+  const facultyWorkloadData = useMemo(() => {
+    return collegeMentors
+      .filter(m => !searchQuery || m.name.toLowerCase().includes(searchQuery.toLowerCase()) || (m.department || '').toLowerCase().includes(searchQuery.toLowerCase()))
+      .map((mentor, idx) => {
+        const assignedSlots = campusSlots.filter(s => s.mentorId === mentor.id);
+        const assignedHours = assignedSlots.length;
+        const targetLimit = 16;
+        const variance = assignedHours - targetLimit;
+        const status = assignedHours > 16 ? "Overload" : assignedHours >= 14 ? "Optimal" : "Underload";
+        return {
+          sNo: idx + 1,
+          id: mentor.id,
+          name: mentor.name,
+          email: mentor.email,
+          dept: mentor.department || mentor.mentor_group || "General",
+          assignedHours,
+          targetLimit,
+          variance: variance > 0 ? `+${variance}h` : `${variance}h`,
+          status,
+          subjects: mentor.subjects || "—"
+        };
+      });
+  }, [collegeMentors, campusSlots, searchQuery]);
+
+  const exportFacultyWorkload = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Faculty Name", "Email", "Department", "Assigned Weekly Hours", "Target Limit (16h)", "Variance", "Workload Status", "Allocated Subjects"];
+    const rows = facultyWorkloadData.map(r => [r.sNo, r.name, r.email, r.dept, `${r.assignedHours} hrs`, `${r.targetLimit} hrs`, r.variance, r.status, r.subjects]);
+    if (format === "excel") exportToExcel("Faculty_Workload_Ledger", "Workload", headers, rows);
+    else if (format === "csv") exportToCSV("Faculty_Workload_Ledger", headers, rows);
+    else exportToPrintablePDF("Faculty Workload & Allocation Ledger", "Mapping active faculty assigned hours against the 16 hours/week institutional workload limit.", headers, rows);
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // REPORT 2: Student Attendance Shortage Warning Report (< 75%)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const attendanceShortageData = useMemo(() => {
+    let filteredStudents = collegeStudents;
+    if (selectedCohort !== "all") {
+      filteredStudents = filteredStudents.filter(s => isCohortMatch(s.classGroup, selectedCohort));
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filteredStudents = filteredStudents.filter(s => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q) || (s.register_number || '').toLowerCase().includes(q));
+    }
+
+    const records: any[] = [];
+    filteredStudents.forEach(student => {
+      // Find attendance records for this student
+      const studentAtts = studentAttendance.filter(a => a.studentId === student.id);
+      const totalConducted = studentAtts.length;
+      if (totalConducted === 0) return; // Skip students with 0 marked periods
+
+      const presentCount = studentAtts.filter(a => a.status === "present" || a.status === "od").length;
+      const absentCount = studentAtts.filter(a => a.status === "absent").length;
+      const percentage = Math.round((presentCount / totalConducted) * 100);
+
+      if (percentage < 75) {
+        records.push({
+          id: student.id,
+          name: student.name,
+          regNo: student.register_number || student.id,
+          dept: student.department || "General",
+          classGroup: student.classGroup || "General",
+          conducted: totalConducted,
+          present: presentCount,
+          absent: absentCount,
+          percentage,
+          severity: percentage < 65 ? "Critical Shortage (<65%)" : "Warning Shortage (65-74%)"
+        });
+      }
+    });
+
+    return records.sort((a, b) => a.percentage - b.percentage);
+  }, [collegeStudents, studentAttendance, selectedCohort, searchQuery]);
+
+  const exportAttendanceShortage = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Student ID", "Student Name", "Register No", "Department", "Class Group", "Conducted Periods", "Attended (Present)", "Absent", "Attendance %", "Status"];
+    const rows = attendanceShortageData.map((r, idx) => [idx + 1, r.id, r.name, r.regNo, r.dept, r.classGroup, r.conducted, r.present, r.absent, `${r.percentage}%`, r.severity]);
+    const title = selectedCohort !== "all" ? `Student Attendance Shortage Warning Report (${selectedCohort})` : "Student Attendance Shortage Warning Report (< 75%)";
+    if (format === "excel") exportToExcel("Student_Attendance_Shortage_Report", "Attendance_Shortage", headers, rows);
+    else if (format === "csv") exportToCSV("Student_Attendance_Shortage_Report", headers, rows);
+    else exportToPrintablePDF(title, "Detailed breakdown of students whose cumulative attendance rate is currently below the mandatory 75% threshold.", headers, rows);
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // REPORT 3: Subject Completion & Syllabus Pace Report
+  // ─────────────────────────────────────────────────────────────────────────────
+  const syllabusPaceData = useMemo(() => {
+    return collegeSubjects
+      .filter(s => !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase()) || (s.department || '').toLowerCase().includes(searchQuery.toLowerCase()))
+      .map((sub, idx) => {
+        const weeklyHrs = Number(sub.weekly_hours) || 4;
+        const targetSemesterHours = weeklyHrs * 15; // 15-week academic semester
+
+        // Count sessions conducted in studentAttendance for this subject
+        const conductedCount = studentAttendance.filter(a => {
+          if (a.coveredSubject && isSubjectNameMatch(a.coveredSubject, sub.name)) return true;
+          const matchingSlot = campusSlots.find(slot => slot.id === a.slotId);
+          return matchingSlot && isSubjectNameMatch(matchingSlot.course, sub.name);
+        }).length;
+
+        // Distinct session count estimate
+        const distinctSessions = Math.min(targetSemesterHours, Math.round(conductedCount / Math.max(1, collegeStudents.length / 5)));
+        const actualHours = distinctSessions > 0 ? distinctSessions : Math.min(targetSemesterHours, campusSlots.filter(s => isSubjectNameMatch(s.course, sub.name)).length * 10);
+        const completionPct = Math.min(100, Math.round((actualHours / targetSemesterHours) * 100));
+        const status = completionPct >= 80 ? "On Track" : completionPct >= 50 ? "In Progress" : "Lagging Behind";
+
+        return {
+          sNo: idx + 1,
+          name: sub.name,
+          dept: sub.department || "General",
+          sem: sub.semester || "Semester 5",
+          type: sub.type || "Theory",
+          targetHours: targetSemesterHours,
+          actualHours,
+          completionPct,
+          status
+        };
+      });
+  }, [collegeSubjects, studentAttendance, campusSlots, collegeStudents, searchQuery]);
+
+  const exportSyllabusPace = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Subject Name", "Department", "Semester", "Type", "Target Semester Hours", "Actual Conducted Hours", "Syllabus Pace %", "Delivery Status"];
+    const rows = syllabusPaceData.map(r => [r.sNo, r.name, r.dept, r.sem, r.type, `${r.targetHours} hrs`, `${r.actualHours} hrs`, `${r.completionPct}%`, r.status]);
+    if (format === "excel") exportToExcel("Subject_Completion_Syllabus_Report", "Syllabus_Pace", headers, rows);
+    else if (format === "csv") exportToCSV("Subject_Completion_Syllabus_Report", headers, rows);
+    else exportToPrintablePDF("Subject Completion & Syllabus Pace Report", "Documenting actual periods delivered vs target scheduled semester curriculum hours.", headers, rows);
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // REPORT 4: Mentor Demo & Evaluation Report
+  // ─────────────────────────────────────────────────────────────────────────────
+  const demoEvaluationData = useMemo(() => {
+    return (demoSessions || [])
+      .filter(d => !searchQuery || d.mentorName?.toLowerCase().includes(searchQuery.toLowerCase()) || d.subject?.toLowerCase().includes(searchQuery.toLowerCase()))
+      .map((d, idx) => ({
+        sNo: idx + 1,
+        id: d.id,
+        mentorName: d.mentorName || "Mentor",
+        smeName: d.smeName || "SME Evaluator",
+        subject: d.subject || "Subject Demo",
+        stream: d.stream || "General",
+        dateStr: d.dateStr,
+        timeSlot: d.timeSlot,
+        status: d.status === "completed" ? "Completed" : d.status === "scheduled" ? "Scheduled" : d.status === "reallocation_required" ? "Reallocation Required" : d.status,
+        marks: d.marks !== undefined && d.marks !== null ? `${d.marks}/100` : "Pending",
+        comments: d.comments || "—"
+      }));
+  }, [demoSessions, searchQuery]);
+
+  const exportDemoEvaluations = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Mentor Name", "SME Evaluator", "Subject Demo", "Stream / Class", "Session Date", "Time Slot", "Status", "Score", "Evaluator Feedback"];
+    const rows = demoEvaluationData.map(r => [r.sNo, r.mentorName, r.smeName, r.subject, r.stream, r.dateStr, r.timeSlot, r.status, r.marks, r.comments]);
+    if (format === "excel") exportToExcel("Mentor_Demo_Evaluation_Report", "Demo_Evaluations", headers, rows);
+    else if (format === "csv") exportToCSV("Mentor_Demo_Evaluation_Report", headers, rows);
+    else exportToPrintablePDF("Mentor Demo & Evaluation Ledger", "Comprehensive evaluation report of mentor domain demo sessions conducted by Subject Matter Experts (SMEs).", headers, rows);
+  };
+
+  return (
+    <div className="space-y-6 font-sans">
+      {/* Top Banner & Sub-Navigation */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100">
+                <FileSpreadsheet className="h-5 w-5" />
+              </div>
+              <h2 className="text-base font-black text-slate-900 leading-tight">Campus Insight &amp; Institutional Reports</h2>
+            </div>
+            <p className="text-xs text-slate-500 font-medium mt-1">
+              Download real-time faculty workload ledgers, student attendance shortage lists, syllabus paces, and mentor demo reports.
+            </p>
+          </div>
+
+          {/* Search & Global Cohort Selector */}
+          <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+            <div className="relative w-48">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50/50 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <select
+              value={selectedCohort}
+              onChange={e => setSelectedCohort(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+            >
+              <option value="all">All Class Groups / Cohorts</option>
+              {campusCohorts.map(cg => (
+                <option key={cg} value={cg}>{cg}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Quick Report Filter Tabs */}
+        <div className="flex gap-2 overflow-x-auto border-b border-slate-100 pb-2">
+          {[
+            { id: "all", label: "All Insights & Reports", count: 4 },
+            { id: "workload", label: "Faculty Workload Ledger", count: facultyWorkloadData.length },
+            { id: "attendance", label: "Attendance Shortage (<75%)", count: attendanceShortageData.length, alert: attendanceShortageData.length > 0 },
+            { id: "syllabus", label: "Syllabus Completion Pace", count: syllabusPaceData.length },
+            { id: "demos", label: "Mentor Demo Evaluations", count: demoEvaluationData.length }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSelectedSubTab(tab.id as any)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
+                selectedSubTab === tab.id
+                  ? "bg-slate-900 text-white shadow-xs"
+                  : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                selectedSubTab === tab.id
+                  ? "bg-white/20 text-white"
+                  : tab.alert ? "bg-rose-100 text-rose-700" : "bg-slate-200 text-slate-700"
+              }`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ──────────────────────── REPORT CARDS GRID ──────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* CARD 1: Faculty Workload Ledger */}
+        {(selectedSubTab === "all" || selectedSubTab === "workload") && (
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">Faculty Workload &amp; Allocation Ledger</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Active faculty weekly hours mapped against the 16 hours/week institutional threshold.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI Summary */}
+              <div className="grid grid-cols-3 gap-2 bg-slate-50/70 p-3 rounded-xl border border-slate-150">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Faculty Count</p>
+                  <p className="text-base font-black text-slate-800 mt-0.5">{facultyWorkloadData.length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Overload (&gt;16h)</p>
+                  <p className="text-base font-black text-amber-600 mt-0.5">{facultyWorkloadData.filter(f => f.assignedHours > 16).length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Avg Workload</p>
+                  <p className="text-base font-black text-indigo-600 mt-0.5">
+                    {facultyWorkloadData.length > 0 ? (facultyWorkloadData.reduce((s, f) => s + f.assignedHours, 0) / facultyWorkloadData.length).toFixed(1) : 0} hrs/wk
+                  </p>
+                </div>
+              </div>
+
+              {/* Top 3 Preview Rows */}
+              <div className="overflow-hidden border border-slate-200/80 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
+                    <tr>
+                      <th className="p-2.5">Faculty</th>
+                      <th className="p-2.5">Hours</th>
+                      <th className="p-2.5 text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {facultyWorkloadData.slice(0, 3).map(f => (
+                      <tr key={f.id} className="hover:bg-slate-50/50">
+                        <td className="p-2.5 font-bold text-slate-800">{f.name}</td>
+                        <td className="p-2.5 font-mono text-slate-600 font-semibold">{f.assignedHours} / 16 hrs</td>
+                        <td className="p-2.5 text-right">
+                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                            f.status === "Overload" ? "bg-amber-100 text-amber-800" : f.status === "Optimal" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {f.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => exportFacultyWorkload("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportFacultyWorkload("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportFacultyWorkload("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* CARD 2: Student Attendance Shortage Warning Report (<75%) */}
+        {(selectedSubTab === "all" || selectedSubTab === "attendance") && (
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100 shrink-0">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">Student Attendance Shortage Warning Report</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Students below the mandatory 75% attendance threshold with critical risk flags.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI Summary */}
+              <div className="grid grid-cols-3 gap-2 bg-rose-50/40 p-3 rounded-xl border border-rose-150">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Shortage Total</p>
+                  <p className="text-base font-black text-rose-600 mt-0.5">{attendanceShortageData.length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Critical (&lt;65%)</p>
+                  <p className="text-base font-black text-rose-700 mt-0.5">{attendanceShortageData.filter(s => s.percentage < 65).length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Selected Cohort</p>
+                  <p className="text-xs font-bold text-slate-700 truncate mt-1">{selectedCohort === "all" ? "All Cohorts" : selectedCohort}</p>
+                </div>
+              </div>
+
+              {/* Top 3 Preview Rows */}
+              <div className="overflow-hidden border border-slate-200/80 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
+                    <tr>
+                      <th className="p-2.5">Student</th>
+                      <th className="p-2.5">Cohort</th>
+                      <th className="p-2.5 text-right">Attendance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {attendanceShortageData.slice(0, 3).map(s => (
+                      <tr key={s.id} className="hover:bg-slate-50/50">
+                        <td className="p-2.5 font-bold text-slate-800">{s.name}</td>
+                        <td className="p-2.5 text-slate-500 text-[11px]">{s.classGroup}</td>
+                        <td className="p-2.5 text-right">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-100 text-rose-800">
+                            {s.percentage}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {attendanceShortageData.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="p-4 text-center text-xs text-emerald-600 font-bold bg-emerald-50/40">
+                          🎉 Zero students below 75% attendance in this selection!
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => exportAttendanceShortage("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportAttendanceShortage("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportAttendanceShortage("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* CARD 3: Subject Completion & Syllabus Pace Report */}
+        {(selectedSubTab === "all" || selectedSubTab === "syllabus") && (
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-100 shrink-0">
+                    <BookOpen className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">Subject Completion &amp; Syllabus Pace Report</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Delivery tracker comparing actual periods conducted vs target scheduled hours.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI Summary */}
+              <div className="grid grid-cols-3 gap-2 bg-slate-50/70 p-3 rounded-xl border border-slate-150">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Subjects</p>
+                  <p className="text-base font-black text-slate-800 mt-0.5">{syllabusPaceData.length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">On Track (≥80%)</p>
+                  <p className="text-base font-black text-emerald-600 mt-0.5">{syllabusPaceData.filter(s => s.completionPct >= 80).length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Lagging (&lt;50%)</p>
+                  <p className="text-base font-black text-rose-600 mt-0.5">{syllabusPaceData.filter(s => s.completionPct < 50).length}</p>
+                </div>
+              </div>
+
+              {/* Top 3 Preview Rows */}
+              <div className="overflow-hidden border border-slate-200/80 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
+                    <tr>
+                      <th className="p-2.5">Subject</th>
+                      <th className="p-2.5">Pace</th>
+                      <th className="p-2.5 text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {syllabusPaceData.slice(0, 3).map(sub => (
+                      <tr key={sub.name} className="hover:bg-slate-50/50">
+                        <td className="p-2.5 font-bold text-slate-800">{sub.name}</td>
+                        <td className="p-2.5 font-mono text-slate-600 font-semibold">{sub.completionPct}%</td>
+                        <td className="p-2.5 text-right">
+                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                            sub.status === "On Track" ? "bg-emerald-100 text-emerald-800" : sub.status === "In Progress" ? "bg-blue-100 text-blue-800" : "bg-rose-100 text-rose-800"
+                          }`}>
+                            {sub.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => exportSyllabusPace("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportSyllabusPace("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportSyllabusPace("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* CARD 4: Mentor Demo & Evaluation Report */}
+        {(selectedSubTab === "all" || selectedSubTab === "demos") && (
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-pink-50 text-pink-600 flex items-center justify-center border border-pink-100 shrink-0">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">Mentor Demo &amp; Evaluation Ledger</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Comprehensive audit of mentor evaluations conducted by Subject Matter Experts (SMEs).</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI Summary */}
+              <div className="grid grid-cols-3 gap-2 bg-slate-50/70 p-3 rounded-xl border border-slate-150">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Demos</p>
+                  <p className="text-base font-black text-slate-800 mt-0.5">{demoEvaluationData.length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Completed</p>
+                  <p className="text-base font-black text-emerald-600 mt-0.5">{demoEvaluationData.filter(d => d.status === "Completed").length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Reallocation Req</p>
+                  <p className="text-base font-black text-amber-600 mt-0.5">{demoEvaluationData.filter(d => d.status.includes("Reallocation")).length}</p>
+                </div>
+              </div>
+
+              {/* Top 3 Preview Rows */}
+              <div className="overflow-hidden border border-slate-200/80 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
+                    <tr>
+                      <th className="p-2.5">Mentor</th>
+                      <th className="p-2.5">Subject</th>
+                      <th className="p-2.5 text-right">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {demoEvaluationData.slice(0, 3).map(d => (
+                      <tr key={d.id} className="hover:bg-slate-50/50">
+                        <td className="p-2.5 font-bold text-slate-800">{d.mentorName}</td>
+                        <td className="p-2.5 text-slate-500 text-[11px]">{d.subject}</td>
+                        <td className="p-2.5 text-right font-mono font-bold text-indigo-700">{d.marks}</td>
+                      </tr>
+                    ))}
+                    {demoEvaluationData.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="p-4 text-center text-xs text-slate-400 italic">
+                          No demo evaluations logged yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => exportDemoEvaluations("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportDemoEvaluations("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportDemoEvaluations("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+};
+
 // Persistent global flag to prevent sidebar animating on every re-mount during navigation
 let isFirstSidebarAnimationDone = false;
 
@@ -8406,34 +9169,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     return <CAMFeePanel camId={camId || ""} />;
                   })()}
 
-                  {/* 7. CAMPUS INSIGHT */}
+                  {/* 7. CAMPUS INSIGHT & REPORTS */}
                   {activeTab === "reports" && (
-                    <Panel
-                      title="Campus Insight"
-                      subtitle="Export student performance metrics, classroom utilization, and workload compliance ledger."
-                    >
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs font-semibold">
-                        {[
-                          { title: "Faculty Workload & Allocation Ledger", desc: "List of all active faculty members, mapping assigned hours against the 16 hours/week workload limit." },
-                          { title: "Student Attendance Shortage warning report", desc: "Detailed breakdown of students whose overall attendance rate is currently below the 75% threshold." },
-                          { title: "Classroom & Lab Utilization report", desc: "Analyses classroom bookings, highlighting empty classroom counts and peak utilization times." },
-                          { title: "Subject completion & syllabus pace report", desc: "Lists all syllabus mapping statuses, documenting actual periods held vs target scheduled hours." }
-                        ].map((rep, idx) => (
-                          <div key={idx} className="p-4 rounded-xl border border-slate-200 bg-white flex items-start justify-between gap-4 hover:shadow-md shadow-sm transition-all">
-                            <div className="space-y-1">
-                              <h4 className="text-xs font-bold text-slate-808">{rep.title}</h4>
-                              <p className="text-[10.5px] text-slate-400 leading-relaxed font-semibold">{rep.desc}</p>
-                            </div>
-                            <Button
-                              variant="secondary"
-                              size="xs"
-                              icon={<Download className="h-4 w-4" />}
-                              onClick={() => toast(`Report "${rep.title}" exported successfully in Excel/PDF format.`, "success")}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </Panel>
+                    <CAMCampusInsightPanel
+                      activeCollegeId={activeCollegeId}
+                      activeCollegeName={activeCollegeName}
+                      collegeMentors={collegeMentors}
+                      campusSlots={collegeSlots}
+                      collegeStudents={collegeStudents}
+                      collegeSubjects={collegeSubjects}
+                    />
                   )}
 
                   {/* 8. TASKS & ISSUES */}
