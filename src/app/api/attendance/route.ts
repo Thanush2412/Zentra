@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
+// ── Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1) ──
+// Without this, Vercel routes to iad1 (Washington DC) → ~200ms per DB call
+export const preferredRegion = "bom1";
+export const maxDuration = 60; // seconds — bulk imports need breathing room
+
 export async function GET(request: Request) {
   try {
     const db = await getDb();
