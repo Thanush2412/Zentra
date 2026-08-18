@@ -1589,6 +1589,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     refreshData,
     refreshAttendance,
     studentAttendance,
+    setStudentAttendance,
     createSubject,
     updateSubject,
     deleteSubject,
@@ -1678,6 +1679,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     window.addEventListener("fp_navigate_tab", handleNav);
     return () => window.removeEventListener("fp_navigate_tab", handleNav);
   }, [setActiveTab]);
+
+  // ── Auto-poll attendance every 30s when monitoring tab is open ──
+  // This ensures mentor-marked data appears in the CAM matrix without a manual page refresh
+  useEffect(() => {
+    if (activeTab !== "monitoring") return;
+    // Immediate fetch on tab open so data is always fresh
+    refreshAttendance(activeCollegeId);
+    const interval = setInterval(() => {
+      refreshAttendance(activeCollegeId);
+    }, 30_000); // every 30 seconds
+    return () => clearInterval(interval);
+  }, [activeTab, activeCollegeId]);
 
   // GSAP Container reference
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2534,53 +2547,49 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     try {
       const recordsToPost: any[] = [];
 
+      // Pre-build slot lookup cache: classGroup → dayName → slot[]
+      // Avoids calling collegeSlots.filter() + isCohortMatch() in a hot nested loop
+      const slotCache = new Map<string, any[]>();
+      const getSlots = (dayName: string, classGroup: string): any[] => {
+        const key = `${dayName}||${classGroup}`;
+        if (slotCache.has(key)) return slotCache.get(key)!;
+        let result = collegeSlots.filter(s => s.day === dayName && isCohortMatch(s.classGroup, classGroup));
+        if (result.length === 0) result = collegeSlots.filter(s => isCohortMatch(s.classGroup, classGroup));
+        if (result.length === 0) result = slots.filter(s => s.day === dayName && isCohortMatch(s.classGroup, classGroup));
+        if (result.length === 0) result = slots.filter(s => isCohortMatch(s.classGroup, classGroup));
+        slotCache.set(key, result);
+        return result;
+      };
+
       attendanceImportPreview.parsed.forEach(item => {
-        // If row has multi-date marks (e.g. 15-06-2026, 16-06-2026...)
         if (item.dateMarks && Object.keys(item.dateMarks).length > 0) {
           Object.keys(item.dateMarks).forEach(dStr => {
             const status = item.dateMarks[dStr];
             if (!status || status === "not_marked") return;
-
             const standardDateStr = parseDateToYMD(dStr) || dStr;
             const dateObj = new Date(standardDateStr + "T00:00:00");
             const dayName = !isNaN(dateObj.getTime())
-              ? dateObj.toLocaleDateString("en-US", { weekday: "long" })
-              : "";
-            let daySlots = collegeSlots.filter(s => s.day === dayName && isCohortMatch(s.classGroup, item.classGroup));
-
-            // If no day-specific match, try without day filter (get any slot for this cohort on any day)
-            if (daySlots.length === 0) {
-              daySlots = collegeSlots.filter(s => isCohortMatch(s.classGroup, item.classGroup));
-            }
-
-            // If still none, try the global slots list
-            if (daySlots.length === 0) {
-              daySlots = slots.filter(s => s.day === dayName && isCohortMatch(s.classGroup, item.classGroup));
-            }
-            if (daySlots.length === 0) {
-              daySlots = slots.filter(s => isCohortMatch(s.classGroup, item.classGroup));
-            }
-
+              ? dateObj.toLocaleDateString("en-US", { weekday: "long" }) : "";
+            const daySlots = getSlots(dayName, item.classGroup);
             daySlots.forEach(slot => {
               recordsToPost.push({
                 studentId: item.studentId,
                 slotId: slot.id,
                 dateStr: standardDateStr,
-                status: status,
+                status,
                 markedBy: currentCAM?.name || "Master Import"
               });
             });
           });
         } else if (item.periodMarks && Object.keys(item.periodMarks).length > 0) {
-          // Single-day period marks fallback
           const dateObj = new Date(attendanceImportPreview.targetDate + "T00:00:00");
           const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
-          const daySlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, item.classGroup)));
-          const sortedStudentSlots = sortSlotsByTime(daySlots);
-
+          const daySlots = sortSlotsByTime(
+            collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, item.classGroup)))
+          );
           Object.keys(item.periodMarks).forEach(pKey => {
             const pIndex = parseInt(pKey.replace(/\D/g, "") || "1", 10) - 1;
-            const targetSlot = sortedStudentSlots[pIndex] || daySlots[pIndex];
+            const targetSlot = daySlots[pIndex];
             if (targetSlot) {
               recordsToPost.push({
                 studentId: item.studentId,
@@ -2609,39 +2618,28 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         college_id: activeCollegeId
       }));
 
-      const CHUNK_SIZE = 250;
-      let totalCount = 0;
-      const totalChunks = Math.ceil(recordsToPost.length / CHUNK_SIZE);
+      // Send everything in ONE request — the server handles batching internally with a transaction
+      // This eliminates N serial HTTP round-trips (was 250 records per request = many calls)
+      const res = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "bulk_import",
+          records: recordsToPost,
+          students: studentsToSync,
+          collegeId: activeCollegeId,
+          markedBy: currentCAM?.name || "Master Import"
+        })
+      });
 
-      for (let i = 0; i < recordsToPost.length; i += CHUNK_SIZE) {
-        const chunkRecords = recordsToPost.slice(i, i + CHUNK_SIZE);
-        const chunkStudents = i === 0 ? studentsToSync : [];
-        const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
+      const rawText = await res.text();
+      let data: any = {};
+      try { data = JSON.parse(rawText); }
+      catch (_) { throw new Error(`Server error (${res.status}): ${rawText.slice(0, 120)}`); }
 
-        const res = await fetch("/api/attendance", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "bulk_import",
-            records: chunkRecords,
-            students: chunkStudents,
-            markedBy: currentCAM?.name || "Master Import"
-          })
-        });
+      if (!data.success) throw new Error(data.message || "Import failed.");
 
-        const rawText = await res.text();
-        let data: any = {};
-        try {
-          data = JSON.parse(rawText);
-        } catch (_) {
-          throw new Error(`Server returned HTTP ${res.status}: ${rawText.slice(0, 100)}`);
-        }
-
-        if (!data.success) {
-          throw new Error(data.message || `Failed at batch ${chunkIndex} of ${totalChunks}`);
-        }
-        totalCount += data.count || chunkRecords.length;
-      }
+      const totalCount = data.count || recordsToPost.length;
 
       // Expand active date range to encompass all imported dates so they show up immediately
       const allDates = Array.from(new Set(recordsToPost.map(r => r.dateStr))).sort();
@@ -2655,8 +2653,26 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       toast(`Successfully imported ${totalCount} attendance entries across ${attendanceImportPreview.parsed.length} students in real-time!`, "success");
       setShowAttendanceImportModal(false);
       setAttendanceImportPreview(null);
-      // Surgical attendance-only re-fetch — much faster than full refreshData()
-      // and fetches ALL dates without the 2000-record limit
+
+      // Immediately update local state so matrix shows new data right away
+      // (before the async refreshAttendance completes)
+      setStudentAttendance(prev => {
+        const incoming = recordsToPost.map(r => ({
+          id: `att_import_${r.studentId}_${r.slotId}_${r.dateStr}`,
+          studentId: r.studentId,
+          slotId: r.slotId,
+          dateStr: r.dateStr,
+          status: r.status,
+          markedBy: r.markedBy,
+          timestamp: new Date().toISOString()
+        }));
+        // Build a set of keys to overwrite
+        const incomingKeys = new Set(incoming.map(r => `${r.studentId}|${r.slotId}|${r.dateStr}`));
+        const filtered = prev.filter(a => !incomingKeys.has(`${a.studentId}|${a.slotId}|${a.dateStr}`));
+        return [...filtered, ...incoming];
+      });
+
+      // Then also refresh from server to get authoritative data
       await refreshAttendance(activeCollegeId);
     } catch (err: any) {
       toast("Error submitting attendance import: " + err.message, "error");
@@ -2792,6 +2808,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setIsClearingAttendance(true);
     try {
       const params = new URLSearchParams();
+      // Always send collegeId — the API refuses to delete without it
       if (activeCollegeId) params.set("collegeId", activeCollegeId);
       if (clearDeptFilter !== "all") params.set("department", clearDeptFilter);
       if (clearBatchFilter !== "all") params.set("classGroup", clearBatchFilter);
@@ -2799,6 +2816,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         params.set("startDate", attendanceStartDate);
         params.set("endDate", attendanceEndDate);
       } else {
+        // Full wipe — collegeId is already set above, required by API
         params.set("all", "true");
       }
 
@@ -2809,7 +2827,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       if (data.success) {
         toast(`Successfully removed ${data.deletedCount || 0} attendance records for the selected scope!`, "success");
         setShowClearAttendanceModal(false);
-        await refreshAttendance(activeCollegeId);
+        // Surgical immediate update: remove matching records from local state so matrix clears instantly
+        setStudentAttendance(prev => {
+          const campusStudentIds = new Set(collegeStudents.map((s: any) => s.id));
+          return prev.filter(a => {
+            if (!campusStudentIds.has(a.studentId)) return true; // keep other colleges
+            if (clearDeptFilter !== "all") {
+              const st = collegeStudents.find((s: any) => s.id === a.studentId);
+              if (!st || st.department !== clearDeptFilter) return true;
+            }
+            if (clearBatchFilter !== "all") {
+              const st = collegeStudents.find((s: any) => s.id === a.studentId);
+              if (!st || st.classGroup !== clearBatchFilter) return true;
+            }
+            if (clearScope === "range") {
+              return !(a.dateStr >= attendanceStartDate && a.dateStr <= attendanceEndDate);
+            }
+            return false; // full wipe for this campus student
+          });
+        });
       } else {
         toast(data.message || "Failed to clear attendance.", "error");
       }

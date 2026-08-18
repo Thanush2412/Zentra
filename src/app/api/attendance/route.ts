@@ -191,36 +191,67 @@ export async function POST(request: Request) {
 
     // ── BULK ATTENDANCE IMPORT (HIGH-PERFORMANCE BATCH SQL) ───────────────
     if (action === "bulk_import") {
-      const { records, students: incomingStudents, markedBy } = body;
+      const { records, students: incomingStudents, markedBy, collegeId: importCollegeId } = body;
       if (!records || !Array.isArray(records) || records.length === 0) {
         return NextResponse.json({ success: false, message: "No attendance records to import" }, { status: 400 });
       }
 
       const nowStr = new Date().toISOString();
 
-      // ── STEP 1: Auto-upsert any new students so they persist after refresh ──
+      // ── STEP 1: Batch-upsert new students in one multi-row INSERT ──
       if (incomingStudents && Array.isArray(incomingStudents) && incomingStudents.length > 0) {
-        for (const st of incomingStudents) {
-          if (!st.id || !st.name) continue;
-          try {
-            await db.run(
-              `INSERT INTO students (id, name, roll_number, department, classGroup, college_id, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)
-               ON CONFLICT(id) DO UPDATE SET
-                 name = COALESCE(excluded.name, name),
-                 roll_number = COALESCE(excluded.roll_number, roll_number),
-                 department = COALESCE(excluded.department, department),
-                 classGroup = COALESCE(excluded.classGroup, classGroup),
-                 college_id = COALESCE(excluded.college_id, college_id)`,
-              [st.id, st.name, st.roll_number || st.id, st.department || "General",
-               st.classGroup || "General Batch", st.college_id || null, nowStr]
-            );
-          } catch (_) {}
+        const validStudents = incomingStudents.filter((st: any) => st.id && st.name);
+        if (validStudents.length > 0) {
+          // Batch in groups of 50 to stay under SQLite param limits
+          const ST_BATCH = 50;
+          for (let i = 0; i < validStudents.length; i += ST_BATCH) {
+            const chunk = validStudents.slice(i, i + ST_BATCH);
+            const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, 'Active', ?)").join(", ");
+            const params: any[] = [];
+            chunk.forEach((st: any) => {
+              params.push(st.id, st.name, st.roll_number || st.id,
+                st.department || "General", st.classGroup || "General Batch",
+                st.college_id || importCollegeId || null, nowStr);
+            });
+            try {
+              await db.run(
+                `INSERT INTO students (id, name, roll_number, department, classGroup, college_id, status, created_at)
+                 VALUES ${placeholders}
+                 ON CONFLICT(id) DO UPDATE SET
+                   name = COALESCE(excluded.name, name),
+                   roll_number = COALESCE(excluded.roll_number, roll_number),
+                   department = COALESCE(excluded.department, department),
+                   classGroup = COALESCE(excluded.classGroup, classGroup),
+                   college_id = COALESCE(excluded.college_id, college_id)`,
+                params
+              );
+            } catch (_) {
+              // Fallback: individual upserts if batch fails (duplicate id edge case)
+              for (const st of chunk) {
+                try {
+                  await db.run(
+                    `INSERT INTO students (id, name, roll_number, department, classGroup, college_id, status, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)
+                     ON CONFLICT(id) DO UPDATE SET
+                       name = COALESCE(excluded.name, name),
+                       roll_number = COALESCE(excluded.roll_number, roll_number),
+                       department = COALESCE(excluded.department, department),
+                       classGroup = COALESCE(excluded.classGroup, classGroup),
+                       college_id = COALESCE(excluded.college_id, college_id)`,
+                    [st.id, st.name, st.roll_number || st.id, st.department || "General",
+                     st.classGroup || "General Batch", st.college_id || importCollegeId || null, nowStr]
+                  );
+                } catch (_2) {}
+              }
+            }
+          }
         }
       }
 
-      // Pre-fetch all valid slot IDs once
-      const validSlots = await db.all("SELECT id FROM slots");
+      // Pre-fetch valid slot IDs scoped to college for faster lookup
+      const validSlots = importCollegeId
+        ? await db.all("SELECT id FROM slots WHERE college_id = ?", importCollegeId)
+        : await db.all("SELECT id FROM slots");
       const validSlotIds = new Set(validSlots.map((s: any) => s.id));
       const fallbackSlotId = validSlots.length > 0 ? validSlots[0].id : null;
 
@@ -252,62 +283,67 @@ export async function POST(request: Request) {
 
       let count = 0;
 
-      // 1. Process deletes in fast chunks
-      if (deleteItems.length > 0) {
-        const DELETE_CHUNK = 50;
-        for (let i = 0; i < deleteItems.length; i += DELETE_CHUNK) {
-          const chunk = deleteItems.slice(i, i + DELETE_CHUNK);
-          await Promise.all(
-            chunk.map(d =>
-              db.run(
-                "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
-                [d.studentId, d.slotId, d.dateStr]
+      // Wrap everything in a single transaction — this alone gives 10-50x speedup on SQLite
+      await db.run("BEGIN");
+      try {
+        // 1. Process deletes in one batch per chunk
+        if (deleteItems.length > 0) {
+          const DELETE_CHUNK = 100;
+          for (let i = 0; i < deleteItems.length; i += DELETE_CHUNK) {
+            const chunk = deleteItems.slice(i, i + DELETE_CHUNK);
+            await Promise.all(
+              chunk.map(d =>
+                db.run(
+                  "DELETE FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+                  [d.studentId, d.slotId, d.dateStr]
+                )
               )
-            )
-          );
-          count += chunk.length;
-        }
-      }
-
-      // 2. Process upserts in high-speed multi-row batches (100 rows per query = 700 params)
-      if (upsertRows.length > 0) {
-        const BATCH_SIZE = 80;
-        for (let i = 0; i < upsertRows.length; i += BATCH_SIZE) {
-          const chunk = upsertRows.slice(i, i + BATCH_SIZE);
-          const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
-          const params: any[] = [];
-          
-          chunk.forEach(r => {
-            params.push(r.id, r.studentId, r.slotId, r.dateStr, r.status, r.markedBy, r.timestamp);
-          });
-
-          const sql = `
-            INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
-            VALUES ${placeholders}
-            ON CONFLICT(studentId, slotId, dateStr)
-            DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp
-          `;
-
-          try {
-            await db.run(sql, params);
+            );
             count += chunk.length;
-          } catch (batchErr) {
-            console.warn("[BULK_IMPORT] Multi-row batch fallback:", batchErr);
-            // Fallback to individual inserts if batch fails
-            for (const r of chunk) {
-              try {
-                await db.run(
-                  `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(studentId, slotId, dateStr)
-                   DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp`,
-                  [r.id, r.studentId, r.slotId, r.dateStr, r.status, r.markedBy, r.timestamp]
-                );
-                count++;
-              } catch (_) {}
+          }
+        }
+
+        // 2. Upsert in large batches — 200 rows per query (1400 params, well under SQLite 32766 limit)
+        if (upsertRows.length > 0) {
+          const BATCH_SIZE = 200;
+          for (let i = 0; i < upsertRows.length; i += BATCH_SIZE) {
+            const chunk = upsertRows.slice(i, i + BATCH_SIZE);
+            const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
+            const params: any[] = [];
+            chunk.forEach(r => {
+              params.push(r.id, r.studentId, r.slotId, r.dateStr, r.status, r.markedBy, r.timestamp);
+            });
+            try {
+              await db.run(
+                `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
+                 VALUES ${placeholders}
+                 ON CONFLICT(studentId, slotId, dateStr)
+                 DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp`,
+                params
+              );
+              count += chunk.length;
+            } catch (_) {
+              // Fallback: individual upserts
+              for (const r of chunk) {
+                try {
+                  await db.run(
+                    `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)
+                     ON CONFLICT(studentId, slotId, dateStr)
+                     DO UPDATE SET status = excluded.status, markedBy = excluded.markedBy, timestamp = excluded.timestamp`,
+                    [r.id, r.studentId, r.slotId, r.dateStr, r.status, r.markedBy, r.timestamp]
+                  );
+                  count++;
+                } catch (_2) {}
+              }
             }
           }
         }
+
+        await db.run("COMMIT");
+      } catch (txErr) {
+        await db.run("ROLLBACK");
+        throw txErr;
       }
 
       return NextResponse.json({
@@ -530,7 +566,30 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    // 5. Clear All / Full Wipe for scoped college/department/batch
+    // 5. Clear All / Full Wipe
+    // ALWAYS scope to collegeId when provided — never wipe other colleges' data
+    if (clearAll) {
+      if (collegeId) {
+        // Safe: only wipe this college's students
+        const res = await db.run(
+          `DELETE FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?)`,
+          [collegeId]
+        );
+        return NextResponse.json({
+          success: true,
+          message: "All attendance records for this campus have been cleared.",
+          deletedCount: res.changes
+        });
+      } else {
+        // No collegeId provided — refuse to wipe globally to prevent accidental cross-campus deletion
+        return NextResponse.json({
+          success: false,
+          message: "collegeId is required for a full wipe. Cross-campus deletion is not permitted."
+        }, { status: 400 });
+      }
+    }
+
+    // 6. Scoped wipe by dept/batch/college (no all flag)
     if (hasDeptOrBatch || collegeId) {
       const { sql: stSql, params: stParams } = buildStudentFilter();
       const res = await db.run(
@@ -544,12 +603,11 @@ export async function DELETE(request: NextRequest) {
       });
     }
 
-    const res = await db.run("DELETE FROM student_attendance");
+    // Final fallback — refuse unscoped global delete to prevent accidental cross-campus wipe
     return NextResponse.json({
-      success: true,
-      message: "All student attendance records have been cleared successfully.",
-      deletedCount: res.changes
-    });
+      success: false,
+      message: "A collegeId, date range, or student filter is required. Unscoped global deletion is not permitted."
+    }, { status: 400 });
   } catch (error: any) {
     console.error("API DELETE Attendance error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

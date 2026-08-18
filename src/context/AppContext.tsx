@@ -414,6 +414,7 @@ interface AppContextProps {
   refreshAttendance: (collegeId?: string) => Promise<void>;
   students: Student[];
   studentAttendance: StudentAttendance[];
+  setStudentAttendance: React.Dispatch<React.SetStateAction<StudentAttendance[]>>;
   currentStudent: Student | null;
   markAttendance: (
     slotId: string, 
@@ -2977,6 +2978,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteStudent,
         bulkDeleteStudents,
         studentAttendance,
+        setStudentAttendance,
         currentStudent,
         markAttendance,
         leaveRequests,
