@@ -7938,23 +7938,63 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             {/* Hour Allocation Tracker */}
                             {(() => {
                               const activeSem = timetableSubTab === "view" ? selectedCohortSem : genSelectedSemester;
-                              const deptSubs = subjectsList.filter(
-                                s => (!s.college_id || s.college_id === activeCollegeId) && 
-                                     getCleanSemesterKey(s.semester) === getCleanSemesterKey(activeSem)
-                              );
+                              const activeCourse = timetableSubTab === "view" ? selectedCohortCourse : genSelectedCourse;
+
+                              const deptSubs = subjectsList.filter(s => {
+                                if (s.college_id && s.college_id !== activeCollegeId) return false;
+                                if (activeSem && getCleanSemesterKey(s.semester) !== getCleanSemesterKey(activeSem)) return false;
+                                if (activeCourse) {
+                                  const sDept = (s.department || "").toLowerCase().trim();
+                                  const cNorm = activeCourse.toLowerCase().trim();
+                                  if (sDept && cNorm && sDept !== cNorm && !isSubjectNameMatch(sDept, cNorm) && !sDept.includes(cNorm) && !cNorm.includes(sDept)) {
+                                    return false;
+                                  }
+                                }
+                                return true;
+                              });
+
                               const classGroup = timetableSubTab === "view" ? viewerClassGroup : genClassGroup;
                               const activeShift = hasShifts ? (timetableSubTab === "view" ? viewerShift : genShift) : "general";
 
                               if (!classGroup || deptSubs.length === 0) return null;
 
                               const trackerData = deptSubs.map(sub => {
-                                const scheduledCount = collegeSlots.filter(
-                                  slot => (slot.classGroup === classGroup || 
-                                           isCohortMatching(slot.classGroup, classGroup) || 
-                                           slot.classGroup?.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase() === classGroup?.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase()) && 
-                                          ((slot.shift as string)?.toLowerCase() === activeShift?.toLowerCase() || !slot.shift || activeShift === "general") && 
-                                          (slot.course.toLowerCase().trim() === sub.name.toLowerCase().trim() || isSubjectNameMatch(slot.course, sub.name))
-                                ).length;
+                                const subName = sub.name.toLowerCase().trim();
+                                const subNameNorm = subName.replace(/[^a-z0-9]/g, "");
+
+                                const scheduledCount = collegeSlots.filter(slot => {
+                                  // 1. ClassGroup / Cohort match (same as Grid)
+                                  const isCgMatch =
+                                    !slot.classGroup ||
+                                    slot.classGroup === classGroup ||
+                                    isCohortMatch(slot.classGroup, classGroup) ||
+                                    isCohortMatching(slot.classGroup, classGroup, collegeCourses, subjectsList) ||
+                                    slot.classGroup.toLowerCase().includes(classGroup.toLowerCase()) ||
+                                    classGroup.toLowerCase().includes(slot.classGroup.toLowerCase()) ||
+                                    slot.classGroup.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase() === classGroup.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase();
+
+                                  if (!isCgMatch) return false;
+
+                                  // 2. Shift match
+                                  const isShiftMatch =
+                                    !hasShifts ||
+                                    !slot.shift ||
+                                    activeShift === "general" ||
+                                    (slot.shift as string)?.toLowerCase() === activeShift?.toLowerCase();
+
+                                  if (!isShiftMatch) return false;
+
+                                  // 3. Subject match
+                                  const sCourse = slot.course.toLowerCase().trim();
+                                  const sCourseNorm = sCourse.replace(/[^a-z0-9]/g, "");
+
+                                  return (
+                                    sCourse === subName ||
+                                    sCourseNorm === subNameNorm ||
+                                    isSubjectNameMatch(slot.course, sub.name)
+                                  );
+                                }).length;
+
                                 const target = sub.weekly_hours || 4;
                                 return {
                                   name: sub.name,
