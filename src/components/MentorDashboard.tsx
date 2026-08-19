@@ -2661,9 +2661,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const memoizedSelectedCellStudents = useMemo(() => {
     if (!selectedCell?.slot) return [];
     return students.filter((student) => {
+      // Must match college scope first
+      if (student.college_id && selectedCell.slot!.college_id && student.college_id !== selectedCell.slot!.college_id) return false;
+      // Primary: match by classGroup (most specific)
       if (isClassGroupMatch(student.classGroup, selectedCell.slot!.classGroup)) return true;
-      if (isClassGroupMatch(student.department, selectedCell.slot!.department || selectedCell.slot!.classGroup)) return true;
-      if (student.college_id && selectedCell.slot!.college_id && student.college_id === selectedCell.slot!.college_id) return true;
+      // Secondary: match by department when slot has no classGroup set
+      if (!selectedCell.slot!.classGroup && isClassGroupMatch(student.department, selectedCell.slot!.department || "")) return true;
       return false;
     });
   }, [students, selectedCell?.slot]);
