@@ -1597,7 +1597,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                 );
               })()}
 
-              {/* 📅 Today's Operations Panel */}
+              {/* Today's Operations Panel */}
               <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-5 md:p-6 shadow-sm space-y-4">
                 <div className="flex items-center justify-between gap-3 flex-wrap border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div>
@@ -2295,7 +2295,7 @@ export const KAMDashboard: React.FC<KAMDashboardProps> = ({
                                   }`}>{t.priority}</span>
                                   <span className="text-slate-500 dark:text-slate-400 truncate">{college?.name || "—"}</span>
                                   {isOverdue && (
-                                    <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white">⚠ Overdue</span>
+                                    <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white">Overdue</span>
                                   )}
                                 </div>
                                 <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{t.title}</p>

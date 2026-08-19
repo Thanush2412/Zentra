@@ -89,18 +89,31 @@ export async function GET(request: Request) {
     const announcementSql = collegeId ? "SELECT * FROM announcements WHERE college_id = ? OR college_id IS NULL ORDER BY created_at DESC" : "SELECT * FROM announcements ORDER BY created_at DESC";
     const announcementParams = collegeId ? [collegeId] : [];
 
-    // Fetch attendance with a wider range for CAM monitoring — up to 6 months, higher limit
-    // CAM needs to see full semester history for the attendance matrix
+    // Fetch attendance with optimized range for CAM monitoring
+    // For CAM: Load last 2 months instead of 6 to reduce payload (can always expand date range in UI)
+    // For Students/Mentors: Load as before
+    const twoMonthsAgo = new Date();
+    twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+    const camDateThreshold = twoMonthsAgo.toISOString().slice(0, 10);
+
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     const dateThreshold = sixMonthsAgo.toISOString().slice(0, 10);
 
     const attendanceSql = (role === "student" && userId)
       ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 1000"
-      : collegeId
-        ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) AND dateStr >= ? ORDER BY dateStr ASC"
-        : "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? ORDER BY dateStr ASC LIMIT 20000";
-    const attendanceParams = (role === "student" && userId) ? [userId] : collegeId ? [collegeId, dateThreshold] : [dateThreshold];
+      : collegeId && (role === "cam")
+        ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) AND dateStr >= ? ORDER BY dateStr DESC LIMIT 10000"
+        : collegeId
+          ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) AND dateStr >= ? ORDER BY dateStr ASC"
+          : "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? ORDER BY dateStr DESC LIMIT 10000";
+    const attendanceParams = (role === "student" && userId) 
+      ? [userId] 
+      : collegeId && (role === "cam")
+        ? [collegeId, camDateThreshold]
+        : collegeId 
+          ? [collegeId, dateThreshold] 
+          : [camDateThreshold];
 
     const isMentor = role === "mentor";
     const isStudent = role === "student";

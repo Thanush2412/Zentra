@@ -120,6 +120,7 @@ export interface Student {
   figma_link?: string;
   semester?: string;
   shift?: string;
+  section?: string;
 }
 
 export interface StudentAttendance {
@@ -218,7 +219,7 @@ export interface HandoverRequest {
   targetStaffId: string;
   targetStaffName: string;
   reason: string;
-  status: "pending" | "pending_cam" | "approved" | "rejected";
+  status: "pending" | "pending_cam" | "approved" | "rejected" | "needs_cam_allocation";
   headerReason?: string;
   approvedBy?: string;
   timestamp: string;

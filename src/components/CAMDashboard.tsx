@@ -17,7 +17,7 @@ import {
   PieChart, Pie, Cell, Legend,
   AreaChart, Area, CartesianGrid
 } from "recharts";
-import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob } from "../lib/utils";
+import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate } from "../lib/utils";
 import { InterviewModule } from "./InterviewModule";
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
@@ -173,16 +173,14 @@ const CAMFeePanel: React.FC<{ camId: string }> = ({ camId }) => {
             {/* Donut */}
             <div className="shrink-0">
               <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider text-center mb-2">Fee Status Split</p>
-              <ResponsiveContainer width={160} height={160}>
-                <PieChart>
-                  <Pie data={donutData} cx="50%" cy="50%" innerRadius={44} outerRadius={66} paddingAngle={3} dataKey="value">
+              <PieChart width={160} height={160}>
+                  <Pie data={donutData} cx="50%" cy="50%" innerRadius={44} outerRadius={66} paddingAngle={3} dataKey="value" isAnimationActive={false}>
                     {donutData.map((entry, i) => (
                       <Cell key={i} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(val: any, name: any) => [`${val} students`, name]} />
                 </PieChart>
-              </ResponsiveContainer>
               <div className="flex items-center justify-center gap-3 mt-1">
                 {donutData.map(d => (
                   <div key={d.name} className="flex items-center gap-1">
@@ -297,6 +295,112 @@ const CAMFeePanel: React.FC<{ camId: string }> = ({ camId }) => {
   );
 };
 
+/* ─── Attendance Monitoring Charts — memoized, fixed dimensions, no animation ─── */
+// Extracted as a standalone React.memo component so charts ONLY re-render when their
+// data actually changes — not on every parent render (pagination, search, etc.)
+interface AttMonitoringChartProps {
+  donutData:   { name: string; value: number; color: string }[];
+  cgChartData: { name: string; pct: number }[];
+  onTrack:     number;
+  atRisk:      number;
+  critical:    number;
+  noData:      number;
+  overallAvgPct: number;
+  filteredCount: number;
+  workingDatesCount: number;
+}
+const AttMonitoringCharts = React.memo<AttMonitoringChartProps>(({
+  donutData, cgChartData, onTrack, atRisk, critical, noData,
+  overallAvgPct, filteredCount, workingDatesCount,
+}) => {
+  const shortageCount = atRisk + critical;
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-2">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+          <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider">Campus Avg</p>
+          <p className="text-xl font-black text-emerald-700 mt-0.5">{overallAvgPct}%</p>
+          <p className="text-[9px] text-emerald-500 font-semibold mt-0.5">across {filteredCount} students</p>
+        </div>
+        <div className="bg-rose-50 border border-rose-200 rounded-xl p-3">
+          <p className="text-[10px] font-extrabold text-rose-600 uppercase tracking-wider">Shortage Alert</p>
+          <p className="text-xl font-black text-rose-700 mt-0.5">{shortageCount}</p>
+          <p className="text-[9px] text-rose-400 font-semibold mt-0.5">students below 75%</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
+          <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">On Track</p>
+          <p className="text-xl font-black text-slate-800 mt-0.5">{onTrack}</p>
+          <p className="text-[9px] text-slate-400 font-semibold mt-0.5">students ≥ 75%</p>
+        </div>
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+          <p className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-wider">Tracked Days</p>
+          <p className="text-xl font-black text-indigo-700 mt-0.5">{workingDatesCount}</p>
+          <p className="text-[9px] text-indigo-400 font-semibold mt-0.5">working days in range</p>
+        </div>
+      </div>
+
+      {/* Donut: student-level compliance — fixed 240×160, no animation */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col">
+        <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-1">Student Compliance Split</p>
+        <p className="text-[9px] text-slate-400 font-medium mb-2">Each segment = number of students</p>
+        {donutData.length > 0 ? (
+          <PieChart width={240} height={120} style={{ margin: "0 auto" }}>
+            <Pie
+              data={donutData} cx="50%" cy="50%"
+              innerRadius={32} outerRadius={54}
+              paddingAngle={3} dataKey="value"
+              isAnimationActive={false}
+            >
+              {donutData.map((e, i) => <Cell key={i} fill={e.color} />)}
+            </Pie>
+            <Tooltip formatter={(v: any, n: any) => [`${v} students`, n]} />
+          </PieChart>
+        ) : (
+          <div className="h-[120px] flex items-center justify-center text-xs text-slate-400 italic">No data</div>
+        )}
+        <div className="flex flex-col gap-1 mt-2">
+          {donutData.map(d => (
+            <div key={d.name} className="flex items-center justify-between text-[9px] font-bold text-slate-600">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full shrink-0" style={{ background: d.color }} />
+                {d.name}
+              </span>
+              <span className="font-black">{d.value} students</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Bar: class-group avg % — fixed 340×130, no animation */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-1">Avg Attendance % by Class</p>
+        <p className="text-[9px] text-slate-400 font-medium mb-2">≥75% Good &nbsp; 65–74% Average &nbsp; &lt;65% Low</p>
+        {cgChartData.length > 0 ? (
+          <BarChart
+            width={320} height={Math.max(100, cgChartData.length * 22)}
+            data={cgChartData} layout="vertical"
+            margin={{ top: 0, right: 32, bottom: 0, left: 0 }}
+          >
+            <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 9 }} tickFormatter={v => `${v}%`} />
+            <YAxis dataKey="name" type="category" tick={{ fontSize: 8, fontWeight: 700 }} width={100} />
+            <Tooltip formatter={(v: any) => [`${v}%`, "Avg Attendance"]} />
+            <Bar dataKey="pct" radius={[0, 4, 4, 0]} isAnimationActive={false}
+              label={{ position: "right", fontSize: 8, fontWeight: 700, formatter: (v: any) => `${v}%` }}>
+              {cgChartData.map((e, i) => (
+                <Cell key={i} fill={e.pct >= 75 ? "#10b981" : e.pct >= 65 ? "#f59e0b" : "#f43f5e"} />
+              ))}
+            </Bar>
+          </BarChart>
+        ) : (
+          <div className="h-[130px] flex items-center justify-center text-xs text-slate-400 italic">No attendance data in range</div>
+        )}
+      </div>
+    </div>
+  );
+});
+AttMonitoringCharts.displayName = "AttMonitoringCharts";
+
 /* ─── CAM Campus Insight & Downloadable Reports Panel ─── */
 const CAMCampusInsightPanel: React.FC<{
   activeCollegeId: string;
@@ -323,7 +427,11 @@ const CAMCampusInsightPanel: React.FC<{
   // Fetch Attendance records
   useEffect(() => {
     if (!activeCollegeId) return;
-    fetch(`/api/attendance?college_id=${encodeURIComponent(activeCollegeId)}`)
+    // Limit to last 60 days to prevent unbounded full-table scan
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+    const startDate = sixtyDaysAgo.toISOString().split("T")[0];
+    fetch(`/api/attendance?college_id=${encodeURIComponent(activeCollegeId)}&startDate=${startDate}`)
       .then(r => r.json())
       .then(d => {
         if (d.records) setStudentAttendance(d.records);
@@ -833,7 +941,7 @@ const CAMCampusInsightPanel: React.FC<{
                     {attendanceShortageData.length === 0 && (
                       <tr>
                         <td colSpan={3} className="p-4 text-center text-xs text-emerald-600 font-bold bg-emerald-50/40">
-                          🎉 Zero students below 75% attendance in this selection!
+                          Zero students below 75% attendance in this selection!
                         </td>
                       </tr>
                     )}
@@ -1403,7 +1511,8 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
                         </span>
                       </td>
                       <td className="p-3 font-extrabold">
-                        {req.request_type === "Leave" && <span className="text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 text-[10px] font-black uppercase">Leave</span>}
+                        {(req.request_type === "Leave" || req.request_type === "Casual Leave") && <span className="text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 text-[10px] font-black uppercase">{req.request_type === "Casual Leave" ? "Casual Leave" : "Leave"}</span>}
+                        {req.request_type === "Emergency Leave" && <span className="text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 text-[10px] font-black uppercase">Emergency</span>}
                         {req.request_type === "Permission" && <span className="text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 text-[10px] font-black uppercase">Permission</span>}
                         {req.request_type === "OD" && <span className="text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200 text-[10px] font-black uppercase">OD (On Duty)</span>}
                       </td>
@@ -1484,8 +1593,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
             <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-xs flex flex-col">
               <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-3">Today's Punch Distribution</p>
               {summary.total > 0 ? (
-                <ResponsiveContainer width="100%" height={140}>
-                  <BarChart data={[
+                <BarChart width={220} height={140} data={[
                     { name: "Present", value: summary.present },
                     { name: "OD", value: summary.od },
                     { name: "Leave", value: summary.leave },
@@ -1495,7 +1603,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
                     <XAxis dataKey="name" tick={{ fontSize: 9, fontWeight: 700 }} />
                     <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
                     <Tooltip formatter={(val: any, name: any) => [`${val} faculty`, name]} />
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                       {[
                         { fill: "#10b981" },
                         { fill: "#6366f1" },
@@ -1507,7 +1615,6 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
                       ))}
                     </Bar>
                   </BarChart>
-                </ResponsiveContainer>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-xs text-slate-400 italic">No data for this date</div>
               )}
@@ -2019,9 +2126,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
   // Attendance Directory & Date-Wise Monitoring States
   const [attendanceDate, setAttendanceDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
-  const [attendanceStartDate, setAttendanceStartDate] = useState("2026-06-15");
+  const [attendanceStartDate, setAttendanceStartDate] = useState(() => {
+    // Default to last 30 days for better performance
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    return thirtyDaysAgo.toISOString().split("T")[0];
+  });
   const [attendanceEndDate, setAttendanceEndDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
   const [attendanceMonthFilter, setAttendanceMonthFilter] = useState("all");
+  const [showAttendanceTemplateModal, setShowAttendanceTemplateModal] = useState(false);
+  const [templateModalCollegeId, setTemplateModalCollegeId] = useState<string>(activeCollegeId || "all");
+  const [templateModalCohort, setTemplateModalCohort] = useState<string>("all");
+  const [templateModalStartDate, setTemplateModalStartDate] = useState<string>(attendanceStartDate || "2026-06-15");
+  const [templateModalEndDate, setTemplateModalEndDate] = useState<string>(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
   const [showAttendanceImportModal, setShowAttendanceImportModal] = useState(false);
   const [attendanceImportPreview, setAttendanceImportPreview] = useState<{ parsed: any[]; warnings: string[]; targetDate: string } | null>(null);
   const [isAttendanceImportSubmitting, setIsAttendanceImportSubmitting] = useState(false);
@@ -2158,6 +2276,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       "Roll No",
       "Department",
       "Shift",
+      "Section",
       "Name",
       "Hire Score",
       "EFSET Score",
@@ -2188,6 +2307,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "21CS001",
         resolvedDept,
         resolvedShift,
+        "A",
         "Anitha R",
         "85",
         "C2",
@@ -2216,6 +2336,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "21CS002",
         resolvedDept,
         resolvedShift,
+        "B",
         "Bala Kumar M",
         "78",
         "B2",
@@ -2286,6 +2407,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       else if (norm.includes("figma")) mapped.figma_link = val;
       else if (norm === "department" || norm === "dept" || norm === "course" || norm === "stream") mapped.department = val;
       else if (norm === "shift") mapped.shift = val;
+      else if (norm === "section" || norm === "sec" || norm === "classsection") mapped.section = val;
       else if (norm === "semester" || norm === "sem" || norm.includes("semester") || norm.includes("sem")) mapped.semester = val;
       else if (norm === "classgroup" || norm === "class" || norm === "cohort") mapped.classGroup = val;
     });
@@ -2330,14 +2452,27 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       }
     }
 
-    // Derive classGroup cleanly without forcing Shift 1 on non-shift campuses
+    // Standardize section if provided (e.g. "A", "B")
+    if (mapped.section) {
+      const cleanSec = mapped.section.toString().replace(/^sec(tion)?\s*/i, "").trim().toUpperCase();
+      mapped.section = cleanSec;
+    }
+
+    // Derive classGroup cleanly with section support
     if (!mapped.classGroup || mapped.classGroup === defaultCG) {
       const deptPart = mapped.department || (defaultCG.includes(" - ") ? defaultCG.split(" - ")[0] : "General");
       const semPart = mapped.semester || "Semester 1";
+      const secPart = mapped.section ? ` - Sec ${mapped.section}` : "";
+
       if (isCampusShiftBased && mapped.shift && mapped.shift !== "General") {
-        mapped.classGroup = `${deptPart} - ${mapped.shift} - ${semPart}`;
+        mapped.classGroup = `${deptPart} - ${mapped.shift} - ${semPart}${secPart}`;
       } else {
-        mapped.classGroup = `${deptPart} - ${semPart}`;
+        mapped.classGroup = `${deptPart} - ${semPart}${secPart}`;
+      }
+    } else if (mapped.section) {
+      const cleanSec = mapped.section;
+      if (!mapped.classGroup.toUpperCase().includes(`SEC ${cleanSec}`) && !mapped.classGroup.toUpperCase().endsWith(` ${cleanSec}`)) {
+        mapped.classGroup = `${mapped.classGroup} - Sec ${cleanSec}`;
       }
     }
 
@@ -2414,6 +2549,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         return {
           ...s,
           classGroup: finalCG,
+          section: s.section || null,
           semester: finalSem,
           department: finalDept,
           shift: finalShift,
@@ -2485,13 +2621,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     return ymd;
   };
 
-  const handleDownloadAttendanceTemplate = async (targetCG?: string, startStr?: string, endStr?: string) => {
+  const handleDownloadAttendanceTemplate = async (targetCG?: string, startStr?: string, endStr?: string, targetCollegeId?: string) => {
     const XLSX = await import("xlsx");
     const sDate = startStr || attendanceStartDate || "2026-06-15";
     const eDate = endStr || attendanceEndDate || new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
     const workingDates = getSemesterWorkingDates(sDate, eDate);
 
-    const filteredStudents = collegeStudents.filter(s => !targetCG || targetCG === "all" || isCohortMatch(s.classGroup, targetCG));
+    const effectiveCollegeId = targetCollegeId || activeCollegeId;
+    const baseStudents = (effectiveCollegeId && effectiveCollegeId !== "all")
+      ? students.filter(s => s.college_id === effectiveCollegeId)
+      : collegeStudents;
+
+    const filteredStudents = baseStudents.filter(s => !targetCG || targetCG === "all" || isCohortMatch(s.classGroup, targetCG));
 
     const dateHeaders = workingDates.map(d => formatDateToDMY(d));
     const headers = [
@@ -2500,10 +2641,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       "Name",
       "Department",
       "Class Group",
-      "Total days",
-      "Total of Present Days",
-      "Total of Absent Days",
-      "%",
       ...dateHeaders
     ];
 
@@ -2515,10 +2652,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         st.name,
         st.department || "",
         st.classGroup || "",
-        workingDates.length,
-        workingDates.length,
-        0,
-        "100%",
         ...defaultStatuses
       ];
     }) : [
@@ -2528,19 +2661,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "Sample Student",
         "Computer Science",
         targetCG || "BCA - Semester 5",
-        workingDates.length,
-        workingDates.length,
-        0,
-        "100%",
         ...workingDates.map(() => "P")
       ]
     ];
 
+    const targetColName = colleges.find(c => c.id === effectiveCollegeId)?.name || "Campus";
+    const cleanColName = targetColName.replace(/[^a-zA-Z0-9]/g, "_");
     const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Master Attendance");
-    XLSX.writeFile(wb, `Master_Attendance_Template_${sDate}_to_${eDate}.xlsx`);
-    toast("Master multi-date attendance template downloaded!", "success");
+    XLSX.utils.book_append_sheet(wb, ws, "Attendance Template");
+    XLSX.writeFile(wb, `${cleanColName}_Attendance_Template_${sDate}_to_${eDate}.xlsx`);
+    toast(`Attendance template for ${targetColName} downloaded successfully!`, "success");
   };
 
   const handleAttendanceFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2886,27 +3017,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         if (stSlots.length === 0 && stDayAtt.length === 0) return "—";
         totalWorkingDays++;
 
-        const pCount = stDayAtt.filter(a => a.status === "present").length;
-        const odCount = stDayAtt.filter(a => a.status === "od").length;
-        const aCount = stDayAtt.filter(a => a.status === "absent").length;
-        const totalMarked = stDayAtt.length;
-        const totalEff = Math.max(stSlots.length, totalMarked);
+        const isExam = isExamDate(dStr, dailyConfigsList, studentAttendance);
+        const evalRes = evaluateDailyStudentAttendance(stDayAtt, stSlots.length, isExam);
 
-        if (odCount > 0 && (odCount + pCount >= totalEff)) {
-          presentDays += 1;
-          return "OD";
-        } else if (pCount > 0 && (pCount === totalEff || aCount === 0)) {
-          presentDays += 1;
-          return "P";
-        } else if (pCount > 0 && aCount > 0) {
-          presentDays += 0.5;
-          absentDays += 0.5;
-          return "HD";
-        } else if (aCount > 0) {
-          absentDays += 1;
-          return "A";
-        }
-        return "—";
+        presentDays += evalRes.presentDays;
+        absentDays += evalRes.absentDays;
+        return evalRes.status;
       });
 
       const effectiveTotalDays = totalWorkingDays || workingDates.length;
@@ -3204,6 +3320,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     default_shift: "shift_1",
     shift_based: 0
   });
+  const [deptFormSections, setDeptFormSections] = useState<string[]>([]);
+  const [deptSectionInput, setDeptSectionInput] = useState("");
 
   const handleSendWarningEmail = async (item: any) => {
     if (!item.mentor?.email) {
@@ -3552,6 +3670,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [dailyDayOrder, setDailyDayOrder] = useState("Day 1");
   const [dailySessionMode, setDailySessionMode] = useState<string>("Offline");
   const [dailyNotes, setDailyNotes] = useState("");
+  const [dailyDeptScope, setDailyDeptScope] = useState<string>("All Departments");
   const [dailyConfigsList, setDailyConfigsList] = useState<any[]>([]);
   const [isDailyLoading, setIsDailyLoading] = useState(false);
   const [isDailySaving, setIsDailySaving] = useState(false);
@@ -3560,6 +3679,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [editingDailyId, setEditingDailyId] = useState<string | null>(null);
   const [isDailyConfigModalOpen, setIsDailyConfigModalOpen] = useState<boolean>(false);
   const [dailySearchFilter, setDailySearchFilter] = useState<string>("");
+
+  // Manage Class & Sections Modal state
+  const [showManageSectionsModal, setShowManageSectionsModal] = useState(false);
+  const [sectionClassFilter, setSectionClassFilter] = useState<string>("");
+  const [newSectionInput, setNewSectionInput] = useState<string>("");
+  const [selectedStudentIdsForSection, setSelectedStudentIdsForSection] = useState<string[]>([]);
+  const [targetMoveSection, setTargetMoveSection] = useState<string>("");
+  const [isSectionActionLoading, setIsSectionActionLoading] = useState(false);
 
   const [classTeacherAssignments, setClassTeacherAssignments] = useState<any[]>([]);
   const [selectedAssignYear, setSelectedAssignYear] = useState("Year 1");
@@ -3810,6 +3937,62 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [handoverSubject, setHandoverSubject] = useState<string>("original");
   const [selectedSubjName, setSelectedSubjName] = useState<string>("");
   const [customSubjName, setCustomSubjName] = useState<string>("");
+
+  // CAM Direct Cover Allocation Modal states
+  const [camAssigningReq, setCamAssigningReq] = useState<any | null>(null);
+  const [camAssignAvailableMentors, setCamAssignAvailableMentors] = useState<any[]>([]);
+  const [camAssignLoadingMentors, setCamAssignLoadingMentors] = useState(false);
+  const [camSelectedCoverMentorId, setCamSelectedCoverMentorId] = useState("");
+  const [camAssignSubmitting, setCamAssignSubmitting] = useState(false);
+
+  const openCamAssignModal = (req: any) => {
+    setCamAssigningReq(req);
+    setCamSelectedCoverMentorId("");
+    setCamAssignLoadingMentors(true);
+    fetch(`/api/requests/faculty-leave?availableForSlotId=${encodeURIComponent(req.slotId)}&availableForDate=${encodeURIComponent(req.dateStr)}&availableForCollegeId=${encodeURIComponent(activeCollegeId)}&excludeMentorId=${encodeURIComponent(req.requestorId)}`)
+      .then(r => r.json())
+      .then(data => {
+        setCamAssignAvailableMentors(data.mentors || []);
+        if (data.mentors && data.mentors.length > 0) {
+          setCamSelectedCoverMentorId(data.mentors[0].id);
+        }
+      })
+      .catch(() => setCamAssignAvailableMentors([]))
+      .finally(() => setCamAssignLoadingMentors(false));
+  };
+
+  const handleCamAssignConfirm = async () => {
+    if (!camAssigningReq || !camSelectedCoverMentorId) {
+      toast("Please select a faculty member to assign.", "error");
+      return;
+    }
+    setCamAssignSubmitting(true);
+    try {
+      const res = await fetch("/api/requests/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: camAssigningReq.id,
+          action: "cam_reassign",
+          targetStaffId: camSelectedCoverMentorId,
+          approverName: currentCAM?.name || "Campus Manager",
+          actorRole: "Campus Manager"
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast("Cover faculty assigned and confirmed successfully!", "success");
+        setCamAssigningReq(null);
+        refreshData();
+      } else {
+        toast(data.message || "Failed to assign cover faculty.", "error");
+      }
+    } catch (err: any) {
+      toast("Error: " + err.message, "error");
+    } finally {
+      setCamAssignSubmitting(false);
+    }
+  };
   // Load and save state
   useEffect(() => {
     // Allowed Student Profile Edit Classes
@@ -3830,11 +4013,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   // Additional derived filters and variables
 
   const activeBatches = useMemo(() => {
-    // Derive from STUDENTS (not slots) so the filter matches what students actually have
-    const fromStudents = Array.from(new Set(collegeStudents.map(s => s.classGroup).filter((g): g is string => Boolean(g)))).sort();
-    const fromSlots = Array.from(new Set(collegeSlots.map(s => s.classGroup).filter((g): g is string => Boolean(g))));
-    // Merge: students first, then any slot-only cohorts
-    return Array.from(new Set([...fromStudents, ...fromSlots]));
+    // Derive from STUDENTS first, and deduplicate normalized names
+    const fromStudents = collegeStudents.map(s => s.classGroup).filter(Boolean);
+    const fromSlots = collegeSlots.map(s => s.classGroup).filter(Boolean);
+    const all = [...fromStudents, ...fromSlots];
+    
+    // Group and deduplicate: if two items match via isCohortMatch, normalize to canonical name
+    const unique: string[] = [];
+    for (const item of all) {
+      const trimmed = (item || "").trim();
+      if (!trimmed) continue;
+      const canonical = normalizeClassGroup(trimmed) || trimmed;
+      const alreadyExists = unique.some(u => isCohortMatch(u, canonical));
+      if (!alreadyExists) {
+        unique.push(canonical);
+      }
+    }
+    return unique.sort();
   }, [collegeStudents, collegeSlots]);
 
   const classrooms = useMemo(() => {
@@ -3851,6 +4046,137 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const studentDepts = useMemo(() => {
     return Array.from(new Set(collegeStudents.map(s => s.department?.trim()).filter(Boolean))).sort();
   }, [collegeStudents]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── ATTENDANCE MONITORING — PRE-COMPUTED MEMOS (component-level, stable)  ──
+  // These MUST live here at component level, not inside any IIFE/render block.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** O(1) map: `${studentId}_${dateStr}` → attendance records[] */
+  const attMonitoringMap = useMemo(() => {
+    const map = new Map<string, any[]>();
+    (studentAttendance || []).forEach(a => {
+      if (!a.studentId || !a.dateStr) return;
+      const k = `${a.studentId}_${a.dateStr}`;
+      const existing = map.get(k);
+      if (existing) existing.push(a);
+      else map.set(k, [a]);
+    });
+    return map;
+  }, [studentAttendance]);
+
+  /** Sorted working dates in the selected date range (Mon–Sat, excl. holidays) */
+  const attMonitoringWorkingDates = useMemo(() => {
+    const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+    const dateSet = new Set<string>();
+    // Source 1: dates that actually have attendance records
+    (studentAttendance || []).forEach(a => { if (a.dateStr) dateSet.add(a.dateStr); });
+    // Source 2: every Mon–Sat in the selected range
+    const rangeStart = new Date(attendanceStartDate + "T00:00:00");
+    const rangeEnd   = new Date(attendanceEndDate   + "T00:00:00");
+    if (!isNaN(rangeStart.getTime()) && !isNaN(rangeEnd.getTime())) {
+      const cur = new Date(rangeStart);
+      while (cur <= rangeEnd) {
+        const dow = cur.getDay();
+        const ymd = cur.toISOString().split("T")[0];
+        const isHol = (holidays || []).some((h: any) => h?.date === ymd || h?.dateStr === ymd);
+        if (dow !== 0 && !isHol) dateSet.add(ymd);
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+    // Source 3: today
+    if (todayStr >= attendanceStartDate && todayStr <= attendanceEndDate) dateSet.add(todayStr);
+    return Array.from(dateSet).filter(d => d >= attendanceStartDate && d <= attendanceEndDate).sort();
+  }, [attendanceStartDate, attendanceEndDate, holidays, studentAttendance]);
+
+  /** Set of exam dates (O(1) lookup to replace per-cell isExamDate() scan) */
+  const attMonitoringExamDateSet = useMemo(() => {
+    const s = new Set<string>();
+    attMonitoringWorkingDates.forEach(d => {
+      if (isExamDate(d, dailyConfigsList, studentAttendance)) s.add(d);
+    });
+    return s;
+  }, [attMonitoringWorkingDates, dailyConfigsList, studentAttendance]);
+
+  /** Pre-computed day name for each working date (avoids per-cell new Date().toLocaleDateString) */
+  const attMonitoringDayNameMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    attMonitoringWorkingDates.forEach(d => {
+      m[d] = new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+    });
+    return m;
+  }, [attMonitoringWorkingDates]);
+
+  /** Slot lookup map: `${dayName}__${classGroupLower}` → Slot[] */
+  const attMonitoringSlotMap = useMemo(() => {
+    const map = new Map<string, any[]>();
+    collegeSlots.forEach(s => {
+      const key = `${s.day}__${(s.classGroup || "").toLowerCase()}`;
+      const existing = map.get(key);
+      if (existing) existing.push(s);
+      else map.set(key, [s]);
+    });
+    return map;
+  }, [collegeSlots]);
+
+  /** Filtered students for the monitoring tab */
+  const attMonitoringFiltered = useMemo(() => {
+    const q = (deferredStudentSearch || "").trim().toLowerCase();
+    return collegeStudents.filter(s => {
+      const matchesSearch = !q || s.name.toLowerCase().includes(q) ||
+                            (s.roll_number && s.roll_number.toLowerCase().includes(q)) ||
+                            s.id.toLowerCase().includes(q);
+      const matchesDept  = studentDeptFilter  === "all" || s.department === studentDeptFilter || isDeptSubjectMatch(s.department, studentDeptFilter);
+      const matchesBatch = studentBatchFilter === "all" || s.classGroup === studentBatchFilter || isCohortMatch(s.classGroup, studentBatchFilter);
+      return matchesSearch && matchesDept && matchesBatch;
+    });
+  }, [collegeStudents, deferredStudentSearch, studentDeptFilter, studentBatchFilter]);
+
+  /** Per-student compliance stats (powers both infographics AND the table %) */
+  const attMonitoringStudentStats = useMemo(() => {
+    return attMonitoringFiltered.map(st => {
+      let presentDays = 0, absentDays = 0, totalMarkedDays = 0;
+      attMonitoringWorkingDates.forEach(dStr => {
+        const recs  = attMonitoringMap.get(`${st.id}_${dStr}`) || [];
+        if (recs.length === 0) return;
+        totalMarkedDays++;
+        const isExam = attMonitoringExamDateSet.has(dStr);
+        const ev     = evaluateDailyStudentAttendance(recs, 0, isExam);
+        presentDays += ev.presentDays;
+        absentDays  += ev.absentDays;
+      });
+      const pct = totalMarkedDays > 0 ? Math.round((presentDays / totalMarkedDays) * 100) : -1;
+      return {
+        id: st.id, name: st.name,
+        cg: st.classGroup || st.department || "General",
+        pct, hasData: totalMarkedDays > 0,
+        presentDays, absentDays, totalMarkedDays,
+      };
+    });
+  }, [attMonitoringFiltered, attMonitoringWorkingDates, attMonitoringMap, attMonitoringExamDateSet]);
+
+  /** Infographic aggregates derived from studentStats */
+  const attMonitoringChartData = useMemo(() => {
+    const onTrack  = attMonitoringStudentStats.filter(s => s.pct >= 75).length;
+    const atRisk   = attMonitoringStudentStats.filter(s => s.pct >= 65 && s.pct < 75).length;
+    const critical = attMonitoringStudentStats.filter(s => s.pct >= 0 && s.pct < 65).length;
+    const noData   = attMonitoringStudentStats.filter(s => !s.hasData).length;
+    const cgMap: Record<string, { sum: number; count: number }> = {};
+    attMonitoringStudentStats.filter(s => s.hasData).forEach(s => {
+      if (!cgMap[s.cg]) cgMap[s.cg] = { sum: 0, count: 0 };
+      cgMap[s.cg].sum   += s.pct;
+      cgMap[s.cg].count += 1;
+    });
+    const cgChartData = Object.entries(cgMap)
+      .map(([name, v]) => ({ name: name.length > 16 ? name.slice(0, 16) + "…" : name, pct: Math.round(v.sum / v.count) }))
+      .sort((a, b) => b.pct - a.pct).slice(0, 8);
+    const totalPresent    = attMonitoringStudentStats.reduce((a, s) => a + s.presentDays, 0);
+    const totalPossible   = attMonitoringStudentStats.reduce((a, s) => a + s.totalMarkedDays, 0);
+    const overallAvgPct   = totalPossible > 0 ? Math.round((totalPresent / totalPossible) * 100) : 0;
+    return { onTrack, atRisk, critical, noData, cgChartData, overallAvgPct };
+  }, [attMonitoringStudentStats]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
 
   const depts = useMemo(() => {
     return Array.from(new Set([...facultyDepts, ...studentDepts])).sort();
@@ -4700,6 +5026,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   // --- ACTIONS: DEPARTMENTS / COURSES & BATCH CRUD (FULL ADMIN-GRADE MODAL) ---
   const handleOpenDeptModal = (dept?: any) => {
     setModalError(null);
+    setDeptSectionInput("");
     if (dept) {
       const initialShift = dept.default_shift || (dept.shift_based === 1 ? "both" : "general");
       const isShiftSplit = initialShift === "both" || initialShift === "all";
@@ -4719,6 +5046,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         default_shift: initialShift,
         shift_based: isShiftSplit ? 1 : 0
       });
+      // Pre-fill sections from existing class groups for this course
+      const existingSections = Array.from(new Set(
+        [...collegeStudents, ...students]
+          .filter(s => s.classGroup && s.classGroup.toLowerCase().includes((dept.name || "").toLowerCase()))
+          .map(s => {
+            const match = s.classGroup?.match(/[- ](Section\s*)?([A-Z])$/i);
+            return match ? match[2].toUpperCase() : null;
+          })
+          .filter(Boolean)
+      )) as string[];
+      setDeptFormSections(existingSections);
       setEditingDept(true);
     } else {
       setDeptForm({
@@ -4737,6 +5075,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         default_shift: "general",
         shift_based: 0
       });
+      setDeptFormSections([]);
       setEditingDept(false);
     }
     setShowDeptModal(true);
@@ -4835,7 +5174,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         description: deptForm.description.trim(),
         college_id: deptForm.college_id || activeCollegeId,
         default_shift: deptForm.default_shift || "general",
-        shift_based: isShiftSplit ? 1 : 0
+        shift_based: isShiftSplit ? 1 : 0,
+        // Save sections as a JSON string for future reference
+        sections: deptFormSections.length > 0 ? JSON.stringify(deptFormSections) : null
       };
 
       if (editingDept && deptForm.id) {
@@ -4850,8 +5191,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       } else {
         const res = await createCourse(payload);
         if (res.success) {
+          const sectionMsg = deptFormSections.length > 0
+            ? ` with ${deptFormSections.length} section(s) (${deptFormSections.join(", ")}). Class groups like "${deptForm.name.trim()} - Semester 1 - Section ${deptFormSections[0]}" are now available in timetable & student import.`
+            : ".";
+          toast(`Course & Batch created successfully${sectionMsg}`, "success");
           setShowDeptModal(false);
-          toast("Course & Batch created successfully.", "success");
+          setDeptFormSections([]);
           await refreshData();
         } else {
           setModalError(res.message || "Failed to create course.");
@@ -5074,7 +5419,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setDailyDayType(cfg.day_type || "working");
     setDailyDayOrder(cfg.day_order || "Day 1");
     setDailySessionMode(cfg.session_mode || "Offline");
-    setDailyNotes(cfg.notes || "");
+    const deptMatch = (cfg.notes || "").match(/\[Dept:\s*([^\]]+)\]/i);
+    if (deptMatch && deptMatch[1]) {
+      setDailyDeptScope(deptMatch[1].trim());
+      setDailyNotes((cfg.notes || "").replace(/\[Dept:\s*[^\]]+\]/i, "").trim());
+    } else {
+      setDailyDeptScope("All Departments");
+      setDailyNotes(cfg.notes || "");
+    }
     setIsDailyConfigModalOpen(true);
     toast(`Editing Day Order schedule for ${cfg.dateStr}`, "info");
   };
@@ -5082,6 +5434,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const handleCancelDailyEdit = () => {
     setEditingDailyId(null);
     setDailyNotes("");
+    setDailyDeptScope("All Departments");
   };
 
   const handleSaveDailyConfig = async (e: React.FormEvent) => {
@@ -5096,6 +5449,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
     setIsDailySaving(true);
     try {
+      const finalNotes = dailyDeptScope && dailyDeptScope !== "All Departments"
+        ? (dailyNotes.includes(`[Dept: ${dailyDeptScope}]`) ? dailyNotes : `[Dept: ${dailyDeptScope}] ${dailyNotes}`.trim())
+        : dailyNotes;
+
       const res = await fetch("/api/daily-configs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -5107,7 +5464,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           day_type: dailyDayType,
           day_order: dailyDayType === "holiday" ? "None" : dailyDayOrder,
           session_mode: dailySessionMode,
-          notes: dailyNotes,
+          notes: finalNotes,
           auto_advance: autoAdvanceDayOrder,
           skip_sundays: skipSundays
         })
@@ -6888,6 +7245,43 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
                 </div>
 
+                {/* Class Sections & Cohort Management Banner */}
+                <div className="md:col-span-2 pt-6 border-t border-slate-200">
+                  <div className="bg-gradient-to-r from-indigo-50/70 via-purple-50/70 to-indigo-50/70 border border-indigo-200/80 shadow-xs rounded-2xl p-5 flex justify-between items-center flex-wrap gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-xs">
+                          <Users className="h-5 w-5" />
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">
+                            Class Cohorts &amp; Section Management
+                          </h3>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-100 text-indigo-800 border border-indigo-200">
+                            {distinctClasses.length} Cohorts Active
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-600 font-medium pl-10">
+                        Create multi-section cohorts (e.g. BCA A, BCA B), view section-wise student enrollment, and reassign students between sections.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSectionClassFilter(distinctClasses[0] || "");
+                        setSelectedStudentIdsForSection([]);
+                        setShowManageSectionsModal(true);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-sm transition-all cursor-pointer flex items-center gap-2"
+                    >
+                      <Users className="h-4 w-4" />
+                      <span>Manage Class Sections</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Class Teacher / Class Advisor Assignments Panel */}
                 <div className="md:col-span-2 pt-6 border-t border-slate-200 space-y-4">
                   <div className="flex justify-between items-center flex-wrap gap-3 pb-2 border-b border-slate-100">
@@ -7566,16 +7960,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <div className="bg-white border border-slate-200 rounded-xl p-4">
                                 <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">Weekly Hours (top 10)</p>
                                 {workloadData.length > 0 ? (
-                                  <ResponsiveContainer width="100%" height={130}>
-                                    <BarChart data={workloadData} margin={{ top: 0, right: 4, bottom: 0, left: -20 }}>
+                                  <BarChart width={320} height={130} data={workloadData} margin={{ top: 0, right: 4, bottom: 0, left: -20 }}>
                                       <XAxis dataKey="name" tick={{ fontSize: 8, fontWeight: 700 }} />
                                       <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
                                       <Tooltip formatter={(v: any) => [`${v} hrs`]} />
-                                      <Bar dataKey="hrs" radius={[4, 4, 0, 0]}>
+                                      <Bar dataKey="hrs" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                                         {workloadData.map((e, i) => <Cell key={i} fill={e.fill} />)}
                                       </Bar>
                                     </BarChart>
-                                  </ResponsiveContainer>
                                 ) : (
                                   <div className="h-[130px] flex items-center justify-center text-xs text-slate-400 italic">No slot data</div>
                                 )}
@@ -7585,14 +7977,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <div className="bg-white border border-slate-200 rounded-xl p-4">
                                 <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">Faculty by Department</p>
                                 {deptData.length > 0 ? (
-                                  <ResponsiveContainer width="100%" height={130}>
-                                    <BarChart data={deptData} layout="vertical" margin={{ top: 0, right: 10, bottom: 0, left: 0 }}>
+                                  <BarChart width={320} height={130} data={deptData} layout="vertical" margin={{ top: 0, right: 10, bottom: 0, left: 0 }}>
                                       <XAxis type="number" tick={{ fontSize: 9 }} allowDecimals={false} />
                                       <YAxis dataKey="name" type="category" tick={{ fontSize: 8, fontWeight: 700 }} width={75} />
                                       <Tooltip formatter={(v: any) => [`${v} faculty`]} />
-                                      <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                                      <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} isAnimationActive={false} />
                                     </BarChart>
-                                  </ResponsiveContainer>
                                 ) : (
                                   <div className="h-[130px] flex items-center justify-center text-xs text-slate-400 italic">No data</div>
                                 )}
@@ -8179,7 +8569,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   </button>
                                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none min-w-[210px] animate-fadeIn">
                                     <div className="bg-slate-900 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl border border-slate-700 text-center leading-tight">
-                                      📥 Download pre-filled Excel template to edit class schedule offline.
+                                      Download pre-filled Excel template to edit class schedule offline.
                                     </div>
                                     <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700"></div>
                                   </div>
@@ -8205,7 +8595,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   </label>
                                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none min-w-[210px] animate-fadeIn">
                                     <div className="bg-slate-900 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl border border-slate-700 text-center leading-tight">
-                                      📤 Upload completed Excel spreadsheet to instantly sync scheduled slots.
+                                      Upload completed Excel spreadsheet to instantly sync scheduled slots.
                                     </div>
                                     <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700"></div>
                                   </div>
@@ -8252,7 +8642,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   </button>
                                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none min-w-[210px] animate-fadeIn">
                                     <div className="bg-slate-900 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl border border-slate-700 text-center leading-tight">
-                                      🗑️ Permanently clear all scheduled periods for this cohort to start fresh.
+                                      Permanently clear all scheduled periods for this cohort to start fresh.
                                     </div>
                                     <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700"></div>
                                   </div>
@@ -9024,14 +9414,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             {/* Status Donut */}
                             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col">
                               <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-3">Status Breakdown</p>
-                              <ResponsiveContainer width="100%" height={150}>
-                                <PieChart>
-                                  <Pie data={statusDonut} cx="50%" cy="50%" innerRadius={38} outerRadius={60} paddingAngle={3} dataKey="value">
+                              <PieChart width={240} height={150} style={{ margin: "0 auto" }}>
+                                  <Pie data={statusDonut} cx="50%" cy="50%" innerRadius={38} outerRadius={60} paddingAngle={3} dataKey="value" isAnimationActive={false}>
                                     {statusDonut.map((e, i) => <Cell key={i} fill={e.color} />)}
                                   </Pie>
                                   <Tooltip formatter={(v: any, n: any) => [`${v} interviews`, n]} />
                                 </PieChart>
-                              </ResponsiveContainer>
                               <div className="flex flex-wrap gap-2 justify-center mt-2">
                                 {statusDonut.map(d => (
                                   <span key={d.name} className="flex items-center gap-1 text-[9px] font-bold text-slate-500">
@@ -9046,14 +9434,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
                               <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-3">Interviews by Subject</p>
                               {subjectBar.length > 0 ? (
-                                <ResponsiveContainer width="100%" height={150}>
-                                  <BarChart data={subjectBar} layout="vertical" margin={{ top: 0, right: 10, bottom: 0, left: 0 }}>
+                                <BarChart width={300} height={150} data={subjectBar} layout="vertical" margin={{ top: 0, right: 10, bottom: 0, left: 0 }}>
                                     <XAxis type="number" tick={{ fontSize: 9 }} allowDecimals={false} />
                                     <YAxis dataKey="name" type="category" tick={{ fontSize: 8, fontWeight: 700 }} width={100} />
                                     <Tooltip formatter={(v: any) => [`${v} interviews`]} />
-                                    <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                                    <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} isAnimationActive={false} />
                                   </BarChart>
-                                </ResponsiveContainer>
                               ) : (
                                 <div className="h-[150px] flex items-center justify-center text-xs text-slate-400 italic">No data</div>
                               )}
@@ -9062,16 +9448,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             {/* Marks Distribution Bar */}
                             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
                               <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-3">Marks Distribution</p>
-                              <ResponsiveContainer width="100%" height={150}>
-                                <BarChart data={marksBuckets} margin={{ top: 0, right: 4, bottom: 0, left: -20 }}>
+                              <BarChart width={300} height={150} data={marksBuckets} margin={{ top: 0, right: 4, bottom: 0, left: -20 }}>
                                   <XAxis dataKey="label" tick={{ fontSize: 9, fontWeight: 700 }} />
                                   <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
                                   <Tooltip formatter={(v: any) => [`${v} students`]} />
-                                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                                  <Bar dataKey="count" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                                     {marksBuckets.map((e, i) => <Cell key={i} fill={e.fill} />)}
                                   </Bar>
                                 </BarChart>
-                              </ResponsiveContainer>
                             </div>
 
                           </div>
@@ -9091,108 +9475,30 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   {activeTab === "monitoring" && (() => {
                     const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
 
-                    // Build working dates from THREE sources so no date is ever missing:
-                    // 1. Dates that actually have attendance records in context
-                    // 2. All calendar Mon–Sat days in the selected range (excluding holidays)
-                    // 3. Today (always included if within range)
-                    const attendanceDateSet = new Set<string>();
+                    // ── Use component-level pre-computed memos (no useMemo inside IIFE) ──
+                    const workingDates  = attMonitoringWorkingDates;
+                    const attendanceMap = attMonitoringMap;
+                    const examDateSet   = attMonitoringExamDateSet;
+                    const dayNameMap    = attMonitoringDayNameMap;
+                    const filtered      = attMonitoringFiltered;
+                    const studentStats  = attMonitoringStudentStats;   // per-student { pct, presentDays, absentDays, totalMarkedDays }
+                    const chartData     = attMonitoringChartData;
+                    const { onTrack, atRisk, critical, noData, cgChartData, overallAvgPct } = chartData;
 
-                    // Source 1: dates with actual attendance data
-                    (studentAttendance || []).forEach(a => {
-                      if (a.dateStr) attendanceDateSet.add(a.dateStr);
-                    });
-
-                    // Source 2: every Mon–Sat in the selected range (so mentor-marked dates appear even if not in context yet)
-                    const rangeStart = new Date(attendanceStartDate + "T00:00:00");
-                    const rangeEnd = new Date(attendanceEndDate + "T00:00:00");
-                    if (!isNaN(rangeStart.getTime()) && !isNaN(rangeEnd.getTime())) {
-                      const cur = new Date(rangeStart);
-                      while (cur <= rangeEnd) {
-                        const dayOfWeek = cur.getDay();
-                        const ymd = cur.toISOString().split("T")[0];
-                        const isHoliday = (holidays || []).some((h: any) => h?.date === ymd || h?.dateStr === ymd);
-                        if (dayOfWeek !== 0 && !isHoliday) {
-                          attendanceDateSet.add(ymd);
-                        }
-                        cur.setDate(cur.getDate() + 1);
-                      }
-                    }
-
-                    // Source 3: today
-                    if (todayStr >= attendanceStartDate && todayStr <= attendanceEndDate) {
-                      attendanceDateSet.add(todayStr);
-                    }
-
-                    const workingDates = Array.from(attendanceDateSet)
-                      .filter(d => d >= attendanceStartDate && d <= attendanceEndDate)
-                      .sort();
-
-                    // High-Performance O(1) Precomputed Maps (Eliminates all table lag)
-                    const attendanceMap = new Map<string, any[]>();
-                    (studentAttendance || []).forEach(a => {
-                      if (!a.studentId || !a.dateStr) return;
-                      const k1 = `${a.studentId}_${a.dateStr}`;
-                      const l1 = attendanceMap.get(k1);
-                      if (l1) l1.push(a);
-                      else attendanceMap.set(k1, [a]);
-                    });
-
-                    const slotsCache = new Map<string, any[]>();
                     const getStudentSlots = (dayName: string, classGroup?: string) => {
-                      const cacheKey = `${dayName}__${(classGroup || "").toLowerCase()}`;
-                      if (slotsCache.has(cacheKey)) return slotsCache.get(cacheKey)!;
-                      const res = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, classGroup)));
-                      slotsCache.set(cacheKey, res);
-                      return res;
+                      const key = `${dayName}__${(classGroup || "").toLowerCase()}`;
+                      return attMonitoringSlotMap.get(key) || [];
                     };
 
-                    // Apply student filters with deferred search for 60fps typing
-                    const q = (deferredStudentSearch || "").trim().toLowerCase();
-                    const filtered = collegeStudents.filter(s => {
-                      const matchesSearch = !q || s.name.toLowerCase().includes(q) || 
-                                           (s.roll_number && s.roll_number.toLowerCase().includes(q)) ||
-                                           s.id.toLowerCase().includes(q);
-                      const matchesDept = studentDeptFilter === "all" || s.department === studentDeptFilter;
-                      const matchesBatch = studentBatchFilter === "all" || s.classGroup === studentBatchFilter;
-                      return matchesSearch && matchesDept && matchesBatch;
-                    });
-
-                    // Pagination calculations to avoid rendering thousands of DOM nodes at once
+                    // Pagination
                     const totalPages = attendancePageSize > 0 ? Math.max(1, Math.ceil(filtered.length / attendancePageSize)) : 1;
                     const safePage = Math.min(Math.max(1, attendancePage), totalPages);
-                    const paginatedStudents = attendancePageSize > 0 
-                      ? filtered.slice((safePage - 1) * attendancePageSize, safePage * attendancePageSize) 
+                    const paginatedStudents = attendancePageSize > 0
+                      ? filtered.slice((safePage - 1) * attendancePageSize, safePage * attendancePageSize)
                       : filtered;
 
-                    // Overall summary stats
-                    // Compute actual dates with ANY attendance in the attendanceMap (for compliance denominator)
-                    const datesWithAnyAttendance = new Set<string>();
-                    (studentAttendance || []).forEach(a => {
-                      if (a.dateStr && workingDates.includes(a.dateStr)) datesWithAnyAttendance.add(a.dateStr);
-                    });
-                    const actualAttendanceDates = datesWithAnyAttendance.size || workingDates.length;
-
-                    let grandPresentDaysSum = 0;
-                    let grandMarkedDaysSum = 0; // total days where attendance was actually recorded (per student)
-
-                    filtered.forEach(st => {
-                      workingDates.forEach(dStr => {
-                        const stDayAtt = attendanceMap.get(`${st.id}_${dStr}`) || [];
-                        if (stDayAtt.length === 0) return;
-
-                        grandMarkedDaysSum++; // this date was marked for this student
-
-                        const pCount = stDayAtt.filter(a => a.status === "present" || a.status === "od").length;
-                        const aCount = stDayAtt.filter(a => a.status === "absent").length;
-
-                        if (pCount > 0 && aCount === 0) grandPresentDaysSum += 1;
-                        else if (pCount > 0 && aCount > 0) grandPresentDaysSum += 0.5;
-                      });
-                    });
-
-                    // Compliance = present / (students × actual attendance dates)
-                    const grandTotalPossibleDays = filtered.length * actualAttendanceDates;
-                    const overallAvgPct = grandTotalPossibleDays > 0 ? Math.round((grandPresentDaysSum / grandTotalPossibleDays) * 100) : 0;
+                    // Stats for header (derived directly from pre-computed studentStats)
+                    const actualAttendanceDates = workingDates.length;
 
                     // Preset helpers
                     const setPresetDates = (preset: string) => {
@@ -9256,9 +9562,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 {/* Download template sub-button */}
                                 <button
                                   type="button"
-                                  onClick={() => handleDownloadAttendanceTemplate(studentBatchFilter, attendanceStartDate, attendanceEndDate)}
+                                  onClick={() => {
+                                    setTemplateModalCollegeId(activeCollegeId);
+                                    setTemplateModalCohort(studentBatchFilter || "all");
+                                    setTemplateModalStartDate(attendanceStartDate);
+                                    setTemplateModalEndDate(attendanceEndDate);
+                                    setShowAttendanceTemplateModal(true);
+                                  }}
                                   className="ml-0.5 inline-flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
-                                  title="Download blank template to fill attendance"
+                                  title="Download college-wise blank template to fill attendance"
                                 >
                                   <Download className="h-3.5 w-3.5" />
                                   <span>Template</span>
@@ -9289,134 +9601,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             </div>
                           </div>
 
-                          {/* ── ATTENDANCE INFOGRAPHICS ROW ── */}
-                          {(() => {
-                            // ── Per-student attendance % using the already-computed attendanceMap ──
-                            const studentPcts: { id: string; name: string; cg: string; pct: number; hasData: boolean }[] = filtered.map(st => {
-                              let presentDays = 0, totalMarkedDays = 0;
-                              workingDates.forEach(dStr => {
-                                const recs = attendanceMap.get(`${st.id}_${dStr}`) || [];
-                                if (recs.length === 0) return;
-                                totalMarkedDays++;
-                                const p = recs.filter((a: any) => a.status === "present" || a.status === "od").length;
-                                const ab = recs.filter((a: any) => a.status === "absent").length;
-                                if (p > 0 && ab === 0) presentDays += 1;
-                                else if (p > 0 && ab > 0) presentDays += 0.5;
-                              });
-                              const pct = totalMarkedDays > 0 ? Math.round((presentDays / totalMarkedDays) * 100) : -1;
-                              return { id: st.id, name: st.name, cg: st.classGroup || st.department || "General", pct, hasData: totalMarkedDays > 0 };
-                            });
-
-                            // ── Donut: Student-level compliance buckets ──
-                            const onTrack    = studentPcts.filter(s => s.pct >= 75).length;
-                            const atRisk     = studentPcts.filter(s => s.pct >= 65 && s.pct < 75).length;
-                            const critical   = studentPcts.filter(s => s.pct >= 0 && s.pct < 65).length;
-                            const noData     = studentPcts.filter(s => !s.hasData).length;
-                            const shortageCount = atRisk + critical;
-
-                            const donutData = [
-                              { name: `On Track (≥75%)`,   value: onTrack,  color: "#10b981" },
-                              { name: `At Risk (65–74%)`,  value: atRisk,   color: "#f59e0b" },
-                              { name: `Critical (<65%)`,   value: critical, color: "#f43f5e" },
-                              { name: `No Data`,           value: noData,   color: "#cbd5e1" },
-                            ].filter(d => d.value > 0);
-
-                            // ── Bar: class-group avg attendance % ──
-                            const cgMap: Record<string, { sum: number; count: number }> = {};
-                            studentPcts.filter(s => s.hasData).forEach(s => {
-                              if (!cgMap[s.cg]) cgMap[s.cg] = { sum: 0, count: 0 };
-                              cgMap[s.cg].sum   += s.pct;
-                              cgMap[s.cg].count += 1;
-                            });
-                            const cgChartData = Object.entries(cgMap)
-                              .map(([name, v]) => ({
-                                name: name.length > 16 ? name.slice(0, 16) + "…" : name,
-                                pct:  Math.round(v.sum / v.count),
-                              }))
-                              .sort((a, b) => b.pct - a.pct)
-                              .slice(0, 8);
-
-                            if (studentPcts.length === 0) return null;
-
-                            return (
-                              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-2">
-
-                                {/* KPI Cards */}
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
-                                    <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider">Campus Avg</p>
-                                    <p className="text-xl font-black text-emerald-700 mt-0.5">{overallAvgPct}%</p>
-                                    <p className="text-[9px] text-emerald-500 font-semibold mt-0.5">across {filtered.length} students</p>
-                                  </div>
-                                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-3">
-                                    <p className="text-[10px] font-extrabold text-rose-600 uppercase tracking-wider">Shortage Alert</p>
-                                    <p className="text-xl font-black text-rose-700 mt-0.5">{shortageCount}</p>
-                                    <p className="text-[9px] text-rose-400 font-semibold mt-0.5">students below 75%</p>
-                                  </div>
-                                  <div className="bg-white border border-slate-200 rounded-xl p-3">
-                                    <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">On Track</p>
-                                    <p className="text-xl font-black text-slate-800 mt-0.5">{onTrack}</p>
-                                    <p className="text-[9px] text-slate-400 font-semibold mt-0.5">students ≥ 75%</p>
-                                  </div>
-                                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
-                                    <p className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-wider">Tracked Days</p>
-                                    <p className="text-xl font-black text-indigo-700 mt-0.5">{workingDates.length}</p>
-                                    <p className="text-[9px] text-indigo-400 font-semibold mt-0.5">working days in range</p>
-                                  </div>
-                                </div>
-
-                                {/* Donut: student-level compliance */}
-                                <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col">
-                                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-1">Student Compliance Split</p>
-                                  <p className="text-[9px] text-slate-400 font-medium mb-2">Each segment = number of students</p>
-                                  <ResponsiveContainer width="100%" height={120}>
-                                    <PieChart>
-                                      <Pie data={donutData} cx="50%" cy="50%" innerRadius={32} outerRadius={54} paddingAngle={3} dataKey="value">
-                                        {donutData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                                      </Pie>
-                                      <Tooltip formatter={(v: any, n: any) => [`${v} students`, n]} />
-                                    </PieChart>
-                                  </ResponsiveContainer>
-                                  <div className="flex flex-col gap-1 mt-2">
-                                    {donutData.map(d => (
-                                      <div key={d.name} className="flex items-center justify-between text-[9px] font-bold text-slate-600">
-                                        <span className="flex items-center gap-1.5">
-                                          <span className="h-2 w-2 rounded-full shrink-0" style={{ background: d.color }} />
-                                          {d.name}
-                                        </span>
-                                        <span className="font-black">{d.value} students</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {/* Bar: class-group avg % */}
-                                <div className="bg-white border border-slate-200 rounded-xl p-4">
-                                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-1">Avg Attendance % by Class</p>
-                                  <p className="text-[9px] text-slate-400 font-medium mb-2">
-                                    🟢 ≥75% &nbsp; 🟡 65–74% &nbsp; 🔴 &lt;65%
-                                  </p>
-                                  {cgChartData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height={130}>
-                                      <BarChart data={cgChartData} layout="vertical" margin={{ top: 0, right: 28, bottom: 0, left: 0 }}>
-                                        <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 9 }} tickFormatter={v => `${v}%`} />
-                                        <YAxis dataKey="name" type="category" tick={{ fontSize: 8, fontWeight: 700 }} width={100} />
-                                        <Tooltip formatter={(v: any) => [`${v}%`, "Avg Attendance"]} />
-                                        <Bar dataKey="pct" radius={[0, 4, 4, 0]} label={{ position: "right", fontSize: 8, fontWeight: 700, formatter: (v: any) => `${v}%` }}>
-                                          {cgChartData.map((e, i) => (
-                                            <Cell key={i} fill={e.pct >= 75 ? "#10b981" : e.pct >= 65 ? "#f59e0b" : "#f43f5e"} />
-                                          ))}
-                                        </Bar>
-                                      </BarChart>
-                                    </ResponsiveContainer>
-                                  ) : (
-                                    <div className="h-[130px] flex items-center justify-center text-xs text-slate-400 italic">No attendance data in range</div>
-                                  )}
-                                </div>
-
-                              </div>
-                            );
-                          })()}
+                          {/* ── ATTENDANCE INFOGRAPHICS ROW (memoized component — only re-renders when chart data changes) ── */}
+                          {attMonitoringStudentStats.length > 0 && (
+                            <AttMonitoringCharts
+                              donutData={[
+                                { name: `On Track (≥75%)`,  value: onTrack,  color: "#10b981" },
+                                { name: `At Risk (65–74%)`, value: atRisk,   color: "#f59e0b" },
+                                { name: `Critical (<65%)`,  value: critical, color: "#f43f5e" },
+                                { name: `No Data`,          value: noData,   color: "#cbd5e1" },
+                              ].filter(d => d.value > 0)}
+                              cgChartData={cgChartData}
+                              onTrack={onTrack}
+                              atRisk={atRisk}
+                              critical={critical}
+                              noData={noData}
+                              overallAvgPct={overallAvgPct}
+                              filteredCount={filtered.length}
+                              workingDatesCount={workingDates.length}
+                            />
+                          )}
 
                           {/* Date Range + Filters Toolbar (single compact row) */}
                           <div className="flex flex-col lg:flex-row lg:items-center gap-3 flex-wrap">
@@ -9520,18 +9723,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <th className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-rose-700">Total Absent</th>
                                   <th className="p-2.5 border-r border-slate-200 text-center min-w-[65px] text-indigo-700">%</th>
                                   {workingDates.map(dStr => {
-                                    const dObj = new Date(dStr + "T00:00:00");
-                                    const dDay = dObj.toLocaleDateString("en-US", { weekday: "short" });
-                                    const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+                                    // Use pre-computed dayNameMap — no new Date() per cell
+                                    const dDay = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
                                     const isToday = dStr === todayStr;
                                     const holidayObj = (holidays || []).find((h: any) => h?.date === dStr || h?.dateStr === dStr);
-                                    const dayTypeLabel = holidayObj ? "Holiday" : (dDay === "Sat" || dDay === "Sun") ? "Weekend" : "Regular";
+                                    const isExam = examDateSet.has(dStr); // O(1) — was isExamDate() scan
+                                    const dayTypeLabel = holidayObj ? "Holiday" : isExam ? "Exam" : (dDay === "Sat" || dDay === "Sun") ? "Weekend" : "Regular";
 
                                     return (
                                       <th
                                         key={dStr}
                                         className={`p-2 border-r border-slate-200 text-center min-w-[76px] transition-colors ${
-                                          isToday ? "bg-indigo-50/80 border-b-2 border-b-indigo-600" : ""
+                                          isToday ? "bg-indigo-50/80 border-b-2 border-b-indigo-600" : isExam ? "bg-purple-50/60" : ""
                                         }`}
                                         title={`${dDay}, ${formatDateToDMY(dStr)} • Type: ${dayTypeLabel}`}
                                       >
@@ -9540,13 +9743,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                             TODAY
                                           </span>
                                         )}
-                                        <div className={`font-extrabold text-[9.5px] ${isToday ? "text-indigo-900 font-black" : "text-slate-700"}`}>
+                                        <div className={`font-extrabold text-[9.5px] ${isToday ? "text-indigo-900 font-black" : isExam ? "text-purple-900" : "text-slate-700"}`}>
                                           {formatDateToDMY(dStr)}
                                         </div>
                                         <div className="flex items-center justify-center gap-1 mt-0.5">
                                           <span className="text-[8px] text-slate-400 font-semibold">{dDay}</span>
                                           <span className={`text-[7px] font-extrabold px-1 py-0.2 rounded uppercase ${
-                                            holidayObj ? "bg-rose-100 text-rose-700" : "bg-slate-200/70 text-slate-600"
+                                            holidayObj ? "bg-rose-100 text-rose-700" : isExam ? "bg-purple-100 text-purple-800 border border-purple-200" : "bg-slate-200/70 text-slate-600"
                                           }`}>
                                             {dayTypeLabel}
                                           </span>
@@ -9558,15 +9761,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               </thead>
                               <tbody className="divide-y divide-slate-100 bg-white text-slate-700 text-xs">
                                 {paginatedStudents.map((st, idx) => {
-                                  let presentDays = 0;
-                                  let absentDays = 0;
-                                  let totalStudentWorkingDays = 0;
+                                  // Use pre-computed stats — no per-row re-computation
+                                  const stStats = studentStats.find(s => s.id === st.id);
                                   const rowSerial = attendancePageSize > 0 ? ((safePage - 1) * attendancePageSize) + idx + 1 : idx + 1;
 
                                   const dateCells = workingDates.map(dStr => {
-                                    const dateObj = new Date(dStr + "T00:00:00");
-                                    const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
-                                    const stSlots = getStudentSlots(dayName, st.classGroup);
+                                    const dayName  = dayNameMap[dStr];              // O(1) — was new Date().toLocaleDateString()
+                                    const stSlots  = getStudentSlots(dayName, st.classGroup);
                                     const stDayAtt = attendanceMap.get(`${st.id}_${dStr}`) || [];
 
                                     // Only render blank if there are NO slots AND NO attendance records for this date
@@ -9578,41 +9779,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       );
                                     }
 
-                                    totalStudentWorkingDays++;
+                                    const isExam  = examDateSet.has(dStr);          // O(1) — was isExamDate() scan
+                                    const evalRes = evaluateDailyStudentAttendance(stDayAtt, stSlots.length, isExam);
 
-                                    const pCount = stDayAtt.filter(a => a.status === "present").length;
-                                    const odCount = stDayAtt.filter(a => a.status === "od").length;
-                                    const aCount = stDayAtt.filter(a => a.status === "absent").length;
-                                    const hdCount = stDayAtt.filter(a => a.status === "late" || a.status === "hd").length;
-                                    const totalMarked = stDayAtt.length;
-                                    const totalEff = Math.max(stSlots.length, totalMarked);
-
-                                    let statusLabel = "—";
                                     let badgeColor = "bg-slate-50 text-slate-300 border-slate-200";
+                                    if (evalRes.status === "OD") badgeColor = "bg-purple-50 text-purple-700 border-purple-200";
+                                    else if (evalRes.status === "P") badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200";
+                                    else if (evalRes.status === "A") badgeColor = "bg-rose-50 text-rose-700 border-rose-200";
 
-                                    if (totalMarked === 0) {
-                                      statusLabel = "—";
-                                      badgeColor = "bg-slate-50 text-slate-300 border-slate-200";
-                                    } else if (odCount > 0 && (odCount + pCount >= totalEff)) {
-                                      statusLabel = "OD";
-                                      badgeColor = "bg-purple-50 text-purple-700 border-purple-200";
-                                      presentDays += 1;
-                                    } else if (pCount > 0 && aCount === 0 && hdCount === 0) {
-                                      statusLabel = "P";
-                                      badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200";
-                                      presentDays += 1;
-                                    } else if (hdCount > 0 || (pCount > 0 && aCount > 0)) {
-                                      statusLabel = "HD";
-                                      badgeColor = "bg-amber-50 text-amber-700 border-amber-200";
-                                      presentDays += 0.5;
-                                      absentDays += 0.5;
-                                    } else if (aCount > 0) {
-                                      statusLabel = "A";
-                                      badgeColor = "bg-rose-50 text-rose-700 border-rose-200";
-                                      absentDays += 1;
-                                    }
-
-                                    const tooltipText = `${st.name} | ${formatDateToDMY(dStr)} (${dayName})\nMarked: ${pCount + odCount}/${totalEff} Periods Present\n${stDayAtt.map((a, i) => `• Period ${i+1}: ${a.status.toUpperCase()}`).join('\n') || "No periods marked yet"}\n(Click to Mark/Edit)`;
+                                    const tooltipText = `${st.name} | ${formatDateToDMY(dStr)} (${dayName})\n${evalRes.tooltipInfo}\n${stDayAtt.map((a, i) => `• Period ${i+1}: ${a.status.toUpperCase()}`).join('\n') || "No periods marked yet"}\n(Click to Mark/Edit)`;
 
                                     return (
                                       <td key={dStr} className="p-1.5 text-center border-r border-slate-100">
@@ -9622,14 +9797,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           className={`inline-flex items-center justify-center h-5 w-6 rounded font-black text-[10px] border transition-all cursor-pointer hover:scale-110 active:scale-95 ${badgeColor}`}
                                           title={tooltipText}
                                         >
-                                          {statusLabel}
+                                          {evalRes.status}
                                         </button>
                                       </td>
                                     );
                                   });
 
-                                  const effectiveTotal = totalStudentWorkingDays || workingDates.length;
-                                  const pct = effectiveTotal > 0 ? Math.round((presentDays / effectiveTotal) * 100) : 0;
+                                  // Use pre-computed stats from attMonitoringStudentStats memo
+                                  const effectiveTotal = stStats ? (stStats.totalMarkedDays || workingDates.length) : workingDates.length;
+                                  const presentDays    = stStats?.presentDays ?? 0;
+                                  const absentDays     = stStats?.absentDays  ?? 0;
+                                  const rawPct         = stStats?.pct;
+                                  const pct            = (rawPct !== undefined && rawPct >= 0) ? rawPct : 0;
 
                                   return (
                                     <tr key={st.id} className="hover:bg-indigo-50/20 transition-colors">
@@ -9733,13 +9912,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                         const missedAttendanceList = (() => {
                           const list: any[] = [];
-                          for (let i = 1; i <= 7; i++) { // skip today (i=0), check past 7 working days
+                          for (let i = 0; i <= 7; i++) { // Include today (i=0) for instant CAM notification
                             const d = new Date();
                             d.setDate(today.getDate() - i);
                             const dayName = d.toLocaleDateString("en-US", { weekday: "long" });
-                            // Only check Mon-Fri (or Sat if college has 6 working days)
                             if (!workingDays.includes(dayName)) continue;
                             const dateStr = d.toISOString().split("T")[0];
+
+                            const customDayCfg = dailyConfigsList.find(c => c.dateStr === dateStr);
+                            const isEvent = customDayCfg?.day_type === "event" || (studentAttendance || []).some(a => a.dateStr === dateStr && (a as any).attendanceTypeSub === "Event");
+                            const isExam = !isEvent && (customDayCfg?.day_type === "exam_day" || customDayCfg?.day_type === "exam" || isExamDate(dateStr, dailyConfigsList, studentAttendance));
+                            const isSingleMarkingDay = isExam || isEvent;
 
                             const daySlots = slots.filter(s => {
                               const m = mentors.find(men => men.id === s.mentorId);
@@ -9756,13 +9939,36 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                               const coveredBySlot = coveredSet.has(`${dateStr}_slot_${s.id}`);
                               const coveredByDate = coveredSet.has(`date_${dateStr}`);
-                              if (!coveredBySlot && !coveredByDate) {
+
+                              // On single marking days (Exam/Event), any 1 marking on that date covers all slots
+                              if (isSingleMarkingDay && coveredByDate) return;
+
+                              // For today, only flag if the session hour has ended
+                              if (i === 0) {
+                                const parts = (s.time || "").split("-");
+                                const endPart = (parts[1] || parts[0]).trim();
+                                const match = endPart.match(/(\d+)[:.](\d+)?\s*(AM|PM)?/i);
+                                if (match) {
+                                  let hours = parseInt(match[1], 10);
+                                  const mins = match[2] ? parseInt(match[2], 10) : 0;
+                                  const meridian = (match[3] || "").toUpperCase();
+                                  if (meridian === "PM" && hours < 12) hours += 12;
+                                  if (meridian === "AM" && hours === 12) hours = 0;
+                                  const now = new Date();
+                                  const currentMins = now.getHours() * 60 + now.getMinutes();
+                                  const periodMins = hours * 60 + mins;
+                                  if (currentMins < periodMins) return; // session hasn't ended yet
+                                }
+                              }
+
+                              if (!coveredBySlot && (!isSingleMarkingDay || !coveredByDate)) {
                                 const mentorObj = mentors.find(m => m.id === s.mentorId);
                                 list.push({
                                   slot: s,
                                   dateStr,
                                   dayName,
                                   mentor: mentorObj,
+                                  isToday: i === 0,
                                   id: `${s.mentorId}_${s.course}_${s.time}_${dateStr}`
                                 });
                               }
@@ -9815,7 +10021,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                             {missedAttendanceList.length === 0 ? (
                               <div className="py-10 text-center">
-                                <div className="text-3xl mb-2">✅</div>
+                                <div className="text-3xl mb-2"></div>
                                 <p className="text-emerald-600 font-extrabold text-sm">All faculty have marked attendance this week.</p>
                                 <p className="text-xs text-slate-400 font-semibold mt-1">No missed sessions in the past 7 working days.</p>
                               </div>
@@ -10185,192 +10391,285 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <p className="text-xs text-slate-400 font-semibold mt-0.5">Substitution requests awaiting receiver approval.</p>
                             </div>
                             <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  const XLSX = await import("xlsx");
-                                  const headers = ["S.No", "Date", "Time", "Class", "Requestor", "Cover Staff", "Reason", "Status", "Submitted At"];
-                                  const rows = campusRequests.map((r, idx) => [
-                                    idx + 1,
-                                    r.dateStr || "—",
-                                    r.time || "—",
-                                    r.course || "—",
-                                    r.requestorName || "—",
-                                    r.targetStaffName || "—",
-                                    r.reason || "—",
-                                    r.status || "—",
-                                    r.timestamp ? new Date(r.timestamp).toLocaleDateString() : "—"
-                                  ]);
-                                  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-                                  ws["!cols"] = [{ wch: 5 }, { wch: 12 }, { wch: 10 }, { wch: 20 }, { wch: 22 }, { wch: 22 }, { wch: 35 }, { wch: 14 }, { wch: 14 }];
-                                  const wb = XLSX.utils.book_new();
-                                  XLSX.utils.book_append_sheet(wb, ws, "Handovers");
-                                  XLSX.writeFile(wb, `Handover_Requests_${new Date().toISOString().slice(0, 10)}.xlsx`);
-                                  toast("Handover requests exported!", "success");
-                                } catch (err: any) {
-                                  toast("Export failed: " + err.message, "error");
-                                }
-                              }}
-                              className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
-                            >
-                              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
-                              Export Excel
-                            </button>
-                          </div>
-                          
-                          <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
-                            <table className="w-full border-collapse text-left text-xs font-semibold min-w-[640px]">
-                              <thead>
-                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
-                                  <th className="p-3 border-r border-slate-100">Handover Date</th>
-                                  <th className="p-3 border-r border-slate-100">Time / Class</th>
-                                  <th className="p-3 border-r border-slate-100">Requestor (Original)</th>
-                                  <th className="p-3 border-r border-slate-100">Receiver (Cover)</th>
-                                  <th className="p-3 border-r border-slate-100">Reason</th>
-                                  <th className="p-3 border-r border-slate-100">Status</th>
-                                  <th className="p-3 text-right">Actions</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                                {campusRequests.filter(r => r.status === "pending" || r.status === "pending_cam").map(req => (
-                                  <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
-                                    <td className="p-3 font-bold text-slate-805 border-r border-slate-100">{req.dateStr}</td>
-                                    <td className="p-3 border-r border-slate-100">
-                                      <div className="font-bold text-slate-805">{req.course}</div>
-                                      <div className="text-[10px] text-slate-400">{req.time}</div>
-                                    </td>
-                                    <td className="p-3 font-bold border-r border-slate-100">{req.requestorName}</td>
-                                    <td className="p-3 font-bold text-indigo-700 border-r border-slate-100">{req.targetStaffName}</td>
-                                    <td className="p-3 italic text-slate-500 border-r border-slate-100 text-[11px] max-w-xs truncate" title={req.reason}>
-                                      {req.reason}
-                                    </td>
-                                    <td className="p-3 border-r border-slate-100">
-                                      {req.reason?.includes("Late Mentor Attendance Punch") ? (
-                                        <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 animate-pulse flex items-center gap-1 w-fit">
-                                          <span>⏰ Late Mentor Punch</span>
-                                        </span>
-                                      ) : req.reason?.includes("Late Attendance") ? (
-                                        <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 animate-pulse flex items-center gap-1 w-fit">
-                                          <span>⏰ Late Attendance</span>
-                                        </span>
-                                      ) : req.status === "pending_cam" ? (
-                                        <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-indigo-50 border-indigo-150 text-indigo-700 animate-pulse">
-                                          Emergency (CM)
-                                        </span>
-                                      ) : (
-                                        <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-amber-50 border-amber-100 text-amber-700">
-                                          Pending
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="p-3 text-right">
-                                      {req.status === "pending_cam" ? (
-                                        <div className="flex gap-2 justify-end">
-                                          <button
-                                            type="button"
-                                            disabled={loadingActions[`approve_req_${req.id}`]}
-                                            onClick={async () => {
-                                              if (await showConfirm({ message: "Approve this Emergency Handover Request? It will be forwarded to the cover staff.", confirmLabel: "Approve", title: "Approve Emergency Handover" })) {
-                                                setActionLoading(`approve_req_${req.id}`, true);
-                                                try {
-                                                  await handleRequest(req.id, "approved", "", "Campus Manager");
-                                                  toast("Emergency request approved and forwarded to the cover staff.", "success");
-                                                } finally {
-                                                  setActionLoading(`approve_req_${req.id}`, false);
-                                                }
-                                              }
-                                            }}
-                                            className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
-                                          >
-                                            {loadingActions[`approve_req_${req.id}`] ? (
-                                              <>
-                                                <Loader2 className="h-3 w-3 animate-spin" />
-                                                Approving...
-                                              </>
-                                            ) : "Approve Emergency"}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            disabled={loadingActions[`reject_req_${req.id}`]}
-                                            onClick={async () => {
-                                              if (await showConfirm({ message: "Are you sure you want to reject this emergency handover request?", danger: true, confirmLabel: "Reject" })) {
-                                                setActionLoading(`reject_req_${req.id}`, true);
-                                                try {
-                                                  await handleRequest(req.id, "rejected", "", "Campus Manager");
-                                                  toast("Emergency request rejected.", "info");
-                                                } finally {
-                                                  setActionLoading(`reject_req_${req.id}`, false);
-                                                }
-                                              }
-                                            }}
-                                            className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
-                                          >
-                                            {loadingActions[`reject_req_${req.id}`] ? (
-                                              <>
-                                                <Loader2 className="h-3 w-3 animate-spin" />
-                                                Rejecting...
-                                              </>
-                                            ) : "Reject"}
-                                          </button>
-                                        </div>
-                                      ) : camMentor && req.targetStaffId === camMentor.id ? (
-                                        <div className="flex gap-2 justify-end">
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setReviewingRequestId(req.id);
-                                              setHandoverSubject("original");
-                                              setSelectedSubjName("");
-                                              setCustomSubjName("");
-                                              setReviewReason("");
-                                            }}
-                                            className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-[9.5px] font-bold shadow-sm transition-colors"
-                                          >
-                                            Approve
-                                          </button>
-                                          <button
-                                            type="button"
-                                            disabled={loadingActions[`reject_regular_req_${req.id}`]}
-                                            onClick={async () => {
-                                              if (await showConfirm({ message: "Are you sure you want to reject this handover request?", danger: true, confirmLabel: "Reject" })) {
-                                                setActionLoading(`reject_regular_req_${req.id}`, true);
-                                                try {
-                                                  await handleRequest(req.id, "rejected", "", "Campus Manager");
-                                                  toast("Request rejected successfully.", "info");
-                                                } finally {
-                                                  setActionLoading(`reject_regular_req_${req.id}`, false);
-                                                }
-                                              }
-                                            }}
-                                            className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
-                                          >
-                                            {loadingActions[`reject_regular_req_${req.id}`] ? (
-                                              <>
-                                                <Loader2 className="h-3 w-3 animate-spin" />
-                                                Rejecting...
-                                              </>
-                                            ) : "Reject"}
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <span className="text-[10px] text-slate-400 font-semibold italic">
-                                          Awaiting cover staff ({req.targetStaffName})
-                                        </span>
-                                      )}
-                                    </td>
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    const XLSX = await import("xlsx");
+                                    const headers = ["S.No", "Date", "Time", "Class", "Requestor", "Cover Staff", "Reason", "Status", "Submitted At"];
+                                    const rows = campusRequests.map((r, idx) => [
+                                      idx + 1,
+                                      r.dateStr || "—",
+                                      r.time || "—",
+                                      r.course || "—",
+                                      r.requestorName || "—",
+                                      r.targetStaffName || "—",
+                                      r.reason || "—",
+                                      r.status || "—",
+                                      r.timestamp ? new Date(r.timestamp).toLocaleDateString() : "—"
+                                    ]);
+                                    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                                    ws["!cols"] = [{ wch: 5 }, { wch: 12 }, { wch: 10 }, { wch: 20 }, { wch: 22 }, { wch: 22 }, { wch: 35 }, { wch: 14 }, { wch: 14 }];
+                                    const wb = XLSX.utils.book_new();
+                                    XLSX.utils.book_append_sheet(wb, ws, "Handovers");
+                                    XLSX.writeFile(wb, `Handover_Requests_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                                    toast("Handover requests exported!", "success");
+                                  } catch (err: any) {
+                                    toast("Export failed: " + err.message, "error");
+                                  }
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                              >
+                                <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                                Export Excel
+                              </button>
+                            </div>
+                            
+                            <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
+                              <table className="w-full border-collapse text-left text-xs font-semibold min-w-[640px]">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
+                                    <th className="p-3 border-r border-slate-100">Handover Date</th>
+                                    <th className="p-3 border-r border-slate-100">Time / Class</th>
+                                    <th className="p-3 border-r border-slate-100">Requestor (Original)</th>
+                                    <th className="p-3 border-r border-slate-100">Receiver (Cover)</th>
+                                    <th className="p-3 border-r border-slate-100">Reason</th>
+                                    <th className="p-3 border-r border-slate-100">Status</th>
+                                    <th className="p-3 text-right">Actions</th>
                                   </tr>
-                                ))}
-                                {campusRequests.filter(r => r.status === "pending" || r.status === "pending_cam").length === 0 && (
-                                  <tr>
-                                    <td colSpan={7} className="p-8 text-center text-slate-400 italic">
-                                      No pending handover requests for this campus.
-                                    </td>
-                                  </tr>
-                                )}
-                              </tbody>
-                            </table>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                                  {campusRequests.filter(r => r.status === "pending" || r.status === "pending_cam" || r.status === "needs_cam_allocation" || r.status === "rejected").map(req => (
+                                    <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
+                                      <td className="p-3 font-bold text-slate-805 border-r border-slate-100">{req.dateStr}</td>
+                                      <td className="p-3 border-r border-slate-100">
+                                        <div className="font-bold text-slate-805">{req.course}</div>
+                                        <div className="text-[10px] text-slate-400">{req.time}</div>
+                                      </td>
+                                      <td className="p-3 font-bold border-r border-slate-100">{req.requestorName}</td>
+                                      <td className="p-3 font-bold text-indigo-700 border-r border-slate-100">
+                                        {req.status === "needs_cam_allocation" ? (
+                                          <span className="text-amber-700 italic font-semibold">CAM Help Requested</span>
+                                        ) : req.targetStaffName}
+                                      </td>
+                                      <td className="p-3 italic text-slate-500 border-r border-slate-100 text-[11px] max-w-xs truncate" title={req.reason}>
+                                        {req.reason}
+                                      </td>
+                                      <td className="p-3 border-r border-slate-100">
+                                        {req.status === "needs_cam_allocation" ? (
+                                          <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-indigo-50 border-indigo-200 text-indigo-700 flex items-center gap-1 w-fit">
+                                            <span>🛡️ Needs CAM Allocation</span>
+                                          </span>
+                                        ) : req.status === "rejected" ? (
+                                          <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 flex items-center gap-1 w-fit">
+                                            <span>❌ Cover Declined (Reassign)</span>
+                                          </span>
+                                        ) : req.reason?.includes("Late Mentor Attendance Punch") ? (
+                                          <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 animate-pulse flex items-center gap-1 w-fit">
+                                            <span>⏰ Late Mentor Punch</span>
+                                          </span>
+                                        ) : req.reason?.includes("Late Attendance") ? (
+                                          <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 animate-pulse flex items-center gap-1 w-fit">
+                                            <span>⏰ Late Attendance</span>
+                                          </span>
+                                        ) : req.status === "pending_cam" ? (
+                                          <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-indigo-50 border-indigo-150 text-indigo-700 animate-pulse">
+                                            Emergency (CM)
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-amber-50 border-amber-100 text-amber-700">
+                                            Pending Colleague
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="p-3 text-right">
+                                        {(req.status === "needs_cam_allocation" || req.status === "rejected") ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => openCamAssignModal(req)}
+                                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black shadow-xs transition-colors flex items-center gap-1.5 ml-auto cursor-pointer"
+                                          >
+                                            ⚡ Map Free Faculty
+                                          </button>
+                                        ) : req.status === "pending_cam" ? (
+                                          <div className="flex gap-2 justify-end">
+                                            <button
+                                              type="button"
+                                              disabled={loadingActions[`approve_req_${req.id}`]}
+                                              onClick={async () => {
+                                                if (await showConfirm({ message: "Approve this Emergency Handover Request? It will be forwarded to the cover staff.", confirmLabel: "Approve", title: "Approve Emergency Handover" })) {
+                                                  setActionLoading(`approve_req_${req.id}`, true);
+                                                  try {
+                                                    await handleRequest(req.id, "approved", "", "Campus Manager");
+                                                    toast("Emergency request approved and forwarded to the cover staff.", "success");
+                                                  } finally {
+                                                    setActionLoading(`approve_req_${req.id}`, false);
+                                                  }
+                                                }
+                                              }}
+                                              className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                                            >
+                                              {loadingActions[`approve_req_${req.id}`] ? (
+                                                <>
+                                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                                  Approving...
+                                                </>
+                                              ) : "Approve Emergency"}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              disabled={loadingActions[`reject_req_${req.id}`]}
+                                              onClick={async () => {
+                                                if (await showConfirm({ message: "Are you sure you want to reject this emergency handover request?", danger: true, confirmLabel: "Reject" })) {
+                                                  setActionLoading(`reject_req_${req.id}`, true);
+                                                  try {
+                                                    await handleRequest(req.id, "rejected", "", "Campus Manager");
+                                                    toast("Emergency request rejected.", "info");
+                                                  } finally {
+                                                    setActionLoading(`reject_req_${req.id}`, false);
+                                                  }
+                                                }
+                                              }}
+                                              className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                                            >
+                                              {loadingActions[`reject_req_${req.id}`] ? (
+                                                <>
+                                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                                  Rejecting...
+                                                </>
+                                              ) : "Reject"}
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400 font-semibold italic">
+                                            Awaiting cover staff ({req.targetStaffName})
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                  {campusRequests.filter(r => r.status === "pending" || r.status === "pending_cam" || r.status === "needs_cam_allocation" || r.status === "rejected").length === 0 && (
+                                    <tr>
+                                      <td colSpan={7} className="p-8 text-center text-slate-400 italic">
+                                        No pending handover requests for this campus.
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
-                        </div>
+
+                          {/* Modal: CAM Direct Free Faculty Allocation */}
+                          {camAssigningReq && (
+                            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                              <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200 animate-scaleUp space-y-0">
+                                {/* Header */}
+                                <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="h-8 w-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 font-black">
+                                      ⚡
+                                    </div>
+                                    <div>
+                                      <h3 className="text-xs font-black text-slate-900">Map Free Faculty for Cover</h3>
+                                      <p className="text-[10px] text-slate-500 font-semibold">{camAssigningReq.course} · {camAssigningReq.dateFormatted || camAssigningReq.dateStr}</p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCamAssigningReq(null)}
+                                    className="text-slate-400 hover:text-slate-700 p-1 rounded-md cursor-pointer"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </div>
+
+                                {/* Body */}
+                                <div className="p-4 space-y-3.5 bg-slate-50/40">
+                                  {/* Class details snippet */}
+                                  <div className="p-3 rounded-lg bg-white border border-slate-200 text-xs space-y-1 shadow-2xs">
+                                    <div className="flex justify-between">
+                                      <span className="text-slate-500 font-bold">Faculty on Leave:</span>
+                                      <span className="font-extrabold text-slate-800">{camAssigningReq.requestorName}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-slate-500 font-bold">Time Slot &amp; Day:</span>
+                                      <span className="font-mono font-bold text-slate-800">{camAssigningReq.time} ({camAssigningReq.day})</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-slate-500 font-bold">Class Group:</span>
+                                      <span className="font-bold text-slate-800">{camAssigningReq.classGroup || "General"}</span>
+                                    </div>
+                                  </div>
+
+                                  {/* Free Mentors Selection */}
+                                  <div>
+                                    <label className="text-[10.5px] font-black text-slate-700 block mb-1.5 uppercase tracking-wider">
+                                      Select Available Free Faculty:
+                                    </label>
+                                    {camAssignLoadingMentors ? (
+                                      <div className="p-4 text-center text-xs text-slate-400 font-semibold">
+                                        ⏳ Checking live faculty availability...
+                                      </div>
+                                    ) : camAssignAvailableMentors.length === 0 ? (
+                                      <div className="p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
+                                        ⚠️ No faculty members are currently free for this slot without schedule clashes or leaves.
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                        {camAssignAvailableMentors.map((m: any) => (
+                                          <label
+                                            key={m.id}
+                                            className={`flex items-center justify-between p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                                              camSelectedCoverMentorId === m.id
+                                                ? "border-indigo-600 bg-indigo-50/70 text-indigo-950 ring-1 ring-indigo-500 font-extrabold"
+                                                : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                                            }`}
+                                          >
+                                            <div className="flex items-center gap-2">
+                                              <input
+                                                type="radio"
+                                                name="cam_cover_mentor"
+                                                value={m.id}
+                                                checked={camSelectedCoverMentorId === m.id}
+                                                onChange={() => setCamSelectedCoverMentorId(m.id)}
+                                                className="text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                              />
+                                              <span>
+                                                {m.sameSubject && <span className="text-amber-600 font-black mr-1">★</span>}
+                                                {m.name}
+                                              </span>
+                                            </div>
+                                            <span className="text-[10px] text-slate-400 font-medium">
+                                              {m.department || "General"}
+                                            </span>
+                                          </label>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Footer */}
+                                <div className="bg-slate-50 p-3.5 px-4 border-t border-slate-200 flex items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setCamAssigningReq(null)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={camAssignSubmitting || !camSelectedCoverMentorId}
+                                    onClick={handleCamAssignConfirm}
+                                    className="px-4 py-1.5 rounded-lg text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs cursor-pointer transition-all disabled:opacity-50"
+                                  >
+                                    {camAssignSubmitting ? "Assigning..." : "Confirm & Assign Cover →"}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
 
                         {/* Compact Approval Subject Dialog - Not full screen, simple card overlay */}
                         {reviewingRequestId && (() => {
@@ -11932,7 +12231,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           {ev.category || "Fest"}
                                         </span>
                                         <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-black/60 text-white backdrop-blur-xs border border-white/20 flex items-center gap-1">
-                                          <span>📷</span> {eventPhotosList.length} Photos
+                                          {eventPhotosList.length} Photos
                                         </span>
                                       </div>
                                       <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between text-white text-xs font-bold">
@@ -11977,7 +12276,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                                       {ev.venue && (
                                         <div className="text-[11px] text-slate-600 font-semibold flex items-center gap-1">
-                                          <span className="text-slate-400">📍</span>
                                           <span>{ev.venue}</span>
                                         </div>
                                       )}
@@ -12109,7 +12407,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 uppercase">{ev.category || "Fest"}</span>
                                   </div>
                                   <h4 className="text-sm font-extrabold text-slate-900">{ev.name}</h4>
-                                  {ev.venue && <p className="text-[11px] text-slate-500 font-semibold">📍 {ev.venue}</p>}
+                                  {ev.venue && <p className="text-[11px] text-slate-500 font-semibold">{ev.venue}</p>}
                                   {ev.desc && <p className="text-xs text-slate-600 font-normal">{ev.desc}</p>}
                                 </div>
                               </div>
@@ -13951,13 +14249,41 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <span>{st.roll_number || st.id} • {st.classGroup}</span>
                               <span>•</span>
                               <strong className="text-indigo-600">{dayName}, {formatDateToDMY(dStr)}</strong>
-                              <span className={`px-2 py-0.2 rounded font-bold text-[9.5px] uppercase ${
-                                (holidays || []).some((h: any) => h?.date === dStr || h?.dateStr === dStr)
-                                  ? "bg-rose-50 text-rose-700 border border-rose-200"
-                                  : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              }`}>
-                                {(holidays || []).some((h: any) => h?.date === dStr || h?.dateStr === dStr) ? "Holiday / Event Day" : "Regular Class Day"}
-                              </span>
+                              {(() => {
+                                const holidayObj = (holidays || []).find((h: any) => h?.date === dStr || h?.dateStr === dStr);
+                                const customDayCfg = dailyConfigsList.find(c => c.dateStr === dStr);
+                                const studentDayAtts = studentAttendance.filter(a => a.studentId === st.id && a.dateStr === dStr);
+                                const isHoliday = !!holidayObj || customDayCfg?.day_type === "holiday";
+                                const isEvent = customDayCfg?.day_type === "event" || studentDayAtts.some(a => (a as any).attendanceTypeSub === "Event");
+                                const isExam = !isEvent && (customDayCfg?.day_type === "exam_day" || customDayCfg?.day_type === "exam" || isExamDate(dStr, dailyConfigsList, studentAttendance));
+
+                                if (isHoliday) {
+                                  return (
+                                    <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-rose-50 text-rose-700 border border-rose-200">
+                                      Holiday / Non-Working Day
+                                    </span>
+                                  );
+                                }
+                                if (isEvent) {
+                                  return (
+                                    <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-amber-50 text-amber-700 border border-amber-200">
+                                      Event / Special Day
+                                    </span>
+                                  );
+                                }
+                                if (isExam) {
+                                  return (
+                                    <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-purple-50 text-purple-700 border border-purple-200">
+                                      Exam / Assessment Day
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    Regular Class Day
+                                  </span>
+                                );
+                              })()}
                             </p>
                           </div>
                         </div>
@@ -13984,81 +14310,161 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </div>
                       )}
 
-                      {/* Periods List */}
-                      <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs font-semibold">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                          Scheduled Periods for {dayName} ({sortedSlots.length})
-                        </span>
+                      {/* Clean & Simple Sessions List */}
+                      <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-xs font-semibold">
+                        {(() => {
+                          const studentDayAtts = studentAttendance.filter(a => a.studentId === st.id && a.dateStr === dStr);
+                          const customDayCfg = dailyConfigsList.find(c => c.dateStr === dStr);
+                          const isEvent = customDayCfg?.day_type === "event" || studentDayAtts.some(a => (a as any).attendanceTypeSub === "Event");
+                          const isExam = !isEvent && (customDayCfg?.day_type === "exam_day" || customDayCfg?.day_type === "exam" || isExamDate(dStr, dailyConfigsList, studentAttendance));
+                          const isSingleMarkingDay = isExam || isEvent;
 
-                        {sortedSlots.length === 0 ? (
-                          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-slate-400 italic">
-                            No timetable slots scheduled for this student's class cohort on {dayName}.
-                          </div>
-                        ) : (
-                          sortedSlots.map((slot, idx) => {
-                            const att = studentAttendance.find(a => a.studentId === st.id && a.slotId === slot.id && a.dateStr === dStr);
-                            const currentStatus = att ? att.status : "not_marked";
-                            const isBeingEdited = activePeriodChange?.slotId === slot.id;
+                          const singleRecord = studentDayAtts.find(a => (a as any).attendanceTypeSub === "Exam" || (a as any).attendanceTypeSub === "Event" || (a as any).type === "Non-Regular") || (isSingleMarkingDay && studentDayAtts.length > 0 ? studentDayAtts[0] : null);
+                          const singleMentor = singleRecord ? mentors.find(m => m.id === singleRecord.markedBy || m.email === singleRecord.markedBy) : null;
+                          const singleMentorName = singleMentor?.name || (singleRecord?.markedBy && singleRecord.markedBy.startsWith("mentor_") ? "Faculty Member" : singleRecord?.markedBy) || "Assigned Faculty";
+
+                          // Build unified clean session list
+                          const sessions: any[] = [];
+                          const seenSlotIds = new Set<string>();
+
+                          // 1. Logged attendance records for this date
+                          studentDayAtts.forEach(att => {
+                            if (att.slotId) seenSlotIds.add(att.slotId);
+                            const matchedSlot = slots.find(s => s.id === att.slotId);
+                            const mentorObj = mentors.find(m => m.id === att.markedBy || m.email === att.markedBy || m.id === matchedSlot?.mentorId || m.email === matchedSlot?.mentorId);
+                            const mentorName = mentorObj?.name || (att.markedBy && att.markedBy.startsWith("mentor_") ? "Faculty Member" : att.markedBy) || "Faculty";
+                            const courseName = matchedSlot?.course || (att as any).course || (att as any).subject || "Scheduled Subject";
+                            const timeSlotStr = matchedSlot?.time || (att as any).timeSlot || "Scheduled Time";
+                            const markedTime = att.timestamp ? new Date(att.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : timeSlotStr;
+
+                            sessions.push({
+                              id: att.id || att.slotId,
+                              slotId: att.slotId,
+                              course: courseName,
+                              time: timeSlotStr,
+                              markedTime: markedTime,
+                              status: att.status || "present",
+                              mentorName: mentorName,
+                              isLogged: true
+                            });
+                          });
+
+                          // 2. Scheduled timetable slots (ONLY shown on Regular Class Days)
+                          if (!isSingleMarkingDay) {
+                            sortedSlots.forEach((slot, idx) => {
+                              if (seenSlotIds.has(slot.id)) return;
+                              if (sessions.some(s => s.course && slot.course && s.course.toLowerCase().trim() === slot.course.toLowerCase().trim())) return;
+
+                              const mentorObj = mentors.find(m => m.id === slot.mentorId || m.email === slot.mentorId);
+                              const mentorName = mentorObj?.name || "Assigned Faculty";
+
+                              sessions.push({
+                                id: slot.id,
+                                slotId: slot.id,
+                                periodNum: idx + 1,
+                                course: slot.course || "Scheduled Subject",
+                                time: slot.time || `Period ${idx + 1}`,
+                                markedTime: slot.time || `Period ${idx + 1}`,
+                                status: "not_marked",
+                                mentorName: mentorName,
+                                isCovered: false
+                              });
+                            });
+                          }
+
+                          if (sessions.length === 0) {
+                            return (
+                              <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-xl border border-slate-200 italic">
+                                No scheduled classes or attendance entries found for this date.
+                              </div>
+                            );
+                          }
+
+                          return sessions.map((sess, idx) => {
+                            const isBeingEdited = activePeriodChange?.slotId === sess.slotId;
+                            const stOpt = sess.status;
 
                             return (
-                              <div key={slot.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2.5">
-                                <div className="flex items-center justify-between gap-2 flex-wrap">
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 uppercase">
-                                        Period {idx + 1}
-                                      </span>
-                                      <span className="text-[10.5px] text-slate-500 font-bold">{slot.time || "Hour " + (idx + 1)}</span>
-                                      <span className={`px-2 py-0.5 rounded text-[9.5px] font-black uppercase ${
-                                        currentStatus === "present"
-                                          ? "bg-emerald-100 text-emerald-800"
-                                          : currentStatus === "absent"
-                                          ? "bg-rose-100 text-rose-800"
-                                          : currentStatus === "late"
-                                          ? "bg-amber-100 text-amber-800"
-                                          : currentStatus === "od"
-                                          ? "bg-purple-100 text-purple-800"
-                                          : "bg-slate-200 text-slate-600"
-                                      }`}>
-                                        Current: {currentStatus === "not_marked" ? "Not Marked" : currentStatus.toUpperCase()}
+                              <div
+                                key={sess.id || idx}
+                                className={`p-4 rounded-xl border transition-all ${
+                                  sess.status === "present"
+                                    ? "bg-emerald-50/40 border-emerald-200/80"
+                                    : sess.status === "absent"
+                                    ? "bg-rose-50/40 border-rose-200/80"
+                                    : sess.status === "late"
+                                    ? "bg-amber-50/40 border-amber-200/80"
+                                    : sess.status === "od"
+                                    ? "bg-purple-50/40 border-purple-200/80"
+                                    : "bg-slate-50 border-slate-200"
+                                } space-y-3`}
+                              >
+                                <div className="flex items-center justify-between gap-3 flex-wrap">
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <h4 className="font-extrabold text-slate-900 text-sm">
+                                        {sess.course}
+                                      </h4>
+                                      <span
+                                        className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                                          sess.status === "present"
+                                            ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                            : sess.status === "absent"
+                                            ? "bg-rose-100 text-rose-800 border border-rose-300"
+                                            : sess.status === "late"
+                                            ? "bg-amber-100 text-amber-800 border border-amber-300"
+                                            : sess.status === "od"
+                                            ? "bg-purple-100 text-purple-800 border border-purple-300"
+                                            : "bg-slate-200 text-slate-700"
+                                        }`}
+                                      >
+                                        {sess.status === "not_marked" ? "Not Marked" : sess.status.toUpperCase()}
                                       </span>
                                     </div>
-                                    <h4 className="font-bold text-slate-800 text-xs mt-1">{slot.course || "Scheduled Session"}</h4>
+                                    <p className="text-xs text-slate-600 font-semibold flex items-center gap-2 flex-wrap">
+                                      <span>
+                                        Marked by: <strong className="text-slate-900 font-extrabold">{sess.mentorName}</strong>
+                                      </span>
+                                      <span className="text-slate-300">•</span>
+                                      <span>
+                                        Time: <strong className="text-slate-800">{sess.markedTime || sess.time}</strong>
+                                      </span>
+                                    </p>
                                   </div>
 
                                   {!isLimitReached && (
                                     <div className="flex items-center gap-1">
-                                      {(["present", "absent", "late", "od"] as const).map(stOpt => (
+                                      {(["present", "absent", "late", "od"] as const).map(opt => (
                                         <button
-                                          key={stOpt}
+                                          key={opt}
                                           type="button"
                                           disabled={isSubmittingPeriodCorrection}
                                           onClick={() => {
-                                            if (currentStatus === stOpt) {
-                                              toast(`Period is already marked as ${stOpt.toUpperCase()}`, "info");
+                                            if (sess.status === opt) {
+                                              toast(`Already marked as ${opt.toUpperCase()}`, "info");
                                               return;
                                             }
                                             setActivePeriodChange({
-                                              slotId: slot.id,
-                                              newStatus: stOpt,
+                                              slotId: sess.slotId,
+                                              newStatus: opt,
                                               reason: ""
                                             });
                                           }}
-                                          className={`px-2.5 py-1 rounded-lg font-extrabold text-[10px] uppercase transition-all cursor-pointer ${
-                                            currentStatus === stOpt
-                                              ? stOpt === "present"
-                                                ? "bg-emerald-600 text-white shadow-2xs"
-                                                : stOpt === "absent"
-                                                ? "bg-rose-600 text-white shadow-2xs"
-                                                : stOpt === "late"
-                                                ? "bg-amber-500 text-white shadow-2xs"
-                                                : "bg-purple-600 text-white shadow-2xs"
-                                              : isBeingEdited && activePeriodChange?.newStatus === stOpt
-                                              ? "bg-indigo-600 text-white shadow-2xs"
-                                              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                          className={`px-3 py-1.5 rounded-lg font-extrabold text-[10px] uppercase transition-all cursor-pointer ${
+                                            sess.status === opt
+                                              ? opt === "present"
+                                                ? "bg-emerald-600 text-white shadow-xs"
+                                                : opt === "absent"
+                                                ? "bg-rose-600 text-white shadow-xs"
+                                                : opt === "late"
+                                                ? "bg-amber-500 text-white shadow-xs"
+                                                : "bg-purple-600 text-white shadow-xs"
+                                              : isBeingEdited && activePeriodChange?.newStatus === opt
+                                              ? "bg-indigo-600 text-white shadow-xs"
+                                              : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"
                                           }`}
                                         >
-                                          {stOpt === "present" ? "Present" : stOpt === "absent" ? "Absent" : stOpt === "late" ? "Late" : "OD"}
+                                          {opt === "present" ? "Present" : opt === "absent" ? "Absent" : opt === "late" ? "Late" : "OD"}
                                         </button>
                                       ))}
                                     </div>
@@ -14070,7 +14476,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <div className="p-3 bg-white rounded-xl border-2 border-indigo-200 shadow-xs space-y-2 animate-in fade-in">
                                     <div className="flex items-center justify-between">
                                       <span className="text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider">
-                                        Changing Status to: <strong className="uppercase underline">{activePeriodChange.newStatus}</strong> ({correctionCount}/2 corrections used)
+                                        Changing to: <strong className="uppercase underline">{activePeriodChange.newStatus}</strong> ({correctionCount}/2 used)
                                       </span>
                                       <span className="text-[9.5px] text-rose-500 font-bold">* Reason Mandatory</span>
                                     </div>
@@ -14078,32 +14484,32 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       type="text"
                                       required
                                       autoFocus
-                                      placeholder="e.g. Medical certificate verified / Biometric sync correction / OD approved"
+                                      placeholder="e.g. Verified by CAM / OD Approved / Medical exemption"
                                       value={activePeriodChange.reason}
                                       onChange={e => setActivePeriodChange({ ...activePeriodChange, reason: e.target.value })}
-                                      className="w-full p-2 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50"
+                                      className="w-full p-2.5 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50"
                                     />
                                     <div className="flex items-center justify-end gap-2 pt-1">
                                       <button
                                         type="button"
                                         onClick={() => setActivePeriodChange(null)}
-                                        className="px-2.5 py-1 rounded-lg text-[10.5px] font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                                        className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
                                       >
                                         Cancel
                                       </button>
                                       <button
                                         type="button"
                                         disabled={isSubmittingPeriodCorrection || !activePeriodChange.reason.trim()}
-                                        onClick={() => handleApplyPeriodCorrection(slot.id, activePeriodChange.newStatus, activePeriodChange.reason)}
-                                        className="px-3 py-1 rounded-lg text-[10.5px] font-extrabold btn-gradient text-white shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                        onClick={() => handleApplyPeriodCorrection(sess.slotId, activePeriodChange.newStatus, activePeriodChange.reason)}
+                                        className="px-3.5 py-1.5 rounded-lg text-[11px] font-extrabold btn-gradient text-white shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                                       >
                                         {isSubmittingPeriodCorrection ? (
                                           <>
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                            <span>Saving &amp; Logging...</span>
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            <span>Saving...</span>
                                           </>
                                         ) : (
-                                          <span>Confirm &amp; Log Change</span>
+                                          <span>Confirm &amp; Save Change</span>
                                         )}
                                       </button>
                                     </div>
@@ -14111,8 +14517,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 )}
                               </div>
                             );
-                          })
-                        )}
+                          });
+                        })()}
                       </div>
 
                       {/* Footer */}
@@ -14202,7 +14608,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             }}
                             className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:border-rose-500"
                           >
-                            <option value="all">🏢 All Departments (Entire Campus)</option>
+                            <option value="all">All Departments (Entire Campus)</option>
                             {uniqueStudentDepartments.map(dept => (
                               <option key={dept} value={dept}>{dept}</option>
                             ))}
@@ -14219,7 +14625,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             onChange={(e) => setClearBatchFilter(e.target.value)}
                             className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:border-rose-500"
                           >
-                            <option value="all">👥 All Batches in Selected Department</option>
+                            <option value="all">All Batches in Selected Department</option>
                             {availableBatchesForDept.map(bg => (
                               <option key={bg} value={bg}>{bg}</option>
                             ))}
@@ -14279,7 +14685,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             <span className="font-black text-rose-600 dark:text-rose-400">{matchingAttendance.length} period entries</span>
                           </div>
                           <p className="text-[10px] text-slate-400 font-normal pt-1 border-t border-slate-200 dark:border-slate-700 leading-relaxed">
-                            ⚠️ Only the selected records will be wiped. Other departments and unselected batches remain completely unaffected.
+                            Only the selected records will be wiped. Other departments and unselected batches remain completely unaffected.
                           </p>
                         </div>
                       </div>
@@ -14800,6 +15206,122 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 resize-none font-semibold"
                     />
                   </div>
+
+                  {/* ── SECTIONS / COHORTS ── */}
+                  <div className="space-y-3 sm:col-span-2 border-t border-slate-150 pt-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5" /> Class Sections / Cohorts
+                        </h4>
+                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                          Optional — define sections (A, B, C…) to create separate timetable cohorts.<br />
+                          e.g. Adding "A" and "B" for BCA creates: <span className="font-bold text-indigo-600">BCA - Semester 1 - Section A</span>, <span className="font-bold text-indigo-600">BCA - Semester 1 - Section B</span>
+                        </p>
+                      </div>
+                      {deptFormSections.length > 0 && (
+                        <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-700 border border-indigo-200">
+                          {deptFormSections.length} section{deptFormSections.length > 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Tag input */}
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="text"
+                        placeholder="Type section label (e.g. A) and press Enter"
+                        value={deptSectionInput}
+                        onChange={e => setDeptSectionInput(e.target.value.toUpperCase().slice(0, 4))}
+                        onKeyDown={e => {
+                          if ((e.key === "Enter" || e.key === ",") && deptSectionInput.trim()) {
+                            e.preventDefault();
+                            const sec = deptSectionInput.trim().toUpperCase();
+                            if (!deptFormSections.includes(sec)) {
+                              setDeptFormSections(prev => [...prev, sec]);
+                            }
+                            setDeptSectionInput("");
+                          }
+                          if (e.key === "Backspace" && !deptSectionInput && deptFormSections.length > 0) {
+                            setDeptFormSections(prev => prev.slice(0, -1));
+                          }
+                        }}
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800 uppercase"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const sec = deptSectionInput.trim().toUpperCase();
+                          if (sec && !deptFormSections.includes(sec)) {
+                            setDeptFormSections(prev => [...prev, sec]);
+                          }
+                          setDeptSectionInput("");
+                        }}
+                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0"
+                      >
+                        + Add
+                      </button>
+                    </div>
+
+                    {/* Section tags */}
+                    {deptFormSections.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {deptFormSections.map(sec => (
+                          <span key={sec} className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold">
+                            Section {sec}
+                            <button
+                              type="button"
+                              onClick={() => setDeptFormSections(prev => prev.filter(s => s !== sec))}
+                              className="text-indigo-400 hover:text-rose-600 transition-colors cursor-pointer font-black"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Live preview of class group names that will be created */}
+                    {deptFormSections.length > 0 && deptForm.name && (() => {
+                      const deptName = deptForm.name.trim().replace(/\(.*\)/g, "").trim().split(" ").map(w => w[0]).join("").toUpperCase() || deptForm.name.split(" ")[0];
+                      const courseName = deptForm.name.trim();
+                      const totalSems = (deptForm.years || 3) * 2;
+                      const isShiftBased = deptForm.default_shift === "shift_1" || deptForm.default_shift === "shift_2" || deptForm.default_shift === "both" || deptForm.default_shift === "all";
+                      const shifts = deptForm.default_shift === "both" || deptForm.default_shift === "all" ? ["Shift 1", "Shift 2"] :
+                                     deptForm.default_shift === "shift_1" ? ["Shift 1"] :
+                                     deptForm.default_shift === "shift_2" ? ["Shift 2"] : [];
+
+                      const previewGroups: string[] = [];
+                      const semList = [1]; // show only Semester 1 for preview
+                      semList.forEach(sem => {
+                        deptFormSections.forEach(sec => {
+                          if (shifts.length > 0) {
+                            shifts.forEach(shift => {
+                              previewGroups.push(`${courseName} - ${shift} - Semester ${sem} - Section ${sec}`);
+                            });
+                          } else {
+                            previewGroups.push(`${courseName} - Semester ${sem} - Section ${sec}`);
+                          }
+                        });
+                      });
+
+                      return (
+                        <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-3 space-y-1.5">
+                          <p className="text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider">
+                            Class Group Preview (Semester 1 shown · {totalSems} semesters total × {deptFormSections.length} sections{shifts.length > 0 ? ` × ${shifts.length} shifts` : ""})
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {previewGroups.map(g => (
+                              <span key={g} className="px-2 py-0.5 bg-white border border-indigo-200 text-indigo-800 rounded-lg text-[10px] font-bold shadow-xs">
+                                {g}
+                              </span>
+                            ))}
+                            <span className="px-2 py-0.5 text-slate-400 text-[10px] font-semibold">…and Semesters 2–{totalSems}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
 
                 {/* Sticky Footer */}
@@ -14956,129 +15478,167 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             </div>
 
             {/* Modal Form */}
-            <form id="daily-config-form" onSubmit={handleSaveDailyConfig} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50/80 p-5 border border-slate-200 rounded-2xl">
-              <Input
-                label="From Date"
-                type="date"
-                value={dailyStartDateStr}
-                onChange={e => handleStartDateChange(e.target.value)}
-                required
-              />
-              <Input
-                label="To Date (Continuous)"
-                type="date"
-                value={dailyEndDateStr}
-                onChange={e => setDailyEndDateStr(e.target.value)}
-                required
-              />
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Day Type</label>
-                <select
-                  value={dailyDayType}
-                  onChange={e => setDailyDayType(e.target.value)}
-                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
-                >
-                  <option value="working">Working Day</option>
-                  <option value="holiday">Holiday</option>
-                  <option value="event">Campus Event</option>
-                  <option value="exam_day">Exam Day</option>
-                </select>
+            <form id="daily-config-form" onSubmit={handleSaveDailyConfig} className="space-y-4">
+
+              {/* Row 1: Date Range */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">From Date</label>
+                  <input
+                    type="date"
+                    value={dailyStartDateStr}
+                    onChange={e => handleStartDateChange(e.target.value)}
+                    required
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-sm font-semibold focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2] outline-none shadow-xs text-slate-800"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">
+                    To Date <span className="normal-case text-slate-400 font-medium">(leave same as From for a single day)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={dailyEndDateStr}
+                    onChange={e => setDailyEndDateStr(e.target.value)}
+                    required
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-sm font-semibold focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2] outline-none shadow-xs text-slate-800"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Day Order</label>
-                <select
-                  value={dailyDayType === "holiday" ? "None" : dailyDayOrder}
-                  onChange={e => setDailyDayOrder(e.target.value)}
-                  disabled={dailyDayType === "holiday"}
-                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800 disabled:opacity-50"
-                >
-                  <option value="Day 1">Day 1</option>
-                  <option value="Day 2">Day 2</option>
-                  <option value="Day 3">Day 3</option>
-                  <option value="Day 4">Day 4</option>
-                  <option value="Day 5">Day 5</option>
-                  <option value="Day 6">Day 6</option>
-                  <option value="None">None (No Day Order)</option>
-                </select>
+              {/* Row 2: Department + Day Type + Day Order + Session Mode */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Department</label>
+                  <select
+                    value={dailyDeptScope}
+                    onChange={e => setDailyDeptScope(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
+                  >
+                    <option value="All Departments">All Departments</option>
+                    {(departmentsList || []).map(d => (
+                      <option key={d.id || d.name} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Day Type</label>
+                  <select
+                    value={dailyDayType}
+                    onChange={e => setDailyDayType(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
+                  >
+                    <option value="working">Working Day</option>
+                    <option value="holiday">Holiday</option>
+                    <option value="event">Campus Event</option>
+                    <option value="exam_day">Exam Day</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Day Order</label>
+                  <select
+                    value={dailyDayType === "holiday" ? "None" : dailyDayOrder}
+                    onChange={e => setDailyDayOrder(e.target.value)}
+                    disabled={dailyDayType === "holiday"}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="Day 1">Day 1</option>
+                    <option value="Day 2">Day 2</option>
+                    <option value="Day 3">Day 3</option>
+                    <option value="Day 4">Day 4</option>
+                    <option value="Day 5">Day 5</option>
+                    <option value="Day 6">Day 6</option>
+                    <option value="None">None</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Session Mode</label>
+                  <select
+                    value={dailySessionMode}
+                    onChange={e => setDailySessionMode(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
+                  >
+                    <option value="Offline">Offline (On-Campus)</option>
+                    <option value="Online">Online Sessions</option>
+                    <option value="Hybrid">Hybrid Mode</option>
+                  </select>
+                </div>
               </div>
 
+              {/* Row 3: Notes */}
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Session Mode</label>
-                <select
-                  value={dailySessionMode}
-                  onChange={e => setDailySessionMode(e.target.value)}
-                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
-                >
-                  <option value="Offline">Offline (On-Campus)</option>
-                  <option value="Online">Online Sessions</option>
-                  <option value="Hybrid">Hybrid Mode</option>
-                </select>
-              </div>
-
-              <div className="space-y-1 sm:col-span-3">
                 <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Notes / Operational Instructions</label>
                 <input
                   type="text"
                   placeholder="e.g. CIA Exam Session / Cultural Fest / Regular Timetable..."
                   value={dailyNotes}
                   onChange={e => setDailyNotes(e.target.value)}
-                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs text-slate-800"
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2] outline-none shadow-xs text-slate-800"
                 />
               </div>
 
-              <div className="flex items-center gap-4 pt-4 sm:col-span-2 flex-wrap">
-                <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={autoAdvanceDayOrder}
-                    onChange={e => setAutoAdvanceDayOrder(e.target.checked)}
-                    className="h-4 w-4 text-[#D528A2] rounded border-slate-300 focus:ring-[#D528A2] cursor-pointer"
-                  />
-                  <span>Auto-Advance Continuous Days</span>
-                </label>
-                <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={skipSundays}
-                    onChange={e => setSkipSundays(e.target.checked)}
-                    className="h-4 w-4 text-[#D528A2] rounded border-slate-300 focus:ring-[#D528A2] cursor-pointer"
-                  />
-                  <span>Skip Sundays (Auto-Holiday)</span>
-                </label>
-              </div>
+              {/* Row 4: Options + Actions */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+                {/* Checkboxes */}
+                <div className="flex items-center gap-5 flex-wrap">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={autoAdvanceDayOrder}
+                      onChange={e => setAutoAdvanceDayOrder(e.target.checked)}
+                      className="h-4 w-4 accent-[#D528A2] rounded border-slate-300 cursor-pointer"
+                    />
+                    Auto-Advance Continuous Days
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={skipSundays}
+                      onChange={e => setSkipSundays(e.target.checked)}
+                      className="h-4 w-4 accent-[#D528A2] rounded border-slate-300 cursor-pointer"
+                    />
+                    Skip Sundays (Auto-Holiday)
+                  </label>
+                </div>
 
-              <div className="flex items-end sm:col-span-2 justify-end gap-2 pt-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={handleDeleteDailyConfigRange}
-                  disabled={isDailySaving || isDailyLoading}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                  title="Delete all records within selected From Date and To Date range"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Delete Range</span>
-                </button>
-                {editingDailyId && (
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
                   <button
                     type="button"
-                    onClick={handleCancelDailyEdit}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer"
+                    onClick={handleDeleteDailyConfigRange}
+                    disabled={isDailySaving || isDailyLoading}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    title="Delete all records within selected From–To date range"
                   >
-                    Cancel Edit
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete Range
                   </button>
-                )}
-                <button
-                  type="submit"
-                  disabled={isDailySaving}
-                  className="px-5 py-2 rounded-xl text-xs font-extrabold bg-[#D528A2] hover:bg-[#c02090] text-white shadow-sm transition-all cursor-pointer disabled:opacity-50"
-                >
-                  {isDailySaving
-                    ? "Saving..."
-                    : editingDailyId
-                    ? "Update Record"
-                    : "Save Day Order Schedule"}
-                </button>
+                  {editingDailyId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelDailyEdit}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer"
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isDailySaving}
+                    className="px-6 py-2 rounded-xl text-xs font-extrabold bg-[#D528A2] hover:bg-[#c02090] text-white shadow-sm transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isDailySaving ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving...</>
+                    ) : editingDailyId ? (
+                      "Update Record"
+                    ) : (
+                      "Save Schedule"
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
 
@@ -15198,8 +15758,431 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* ── Attendance Template Download Modal (College-Wise & Clean Format) ── */}
+      {showAttendanceTemplateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-slate-150 pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                  <FileSpreadsheet className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900 leading-tight">Download Attendance Template</h3>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">Select campus, cohort, and date range for Excel import.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAttendanceTemplateModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-          );
+
+            <div className="space-y-4">
+              {/* College Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Select College / Campus
+                </label>
+                <select
+                  value={templateModalCollegeId}
+                  onChange={(e) => {
+                    setTemplateModalCollegeId(e.target.value);
+                    setTemplateModalCohort("all");
+                  }}
+                  className="w-full text-xs font-semibold px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                >
+                  <option value="all">All Colleges & Campuses (Combined)</option>
+                  {colleges.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Class Group / Cohort Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Target Class Group / Cohort
+                </label>
+                <select
+                  value={templateModalCohort}
+                  onChange={(e) => setTemplateModalCohort(e.target.value)}
+                  className="w-full text-xs font-semibold px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                >
+                  <option value="all">All Classes / Cohorts in College</option>
+                  {(() => {
+                    const targetStudents = templateModalCollegeId && templateModalCollegeId !== "all"
+                      ? students.filter(s => s.college_id === templateModalCollegeId)
+                      : collegeStudents;
+                    const cohorts = Array.from(new Set(targetStudents.map(s => s.classGroup).filter(Boolean))).sort();
+                    return cohorts.map(cg => (
+                      <option key={cg} value={cg}>{cg}</option>
+                    ));
+                  })()}
+                </select>
+              </div>
+
+              {/* Date Range Selection */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={templateModalStartDate}
+                    onChange={(e) => setTemplateModalStartDate(e.target.value)}
+                    className="w-full text-xs font-medium px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={templateModalEndDate}
+                    onChange={(e) => setTemplateModalEndDate(e.target.value)}
+                    className="w-full text-xs font-medium px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+              </div>
+
+              {/* Format Info Callout */}
+              <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-[11px] text-indigo-900 space-y-1">
+                <p className="font-extrabold flex items-center gap-1.5">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                  Clean Import Format Enabled:
+                </p>
+                <p className="text-indigo-700 text-[10.5px] leading-relaxed">
+                  Headers include strictly <strong className="font-bold">Roll No, Name, Department, Class Group</strong>, followed by individual date columns. Summary columns (Total Days, %, etc.) are omitted for effortless bulk upload.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowAttendanceTemplateModal(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await handleDownloadAttendanceTemplate(
+                    templateModalCohort,
+                    templateModalStartDate,
+                    templateModalEndDate,
+                    templateModalCollegeId
+                  );
+                  setShowAttendanceTemplateModal(false);
+                }}
+                className="px-4 py-2 text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Download Template (.xlsx)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Manage Class Sections Modal ── */}
+      {showManageSectionsModal && (() => {
+        const activeClass = sectionClassFilter || distinctClasses[0] || "";
+        const classStudents = collegeStudents.filter(s => {
+          if (!activeClass) return true;
+          return s.classGroup && (s.classGroup === activeClass || s.classGroup.startsWith(activeClass.split(" - ")[0]));
+        });
+
+        // Group students by section
+        const sectionMap = new Map<string, typeof classStudents>();
+        classStudents.forEach(st => {
+          const sec = st.section || (st.classGroup ? (st.classGroup.match(/Sec\s*([A-Z0-9]+)/i)?.[1] || st.classGroup.match(/\s+([A-Z])$/i)?.[1]) : null) || "Unassigned";
+          if (!sectionMap.has(sec)) sectionMap.set(sec, []);
+          sectionMap.get(sec)!.push(st);
+        });
+
+        const handleAddSection = () => {
+          if (!newSectionInput.trim()) {
+            toast("Please enter a section name (e.g. A, B, C).", "warning");
+            return;
+          }
+          const cleanSec = newSectionInput.replace(/^sec(tion)?\s*/i, "").trim().toUpperCase();
+          if (sectionMap.has(cleanSec)) {
+            toast(`Section ${cleanSec} already exists for this class.`, "info");
+            return;
+          }
+          sectionMap.set(cleanSec, []);
+          setTargetMoveSection(cleanSec);
+          setNewSectionInput("");
+          toast(`Section ${cleanSec} added! You can now move students into it below.`, "success");
+        };
+
+        const handleReassignSelectedStudents = async () => {
+          if (selectedStudentIdsForSection.length === 0) {
+            toast("Please select at least one student to move.", "warning");
+            return;
+          }
+          if (!targetMoveSection) {
+            toast("Please choose a target section to move students into.", "warning");
+            return;
+          }
+
+          setIsSectionActionLoading(true);
+          try {
+            const cleanSec = targetMoveSection.replace(/^sec(tion)?\s*/i, "").trim().toUpperCase();
+            const studentsToUpdate = collegeStudents.filter(s => selectedStudentIdsForSection.includes(s.id));
+
+            const payload = studentsToUpdate.map(st => {
+              const baseCG = (st.classGroup || activeClass).replace(/\s*-\s*Sec\s+[A-Z0-9]+/i, "").replace(/\s+[A-Z]$/i, "").trim();
+              const finalCG = cleanSec === "UNASSIGNED" ? baseCG : `${baseCG} - Sec ${cleanSec}`;
+
+              return {
+                ...st,
+                classGroup: finalCG,
+                section: cleanSec === "UNASSIGNED" ? null : cleanSec,
+                college_id: activeCollegeId
+              };
+            });
+
+            const res = await fetch("/api/students", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) {
+              toast(`Successfully moved ${selectedStudentIdsForSection.length} students to Section ${cleanSec}!`, "success");
+              setSelectedStudentIdsForSection([]);
+              await refreshData();
+            } else {
+              toast(data.message || "Failed to update sections.", "error");
+            }
+          } catch (err: any) {
+            toast("Error updating sections: " + err.message, "error");
+          } finally {
+            setIsSectionActionLoading(false);
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-3xl w-full p-6 space-y-5 animate-scaleUp max-h-[90vh] flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-150 pb-3.5 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 leading-tight">Manage Class Sections &amp; Cohorts</h3>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">Create sections (e.g. BCA A, BCA B) and assign students between sections.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowManageSectionsModal(false);
+                    setSelectedStudentIdsForSection([]);
+                  }}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Class Selector Bar */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 shrink-0">
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">Select Class / Degree Cohort</label>
+                  <select
+                    value={activeClass}
+                    onChange={e => {
+                      setSectionClassFilter(e.target.value);
+                      setSelectedStudentIdsForSection([]);
+                    }}
+                    className="w-full text-xs font-bold px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {distinctClasses.map(cls => (
+                      <option key={cls} value={cls}>{cls}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">Add New Section</label>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="e.g. A, B, C"
+                      value={newSectionInput}
+                      onChange={e => setNewSectionInput(e.target.value)}
+                      className="w-full text-xs font-semibold px-2.5 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 uppercase outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddSection}
+                      className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section Breakdown Pills */}
+              <div className="flex items-center gap-2 flex-wrap shrink-0">
+                <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Sections:</span>
+                {Array.from(sectionMap.entries()).map(([sec, stList]) => (
+                  <span
+                    key={sec}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold border flex items-center gap-1.5 ${
+                      sec === "Unassigned"
+                        ? "bg-slate-100 text-slate-600 border-slate-200"
+                        : "bg-indigo-50 text-indigo-700 border-indigo-200"
+                    }`}
+                  >
+                    <span>Section {sec}</span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-white text-[10px] font-black shadow-2xs">
+                      {stList.length}
+                    </span>
+                  </span>
+                ))}
+              </div>
+
+              {/* Students Table with Selection */}
+              <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl overflow-hidden bg-white min-h-[220px]">
+                <div className="p-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-700">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={classStudents.length > 0 && selectedStudentIdsForSection.length === classStudents.length}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setSelectedStudentIdsForSection(classStudents.map(s => s.id));
+                        } else {
+                          setSelectedStudentIdsForSection([]);
+                        }
+                      }}
+                      className="h-4 w-4 text-indigo-600 rounded border-slate-300 cursor-pointer"
+                    />
+                    <span>Select All Students ({classStudents.length})</span>
+                  </label>
+                  <span className="text-slate-400 text-[11px]">
+                    {selectedStudentIdsForSection.length} selected
+                  </span>
+                </div>
+
+                <div className="divide-y divide-slate-100 max-h-[260px] overflow-y-auto">
+                  {classStudents.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 italic text-xs">
+                      No students found in this class.
+                    </div>
+                  ) : (
+                    classStudents.map(st => {
+                      const isSelected = selectedStudentIdsForSection.includes(st.id);
+                      const sec = st.section || (st.classGroup ? (st.classGroup.match(/Sec\s*([A-Z0-9]+)/i)?.[1] || st.classGroup.match(/\s+([A-Z])$/i)?.[1]) : null) || "Unassigned";
+
+                      return (
+                        <div
+                          key={st.id}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedStudentIdsForSection(selectedStudentIdsForSection.filter(id => id !== st.id));
+                            } else {
+                              setSelectedStudentIdsForSection([...selectedStudentIdsForSection, st.id]);
+                            }
+                          }}
+                          className={`p-3 flex items-center justify-between gap-3 text-xs transition-colors cursor-pointer ${
+                            isSelected ? "bg-indigo-50/60" : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}}
+                              className="h-4 w-4 text-indigo-600 rounded border-slate-300 cursor-pointer pointer-events-none"
+                            />
+                            <div>
+                              <div className="font-extrabold text-slate-900">{st.name}</div>
+                              <div className="text-[10.5px] text-slate-400 font-semibold">{st.roll_number || st.id}</div>
+                            </div>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase border ${
+                            sec === "Unassigned"
+                              ? "bg-slate-100 text-slate-500 border-slate-200"
+                              : "bg-indigo-50 text-indigo-700 border-indigo-200"
+                          }`}>
+                            {sec === "Unassigned" ? "Unassigned" : `Sec ${sec}`}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Bottom Reassign Bar */}
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-150 flex-wrap shrink-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-slate-600">
+                    Move selected ({selectedStudentIdsForSection.length}) to:
+                  </span>
+                  <select
+                    value={targetMoveSection}
+                    onChange={e => setTargetMoveSection(e.target.value)}
+                    className="text-xs font-bold px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="">Choose Section...</option>
+                    {Array.from(sectionMap.keys()).map(sec => (
+                      <option key={sec} value={sec}>Section {sec}</option>
+                    ))}
+                    <option value="A">Section A</option>
+                    <option value="B">Section B</option>
+                    <option value="C">Section C</option>
+                    <option value="D">Section D</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={isSectionActionLoading || selectedStudentIdsForSection.length === 0 || !targetMoveSection}
+                    onClick={handleReassignSelectedStudents}
+                    className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-sm transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isSectionActionLoading ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Updating...</span>
+                      </>
+                    ) : (
+                      <span>Apply Section Move</span>
+                    )}
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowManageSectionsModal(false);
+                    setSelectedStudentIdsForSection([]);
+                  }}
+                  className="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
 };
 
 // Stale cache trigger comment to force IDE diagnostics refresh.

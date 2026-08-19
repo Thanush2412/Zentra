@@ -10,10 +10,10 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { requestId, status, headerReason, approverName, actorRole, course } = body;
+    const { requestId, status, headerReason, approverName, actorRole, course, action, targetStaffId: newTargetStaffId } = body;
 
-    if (!requestId || !status) {
-      return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
+    if (!requestId) {
+      return NextResponse.json({ success: false, message: "Missing required requestId" }, { status: 400 });
     }
 
     const handoverRequest = await db.get(
@@ -25,12 +25,78 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Handover request not found" }, { status: 404 });
     }
 
-    if (handoverRequest.status !== "pending" && handoverRequest.status !== "pending_cam") {
-      return NextResponse.json({ success: false, message: "Request has already been processed" });
+    const cleanApproverName = approverName || "System User";
+    const cleanActorRole = actorRole || (action === "cam_reassign" ? "Campus Manager" : "Mentor");
+
+    // 1. CAM Direct Reassignment / Allocation of a Free Mentor
+    if (action === "cam_reassign" && newTargetStaffId) {
+      const newCoverStaff = await db.get("SELECT * FROM mentors WHERE id = ?", newTargetStaffId);
+      if (!newCoverStaff) {
+        return NextResponse.json({ success: false, message: "Selected cover faculty not found" }, { status: 404 });
+      }
+
+      await db.run(
+        `UPDATE handover_requests 
+         SET targetStaffId = ?, targetStaffName = ?, status = 'approved', approvedBy = ?, headerReason = ?
+         WHERE id = ?`,
+        [newCoverStaff.id, newCoverStaff.name, cleanApproverName, `Assigned by CAM ${cleanApproverName}`, requestId]
+      );
+
+      // Create Approved Handover mapping directly
+      const handoverId = "h_" + Date.now();
+      await db.run(
+        `INSERT INTO approved_handovers (id, requestId, slotId, dateStr, originalMentorId, coverStaffId, coverStaffName, course, ledger_month) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        handoverId,
+        requestId,
+        handoverRequest.slotId,
+        handoverRequest.dateStr,
+        handoverRequest.requestorId,
+        newCoverStaff.id,
+        newCoverStaff.name,
+        course || handoverRequest.course,
+        handoverRequest.dateStr.slice(0, 7)
+      );
+
+      // Log Audit Event
+      const logId = "l_" + Date.now();
+      await db.run(
+        "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+        logId,
+        "handover_approval",
+        `CAM Assigned Cover: ${cleanApproverName} mapped "${handoverRequest.course}" on ${handoverRequest.dateFormatted} to ${newCoverStaff.name}`,
+        cleanApproverName,
+        cleanActorRole,
+        new Date().toISOString()
+      );
+
+      // Email newly assigned cover faculty
+      if (newCoverStaff.email) {
+        try {
+          await sendMail({
+            to: newCoverStaff.email,
+            subject: `[Assigned by CAM] Class Cover: ${handoverRequest.course} on ${handoverRequest.dateFormatted}`,
+            htmlBody: renderHandoverApprovalEmail({
+              requestorName: handoverRequest.requestorName,
+              coverStaffName: newCoverStaff.name,
+              dateStr: handoverRequest.dateFormatted,
+              time: `${handoverRequest.time} (${handoverRequest.day})`,
+              course: handoverRequest.course,
+              classGroup: handoverRequest.classGroup || "General",
+              reviewerName: `${cleanApproverName} (Campus Manager)`
+            })
+          });
+        } catch (mErr) {
+          console.error("Failed to email assigned cover mentor:", mErr);
+        }
+      }
+
+      return NextResponse.json({ success: true, message: `Class successfully assigned to ${newCoverStaff.name}!` });
     }
 
-    const cleanApproverName = approverName || "System User";
-    const cleanActorRole = actorRole || "Mentor Header";
+    if (handoverRequest.status !== "pending" && handoverRequest.status !== "pending_cam" && handoverRequest.status !== "needs_cam_allocation") {
+      return NextResponse.json({ success: false, message: "Request has already been processed" });
+    }
 
     let targetStatus = status; // e.g. "approved" or "rejected"
     if (handoverRequest.status === "pending_cam") {

@@ -1630,7 +1630,7 @@ export function DemoAllocationDashboard() {
   return (
     <div className="flex-1 flex flex-col md:flex-row bg-slate-50/50 dark:bg-slate-900/10 text-slate-800 font-sans h-full overflow-hidden">
       
-      {/* 📂 FLOATING COLLAPSIBLE LEFT SIDEBAR NAVIGATION */}
+      {/* FLOATING COLLAPSIBLE LEFT SIDEBAR NAVIGATION */}
       <aside className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-3" : "w-64 p-5"}`}>
         <div className="flex flex-col flex-1 overflow-visible">
           
@@ -1699,7 +1699,7 @@ export function DemoAllocationDashboard() {
         </div>
       </aside>
 
-      {/* 🚀 MAIN WORKSPACE AREA */}
+      {/* MAIN WORKSPACE AREA */}
       <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
         
         {/* Page Top Header */}
@@ -3123,7 +3123,7 @@ export function DemoAllocationDashboard() {
                               </span>
                             ) : (
                               <span className="px-2.5 py-1 bg-rose-50 dark:bg-rose-955/20 text-rose-700 dark:text-rose-455 border border-rose-100 dark:border-rose-900 rounded-lg text-[10px] font-black uppercase flex items-center gap-1">
-                                ⚠ Clash: {validation.message}
+                                Clash: {validation.message}
                               </span>
                             )}
                           </div>

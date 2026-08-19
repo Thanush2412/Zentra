@@ -193,7 +193,7 @@ const CapacityMetricsBar = ({
       </span>
       {remAlloc > 0 && (
         <span className="text-[10px] text-amber-700 font-black bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-          ⚠️ Remaining to Allocate: {remAlloc}
+          Remaining to Allocate: {remAlloc}
         </span>
       )}
       {remEval > 0 && allocCount > 0 && (
@@ -208,11 +208,11 @@ const CapacityMetricsBar = ({
 // ─── Score Slider ─────────────────────────────────────────────────────────────
 
 const ScoreSlider = ({
-  label, emoji, value, onChange, color = "#D528A2"
-}: { label: string; emoji: string; value: number; onChange: (v: number) => void; color?: string }) => (
+  label, value, onChange, color = "#D528A2"
+}: { label: string; value: number; onChange: (v: number) => void; color?: string }) => (
   <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-3.5 space-y-2 shadow-xs">
     <div className="flex justify-between items-center">
-      <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">{emoji} {label}</span>
+      <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">{label}</span>
       <span className="text-xs font-black px-2 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs" style={{ color }}>
         {value} / 10
       </span>
@@ -2530,7 +2530,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                           )}
                           {hasAssignedSlotsAsEvaluator && (
                             <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              ⭐ Evaluator ({reqStudents.length} Candidates)
+                              Evaluator ({reqStudents.length} Candidates)
                             </span>
                           )}
                         </div>
@@ -2818,10 +2818,10 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
                                 {/* ── OVERALL CORE SKILLS SCORING SLIDERS ── */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-                                  <ScoreSlider label="Communication Skill" emoji="🗣️" value={commScore} onChange={setCommScore} color="#D528A2" />
-                                  <ScoreSlider label="Content Knowledge" emoji="📚" value={contentScore} onChange={setContentScore} color="#F4A863" />
-                                  <ScoreSlider label="Technical Problem Solving" emoji="💻" value={techScore} onChange={setTechScore} color="#6366f1" />
-                                  <ScoreSlider label="Confidence & Presentation" emoji="🌟" value={confidenceScore} onChange={setConfidenceScore} color="#f59e0b" />
+                                  <ScoreSlider label="Communication Skill" value={commScore} onChange={setCommScore} color="#D528A2" />
+                                  <ScoreSlider label="Content Knowledge" value={contentScore} onChange={setContentScore} color="#F4A863" />
+                                  <ScoreSlider label="Technical Problem Solving" value={techScore} onChange={setTechScore} color="#6366f1" />
+                                  <ScoreSlider label="Confidence & Presentation" value={confidenceScore} onChange={setConfidenceScore} color="#f59e0b" />
                                 </div>
 
                                 {/* Overall Remarks */}
@@ -3461,7 +3461,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                           </span>
                                         ) : (
                                           <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                            ⚠️ In Class in {assignedMentorSlot}
+                                            In Class in {assignedMentorSlot}
                                           </span>
                                         )}
                                       </div>

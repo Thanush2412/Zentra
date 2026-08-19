@@ -42,10 +42,11 @@ import {
   Trash2,
   Loader2,
   Award,
-  Video
+  Video,
+  BellRing
 } from "lucide-react";
 import { InterviewModule } from "./InterviewModule";
-import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup } from "@/lib/utils";
+import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 import { Pagination } from "@/components/ui/Pagination";
 
@@ -366,12 +367,19 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
 /* ─── Faculty Leave & Permission Request Panel ─── */
 const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({ mentor, slots = [] }) => {
   const { toast } = useToast();
-  const [panelTab, setPanelTab] = useState<"leave_apps" | "punch_history">("leave_apps");
+  const [panelTab, setPanelTab] = useState<"leave_apps" | "incoming_covers" | "punch_history">("leave_apps");
 
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Incoming cover requests assigned to this mentor
+  const [incomingCovers, setIncomingCovers] = useState<any[]>([]);
+  const [loadingCovers, setLoadingCovers] = useState(false);
+  const [actionCoverId, setActionCoverId] = useState<string | null>(null);
+  const [coverPage, setCoverPage] = useState(1);
+  const [coverPageSize, setCoverPageSize] = useState(25);
 
   // Past attendance history state
   const [attLogs, setAttLogs] = useState<any[]>([]);
@@ -393,13 +401,26 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
     return requests.slice(start, start + leavePageSize);
   }, [requests, leavePage, leavePageSize]);
 
+  const paginatedCovers = useMemo(() => {
+    const start = (coverPage - 1) * coverPageSize;
+    return incomingCovers.slice(start, start + coverPageSize);
+  }, [incomingCovers, coverPage, coverPageSize]);
+
+  const pendingCoversCount = useMemo(() => {
+    return incomingCovers.filter(c => c.status === "pending" || c.status === "pending_cam").length;
+  }, [incomingCovers]);
+
   // Request form state
-  const [requestType, setRequestType] = useState<"Leave" | "Permission" | "OD">("Leave");
+  const [requestType, setRequestType] = useState<"Casual Leave" | "Emergency Leave" | "Leave" | "Permission" | "OD">("Casual Leave");
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("11:00");
   const [reason, setReason] = useState("");
+  // Map of "slotId_dateStr" -> coverMentorId selected by mentor
+  const [coverSelections, setCoverSelections] = useState<Record<string, string>>({});
+  // Map of "slotId_dateStr" -> { loading, mentors[] } for suggested cover mentors
+  const [coverOptions, setCoverOptions] = useState<Record<string, { loading: boolean; mentors: any[] }>>();
 
   // Dynamically calculate scheduled classes in the selected leave/permission window
   const affectedSlots = useMemo(() => {
@@ -422,6 +443,30 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
     }
     return affected;
   }, [slots, mentor.id, startDate, endDate, requestType]);
+
+  // Automatically prefetch available cover mentors whenever affected slots change
+  useEffect(() => {
+    if (!mentor.college_id || affectedSlots.length === 0) return;
+
+    affectedSlots.forEach(item => {
+      const key = `${item.slot.id}_${item.dateStr}`;
+      // Fetch if not already loaded or loading
+      fetch(`/api/requests/faculty-leave?availableForSlotId=${encodeURIComponent(item.slot.id)}&availableForDate=${encodeURIComponent(item.dateStr)}&availableForCollegeId=${encodeURIComponent(mentor.college_id!)}&excludeMentorId=${encodeURIComponent(mentor.id)}`)
+        .then(r => r.json())
+        .then(data => {
+          setCoverOptions(prev => ({
+            ...prev,
+            [key]: { loading: false, mentors: data.mentors || [] }
+          }));
+        })
+        .catch(() => {
+          setCoverOptions(prev => ({
+            ...prev,
+            [key]: { loading: false, mentors: [] }
+          }));
+        });
+    });
+  }, [affectedSlots, mentor.college_id, mentor.id]);
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -453,15 +498,63 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
     }
   };
 
+  const fetchIncomingCovers = async () => {
+    setLoadingCovers(true);
+    try {
+      const res = await fetch(`/api/requests?targetStaffId=${encodeURIComponent(mentor.id)}`);
+      const json = await res.json();
+      if (json.success) {
+        setIncomingCovers(json.requests || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch incoming covers:", e);
+    } finally {
+      setLoadingCovers(false);
+    }
+  };
+
+  const handleResolveCover = async (requestId: string, status: "approved" | "rejected") => {
+    setActionCoverId(requestId);
+    try {
+      const res = await fetch("/api/requests/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId,
+          status,
+          approverName: mentor.name,
+          actorRole: "Mentor"
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(`Cover request ${status === "approved" ? "accepted" : "declined"}!`, "success");
+        await fetchIncomingCovers();
+      } else {
+        toast(data.message || "Failed to update cover request.", "error");
+      }
+    } catch (err: any) {
+      toast("Error: " + err.message, "error");
+    } finally {
+      setActionCoverId(null);
+    }
+  };
+
   useEffect(() => {
     fetchRequests();
+    fetchIncomingCovers();
   }, [mentor.id]);
 
   useEffect(() => {
     if (panelTab === "punch_history") {
       fetchAttendanceLogs();
+    } else if (panelTab === "incoming_covers") {
+      fetchIncomingCovers();
     }
   }, [mentor.id, panelTab]);
+
+  // Step form state: 1 = Details, 2 = Cover Mapping
+  const [formStep, setFormStep] = useState<1 | 2>(1);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -471,6 +564,11 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
     }
     if (!reason.trim()) {
       toast("Please enter a mandatory reason for your application.", "error");
+      return;
+    }
+
+    if (formStep === 1 && affectedSlots.length > 0) {
+      setFormStep(2);
       return;
     }
 
@@ -492,6 +590,22 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
         payload.endDate = endDate || startDate;
       }
 
+      // Build coverSelections array from state
+      const coverSelectionsArr = affectedSlots
+        .map(item => {
+          const val = coverSelections[`${item.slot.id}_${item.dateStr}`];
+          return {
+            slotId: item.slot.id,
+            dateStr: item.dateStr,
+            coverMentorId: (val === "cam_help" || !val) ? null : val
+          };
+        })
+        .filter(sel => sel.slotId && sel.dateStr);
+
+      if (coverSelectionsArr.length > 0) {
+        payload.coverSelections = coverSelectionsArr;
+      }
+
       const res = await fetch("/api/requests/faculty-leave", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -499,9 +613,15 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
       });
       const json = await res.json();
       if (json.success) {
-        toast("Application submitted successfully! Email notification sent to CM.", "success");
+        const coverMsg = json.createdHandovers?.length > 0
+          ? ` Cover requested for ${json.createdHandovers.length} class(es).`
+          : "";
+        toast(`Application submitted successfully!${coverMsg} Email notification sent to CM.`, "success");
         setShowModal(false);
+        setFormStep(1);
         setReason("");
+        setCoverSelections({});
+        setCoverOptions(undefined);
         await fetchRequests();
       } else {
         toast(json.message || "Failed to submit request", "error");
@@ -543,6 +663,21 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
             </button>
             <button
               type="button"
+              onClick={() => setPanelTab("incoming_covers")}
+              className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${panelTab === "incoming_covers"
+                  ? "bg-slate-900 text-white shadow-xs"
+                  : "text-slate-500 hover:text-slate-800"
+                }`}
+            >
+              Cover Requests for Me
+              {pendingCoversCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                  {pendingCoversCount}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => setPanelTab("punch_history")}
               className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${panelTab === "punch_history"
                   ? "bg-slate-900 text-white shadow-xs"
@@ -566,7 +701,98 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
         </div>
       </div>
 
-      {panelTab === "punch_history" ? (
+      {panelTab === "incoming_covers" ? (
+        /* Incoming Cover Requests Table View */
+        <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-amber-600" />
+              <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">Incoming Class Cover Requests</h3>
+            </div>
+            <button onClick={fetchIncomingCovers} className="p-1.5 rounded-md border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition-all cursor-pointer">
+              <RefreshCw className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="overflow-x-auto border border-slate-200/80 rounded-lg bg-white">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider">
+                  <th className="p-3">Requested By</th>
+                  <th className="p-3">Subject / Class</th>
+                  <th className="p-3">Date &amp; Time Slot</th>
+                  <th className="p-3">Reason / Details</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white font-medium text-slate-800">
+                {loadingCovers ? (
+                  <tr><td colSpan={6} className="p-6 text-center text-slate-400">Loading incoming cover requests...</td></tr>
+                ) : incomingCovers.length === 0 ? (
+                  <tr><td colSpan={6} className="p-6 text-center text-slate-400 italic">No incoming cover requests assigned to you.</td></tr>
+                ) : (
+                  paginatedCovers.map((c) => (
+                    <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-3 font-extrabold text-slate-900">
+                        {c.requestorName}
+                      </td>
+                      <td className="p-3">
+                        <div className="font-bold text-slate-800">{c.course}</div>
+                        <div className="text-[10px] text-slate-500">{c.classGroup || "General"}</div>
+                      </td>
+                      <td className="p-3 font-mono text-[11px] text-slate-800 font-bold">
+                        <div>{c.dateFormatted || c.dateStr}</div>
+                        <div className="text-[10px] text-slate-500">{c.time} ({c.day})</div>
+                      </td>
+                      <td className="p-3 text-[11px] italic text-slate-600 max-w-[240px] truncate" title={c.reason}>
+                        {c.reason}
+                      </td>
+                      <td className="p-3">
+                        {c.status === "pending" && <span className="px-2.5 py-0.5 rounded-full bg-amber-100/80 text-amber-800 text-[10px] font-black uppercase">Pending Your Action</span>}
+                        {c.status === "pending_cam" && <span className="px-2.5 py-0.5 rounded-full bg-blue-100/80 text-blue-800 text-[10px] font-black uppercase">Pending CAM</span>}
+                        {c.status === "approved" && <span className="px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 text-[10px] font-black uppercase">Accepted</span>}
+                        {c.status === "rejected" && <span className="px-2.5 py-0.5 rounded-full bg-rose-100/80 text-rose-800 text-[10px] font-black uppercase">Declined</span>}
+                      </td>
+                      <td className="p-3 text-right">
+                        {(c.status === "pending" || c.status === "pending_cam") ? (
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <button
+                              type="button"
+                              disabled={actionCoverId === c.id}
+                              onClick={() => handleResolveCover(c.id, "approved")}
+                              className="px-3 py-1 rounded-md text-[10px] font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer transition-all disabled:opacity-50"
+                            >
+                              Accept
+                            </button>
+                            <button
+                              type="button"
+                              disabled={actionCoverId === c.id}
+                              onClick={() => handleResolveCover(c.id, "rejected")}
+                              className="px-3 py-1 rounded-md text-[10px] font-black bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer transition-all disabled:opacity-50"
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-bold capitalize">{c.status}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            <Pagination
+              currentPage={coverPage}
+              totalItems={incomingCovers.length}
+              pageSize={coverPageSize}
+              onPageChange={setCoverPage}
+              onPageSizeChange={setCoverPageSize}
+            />
+          </div>
+        </div>
+      ) : panelTab === "punch_history" ? (
         /* Historical Attendance Logs View */
         <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
@@ -657,7 +883,8 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
                   paginatedRequests.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="p-3 font-extrabold">
-                        {r.request_type === "Leave" && <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200/80 text-[10px] font-black uppercase">Leave</span>}
+                        {(r.request_type === "Leave" || r.request_type === "Casual Leave") && <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200/80 text-[10px] font-black uppercase">{r.request_type === "Casual Leave" ? "Casual Leave" : "Leave"}</span>}
+                        {r.request_type === "Emergency Leave" && <span className="px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200/80 text-[10px] font-black uppercase">Emergency</span>}
                         {r.request_type === "Permission" && <span className="px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200/80 text-[10px] font-black uppercase">Permission</span>}
                         {r.request_type === "OD" && <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-[10px] font-black uppercase">OD (On Duty)</span>}
                       </td>
@@ -691,12 +918,12 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
         </div>
       )}
 
-      {/* Styled Popup Modal matching CAM Dashboard Palette */}
+      {/* Styled Popup Modal: 2-Step Wizard matching CAM Dashboard Palette */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <form onSubmit={handleSubmit} className="bg-white rounded-xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-200 animate-scaleUp space-y-0">
 
-            {/* Modal Header matching CAM Dashboard slate style */}
+            {/* Modal Header with 2-Step Wizard Indicator */}
             <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 border border-indigo-100">
@@ -704,173 +931,313 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-slate-900 leading-tight">Apply Leave / Permission / OD</h3>
-                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">CM approval required with mandatory reason.</p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                      formStep === 1
+                        ? "bg-indigo-600 text-white shadow-2xs"
+                        : "bg-emerald-100 text-emerald-800"
+                    }`}>
+                      {formStep === 2 && "✓ "}Step 1: Leave Details
+                    </span>
+                    {affectedSlots.length > 0 && (
+                      <>
+                        <span className="text-[10px] text-slate-300 font-bold">→</span>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                          formStep === 2
+                            ? "bg-indigo-600 text-white shadow-2xs"
+                            : "bg-slate-200 text-slate-600"
+                        }`}>
+                          Step 2: Class Swap ({affectedSlots.length})
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false);
+                  setFormStep(1);
+                }}
                 className="text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 p-1.5 rounded-md transition-all cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-5 space-y-4 bg-slate-50/40">
+            {/* Modal Body: STEP 1 (Leave Details) */}
+            {formStep === 1 && (
+              <div className="p-5 space-y-4 bg-slate-50/40">
+                {/* Request Type Select Dropdown */}
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Request Type <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={requestType}
+                    onChange={(e) => setRequestType(e.target.value as any)}
+                    className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                  >
+                    <option value="Casual Leave">Casual Leave (Personal / Health)</option>
+                    <option value="Emergency Leave">Emergency Leave (Urgent / Unplanned)</option>
+                    <option value="OD">On Duty (OD) Event / Duty</option>
+                    <option value="Permission">Short Permission (Hourly)</option>
+                    <option value="Leave">Full / Multi-Day Leave</option>
+                  </select>
+                </div>
 
-              {/* Request Type Select Dropdown */}
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Request Type <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={requestType}
-                  onChange={(e) => setRequestType(e.target.value as any)}
-                  className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all cursor-pointer"
-                >
-                  <option value="Leave">Full / Multi-Day Leave</option>
-                  <option value="Permission">Short Permission (Hourly)</option>
-                  <option value="OD">On Duty (OD) Event / Duty</option>
-                </select>
-              </div>
-
-              {/* Dynamic Dates/Times based on Request Type */}
-              {requestType === "Permission" ? (
-                /* Permission View: Date + From Time + To Time */
-                <div className="space-y-3 bg-indigo-50/50 p-3.5 rounded-lg border border-indigo-100">
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Permission Date <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
-                    />
+                {/* Dynamic Dates/Times based on Request Type */}
+                {requestType === "Permission" ? (
+                  /* Permission View: Date + From Time + To Time */
+                  <div className="space-y-3 bg-indigo-50/50 p-3.5 rounded-lg border border-indigo-100">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Permission Date <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">From Time <span className="text-rose-500">*</span></label>
+                        <input
+                          type="time"
+                          required
+                          value={startTime}
+                          onChange={(e) => setStartTime(e.target.value)}
+                          className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">To Time <span className="text-rose-500">*</span></label>
+                        <input
+                          type="time"
+                          required
+                          value={endTime}
+                          onChange={(e) => setEndTime(e.target.value)}
+                          className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    </div>
                   </div>
+                ) : (
+                  /* Leave & OD View: From Date + To Date */
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">From Time <span className="text-rose-500">*</span></label>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        From Date <span className="text-rose-500">*</span>
+                      </label>
                       <input
-                        type="time"
+                        type="date"
                         required
-                        value={startTime}
-                        onChange={(e) => setStartTime(e.target.value)}
-                        className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
+                        value={startDate}
+                        onChange={(e) => {
+                          setStartDate(e.target.value);
+                          if (e.target.value > endDate) setEndDate(e.target.value);
+                        }}
+                        className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">To Time <span className="text-rose-500">*</span></label>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        To Date <span className="text-rose-500">*</span>
+                      </label>
                       <input
-                        type="time"
+                        type="date"
                         required
-                        value={endTime}
-                        onChange={(e) => setEndTime(e.target.value)}
-                        className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
+                        min={startDate}
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
                       />
                     </div>
                   </div>
-                </div>
-              ) : (
-                /* Leave & OD View: From Date + To Date */
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">
-                      From Date <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={startDate}
-                      onChange={(e) => {
-                        setStartDate(e.target.value);
-                        if (e.target.value > endDate) setEndDate(e.target.value);
-                      }}
-                      className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">
-                      To Date <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      min={startDate}
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
-                    />
-                  </div>
-                </div>
-              )}
+                )}
 
-              {/* Mandatory Reason Field */}
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Mandatory Reason / Remarks <span className="text-rose-500">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={3}
-                  placeholder={
-                    requestType === "Permission"
-                      ? "Specify reason for short permission (e.g., Doctor appointment / Urgent personal errand)..."
-                      : requestType === "OD"
-                        ? "Specify OD details (e.g., Placement drive invigilation at Main Auditorium)..."
-                        : "Specify reason for leave application..."
-                  }
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  className="w-full text-xs font-medium p-3 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
-                />
+                {/* Mandatory Reason Field */}
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Mandatory Reason / Remarks <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={3}
+                    placeholder={
+                      requestType === "Permission"
+                        ? "Specify reason for short permission (e.g., Doctor appointment / Urgent personal errand)..."
+                        : requestType === "OD"
+                          ? "Specify OD details (e.g., Placement drive invigilation at Main Auditorium)..."
+                          : "Specify reason for leave application..."
+                    }
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    className="w-full text-xs font-medium p-3 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
+                  />
+                </div>
+
+                {/* Schedule Impact Quick Badge */}
+                {affectedSlots.length > 0 ? (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-medium flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span><strong>{affectedSlots.length} class{affectedSlots.length > 1 ? "es" : ""}</strong> scheduled during this leave period.</span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded">
+                      Cover mapping in Step 2 →
+                    </span>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-medium flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>No regular timetable classes scheduled during this selected time window.</span>
+                  </div>
+                )}
               </div>
+            )}
 
-              {/* Dynamic Timetable Scheduled Classes Alert & Swap Guidance */}
-              {affectedSlots.length > 0 ? (
-                <div className="p-3.5 rounded-xl bg-amber-50/90 border border-amber-250 text-amber-900 text-xs space-y-2">
-                  <div className="flex items-center gap-2 font-bold text-amber-900">
-                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>You have {affectedSlots.length} scheduled class{affectedSlots.length > 1 ? "es" : ""} during this period:</span>
+            {/* Modal Body: STEP 2 (Class Cover & Swap Mapping) */}
+            {formStep === 2 && (
+              <div className="p-5 space-y-3.5 bg-slate-50/40 max-h-[60vh] overflow-y-auto">
+                <div className="p-3 rounded-xl bg-indigo-50/80 border border-indigo-200 text-indigo-950 text-xs flex items-center gap-2.5">
+                  <div className="h-6 w-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black text-xs shrink-0">
+                    2
                   </div>
-                  <div className="space-y-1 pl-6">
-                    {affectedSlots.map((item, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-[11px] font-semibold text-amber-850">
-                        <span>• {item.slot.course} ({item.slot.classGroup})</span>
-                        <span className="font-mono text-slate-500">{item.dateStr} | {item.slot.time}</span>
+                  <div>
+                    <div className="font-extrabold">Class Cover Arrangement</div>
+                    <div className="text-[10.5px] text-indigo-700">Map available colleagues or request CAM assistance for each class.</div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {affectedSlots.map((item, idx) => {
+                    const key = `${item.slot.id}_${item.dateStr}`;
+                    const opts = coverOptions?.[key];
+                    const selectedCover = coverSelections[key] || "";
+                    const isRequestingCAM = selectedCover === "" || selectedCover === "cam_help";
+
+                    return (
+                      <div key={idx} className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-black text-slate-900 text-xs">{item.slot.course}</div>
+                            <div className="text-[10px] text-slate-500 font-semibold">{item.slot.classGroup || "General"} · {item.slot.day}</div>
+                          </div>
+                          <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-slate-100 font-bold text-slate-700">
+                            {item.dateStr} · {item.slot.time}
+                          </span>
+                        </div>
+
+                        {/* Swap Mapping vs Request CAM Choice */}
+                        <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                          <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                            Choose Cover Option:
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {/* Option 1: Map to Available Mentor */}
+                            <select
+                              value={selectedCover === "cam_help" ? "" : selectedCover}
+                              onChange={(e) => {
+                                setCoverSelections(prev => ({
+                                  ...prev,
+                                  [key]: e.target.value
+                                }));
+                              }}
+                              className={`text-[11px] font-bold p-2 rounded-lg border transition-all cursor-pointer ${
+                                !isRequestingCAM
+                                  ? "border-emerald-500 bg-emerald-50/50 text-emerald-950 ring-1 ring-emerald-400/50"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                              }`}
+                            >
+                              <option value="">👤 Map to Available Faculty...</option>
+                              {opts?.loading && <option disabled>⏳ Checking availability...</option>}
+                              {opts && !opts.loading && opts.mentors.length === 0 && (
+                                <option disabled>No mentors free at this time</option>
+                              )}
+                              {opts?.mentors?.map((m: any) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.sameSubject ? "★ " : ""}{m.name}{m.department ? ` (${m.department})` : ""}
+                                </option>
+                              ))}
+                            </select>
+
+                            {/* Option 2: Explicitly Request CAM Help */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCoverSelections(prev => ({
+                                  ...prev,
+                                  [key]: "cam_help"
+                                }));
+                              }}
+                              className={`px-2.5 py-1.5 rounded-lg text-[10.5px] font-extrabold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                isRequestingCAM
+                                  ? "bg-indigo-50 border-indigo-300 text-indigo-700 shadow-2xs"
+                                  : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                              }`}
+                            >
+                              🛡️ Request CAM Help
+                            </button>
+                          </div>
+
+                          {/* Status Explanatory Note */}
+                          {!isRequestingCAM && (
+                            <p className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                              ✓ Direct cover request will be dispatched upon submission.
+                            </p>
+                          )}
+                          {isRequestingCAM && (
+                            <p className="text-[10px] text-indigo-600 font-medium">
+                              ℹ️ Flagged for CAM manual assignment.
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                  <p className="text-[10.5px] text-amber-800 font-medium pt-1.5 border-t border-amber-200/70 leading-relaxed">
-                    💡 <strong>Kindly arrange a class swap:</strong> Please assign covering faculty via <em>My Schedule → Handover Class</em>. If the CM rejects your leave request, all scheduled classes will remain assigned to you as usual.
-                  </p>
+                    );
+                  })}
                 </div>
-              ) : (
-                <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200/90 text-emerald-800 text-[11px] font-medium flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>No regular timetable classes scheduled during this selected time window.</span>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Modal Action Buttons Footer */}
-            <div className="bg-slate-50 p-4 px-5 border-t border-slate-200 flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setShowModal(false)}
-                className="px-4 py-1.5 rounded-md text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
+            <div className="bg-slate-50 p-4 px-5 border-t border-slate-200 flex items-center justify-between gap-2.5">
+              {formStep === 2 ? (
+                <button
+                  type="button"
+                  onClick={() => setFormStep(1)}
+                  className="px-4 py-1.5 rounded-md text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  ← Back to Details
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowModal(false);
+                    setFormStep(1);
+                  }}
+                  className="px-4 py-1.5 rounded-md text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
+
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-4.5 py-1.5 rounded-md text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                className="px-5 py-1.5 rounded-md text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
               >
-                {submitting ? "Submitting..." : "Submit Application →"}
+                {submitting
+                  ? "Submitting..."
+                  : formStep === 1 && affectedSlots.length > 0
+                    ? `Next: Map Class Covers (${affectedSlots.length}) →`
+                    : "Submit Application →"
+                }
               </button>
             </div>
           </form>
@@ -973,6 +1340,48 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
   };
 
+  const handleRemindCm = async (dateStr: string, dateFormatted: string) => {
+    if (!currentMentor?.college_id) {
+      toast("College information missing.", "error");
+      return;
+    }
+    const now = Date.now();
+    const lastAt = lastRemindedCmAt[dateStr] || 0;
+    if (now - lastAt < 60 * 1000) {
+      const waitSec = Math.ceil((60 * 1000 - (now - lastAt)) / 1000);
+      toast(`Already reminded recently. Wait ${waitSec}s before re-sending.`, "warning");
+      return;
+    }
+    setIsRemindingCm(true);
+    try {
+      const res = await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          college_id: currentMentor.college_id,
+          remind_cam_for_date: dateStr,
+          remind_by_name: currentMentor.name,
+          remind_by_email: currentMentor.email,
+          title: `Day Order Not Configured — ${dateFormatted}`,
+          message: `${currentMentor.name || "A Mentor"} needs the Day Order / Day Type configured for ${dateFormatted} so they can mark attendance.`,
+          link: `/cam/daily-configs?date=${dateStr}`,
+          type: "reminder",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(data.message || "Reminder sent to Campus Manager!", "success");
+        setLastRemindedCmAt((prev) => ({ ...prev, [dateStr]: Date.now() }));
+      } else {
+        toast(data.message || "Failed to send reminder.", "error");
+      }
+    } catch (err: any) {
+      toast("Network error while sending reminder.", "error");
+    } finally {
+      setIsRemindingCm(false);
+    }
+  };
+
   useEffect(() => {
     if ((!leaveRequests || leaveRequests.length === 0) && currentMentor?.college_id) {
       fetchStudentLeaveRequests();
@@ -1039,6 +1448,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [attendanceStep, setAttendanceStep] = useState<1 | 2 | 3>(1);
   const [isDayConfigSet, setIsDayConfigSet] = useState<boolean>(true);
   const [dayConfigDetails, setDayConfigDetails] = useState<any>(null);
+  const [isRemindingCm, setIsRemindingCm] = useState<boolean>(false);
+  const [lastRemindedCmAt, setLastRemindedCmAt] = useState<Record<string, number>>({});
   // Target Classes Filter State
   const [selectedClassFilter, setSelectedClassFilter] = useState<string | null>(null);
 
@@ -2087,11 +2498,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     // 1. Own slots for this day (all shifts — show everything assigned to this mentor)
     const ownSlots = mySlots.filter(s => s.day === queryDay);
 
+    const isExam = isExamDate(dateStr, dailyConfigsList, studentAttendance);
+
     // Filter out slots that have been handed over to someone else on this date
     const activeOwnClasses = ownSlots.map(slot => {
       const isHandedOver = approvedHandovers.some(h => h.slotId === slot.id && h.dateStr === dateStr);
       const pendingHandover = requests.find(r => r.slotId === slot.id && r.dateStr === dateStr && r.status === "pending");
-      const hasAttendance = studentAttendance.some(a => a.slotId === slot.id && a.dateStr === dateStr);
+      const hasAttendance = isExam
+        ? studentAttendance.some(a => a.dateStr === dateStr && (a.slotId === slot.id || (slot.classGroup && isCohortMatch((a as any).classGroup || slots.find(s => s.id === a.slotId)?.classGroup, slot.classGroup))))
+        : studentAttendance.some(a => a.slotId === slot.id && a.dateStr === dateStr);
 
       return {
         slot,
@@ -2099,7 +2514,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         isHandedOver,
         pendingHandover,
         hasAttendance,
-        roleLabel: "Regular Class"
+        roleLabel: isExam ? "Exam Session" : "Regular Class"
       };
     });
 
@@ -2107,14 +2522,18 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     const coveredHandovers = approvedHandovers.filter(h => h.coverStaffId === currentMentor.id && h.dateStr === dateStr);
     const activeCoverClasses = coveredHandovers.map(h => {
       const slot = slots.find(s => s.id === h.slotId);
-      const hasAttendance = slot ? studentAttendance.some(a => a.slotId === slot.id && a.dateStr === dateStr) : false;
+      const hasAttendance = slot
+        ? (isExam
+            ? studentAttendance.some(a => a.dateStr === dateStr && (a.slotId === slot.id || (slot.classGroup && isCohortMatch((a as any).classGroup || slots.find(s => s.id === a.slotId)?.classGroup, slot.classGroup))))
+            : studentAttendance.some(a => a.slotId === slot.id && a.dateStr === dateStr))
+        : false;
       return {
         slot,
         type: "covering" as const,
         isHandedOver: false,
         pendingHandover: null,
         hasAttendance,
-        roleLabel: `Substitution for ${h.coverStaffName || 'Faculty'}`
+        roleLabel: isExam ? `Exam Invigilation for ${h.coverStaffName || 'Faculty'}` : `Substitution for ${h.coverStaffName || 'Faculty'}`
       };
     })
       .filter((x) => x.slot !== undefined)
@@ -3052,10 +3471,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           </div>
         )}
 
-        {/* Tab Leave Requests */}
-        {activeTab === "leave_requests" && currentMentor && (
-          <MentorFacultyLeavePanel mentor={currentMentor} />
-        )}
+
 
         {activeTab === "home" && (
           <>
@@ -3910,9 +4326,48 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <span className="text-[9px] text-gray-400 font-extrabold uppercase mt-1 leading-none">{date.formatted}</span>
                             {mentorInterviews.some((inv: any) => inv.target_date === date.dateStr) && (
                               <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
-                                🎤 Interview
+                                Interview
                               </span>
                             )}
+                            {(() => {
+                              const cfg = dailyConfigsMap.get(date.dateStr);
+                              if (!cfg || !cfg.day_type) {
+                                return (
+                                  <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200 shrink-0 text-center leading-tight" title="Day order not configured by CAM">
+                                    No Order
+                                  </span>
+                                );
+                              }
+                              if (cfg.day_type === "holiday") {
+                                return (
+                                  <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-rose-100 text-rose-700 border border-rose-200 shrink-0" title={cfg.notes || "Holiday"}>
+                                    Holiday
+                                  </span>
+                                );
+                              }
+                              if (cfg.day_type === "event") {
+                                return (
+                                  <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-amber-50 text-amber-700 border border-amber-200 shrink-0" title={cfg.notes || "Campus Event"}>
+                                    Event
+                                  </span>
+                                );
+                              }
+                              if (cfg.day_type === "exam_day") {
+                                return (
+                                  <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-purple-50 text-purple-700 border border-purple-200 shrink-0" title={cfg.notes || "Exam Day"}>
+                                    Exam
+                                  </span>
+                                );
+                              }
+                              if (cfg.day_order && cfg.day_order !== "None") {
+                                return (
+                                  <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
+                                    {cfg.day_order}
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                         </td>
 
@@ -4072,7 +4527,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       if (!isFuture) {
                                         return (
                                           <span className="text-[8.5px] font-black text-amber-700 flex items-center gap-0.5 uppercase tracking-wider animate-pulse">
-                                            ⚠️ Pending
+                                            Pending
                                           </span>
                                         );
                                       }
@@ -4152,10 +4607,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       <div>
                                         <div className="flex flex-wrap items-center gap-1 mb-1 max-w-full">
                                           <span className="px-1.5 py-0.5 rounded bg-purple-200/80 border border-purple-300 text-[7.5px] font-black text-purple-800 uppercase tracking-wide">
-                                            🎤 INTERVIEW ({interviewSession.type?.toUpperCase() || "EXTERNAL"})
+                                            INTERVIEW ({interviewSession.type?.toUpperCase() || "EXTERNAL"})
                                           </span>
                                           <span className="text-[7.5px] font-bold text-purple-600">
-                                            {isEvaluator ? `⭐ Evaluator` : `Host Raiser`}
+                                            {isEvaluator ? `Evaluator` : `Host Raiser`}
                                           </span>
                                         </div>
                                         <div className="font-extrabold text-[10.5px] leading-tight mb-1 text-purple-950 line-clamp-2" title={interviewSession.subject}>
@@ -5297,6 +5752,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           };
 
           const handleSaveAttendance = async () => {
+            // ── Day config pre-flight guard ──────────────────────────────
+            if (!isDayConfigSet) {
+              setFormError("Day order/type has not been configured for this date. The CAM must set the day schedule before you can mark attendance.");
+              return;
+            }
+            // ── End day config guard ──────────────────────────────────────
+
             const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
             if (!windowCheck.open && windowCheck.reason === "expired") {
               setFormError(windowCheck.message || "Attendance window is closed.");
@@ -5397,6 +5859,75 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <X className="w-5 h-5" />
                   </button>
                 </div>
+
+                {/* Day Config Status Banner */}
+                {!isDayConfigSet && (
+                  <div className="px-5 py-2.5 bg-amber-50 border-b border-amber-200 flex items-start gap-2.5 shrink-0">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0 flex items-start gap-3 flex-wrap">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-amber-800">Day Order Not Configured</p>
+                        <p className="text-[11px] text-amber-700 font-medium mt-0.5">
+                          The CAM has not set a day order or day type for <span className="font-bold">{selectedCell.dateFormatted}</span>. Attendance cannot be saved until the CAM configures this date in the Daily Schedule.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemindCm(selectedCell.dateStr, selectedCell.dateFormatted)}
+                        disabled={isRemindingCm}
+                        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-[11px] font-extrabold shadow-xs border border-amber-700/40 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {isRemindingCm ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Reminding…
+                          </>
+                        ) : (
+                          <>
+                            <BellRing className="w-3.5 h-3.5" />
+                            Remind CM
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {isDayConfigSet && dayConfigDetails && dayConfigDetails.day_type === "holiday" && (
+                  <div className="px-5 py-2.5 bg-rose-50 border-b border-rose-200 flex items-start gap-2.5 shrink-0">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-rose-800">Holiday — Attendance Blocked</p>
+                      <p className="text-[11px] text-rose-700 font-medium mt-0.5">
+                        This date is marked as a <span className="font-bold">Holiday</span> by the CAM. Attendance cannot be recorded.
+                        {dayConfigDetails.notes ? <span> Note: {dayConfigDetails.notes}</span> : null}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {isDayConfigSet && dayConfigDetails && dayConfigDetails.day_type !== "holiday" && (
+                  <div className="px-5 py-2 bg-indigo-50 border-b border-indigo-100 flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200 uppercase tracking-wider">
+                        {dayConfigDetails.day_order && dayConfigDetails.day_order !== "None" ? dayConfigDetails.day_order : "No Order"}
+                      </span>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider border ${
+                        dayConfigDetails.day_type === "event" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                        dayConfigDetails.day_type === "exam_day" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                        "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      }`}>
+                        {dayConfigDetails.day_type === "exam_day" ? "Exam Day" : dayConfigDetails.day_type === "event" ? "Campus Event" : "Working Day"}
+                      </span>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 uppercase tracking-wider">
+                        {dayConfigDetails.session_mode || "Offline"}
+                      </span>
+                      {dayConfigDetails.notes ? (
+                        <span className="text-[11px] text-slate-500 font-medium truncate max-w-[220px]" title={dayConfigDetails.notes}>
+                          {dayConfigDetails.notes}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
 
                 {/* Minimal Top Toolbar: Clean Segmented Filter & Search */}
                 <div className="px-5 py-2.5 bg-slate-50/70 border-b border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3 shrink-0">
@@ -5573,8 +6104,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <button
                       type="button"
                       onClick={handleSaveAttendance}
-                      disabled={isSubmittingAttendance || isPastDay}
+                      disabled={isSubmittingAttendance || isPastDay || !isDayConfigSet || (isDayConfigSet && dayConfigDetails?.day_type === "holiday")}
                       className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-all cursor-pointer flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                      title={!isDayConfigSet ? "CAM must configure day order for this date first" : (dayConfigDetails?.day_type === "holiday" ? "Attendance cannot be marked on a holiday" : undefined)}
                     >
                       {isSubmittingAttendance ? (
                         <>

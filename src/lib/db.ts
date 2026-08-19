@@ -75,11 +75,15 @@ export function getDb(): Promise<TursoDbAdapter> {
   if (dbInstance) return Promise.resolve(dbInstance);
   if (!dbPromise) {
     dbPromise = (async () => {
-      const url = process.env.TURSO_DATABASE_URL || "file:database.sqlite";
-      const authToken = process.env.TURSO_AUTH_TOKEN;
+      const useLocal = process.env.USE_LOCAL_DB === "true" || process.env.USE_LOCAL_DB === "1";
+      const url = useLocal ? "file:database.sqlite" : (process.env.TURSO_DATABASE_URL || "file:database.sqlite");
+      const authToken = useLocal ? undefined : process.env.TURSO_AUTH_TOKEN;
 
       let client: Client;
       try {
+        if (useLocal) {
+          console.log("⚡ [Database] Using local SQLite database (database.sqlite).");
+        }
         client = createClient({
           url,
           authToken,
@@ -721,6 +725,21 @@ export function getDb(): Promise<TursoDbAdapter> {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS faculty_leave_requests (
+      id TEXT PRIMARY KEY,
+      mentor_id TEXT NOT NULL,
+      college_id TEXT,
+      request_type TEXT NOT NULL,
+      leave_category TEXT,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (mentor_id) REFERENCES mentors(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS mentor_attendance (
       id TEXT PRIMARY KEY,
       mentor_id TEXT NOT NULL,
@@ -927,6 +946,7 @@ export function getDb(): Promise<TursoDbAdapter> {
         try { await dbInstance.exec(`ALTER TABLE colleges ADD COLUMN working_days INTEGER DEFAULT 5;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE campus_daily_configs ADD COLUMN session_mode TEXT DEFAULT 'Offline';`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE students ADD COLUMN correction_count INTEGER DEFAULT 0;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE students ADD COLUMN section TEXT;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE students ADD COLUMN hire_score TEXT;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE students ADD COLUMN efset_score TEXT;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE students ADD COLUMN mother_name TEXT;`); } catch (_) { }

@@ -5,6 +5,7 @@ export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { sendMail, renderEmailShell } from "@/lib/mail";
+import { checkMentorAvailability } from "@/lib/availability";
 
 export async function GET(request: Request) {
   try {
@@ -14,6 +15,42 @@ export async function GET(request: Request) {
     const collegeId = searchParams.get("collegeId");
     const mentorId = searchParams.get("mentorId");
     const status = searchParams.get("status");
+    // Special mode: fetch available cover mentors for a slot+date
+    const availableForSlotId = searchParams.get("availableForSlotId");
+    const availableForDate = searchParams.get("availableForDate");
+    const availableForCollegeId = searchParams.get("availableForCollegeId");
+    const excludeMentorId = searchParams.get("excludeMentorId");
+
+    if (availableForSlotId && availableForDate && availableForCollegeId) {
+      const slot = await db.get("SELECT * FROM slots WHERE id = ?", [availableForSlotId]);
+      if (!slot) return NextResponse.json({ success: false, message: "Slot not found" }, { status: 404 });
+
+      const allMentors = await db.all(
+        `SELECT id, name, department, email FROM mentors WHERE college_id = ? AND id != ? ORDER BY name`,
+        [availableForCollegeId, excludeMentorId || ""]
+      );
+
+      const available: any[] = [];
+      for (const m of allMentors) {
+        const result = await checkMentorAvailability(db, {
+          mentorId: m.id,
+          dateStr: availableForDate,
+          timeSlot: slot.time,
+          shift: slot.shift
+        });
+        if (result.available) {
+          // Is this mentor a match for the same subject?
+          const sameSubject = await db.get(
+            `SELECT id FROM slots WHERE mentorId = ? AND LOWER(course) = LOWER(?) LIMIT 1`,
+            [m.id, slot.course]
+          );
+          available.push({ ...m, sameSubject: !!sameSubject });
+        }
+      }
+      // Sort: same subject first
+      available.sort((a, b) => (b.sameSubject ? 1 : 0) - (a.sameSubject ? 1 : 0));
+      return NextResponse.json({ success: true, mentors: available });
+    }
 
     let query = `
       SELECT flr.*, m.name as mentorName, m.email as mentorEmail, m.department as mentorDepartment, c.name as collegeName
@@ -280,7 +317,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // 2. Submit new Leave / Permission / OD request (By Mentor)
+    // 2. Submit new Leave / Permission / OD / Casual / Emergency request (By Mentor)
     const {
       mentorId,
       collegeId,
@@ -289,11 +326,17 @@ export async function POST(request: Request) {
       endDate,
       startTime,
       endTime,
-      reason
+      reason,
+      // Array of { slotId, dateStr, coverMentorId } — one per affected class
+      coverSelections
     } = body;
 
+    const validTypes = ["Leave", "Casual Leave", "Emergency Leave", "Permission", "OD"];
     if (!mentorId || !requestType || !startDate || !reason || !reason.trim()) {
       return NextResponse.json({ success: false, message: "Missing required fields: Request Type, Dates, and Mandatory Reason are required." }, { status: 400 });
+    }
+    if (!validTypes.includes(requestType)) {
+      return NextResponse.json({ success: false, message: `Invalid request type: ${requestType}` }, { status: 400 });
     }
 
     const effectiveEndDate = endDate || startDate;
@@ -324,7 +367,115 @@ export async function POST(request: Request) {
       ]
     );
 
-    // Trigger Email Notification to Campus Manager (CM) (End 1)
+    // Process cover selections: create handover_requests for each slot the mentor nominated a cover for
+    const createdHandovers: any[] = [];
+    const needsManualCover: any[] = [];
+
+    if (Array.isArray(coverSelections) && coverSelections.length > 0) {
+      for (const sel of coverSelections) {
+        const { slotId, dateStr, coverMentorId } = sel;
+        if (!slotId || !dateStr) continue;
+
+        if (coverMentorId) {
+          const slot = await db.get("SELECT * FROM slots WHERE id = ?", [slotId]);
+          const coverMentor = await db.get("SELECT * FROM mentors WHERE id = ?", [coverMentorId]);
+          if (!slot || !coverMentor) continue;
+
+          const handoverId = `ho_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+          const dateFormatted = new Date(dateStr + "T00:00:00").toLocaleDateString("en-IN", {
+            weekday: "long", day: "2-digit", month: "short", year: "numeric"
+          });
+
+          await db.run(
+            `INSERT INTO handover_requests (
+              id, requestorId, requestorName, slotId, course, day, time,
+              dateStr, dateFormatted, targetStaffId, targetStaffName,
+              reason, status, timestamp, classGroup, request_type, compensates_handover_id,
+              original_subject, original_month
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 'leave_cover', ?, ?, ?)`,
+            [
+              handoverId, mentorId, mentor?.name || mentorId,
+              slotId, slot.course, slot.day, slot.time,
+              dateStr, dateFormatted,
+              coverMentorId, coverMentor.name,
+              `[Leave Cover] ${requestType} from ${startDate} to ${effectiveEndDate}. ${finalReason}`,
+              new Date().toISOString(),
+              slot.classGroup || "General",
+              reqId, null, null
+            ]
+          );
+
+          createdHandovers.push({ slotId, dateStr, course: slot.course, coverMentorId, coverMentorName: coverMentor.name });
+
+          // Email cover mentor
+          if (coverMentor.email) {
+            try {
+              const coverEmailHtml = renderEmailShell({
+                title: "Cover Class Request",
+                badgeText: "COVER REQUESTED",
+                badgeColor: "amber",
+                description: `${mentor?.name || "A colleague"} has selected you to cover their class while on ${requestType}. Please review and accept or decline in your dashboard.`,
+                details: [
+                  { label: "Subject", value: slot.course, highlight: true },
+                  { label: "Class Group", value: slot.classGroup || "General" },
+                  { label: "Date", value: dateFormatted, highlight: true },
+                  { label: "Time Slot", value: slot.time },
+                  { label: "Requested By", value: mentor?.name || "Faculty" },
+                  { label: "Leave Reason", value: finalReason }
+                ],
+                ctaText: "Open Dashboard to Accept or Decline →",
+                footerText: "Please respond promptly. If you decline, the requesting mentor will be notified to select another cover."
+              });
+              await sendMail({
+                to: coverMentor.email,
+                subject: `[Cover Request] ${slot.course} on ${dateFormatted} — ${mentor?.name || "Faculty"}`,
+                htmlBody: coverEmailHtml
+              });
+            } catch (mailErr) {
+              console.error("Failed to email cover mentor:", mailErr);
+            }
+          }
+        } else {
+          // No cover selected for this slot — mentor explicitly requested CAM to help in swap
+          const slot = await db.get("SELECT * FROM slots WHERE id = ?", [slotId]);
+          if (slot) {
+            const handoverId = `ho_cam_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+            const dateFormatted = new Date(dateStr + "T00:00:00").toLocaleDateString("en-IN", {
+              weekday: "long", day: "2-digit", month: "short", year: "numeric"
+            });
+
+            await db.run(
+              `INSERT INTO handover_requests (
+                id, requestorId, requestorName, slotId, course, day, time,
+                dateStr, dateFormatted, targetStaffId, targetStaffName,
+                reason, status, timestamp, classGroup, request_type, compensates_handover_id,
+                original_subject, original_month
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'needs_cam_allocation', ?, ?, 'leave_cover', ?, ?, ?)`,
+              [
+                handoverId, mentorId, mentor?.name || mentorId,
+                slotId, slot.course, slot.day, slot.time,
+                dateStr, dateFormatted,
+                "cam_allocation", "Needs CAM Allocation",
+                `[CAM Help Requested] Faculty on ${requestType} (${startDate} to ${effectiveEndDate}). Reason: ${finalReason}`,
+                new Date().toISOString(),
+                slot.classGroup || "General",
+                reqId, null, null
+              ]
+            );
+          }
+          needsManualCover.push({ slotId, dateStr, course: slot?.course, time: slot?.time });
+        }
+      }
+    }
+
+    // Fetch KAM for CC
+    let kamEmail: string | null = null;
+    try {
+      const kamUser = await db.get(`SELECT email FROM kam_users WHERE college_id = ? LIMIT 1`, [effectiveCollegeId]);
+      kamEmail = kamUser?.email || null;
+    } catch (_) {}
+
+    // Trigger Email Notification to Campus Manager (CM)
     let camUser = null;
     try {
       camUser = await db.get(
@@ -343,25 +494,34 @@ export async function POST(request: Request) {
     const cmEmail = camUser?.email || "cam@zentra.edu";
     if (cmEmail) {
       try {
+        const coverSummary = createdHandovers.length > 0
+          ? `${createdHandovers.length} class(es) have cover mentors requested by the faculty.`
+          : "";
+        const needsCoverSummary = needsManualCover.length > 0
+          ? `${needsManualCover.length} class(es) have no cover assigned — manual intervention required.`
+          : "";
+
         const emailSubject = `[Action Required] New ${requestType} Request - ${mentor?.name || "Faculty"}`;
         const emailHtml = renderEmailShell({
           title: `New ${requestType} Application Pending Review`,
-          badgeText: "ACTION REQUIRED",
-          badgeColor: "amber",
-          description: `Faculty member ${mentor?.name || "A Mentor"} has submitted a new ${requestType} application requiring your review and approval.`,
+          badgeText: requestType === "Emergency Leave" ? "EMERGENCY — ACTION REQUIRED" : "ACTION REQUIRED",
+          badgeColor: requestType === "Emergency Leave" ? "rose" : "amber",
+          description: `Faculty member ${mentor?.name || "A Mentor"} has submitted a new ${requestType} application. ${coverSummary} ${needsCoverSummary}`,
           details: [
             { label: "Faculty Name", value: mentor?.name || "Faculty", highlight: true },
             { label: "Department", value: mentor?.department || "General" },
             { label: "Request Type", value: requestType, highlight: true },
             { label: "Schedule", value: requestType === "Permission" && startTime ? `${startDate} (${startTime} - ${endTime})` : `${startDate} to ${effectiveEndDate}` },
-            { label: "Mandatory Reason", value: finalReason }
+            { label: "Mandatory Reason", value: finalReason },
+            ...(createdHandovers.length > 0 ? [{ label: "Cover Requests Sent", value: createdHandovers.map(h => `${h.course} → ${h.coverMentorName}`).join(", ") }] : []),
+            ...(needsManualCover.length > 0 ? [{ label: "Needs Manual Cover", value: needsManualCover.map(h => `${h.course} on ${h.dateStr}`).join(", "), highlight: true }] : [])
           ],
-          ctaText: "Open CM Dashboard to Approve/Reject →",
+          ctaText: "Open CM Dashboard to Review →",
           footerText: "Official operational notification from FACE Prep E-Campus System."
         });
 
         await sendMail({
-          to: cmEmail,
+          to: kamEmail ? [cmEmail, kamEmail] : cmEmail,
           subject: emailSubject,
           htmlBody: emailHtml
         });
@@ -372,8 +532,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `${requestType} request submitted successfully! Email notification sent to CM.`,
-      requestId: reqId
+      message: `${requestType} request submitted successfully! ${createdHandovers.length > 0 ? `Cover requests sent for ${createdHandovers.length} class(es).` : ""} Email notification sent to CM.`,
+      requestId: reqId,
+      createdHandovers,
+      needsManualCover
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

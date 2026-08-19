@@ -15,6 +15,7 @@ export async function PUT(request: Request) {
       email,
       department,
       classGroup,
+      section,
       college_id,
       register_number,
       roll_number,
@@ -58,6 +59,7 @@ export async function PUT(request: Request) {
         email = ?, 
         department = ?, 
         classGroup = ?, 
+        section = ?,
         college_id = ?, 
         register_number = ?, 
         roll_number = ?, 
@@ -88,6 +90,7 @@ export async function PUT(request: Request) {
       email ? email.trim() : "",
       department ? department.trim() : "",
       classGroup ? classGroup.trim() : "",
+      section ? section.trim() : null,
       college_id || currentStudent.college_id || null,
       register_number || null,
       roll_number || null,
@@ -137,6 +140,7 @@ export async function POST(request: Request) {
         name,
         email,
         classGroup,
+        section,
         department,
         college_id,
         register_number,
@@ -190,7 +194,7 @@ export async function POST(request: Request) {
 
       await db.run(
         `INSERT OR REPLACE INTO students (
-          id, name, email, classGroup, department, college_id, 
+          id, name, email, classGroup, section, department, college_id, 
           register_number, roll_number, semester, shift,
           hire_score, efset_score, mother_name, father_name, pan_number,
           tenth_mark, eleventh_mark, twelfth_mark, academic_group,
@@ -198,12 +202,13 @@ export async function POST(request: Request) {
           linkedin_link, github_id, project_drive_link, hackerrank_link,
           leetcode_link, figma_link,
           status, password_hash, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', 'password123', ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', 'password123', ?, ?)`,
         [
           stId,
           stName,
           stEmail,
           classGroup || "General Class",
+          section || null,
           department || "General",
           college_id || null,
           stReg,

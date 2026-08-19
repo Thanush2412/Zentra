@@ -39,7 +39,7 @@ import {
   Loader2,
   Video
 } from "lucide-react";
-import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch } from "@/lib/utils";
+import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 
 // Library Books Interface
@@ -468,11 +468,40 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     return (leaveRequests || []).filter((r) => r.studentId === currentStudent.id);
   }, [leaveRequests, currentStudent.id]);
 
-  // Stats Calculations
-  const totalClasses = myAttendance.length;
-  const presentClasses = useMemo(() => myAttendance.filter((a) => a.status === "present").length, [myAttendance]);
-  const absentClasses = useMemo(() => myAttendance.filter((a) => a.status === "absent").length, [myAttendance]);
-  const overallPercentage = totalClasses > 0 ? (presentClasses / totalClasses) * 100 : 100;
+  // Daily-evaluated Stats Calculations (1 period absent = full day absent, exam day single marking is enough)
+  const evaluatedDailyStats = useMemo(() => {
+    const recordsByDate = new Map<string, any[]>();
+    myAttendance.forEach(att => {
+      const arr = recordsByDate.get(att.dateStr) || [];
+      arr.push(att);
+      recordsByDate.set(att.dateStr, arr);
+    });
+
+    let totalDays = 0;
+    let presentDays = 0;
+    let absentDays = 0;
+
+    recordsByDate.forEach((recs, dStr) => {
+      totalDays++;
+      const isExam = isExamDate(dStr, dailyConfigsList, studentAttendance);
+      const evalRes = evaluateDailyStudentAttendance(recs, 0, isExam);
+      presentDays += evalRes.presentDays;
+      absentDays += evalRes.absentDays;
+    });
+
+    const overallPercentage = totalDays > 0 ? (presentDays / totalDays) * 100 : 100;
+    return {
+      totalClasses: totalDays,
+      presentClasses: presentDays,
+      absentClasses: absentDays,
+      overallPercentage
+    };
+  }, [myAttendance, dailyConfigsList, studentAttendance]);
+
+  const totalClasses = evaluatedDailyStats.totalClasses;
+  const presentClasses = evaluatedDailyStats.presentClasses;
+  const absentClasses = evaluatedDailyStats.absentClasses;
+  const overallPercentage = evaluatedDailyStats.overallPercentage;
 
   // Compute Bunk / Attendance Projection calculations (Memoized)
   const bunkStats = useMemo(() => {
@@ -1310,7 +1339,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       <div className="p-4 bg-purple-50/80 border border-purple-200 rounded-xl flex items-center justify-between gap-4 shadow-xs">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="h-8.5 w-8.5 rounded-full bg-purple-100 border border-purple-250 flex items-center justify-center font-bold text-purple-700 text-xs shrink-0 select-none">
-                            🎤
+                            I
                           </div>
                           <div className="min-w-0">
                             <span className="text-xs font-black text-purple-950 block truncate">{todayInterview.subject}</span>
@@ -1451,7 +1480,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             <span className="text-[9px] text-slate-400 font-extrabold uppercase mt-1 leading-none">{date.formatted}</span>
                             {studentInterviews.some((inv: any) => inv.target_date === date.dateStr) && (
                               <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
-                                🎤 Interview
+                                Interview
                               </span>
                             )}
                           </div>
@@ -1518,7 +1547,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                   <div>
                                     <div className="flex flex-wrap items-center gap-1 mb-1 max-w-full">
                                       <span className="px-1.5 py-0.5 rounded bg-purple-200/80 border border-purple-300 text-[7.5px] font-black text-purple-800 uppercase tracking-wide">
-                                        🎤 INTERVIEW ({interviewForSlot.type?.toUpperCase() || "EXTERNAL"})
+                                        INTERVIEW ({interviewForSlot.type?.toUpperCase() || "EXTERNAL"})
                                       </span>
                                     </div>
                                     <div className="font-extrabold text-[10px] leading-tight mb-1 text-purple-950 line-clamp-1" title={interviewForSlot.subject}>
@@ -1776,7 +1805,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             </div>
                           ) : (
                             <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-center text-[11px] font-semibold text-amber-800">
-                              ⚠️ You are unallocated in this current batch (Capacity limited to {inv.allocated_students || inv.student_count || 10} students). You will be scheduled in the next upcoming cycle.
+                              You are unallocated in this current batch (Capacity limited to {inv.allocated_students || inv.student_count || 10} students). You will be scheduled in the next upcoming cycle.
                             </div>
                           )}
 

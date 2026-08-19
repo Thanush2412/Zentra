@@ -20,19 +20,105 @@ export function isTimeSlotMatch(t1?: string, t2?: string): boolean {
   return norm(t1) === norm(t2);
 }
 
+export function normalizeClassGroup(cg?: string): string {
+  if (!cg) return "";
+  let clean = cg.trim();
+  // Remove batch year in parens like (2026-2029) or (2026)
+  clean = clean.replace(/\s*\(\s*\d{4}\s*[-–]\s*\d{4}\s*\)/g, "");
+  clean = clean.replace(/\s*\(\s*\d{4}\s*\)/g, "");
+  
+  // Extract section if present (e.g. "- Sec A", "Section B", "- A")
+  let sec = "";
+  const secMatch = clean.match(/[-_\s]+(?:sec(?:tion)?|sec)\s*([a-zA-Z0-9]+)$/i);
+  if (secMatch) {
+    sec = secMatch[1].toUpperCase();
+    clean = clean.replace(secMatch[0], "").trim();
+  }
+  
+  // Extract shift if present (e.g. "Shift 1", "Shift 2")
+  let shift = "";
+  const shiftMatch = clean.match(/[-_\s]+(shift\s*[12])/i);
+  if (shiftMatch) {
+    shift = shiftMatch[1].replace(/\s+/g, " ").replace(/shift/i, "Shift");
+    clean = clean.replace(shiftMatch[0], "").trim();
+  }
+  
+  // Normalize Roman years like "III BCA" -> "BCA - Semester 5", "II BBA" -> "BBA - Semester 3", "I BBA DM" -> "BBA DM - Semester 1"
+  const romanYearMatch = clean.match(/^(III|II|I|IV)\s+([a-zA-Z\s\.]+)/i);
+  if (romanYearMatch && !clean.toLowerCase().includes("sem")) {
+    const r = romanYearMatch[1].toUpperCase();
+    const course = romanYearMatch[2].trim();
+    const sem = r === "III" ? "Semester 5" : r === "II" ? "Semester 3" : r === "IV" ? "Semester 7" : "Semester 1";
+    clean = `${course} - ${sem}`;
+  }
+  
+  // Normalize "Sem 1", "Sem-1", "Semester-1" -> "Semester 1"
+  const romanMap: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8 };
+  clean = clean.replace(/[-_\s]+sem(?:ester)?[\s\-_]*(\d+|[ivx]+)/i, (_, n) => {
+    const num = parseInt(n, 10) || romanMap[n.toLowerCase()] || 1;
+    return ` - Semester ${num}`;
+  });
+  
+  if (shift && !clean.includes(shift)) {
+    const parts = clean.split(" - ");
+    if (parts.length > 1) {
+      clean = `${parts[0]} - ${shift} - ${parts.slice(1).join(" - ")}`;
+    } else {
+      clean = `${clean} - ${shift}`;
+    }
+  }
+  
+  if (sec) {
+    clean = `${clean} - Sec ${sec}`;
+  }
+  
+  return clean.replace(/\s+/g, " ").trim();
+}
+
 export function isCohortMatch(c1?: string, c2?: string): boolean {
   if (!c1 || !c2) return false;
   if (c1 === c2) return true;
-  const norm1 = c1.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const norm2 = c2.toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (norm1 === norm2 || norm1.includes(norm2) || norm2.includes(norm1)) return true;
+  
+  const normClean = (s: string) =>
+    s.toLowerCase()
+      .replace(/\s*\(\s*\d{4}\s*[-–]\s*\d{4}\s*\)/g, "") // strip (2026-2029)
+      .replace(/\s*\(\s*\d{4}\s*\)/g, "")
+      .replace(/[^a-z0-9]/g, "");
+
+  const norm1 = normClean(c1);
+  const norm2 = normClean(c2);
+  if (norm1 === norm2) return true;
+
+  // Normalized canonical strings comparison
+  const n1 = normalizeClassGroup(c1).toLowerCase();
+  const n2 = normalizeClassGroup(c2).toLowerCase();
+  if (n1 === n2) return true;
+
+  // Section conflict check: if both specify a section and they differ (e.g. Sec A vs Sec B), do not match
+  const extractSec = (s: string) => {
+    const m = s.match(/(?:sec(?:tion)?|sec)\s*([a-z0-9]+)/i);
+    return m ? m[1].toUpperCase() : null;
+  };
+  const sec1 = extractSec(c1);
+  const sec2 = extractSec(c2);
+  if (sec1 && sec2 && sec1 !== sec2) return false;
+
+  // Shift conflict check: if both specify a shift and they differ (e.g. Shift 1 vs Shift 2), do not match
+  const extractShift = (s: string) => {
+    const m = s.match(/shift\s*([12])/i);
+    return m ? m[1] : null;
+  };
+  const shift1 = extractShift(c1);
+  const shift2 = extractShift(c2);
+  if (shift1 && shift2 && shift1 !== shift2) return false;
 
   // Extract base department/course names
   const extractBase = (s: string) => {
     let clean = s.toLowerCase()
+      .replace(/\s*\(\s*\d{4}\s*[-–]\s*\d{4}\s*\)/g, "")
       .replace(/^([ivxlcdm]+)[\s\-_]+/i, "") // strip leading III, II, I
-      .replace(/\s*-\s*(semester|sem|year|yr|shift|batch)\s*([0-9]+|[ivxlcdm]+)/gi, "")
-      .replace(/\s*(semester|sem|year|yr|shift|batch)\s*([0-9]+|[ivxlcdm]+)/gi, "")
+      .replace(/\s*-\s*(semester|sem|year|yr|shift|batch|sec|section)\s*([0-9]+|[ivxlcdm]+|[a-z])/gi, "")
+      .replace(/\s*(semester|sem|year|yr|shift|batch|sec|section)\s*([0-9]+|[ivxlcdm]+|[a-z])/gi, "")
       .replace(/[^a-z0-9]/g, "")
       .trim();
     return clean;
@@ -41,8 +127,16 @@ export function isCohortMatch(c1?: string, c2?: string): boolean {
   const b1 = extractBase(c1);
   const b2 = extractBase(c2);
 
-  // If base dept matches (e.g. bca vs bca, or becse vs becse)
-  if (b1 && b2 && (b1 === b2 || b1.includes(b2) || b2.includes(b1))) {
+  // Check alias & department match (e.g. "BSC CS AI" vs "B.Sc. Computer Science with Artificial Intelligence")
+  const isDeptMatch = (s1: string, s2: string) => {
+    if (!s1 || !s2) return false;
+    const d1 = getDeptFromClassGroup(s1).toLowerCase().replace(/[^a-z0-9]/g, "");
+    const d2 = getDeptFromClassGroup(s2).toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (d1 && d2 && (d1 === d2 || d1.includes(d2) || d2.includes(d1))) return true;
+    return false;
+  };
+
+  if (b1 && b2 && (b1 === b2 || b1.includes(b2) || b2.includes(b1) || isDeptMatch(c1, c2))) {
     // Check semester / year compatibility
     const extractYear = (s: string): number => {
       const lower = s.toLowerCase();
@@ -853,10 +947,28 @@ export function resolveClassGroupDetailsFromState(
     }
   }
 
+  // 4. Resolve Section & Shift
+  let resolvedSection = "";
+  const secMatch = cleanCG.match(/(?:sec(?:tion)?|sec)\s*([a-zA-Z0-9]+)/i);
+  if (secMatch) {
+    resolvedSection = secMatch[1].toUpperCase();
+  }
+
+  let resolvedShift = "";
+  const shiftMatch = cleanCG.match(/(shift\s*[12])/i);
+  if (shiftMatch) {
+    resolvedShift = shiftMatch[1].replace(/\s+/g, " ").replace(/shift/i, "Shift");
+  }
+
+  const canonicalName = normalizeClassGroup(cleanCG);
+
   return {
     department: resolvedDept,
     semester: resolvedSemester,
-    year: resolvedYear
+    year: resolvedYear,
+    section: resolvedSection || null,
+    shift: resolvedShift || null,
+    canonicalName
   };
 }
 
@@ -990,4 +1102,168 @@ export function getCollegePeriodTimeSlots(
   }
 
   return Array.from(resultSlots);
+}
+
+/**
+ * Evaluates the rolled-up daily attendance status for a student on a specific date.
+ *
+ * Rules:
+ * 1. Strict Absence Rule: If a student is marked Absent ('absent') in ANY one period, the whole day status is Absent ('A')
+ *    (presentDays = 0, absentDays = 1).
+ * 2. Exam Day Rule: If the day order/type is Exam (isExamDay = true), attendance marked by ANY ONE mentor is sufficient
+ *    for the whole day (pCount > 0 with 0 absent gives full day Present 'P' / presentDays = 1).
+ * 3. On Duty (OD): If marked OD and no absent periods, counts as 'OD' (presentDays = 1).
+ * 4. Regular Day: If marked present in all recorded periods (and aCount === 0), counts as 'P' (presentDays = 1).
+ */
+export interface DailyAttendanceEvaluation {
+  status: "P" | "A" | "OD" | "—";
+  presentDays: number;
+  absentDays: number;
+  totalMarked: number;
+  pCount: number;
+  aCount: number;
+  odCount: number;
+  isExamDay: boolean;
+  tooltipInfo: string;
+}
+
+export function isExamDate(
+  dateStr: string,
+  dailyConfigs: any[] = [],
+  studentAttendance: any[] = []
+): boolean {
+  if (!dateStr) return false;
+
+  // 1. Check daily configs
+  const cfg = dailyConfigs.find((c: any) => c.dateStr === dateStr);
+  if (cfg) {
+    const dType = (cfg.day_type || "").toLowerCase();
+    const dOrder = (cfg.day_order || "").toLowerCase();
+    const dNotes = (cfg.notes || "").toLowerCase();
+    if (dType === "exam_day" || dType === "exam" || dOrder.includes("exam") || dNotes.includes("exam")) {
+      return true;
+    }
+  }
+
+  // 2. Check attendance records for this date
+  const hasExamRecord = (studentAttendance || []).some(
+    (a: any) => a.dateStr === dateStr && (
+      (a.attendanceTypeSub && a.attendanceTypeSub.toLowerCase().includes("exam")) ||
+      (a.type && a.type.toLowerCase().includes("exam"))
+    )
+  );
+
+  return hasExamRecord;
+}
+
+export function evaluateDailyStudentAttendance(
+  records: Array<{ status: string; [key: string]: any }>,
+  stSlotsCount: number = 0,
+  isExamDay: boolean = false
+): DailyAttendanceEvaluation {
+  if (!records || records.length === 0) {
+    return {
+      status: "—",
+      presentDays: 0,
+      absentDays: 0,
+      totalMarked: 0,
+      pCount: 0,
+      aCount: 0,
+      odCount: 0,
+      isExamDay,
+      tooltipInfo: "No attendance recorded"
+    };
+  }
+
+  const pCount = records.filter(r => r.status === "present").length;
+  const aCount = records.filter(r => r.status === "absent").length;
+  const odCount = records.filter(r => r.status === "od").length;
+  const totalMarked = records.length;
+  const totalEff = Math.max(stSlotsCount, totalMarked);
+
+  // RULE 1: If absent in ANY period -> Whole day is Absent (A)
+  if (aCount > 0) {
+    return {
+      status: "A",
+      presentDays: 0,
+      absentDays: 1,
+      totalMarked,
+      pCount,
+      aCount,
+      odCount,
+      isExamDay,
+      tooltipInfo: `Absent in ${aCount} period(s) → Whole Day Absent`
+    };
+  }
+
+  // RULE 2: If Exam Day -> ANY 1 mentor attendance marking is enough!
+  if (isExamDay) {
+    if (odCount > 0 && pCount === 0) {
+      return {
+        status: "OD",
+        presentDays: 1,
+        absentDays: 0,
+        totalMarked,
+        pCount,
+        aCount,
+        odCount,
+        isExamDay,
+        tooltipInfo: `Exam Day: On Duty (OD)`
+      };
+    }
+    if (pCount > 0 || odCount > 0) {
+      return {
+        status: "P",
+        presentDays: 1,
+        absentDays: 0,
+        totalMarked,
+        pCount,
+        aCount,
+        odCount,
+        isExamDay,
+        tooltipInfo: `Exam Day: Present (${pCount + odCount} period(s) marked)`
+      };
+    }
+  }
+
+  // Regular Day (no absent periods)
+  if (odCount > 0 && (odCount + pCount >= totalEff || pCount === 0)) {
+    return {
+      status: "OD",
+      presentDays: 1,
+      absentDays: 0,
+      totalMarked,
+      pCount,
+      aCount,
+      odCount,
+      isExamDay,
+      tooltipInfo: `On Duty: ${odCount}/${totalEff} periods`
+    };
+  }
+
+  if (pCount > 0) {
+    return {
+      status: "P",
+      presentDays: 1,
+      absentDays: 0,
+      totalMarked,
+      pCount,
+      aCount,
+      odCount,
+      isExamDay,
+      tooltipInfo: `Present: ${pCount}/${totalEff} periods`
+    };
+  }
+
+  return {
+    status: "—",
+    presentDays: 0,
+    absentDays: 0,
+    totalMarked,
+    pCount,
+    aCount,
+    odCount,
+    isExamDay,
+    tooltipInfo: "No valid status"
+  };
 }

@@ -21,14 +21,21 @@ export async function GET(request: Request) {
     // GET /api/attendance?college_id=xxx[&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD]
     if (collegeId && !slotId && !studentId) {
       let sql = `
-        SELECT sa.*
+        SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode
         FROM student_attendance sa
         JOIN students st ON sa.studentId = st.id
         WHERE st.college_id = ?`;
       const args: any[] = [collegeId];
       if (startDate) { sql += " AND sa.dateStr >= ?"; args.push(startDate); }
       if (endDate)   { sql += " AND sa.dateStr <= ?"; args.push(endDate); }
-      sql += " ORDER BY sa.dateStr DESC";
+      // Default 60-day window if no date params given — prevents unbounded full-table scan
+      if (!startDate && !endDate) {
+        const defaultStart = new Date();
+        defaultStart.setDate(defaultStart.getDate() - 60);
+        sql += " AND sa.dateStr >= ?";
+        args.push(defaultStart.toISOString().split("T")[0]);
+      }
+      sql += " ORDER BY sa.dateStr DESC LIMIT 15000";
       const records = await db.all(sql, args);
       return NextResponse.json({ success: true, records, count: records.length });
     }
@@ -412,6 +419,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Slot not found." }, { status: 404 });
     }
 
+    // ── DAY ORDER / TYPE GUARD ────────────────────────────────────────────
+    // Attendance cannot be submitted unless the CAM has configured the day
+    // order and type for this date. Check campus_daily_configs for the
+    // slot's college. Skip this check only for CAM-initiated corrections
+    // (action === "correct") and direct period marks (action === "mark_period")
+    // which are handled above — so anything reaching here is a mentor submit.
+    const collegeIdForSlot = slot.college_id || null;
+    if (collegeIdForSlot) {
+      const dayConfig = await db.get(
+        "SELECT day_type, day_order FROM campus_daily_configs WHERE college_id = ? AND dateStr = ?",
+        [collegeIdForSlot, dateStr]
+      );
+      if (!dayConfig || !dayConfig.day_type || dayConfig.day_type === "None") {
+        return NextResponse.json({
+          success: false,
+          message: "Day order/type has not been configured for this date. The CAM must set the day schedule before attendance can be marked."
+        }, { status: 422 });
+      }
+      if (dayConfig.day_type === "holiday") {
+        return NextResponse.json({
+          success: false,
+          message: "This date is marked as a Holiday by the CAM. Attendance cannot be recorded on a holiday."
+        }, { status: 422 });
+      }
+    }
+    // ── END DAY ORDER / TYPE GUARD ────────────────────────────────────────
+
     // Delete existing
       await db.run("DELETE FROM student_attendance WHERE slotId = ? AND dateStr = ?", [slotId, dateStr]);
 
@@ -533,17 +567,29 @@ export async function DELETE(request: NextRequest) {
           deletedCount: res.changes
         });
       } else if (hasDeptOrBatch || collegeId) {
+        // Two-step: resolve student IDs first (avoids subquery param binding issues with libSQL)
         const { sql: stSql, params: stParams } = buildStudentFilter();
-        const res = await db.run(
-          `DELETE FROM student_attendance 
-           WHERE dateStr >= ? AND dateStr <= ? 
-             AND studentId IN (${stSql})`,
-          [startDate, endDate, ...stParams]
-        );
+        const scopedStudents = await db.all(stSql, stParams);
+        if (scopedStudents.length === 0) {
+          return NextResponse.json({ success: true, message: "No students found for the given scope.", deletedCount: 0 });
+        }
+        const ids = scopedStudents.map((s: any) => s.id);
+        // Delete in chunks of 500 to stay within SQLite IN-list limits
+        const CHUNK = 500;
+        let totalDeleted = 0;
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const chunk = ids.slice(i, i + CHUNK);
+          const ph = chunk.map(() => "?").join(",");
+          const r = await db.run(
+            `DELETE FROM student_attendance WHERE dateStr >= ? AND dateStr <= ? AND studentId IN (${ph})`,
+            [startDate, endDate, ...chunk]
+          );
+          totalDeleted += r.changes;
+        }
         return NextResponse.json({
           success: true,
-          message: `Cleared attendance records from ${startDate} to ${endDate}.`,
-          deletedCount: res.changes
+          message: `Cleared ${totalDeleted} attendance record(s) from ${startDate} to ${endDate}.`,
+          deletedCount: totalDeleted
         });
       } else {
         const res = await db.run(
@@ -589,13 +635,25 @@ export async function DELETE(request: NextRequest) {
     // 4. Single Date
     if (dateStr) {
       if (hasDeptOrBatch || collegeId) {
+        // Two-step: resolve student IDs first
         const { sql: stSql, params: stParams } = buildStudentFilter();
-        const res = await db.run(
-          `DELETE FROM student_attendance 
-           WHERE dateStr = ? AND studentId IN (${stSql})`,
-          [dateStr, ...stParams]
-        );
-        return NextResponse.json({ success: true, message: `Deleted attendance for date ${dateStr}`, deletedCount: res.changes });
+        const scopedStudents = await db.all(stSql, stParams);
+        if (scopedStudents.length === 0) {
+          return NextResponse.json({ success: true, message: "No students found for the given scope.", deletedCount: 0 });
+        }
+        const ids = scopedStudents.map((s: any) => s.id);
+        const CHUNK = 500;
+        let totalDeleted = 0;
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const chunk = ids.slice(i, i + CHUNK);
+          const ph = chunk.map(() => "?").join(",");
+          const r = await db.run(
+            `DELETE FROM student_attendance WHERE dateStr = ? AND studentId IN (${ph})`,
+            [dateStr, ...chunk]
+          );
+          totalDeleted += r.changes;
+        }
+        return NextResponse.json({ success: true, message: `Deleted attendance for date ${dateStr}`, deletedCount: totalDeleted });
       } else {
         const res = await db.run("DELETE FROM student_attendance WHERE dateStr = ?", [dateStr]);
         return NextResponse.json({ success: true, message: `Deleted attendance for date ${dateStr}`, deletedCount: res.changes });
@@ -606,18 +664,29 @@ export async function DELETE(request: NextRequest) {
     // ALWAYS scope to collegeId when provided — never wipe other colleges' data
     if (clearAll) {
       if (collegeId) {
-        // Safe: only wipe this college's students
-        const res = await db.run(
-          `DELETE FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?)`,
-          [collegeId]
-        );
+        // Two-step: resolve IDs for this college, then delete
+        const collegeStudents = await db.all("SELECT id FROM students WHERE college_id = ?", [collegeId]);
+        if (collegeStudents.length === 0) {
+          return NextResponse.json({ success: true, message: "No students found for this campus.", deletedCount: 0 });
+        }
+        const ids = collegeStudents.map((s: any) => s.id);
+        const CHUNK = 500;
+        let totalDeleted = 0;
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const chunk = ids.slice(i, i + CHUNK);
+          const ph = chunk.map(() => "?").join(",");
+          const r = await db.run(
+            `DELETE FROM student_attendance WHERE studentId IN (${ph})`,
+            chunk
+          );
+          totalDeleted += r.changes;
+        }
         return NextResponse.json({
           success: true,
           message: "All attendance records for this campus have been cleared.",
-          deletedCount: res.changes
+          deletedCount: totalDeleted
         });
       } else {
-        // No collegeId provided — refuse to wipe globally to prevent accidental cross-campus deletion
         return NextResponse.json({
           success: false,
           message: "collegeId is required for a full wipe. Cross-campus deletion is not permitted."
@@ -627,15 +696,28 @@ export async function DELETE(request: NextRequest) {
 
     // 6. Scoped wipe by dept/batch/college (no all flag)
     if (hasDeptOrBatch || collegeId) {
+      // Two-step: resolve IDs, then delete
       const { sql: stSql, params: stParams } = buildStudentFilter();
-      const res = await db.run(
-        `DELETE FROM student_attendance WHERE studentId IN (${stSql})`,
-        stParams
-      );
+      const scopedStudents = await db.all(stSql, stParams);
+      if (scopedStudents.length === 0) {
+        return NextResponse.json({ success: true, message: "No students found for the given scope.", deletedCount: 0 });
+      }
+      const ids = scopedStudents.map((s: any) => s.id);
+      const CHUNK = 500;
+      let totalDeleted = 0;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        const ph = chunk.map(() => "?").join(",");
+        const r = await db.run(
+          `DELETE FROM student_attendance WHERE studentId IN (${ph})`,
+          chunk
+        );
+        totalDeleted += r.changes;
+      }
       return NextResponse.json({
         success: true,
         message: "Attendance records for selected scope have been cleared successfully.",
-        deletedCount: res.changes
+        deletedCount: totalDeleted
       });
     }
 

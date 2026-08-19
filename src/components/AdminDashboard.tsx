@@ -229,6 +229,78 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [systemSettings, setSystemSettings] = useState<{ mailing_enabled: boolean; [key: string]: any }>({ mailing_enabled: true });
   const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
 
+  // ── Clear Attendance by Date Range ──────────────────────────────────────
+  const [clearAttStartDate, setClearAttStartDate] = useState("");
+  const [clearAttEndDate, setClearAttEndDate] = useState("");
+  const [clearAttCollegeId, setClearAttCollegeId] = useState("all");
+  const [clearAttDept, setClearAttDept] = useState("all");
+  const [clearAttClassGroup, setClearAttClassGroup] = useState("all");
+  const [isClearingAtt, setIsClearingAtt] = useState(false);
+  const [clearAttPreviewCount, setClearAttPreviewCount] = useState<number | null>(null);
+  const [isFetchingPreview, setIsFetchingPreview] = useState(false);
+
+  const fetchClearAttPreview = async () => {
+    if (!clearAttStartDate || !clearAttEndDate) return;
+    setIsFetchingPreview(true);
+    setClearAttPreviewCount(null);
+    try {
+      const params = new URLSearchParams({ startDate: clearAttStartDate, endDate: clearAttEndDate });
+      if (clearAttCollegeId && clearAttCollegeId !== "all") params.set("collegeId", clearAttCollegeId);
+      if (clearAttDept && clearAttDept !== "all") params.set("department", clearAttDept);
+      if (clearAttClassGroup && clearAttClassGroup !== "all") params.set("classGroup", clearAttClassGroup);
+      const res = await fetch(`/api/attendance?college_id=${clearAttCollegeId !== "all" ? clearAttCollegeId : ""}&startDate=${clearAttStartDate}&endDate=${clearAttEndDate}`);
+      const data = await res.json();
+      if (data.success) {
+        setClearAttPreviewCount(data.count ?? (data.records?.length ?? 0));
+      }
+    } catch { /* preview is non-critical */ } finally {
+      setIsFetchingPreview(false);
+    }
+  };
+
+  const handleClearAttendanceByRange = async () => {
+    if (!clearAttStartDate || !clearAttEndDate) {
+      toast("Please select both a start and end date.", "warning");
+      return;
+    }
+    if (clearAttStartDate > clearAttEndDate) {
+      toast("Start date cannot be after end date.", "error");
+      return;
+    }
+    const scopeLabel = clearAttCollegeId !== "all"
+      ? `for campus: ${colleges.find(c => c.id === clearAttCollegeId)?.name || clearAttCollegeId}`
+      : "across ALL campuses";
+    const deptLabel = clearAttDept !== "all" ? `, department: ${clearAttDept}` : "";
+    const batchLabel = clearAttClassGroup !== "all" ? `, batch: ${clearAttClassGroup}` : "";
+    const confirmed = await showConfirm({
+      title: "Clear Attendance Records",
+      message: `This will permanently delete all attendance records from ${clearAttStartDate} to ${clearAttEndDate} ${scopeLabel}${deptLabel}${batchLabel}.\n\nThis action cannot be undone.`,
+      danger: true,
+      confirmLabel: "Clear Attendance"
+    });
+    if (!confirmed) return;
+    setIsClearingAtt(true);
+    try {
+      const params = new URLSearchParams({ startDate: clearAttStartDate, endDate: clearAttEndDate });
+      if (clearAttCollegeId !== "all") params.set("collegeId", clearAttCollegeId);
+      if (clearAttDept !== "all") params.set("department", clearAttDept);
+      if (clearAttClassGroup !== "all") params.set("classGroup", clearAttClassGroup);
+      const res = await fetch(`/api/attendance?${params.toString()}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        toast(`Cleared ${data.deletedCount ?? 0} attendance record(s) from ${clearAttStartDate} to ${clearAttEndDate}.`, "success");
+        setClearAttPreviewCount(null);
+        refreshData();
+      } else {
+        toast(data.message || "Failed to clear attendance.", "error");
+      }
+    } catch (err: any) {
+      toast(err.message || "An error occurred.", "error");
+    } finally {
+      setIsClearingAtt(false);
+    }
+  };
+
   const fetchSystemSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -5514,6 +5586,123 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
               </div>
+
+              {/* ── Clear Attendance by Date Range ── */}
+              <div className="bg-white border border-rose-200 rounded-2xl p-6 shadow-sm space-y-5">
+                <div className="flex items-start gap-3 pb-4 border-b border-rose-100">
+                  <div className="h-10 w-10 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
+                    <ShieldAlert className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-gray-900">Clear Attendance by Date Range</h3>
+                    <p className="text-[11px] text-gray-500 font-medium mt-0.5">Permanently delete all student attendance records within a chosen date range. Optionally scope to a specific campus, department, or batch.</p>
+                  </div>
+                </div>
+
+                {/* Filters Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 block">From Date</label>
+                    <input
+                      type="date"
+                      value={clearAttStartDate}
+                      onChange={e => { setClearAttStartDate(e.target.value); setClearAttPreviewCount(null); }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white text-xs font-semibold text-gray-800 focus:outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-200"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 block">To Date</label>
+                    <input
+                      type="date"
+                      value={clearAttEndDate}
+                      min={clearAttStartDate}
+                      onChange={e => { setClearAttEndDate(e.target.value); setClearAttPreviewCount(null); }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white text-xs font-semibold text-gray-800 focus:outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-200"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 block">Campus</label>
+                    <select
+                      value={clearAttCollegeId}
+                      onChange={e => { setClearAttCollegeId(e.target.value); setClearAttDept("all"); setClearAttClassGroup("all"); setClearAttPreviewCount(null); }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white text-xs font-semibold text-gray-800 focus:outline-none focus:border-rose-400 cursor-pointer"
+                    >
+                      <option value="all">All Campuses</option>
+                      {colleges.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {clearAttCollegeId !== "all" && (() => {
+                    const campusStudents = students.filter((s: any) => s.college_id === clearAttCollegeId);
+                    const depts = Array.from(new Set(campusStudents.map((s: any) => s.department).filter(Boolean))) as string[];
+                    const batches = (clearAttDept !== "all"
+                      ? Array.from(new Set(campusStudents.filter((s: any) => s.department === clearAttDept).map((s: any) => s.classGroup).filter(Boolean)))
+                      : Array.from(new Set(campusStudents.map((s: any) => s.classGroup).filter(Boolean)))) as string[];
+                    return (
+                      <>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 block">Department</label>
+                          <select
+                            value={clearAttDept}
+                            onChange={e => { setClearAttDept(e.target.value); setClearAttClassGroup("all"); setClearAttPreviewCount(null); }}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white text-xs font-semibold text-gray-800 focus:outline-none focus:border-rose-400 cursor-pointer"
+                          >
+                            <option value="all">All Departments</option>
+                            {depts.map(d => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 block">Batch / Class Group</label>
+                          <select
+                            value={clearAttClassGroup}
+                            onChange={e => { setClearAttClassGroup(e.target.value); setClearAttPreviewCount(null); }}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white text-xs font-semibold text-gray-800 focus:outline-none focus:border-rose-400 cursor-pointer"
+                          >
+                            <option value="all">All Batches</option>
+                            {batches.map(b => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {/* Preview + Delete Row */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-rose-100">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={fetchClearAttPreview}
+                      disabled={!clearAttStartDate || !clearAttEndDate || isFetchingPreview || isClearingAtt}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isFetchingPreview ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarDays className="h-3.5 w-3.5" />}
+                      Preview Count
+                    </button>
+                    {clearAttPreviewCount !== null && (
+                      <span className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-xl">
+                        {clearAttPreviewCount} record{clearAttPreviewCount !== 1 ? "s" : ""} will be deleted
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClearAttendanceByRange}
+                    disabled={!clearAttStartDate || !clearAttEndDate || isClearingAtt}
+                    className="px-5 py-2.5 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-700 text-white shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isClearingAtt ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    Clear Attendance
+                  </button>
+                </div>
+
+                <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl flex items-start gap-2 text-amber-800 text-[10px] font-medium">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                  <span>This permanently removes attendance records and cannot be undone. Use <strong>Preview Count</strong> first to see how many records will be affected before confirming the deletion.</span>
+                </div>
+              </div>
+
             </div>
           )}
         </div>
@@ -6602,7 +6791,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     </div>
                                   ) : (shiftConfigsParams[activeConfigShift].breaks.length === 0) ? (
                                     <div className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 rounded-xl p-3 flex items-center gap-2">
-                                      <span>⚠️</span>
                                       <span>At least one break must be configured for this shift.</span>
                                     </div>
                                   ) : schedule.items.length === 0 ? (

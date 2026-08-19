@@ -852,7 +852,10 @@ export async function seedDatabase() {
       end_date TEXT,
       start_year TEXT,
       end_year TEXT,
-      shift_based INTEGER DEFAULT 0
+      default_room TEXT,
+      default_shift TEXT,
+      shift_based INTEGER DEFAULT 0,
+      sections TEXT
     );
 
     CREATE TABLE IF NOT EXISTS departments (
@@ -1012,6 +1015,18 @@ export async function seedDatabase() {
       created_at TEXT NOT NULL
     );
   `);
+
+  // ── SCHEMA MIGRATIONS ───────────────────────────────────────────────────
+  // Add missing columns to existing tables (fail silently if column exists)
+  try {
+    await db.run("ALTER TABLE courses ADD COLUMN default_room TEXT");
+  } catch (_) {}
+  try {
+    await db.run("ALTER TABLE courses ADD COLUMN default_shift TEXT");
+  } catch (_) {}
+  try {
+    await db.run("ALTER TABLE courses ADD COLUMN sections TEXT");
+  } catch (_) {}
 
   let targetCollege1 = "college_1";
   let targetCollege2 = "college_2";

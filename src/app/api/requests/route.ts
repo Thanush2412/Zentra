@@ -7,6 +7,37 @@ import { getDb } from "@/lib/db";
 import { sendMail, renderHandoverRequestEmail } from "@/lib/mail";
 import { checkMentorAvailability } from "@/lib/availability";
 
+export async function GET(request: Request) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    const targetStaffId = searchParams.get("targetStaffId");
+    const requestorId = searchParams.get("requestorId");
+    const status = searchParams.get("status");
+
+    let query = "SELECT * FROM handover_requests WHERE 1=1";
+    const params: any[] = [];
+    if (targetStaffId) {
+      query += " AND targetStaffId = ?";
+      params.push(targetStaffId);
+    }
+    if (requestorId) {
+      query += " AND requestorId = ?";
+      params.push(requestorId);
+    }
+    if (status) {
+      query += " AND status = ?";
+      params.push(status);
+    }
+    query += " ORDER BY timestamp DESC";
+
+    const records = await db.all(query, params);
+    return NextResponse.json({ success: true, requests: records });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const db = await getDb();

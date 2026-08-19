@@ -27,7 +27,11 @@ import {
   Globe,
   Check,
   RefreshCw,
-  CalendarCheck2
+  CalendarCheck2,
+  Bell,
+  ExternalLink,
+  Inbox,
+  MessageSquare
 } from "lucide-react";
 
 interface DashboardLayoutProps {
@@ -81,6 +85,130 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showDashboardSwitch, setShowDashboardSwitch] = useState(false);
+
+  /* ─── Notifications Bell ─── */
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [activeNotificationId, setActiveNotificationId] = useState<string | null>(null);
+  const notificationsDropRef = useRef<HTMLDivElement | null>(null);
+  const [notifRefreshKey, setNotifRefreshKey] = useState(0);
+  const [bellShake, setBellShake] = useState(false);
+
+  const resolveCurrentUserId = () => {
+    if (typeof window === "undefined") return null;
+    const stored =
+      localStorage.getItem("fp_user_id") || localStorage.getItem("fp_header_id");
+    if (stored) return stored;
+    switch (currentRole) {
+      case "mentor":
+        return currentMentor?.id || null;
+      case "hr":
+        return currentHR?.id || null;
+      case "cam":
+        return currentCAM?.id || null;
+      case "kam":
+        return currentKAM?.id || null;
+      case "admin":
+        return currentAdmin?.id || null;
+      case "student":
+        return currentStudent?.id || null;
+      case "sme":
+        return currentSME?.id || null;
+      default:
+        return null;
+    }
+  };
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  const hasUnread = unreadCount > 0;
+
+  const fetchNotifications = async (silent = false) => {
+    const uid = resolveCurrentUserId();
+    if (!uid) {
+      setNotifications([]);
+      return;
+    }
+    if (!silent) setNotificationsLoading(true);
+    fetch(`/api/notifications?user_id=${encodeURIComponent(uid)}&limit=25`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.success && Array.isArray(data.notifications)) {
+          setNotifications(data.notifications);
+          if (!silent && hasUnread !== (data.notifications.filter((n: any) => !n.is_read).length > 0)) {
+            setBellShake(true);
+            setTimeout(() => setBellShake(false), 600);
+          }
+        } else {
+          setNotifications([]);
+        }
+      })
+      .catch(() => setNotifications([]))
+      .finally(() => setNotificationsLoading(false));
+  };
+
+  const markNotifRead = async (id: string, navigateTo?: string | null) => {
+    setActiveNotificationId(id);
+    fetch(`/api/notifications`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notification_id: id, action: "mark_read" }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.success) {
+          setNotifications((prev) =>
+            prev.map((n) => (n.id === id ? { ...n, is_read: 1 } : n))
+          );
+        }
+        if (navigateTo && typeof window !== "undefined") {
+          if (navigateTo.startsWith("http")) {
+            window.open(navigateTo, "_blank", "noopener");
+          } else {
+            router.push(navigateTo);
+          }
+        }
+      })
+      .finally(() => setActiveNotificationId(null));
+  };
+
+  const clearAllNotifs = () => {
+    const uid = resolveCurrentUserId();
+    if (!uid) return;
+    fetch(`/api/notifications`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: uid, action: "mark_all_read" }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.success) {
+          setNotifications((prev) => prev.map((n) => ({ ...n, is_read: 1 })));
+        }
+      });
+  };
+
+  /* auto-refresh notifications on mount + when opened + every 30s / 15s if unread exists */
+  useEffect(() => {
+    fetchNotifications(true);
+    const interval = window.setInterval(() => {
+      fetchNotifications(true);
+    }, hasUnread ? 15000 : 30000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentRole, notifRefreshKey, currentMentor?.id, currentCAM?.id, currentHR?.id, currentAdmin?.id, currentStudent?.id, currentSME?.id]);
+
+  /* Close dropdowns when clicking outside */
+  useEffect(() => {
+    const onClickOut = (e: MouseEvent) => {
+      const el = e.target as HTMLElement;
+      if (notificationsDropRef.current && !notificationsDropRef.current.contains(el)) {
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOut);
+    return () => document.removeEventListener("mousedown", onClickOut);
+  }, []);
 
   const isFirstLoginRequired = typeof window !== "undefined" && localStorage.getItem("fp_must_change_pass") === "true";
 
@@ -479,6 +607,207 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
               )}
             </div>
           )}
+
+          {/* Notifications Bell */}
+          <div className="relative" ref={notificationsDropRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowNotifications((p) => !p);
+                setShowProfileDropdown(false);
+                setShowDashboardSwitch(false);
+                setShowCampusDropdown && setShowCampusDropdown(false);
+                if (!showNotifications) {
+                  fetchNotifications(true);
+                  setNotifRefreshKey((k) => k + 1);
+                }
+              }}
+              className={`relative flex items-center justify-center h-9 w-9 rounded-lg bg-gray-55 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-700 transition-all cursor-pointer ${
+                hasUnread ? "ring-1 ring-amber-400/60 ring-offset-1 dark:ring-offset-slate-900 bg-amber-50 dark:bg-amber-950/30" : ""
+              } ${bellShake ? "animate-[wiggle_0.5s_ease-in-out]" : ""}`}
+              title="Notifications"
+            >
+              <Bell className={`h-4 w-4 ${hasUnread ? "text-amber-600 dark:text-amber-400" : "text-gray-600 dark:text-slate-300"} ${hasUnread ? "animate-pulse" : ""}`} />
+              {hasUnread && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Dropdown Panel */}
+            {showNotifications && (
+              <div className="absolute right-0 mt-2.5 w-[380px] sm:w-[420px] max-w-[92vw] max-h-[70vh] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-[60] overflow-hidden flex flex-col animate-fadeIn">
+              {/* Header */}
+              <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-indigo-50 to-slate-50 dark:from-indigo-950/40 dark:to-slate-900 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-xl bg-indigo-600 flex items-center justify-center shadow-xs">
+                    <MessageSquare className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-black text-slate-800 dark:text-white tracking-tight">
+                      Notifications
+                    </p>
+                    <p className="text-[9px] text-slate-400 font-medium">
+                      {hasUnread
+                        ? `${unreadCount} unread · ${notifications.length} total`
+                        : `${notifications.length} notifications`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetchNotifications(false);
+                      setNotifRefreshKey((k) => k + 1);
+                    }}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    title="Refresh"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 text-slate-500 dark:text-slate-400 ${notificationsLoading ? "animate-spin" : ""}`} />
+                  </button>
+                  {hasUnread && (
+                    <button
+                      type="button"
+                      onClick={clearAllNotifs}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 text-indigo-650 dark:text-indigo-300 text-[9px] font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* List */}
+              <div className="overflow-y-auto flex-1 max-h-[58vh]">
+                {notificationsLoading && notifications.length === 0 ? (
+                  <div className="px-4 py-10 flex flex-col items-center justify-center text-slate-400">
+                    <Loader2 className="h-6 w-6 animate-spin mb-2 text-indigo-500" />
+                    <p className="text-[11px] font-semibold">Loading notifications…</p>
+                  </div>
+                ) : notifications.length === 0 ? (
+                  <div className="px-4 py-12 flex flex-col items-center justify-center">
+                    <div className="h-14 w-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-3">
+                      <Inbox className="h-6 w-6 text-slate-400" />
+                    </div>
+                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                      All caught up
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 text-center max-w-[240px]">
+                      You don't have any notifications yet. Reminders and activity will show here.
+                    </p>
+                  </div>
+                ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {notifications.map((n) => {
+                        const isRead = !!n.is_read;
+                        const isActive = activeNotificationId === n.id;
+                        const t = n.type || "info";
+                        const accent =
+                          t === "reminder"
+                            ? "bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-900/60"
+                            : t === "success"
+                            ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/60"
+                            : t === "warning" || t === "alert"
+                            ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60"
+                            : "bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/60";
+                        const Icon =
+                          t === "reminder" ? Bell : t === "success" ? CheckCircle2 : t === "warning" ? AlertCircle : MessageSquare;
+                        return (
+                          <div
+                            key={n.id}
+                            className={`group relative px-3.5 py-3 transition-all ${
+                              isRead
+                                ? "bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                                : "bg-indigo-50/40 dark:bg-indigo-950/10 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/20"
+                            } ${isActive ? "opacity-60" : ""}`}
+                          >
+                            {!isRead && (
+                              <span className="absolute left-0 top-3.5 h-2 w-2 rounded-full bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.12)]" />
+                            )}
+                            <div className="pl-5 flex items-start gap-3">
+                              <div className={`shrink-0 mt-0.5 h-8 w-8 rounded-xl border flex items-center justify-center ${accent}`}>
+                                <Icon className="h-3.5 w-3.5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className={`text-[11px] font-black text-slate-800 dark:text-slate-100 leading-snug ${!isRead ? "text-slate-900 dark:text-white" : ""}`}>
+                                    {n.title || "Notification"}
+                                  </p>
+                                  <span className="shrink-0 text-[9px] font-mono font-semibold text-slate-400">
+                                    {(() => {
+                                      try {
+                                        const d = new Date(n.created_at);
+                                        const now = new Date();
+                                        const diffMs = now.getTime() - d.getTime();
+                                        const mins = Math.floor(diffMs / 60000);
+                                        if (mins < 1) return "now";
+                                        if (mins < 60) return `${mins}m`;
+                                        const hrs = Math.floor(mins / 60);
+                                        if (hrs < 24) return `${hrs}h`;
+                                        const days = Math.floor(hrs / 24);
+                                        if (days < 7) return `${days}d`;
+                                        return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+                                      } catch {
+                                        return "";
+                                      }
+                                    })()}
+                                  </span>
+                                </div>
+                                <p className="mt-0.5 text-[10.5px] leading-snug text-slate-600 dark:text-slate-400 font-medium line-clamp-3">
+                                  {n.message}
+                                </p>
+                                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                                  {n.link && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        markNotifRead(n.id, n.link);
+                                        setShowNotifications(false);
+                                      }}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-[9.5px] font-bold shadow-xs transition-all"
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                      Open
+                                    </button>
+                                  )}
+                                  {!isRead && (
+                                    <button
+                                      type="button"
+                                      onClick={() => markNotifRead(n.id)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9.5px] font-bold transition-colors"
+                                    >
+                                      <Check className="h-3 w-3" />
+                                      Mark read
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-4 py-2.5 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
+                <p className="text-[9px] text-slate-400 font-medium">
+                  Auto-refreshes every {hasUnread ? "15s" : "30s"}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowNotifications(false)}
+                  className="text-[9.5px] font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 px-2 py-1 rounded-md hover:bg-white dark:hover:bg-slate-800 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+          </div>
 
           <div className="relative">
             <button

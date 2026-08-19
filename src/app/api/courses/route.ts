@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { name, college_id, code, description, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based } = body;
+    const { name, college_id, code, description, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based, sections } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json({ success: false, message: "Course name is required" }, { status: 400 });
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     }
 
     await db.run(
-      "INSERT INTO courses (id, name, college_id, code, description, hod_name, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO courses (id, name, college_id, code, description, hod_name, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based, sections) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       id,
       cleanName,
       targetCollegeId || "college_1",
@@ -91,7 +91,8 @@ export async function POST(request: Request) {
       end_year || "",
       default_room || null,
       default_shift || null,
-      shift_based === undefined ? 0 : Number(shift_based)
+      shift_based === undefined ? 0 : Number(shift_based),
+      sections || null
     );
 
     try {
@@ -119,7 +120,8 @@ export async function POST(request: Request) {
         end_year: end_year || "",
         default_room: default_room || null,
         default_shift: default_shift || null,
-        shift_based: shift_based === undefined ? 0 : Number(shift_based)
+        shift_based: shift_based === undefined ? 0 : Number(shift_based),
+        sections: sections || null
       }
     });
   } catch (error: any) {
@@ -132,7 +134,7 @@ export async function PUT(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { id, name, college_id, code, description, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based } = body;
+    const { id, name, college_id, code, description, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based, sections } = body;
 
     if (!id || !name || !name.trim()) {
       return NextResponse.json({ success: false, message: "ID and name are required." }, { status: 400 });
@@ -171,7 +173,7 @@ export async function PUT(request: Request) {
     // Run cascade updates for course rename
     // 1. Rename course in master list
     await db.run(
-      "UPDATE courses SET name = ?, college_id = ?, code = ?, description = ?, hod_name = ?, established_year = ?, status = ?, years = ?, start_date = ?, end_date = ?, start_year = ?, end_year = ?, default_room = ?, default_shift = ?, shift_based = ? WHERE id = ?",
+      "UPDATE courses SET name = ?, college_id = ?, code = ?, description = ?, hod_name = ?, established_year = ?, status = ?, years = ?, start_date = ?, end_date = ?, start_year = ?, end_year = ?, default_room = ?, default_shift = ?, shift_based = ?, sections = ? WHERE id = ?",
       cleanName,
       targetCollegeId || "college_1",
       code || "",
@@ -187,6 +189,7 @@ export async function PUT(request: Request) {
       default_room || null,
       default_shift || null,
       shift_based === undefined ? (currentCourse.shift_based || 0) : Number(shift_based),
+      sections !== undefined ? sections : (currentCourse.sections || null),
       currentCourse.id
     );
 
@@ -232,7 +235,8 @@ export async function PUT(request: Request) {
         end_year: end_year || "",
         default_room: default_room || null,
         default_shift: default_shift || null,
-        shift_based: shift_based === undefined ? (currentCourse.shift_based || 0) : Number(shift_based)
+        shift_based: shift_based === undefined ? (currentCourse.shift_based || 0) : Number(shift_based),
+        sections: sections !== undefined ? sections : (currentCourse.sections || null)
       }
     });
   } catch (error: any) {
