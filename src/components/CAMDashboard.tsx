@@ -5152,7 +5152,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
   const handleClearTimetableClick = async (targetGroupArg?: string) => {
     const isGenTab = timetableSubTab === "generate";
-    const targetGroup = targetGroupArg || (isGenTab ? (genClassGroup || viewerClassGroup) : viewerClassGroup);
+    const fallbackGroup = selectedCohortCourse && selectedCohortSem ? `${selectedCohortCourse} - ${selectedCohortSem}` : (selectedCohortCourse || "");
+    const targetGroup = targetGroupArg || (isGenTab ? (genClassGroup || viewerClassGroup || fallbackGroup) : (viewerClassGroup || fallbackGroup));
     if (!targetGroup) {
       toast("Please select a course or cohort name first.", "warning");
       return;
@@ -7912,6 +7913,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <div className="flex items-center gap-2">
                                     <button
                                       type="button"
+                                      onClick={() => handleClearTimetableClick(viewerClassGroup)}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs font-bold hover:bg-red-100 hover:border-red-300 transition-all cursor-pointer shadow-xs active:scale-95 duration-150"
+                                      title={`Clear timetable for ${viewerClassGroup}`}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5 text-red-600 shrink-0" />
+                                      <span>Clear Timetable</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
                                       onClick={handleRegenerateClick}
                                       className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 text-indigo-700 text-xs font-black hover:bg-indigo-100 hover:border-indigo-300 transition-all cursor-pointer shadow-xs active:scale-95 duration-150"
                                       title="Open in Timetable Generator Engine to edit, regenerate, download templates, or clear timetable"
@@ -7938,9 +7949,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                               const trackerData = deptSubs.map(sub => {
                                 const scheduledCount = collegeSlots.filter(
-                                  slot => slot.classGroup === classGroup && 
-                                          slot.shift === activeShift && 
-                                          slot.course.toLowerCase().trim() === sub.name.toLowerCase().trim()
+                                  slot => (slot.classGroup === classGroup || 
+                                           isCohortMatching(slot.classGroup, classGroup) || 
+                                           slot.classGroup?.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase() === classGroup?.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase()) && 
+                                          ((slot.shift as string)?.toLowerCase() === activeShift?.toLowerCase() || !slot.shift || activeShift === "general") && 
+                                          (slot.course.toLowerCase().trim() === sub.name.toLowerCase().trim() || isSubjectNameMatch(slot.course, sub.name))
                                 ).length;
                                 const target = sub.weekly_hours || 4;
                                 return {

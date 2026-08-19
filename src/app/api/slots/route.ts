@@ -136,11 +136,36 @@ export async function DELETE(request: Request) {
     }
 
     if (classGroup) {
-      const deletedSlots = await db.all("SELECT * FROM slots WHERE LOWER(classGroup) = ?", classGroup.toLowerCase().trim());
-      await db.run("DELETE FROM slots WHERE LOWER(classGroup) = ?", classGroup.toLowerCase().trim());
+      const cleanCG = classGroup.toLowerCase().trim();
+      const normCG = cleanCG.replace(/[^a-z0-9]/g, "");
+      const baseCG = cleanCG.replace(/\s*\([^)]*\)/g, "").trim();
+      const normBaseCG = baseCG.replace(/[^a-z0-9]/g, "");
 
-      if (deletedSlots.length > 0) {
-        const logDesc = `Cleared timetable for class group "${classGroup}" (${deletedSlots.length} slots)`;
+      const allSlots = await db.all("SELECT id, classGroup, course FROM slots");
+      const matchedSlotIds = allSlots.filter(s => {
+        if (!s.classGroup) return false;
+        const sCG = s.classGroup.toLowerCase().trim();
+        const sNorm = sCG.replace(/[^a-z0-9]/g, "");
+        const sBase = sCG.replace(/\s*\([^)]*\)/g, "").trim();
+        const sNormBase = sBase.replace(/[^a-z0-9]/g, "");
+
+        return (
+          sCG === cleanCG ||
+          sNorm === normCG ||
+          sBase === baseCG ||
+          sNormBase === normBaseCG ||
+          (normBaseCG.length > 3 && sNorm.includes(normBaseCG)) ||
+          (sNormBase.length > 3 && normCG.includes(sNormBase))
+        );
+      }).map(s => s.id);
+
+      if (matchedSlotIds.length > 0) {
+        const placeholders = matchedSlotIds.map(() => "?").join(",");
+        await db.run(`DELETE FROM slots WHERE id IN (${placeholders})`, matchedSlotIds);
+      }
+
+      if (matchedSlotIds.length > 0) {
+        const logDesc = `Cleared timetable for class group "${classGroup}" (${matchedSlotIds.length} slots)`;
         const logId = "l_" + Date.now();
         await db.run(
           "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'release', ?, ?, ?, ?)",
@@ -151,7 +176,7 @@ export async function DELETE(request: Request) {
           new Date().toISOString()
         );
       }
-      return NextResponse.json({ success: true, count: deletedSlots.length });
+      return NextResponse.json({ success: true, count: matchedSlotIds.length });
     }
 
     const slotToDelete = await db.get("SELECT * FROM slots WHERE id = ?", id);
