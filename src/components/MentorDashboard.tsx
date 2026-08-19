@@ -2152,7 +2152,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
     // Merge and sort by time
     const allAgendaClasses = [...activeOwnClasses, ...activeCoverClasses, ...activeDemoClasses].sort((a, b) => {
-      return a.slot.time.localeCompare(b.slot.time);
+      return (a.slot?.time || "").localeCompare(b.slot?.time || "");
     });
 
     return allAgendaClasses;
@@ -2753,9 +2753,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       slotId: string; dateStr: string; timestamp: string; records: typeof studentAttendance;
     }> = {};
     memoizedMentorAtt.forEach(att => {
-      const key = `${att.slotId}_${att.dateStr}`;
+      if (!att) return;
+      const key = `${att.slotId || ""}_${att.dateStr || ""}`;
       if (!groups[key]) {
-        groups[key] = { slotId: att.slotId, dateStr: att.dateStr, timestamp: att.timestamp, records: [] };
+        groups[key] = { slotId: att.slotId || "", dateStr: att.dateStr || "", timestamp: att.timestamp || "", records: [] };
       }
       groups[key].records.push(att);
     });
@@ -2766,7 +2767,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       const totalMarked = g.records.length;
       const percent = totalMarked > 0 ? Math.round((presentCount / totalMarked) * 100) : 100;
       return { ...g, slot, presentCount, absentCount, totalMarked, percent };
-    }).sort((a, b) => b.dateStr.localeCompare(a.dateStr) || b.timestamp.localeCompare(a.timestamp));
+    }).sort((a, b) => (b.dateStr || "").localeCompare(a.dateStr || "") || (b.timestamp || "").localeCompare(a.timestamp || ""));
   }, [memoizedMentorAtt, slotsByIdMap]);
 
   // Notification count for sidebar — memoized to avoid re-scanning on every render
@@ -3658,7 +3659,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   ) : (
                     <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
                       {[...myRequests, ...myCoverageRequests]
-                        .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+                        .sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""))
                         .slice(0, 3)
                         .map((req, idx) => {
                           const isSent = req.requestorId === currentMentor.id;
@@ -4717,8 +4718,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
           // Unique months from all sessions
           const allMonths = Array.from(new Set(
-            markedSessions.map(s => s.dateStr.slice(0, 7))
-          )).sort((a, b) => b.localeCompare(a));
+            markedSessions.map(s => (s.dateStr ? s.dateStr.slice(0, 7) : "")).filter(Boolean)
+          )).sort((a, b) => (b || "").localeCompare(a || ""));
 
           // Unique class groups
           const allClassGroups = Array.from(new Set(
@@ -4739,7 +4740,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             arr.push(s);
             groupedByDate.set(s.dateStr, arr);
           });
-          const sortedDates = Array.from(groupedByDate.keys()).sort((a, b) => b.localeCompare(a));
+          const sortedDates = Array.from(groupedByDate.keys()).sort((a, b) => (b || "").localeCompare(a || ""));
 
           // Month summary
           const monthPresent = filtered.reduce((a, s) => a + s.presentCount, 0);

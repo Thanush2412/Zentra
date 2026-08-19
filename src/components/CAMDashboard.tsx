@@ -12,6 +12,11 @@ import { Input } from "./Input";
 import { Select } from "./Select";
 import { LoadingButton } from "./ui/LoadingButton";
 import { Pagination } from "./ui/Pagination";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
+  AreaChart, Area, CartesianGrid
+} from "recharts";
 import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob } from "../lib/utils";
 import { InterviewModule } from "./InterviewModule";
 import {
@@ -72,6 +77,32 @@ const CAMFeePanel: React.FC<{ camId: string }> = ({ camId }) => {
   const [data, setData] = React.useState<any>(null);
   const [search, setSearch] = React.useState("");
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
+  const { toast } = (React as any).useContext ? { toast: (_m: string) => {} } : { toast: (_m: string) => {} };
+
+  const exportFeeReport = async (students: any[], fees: any[], stats: any) => {
+    try {
+      const XLSX = await import("xlsx");
+      const headers = ["S.No", "Student Name", "Department", "Total Fee (₹)", "Paid (₹)", "Outstanding (₹)", "Status"];
+      const rows = students.map((s: any, idx: number) => {
+        const sf = fees.filter((f: any) => f.student_id === s.id);
+        const paid = sf.reduce((a: number, f: any) => a + f.paid_amount, 0);
+        const total = sf.reduce((a: number, f: any) => a + f.amount, 0);
+        const outstanding = total - paid;
+        const status = paid >= total && total > 0 ? "Paid" : paid > 0 ? "Partial" : "Unpaid";
+        return [idx + 1, s.name, s.department || "—", total, paid, outstanding, status];
+      });
+      // Summary row
+      rows.push(["", "", "TOTAL", stats?.totalFees || 0, stats?.totalPaid || 0, stats?.totalOutstanding || 0, ""]);
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws["!cols"] = [{ wch: 6 }, { wch: 28 }, { wch: 20 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 10 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Fee Collection");
+      XLSX.writeFile(wb, `Fee_Collection_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (err: any) {
+      alert("Export failed: " + err.message);
+    }
+  };
 
   const fetchData = async () => {
     if (!camId) return;
@@ -111,6 +142,97 @@ const CAMFeePanel: React.FC<{ camId: string }> = ({ camId }) => {
           <p className="text-lg font-black text-rose-600 mt-1">{fmt(data.stats?.totalOutstanding || 0)}</p>
         </div>
       </div>
+
+      {/* Fee Infographic: Donut Chart + Status Breakdown */}
+      {(() => {
+        const paidCount = filtered.filter((s: any) => {
+          const sf = fees.filter((f: any) => f.student_id === s.id);
+          const p = sf.reduce((a: number, f: any) => a + f.paid_amount, 0);
+          const t = sf.reduce((a: number, f: any) => a + f.amount, 0);
+          return p >= t && t > 0;
+        }).length;
+        const partialCount = filtered.filter((s: any) => {
+          const sf = fees.filter((f: any) => f.student_id === s.id);
+          const p = sf.reduce((a: number, f: any) => a + f.paid_amount, 0);
+          const t = sf.reduce((a: number, f: any) => a + f.amount, 0);
+          return p > 0 && p < t;
+        }).length;
+        const unpaidCount = filtered.length - paidCount - partialCount;
+        const donutData = [
+          { name: "Paid", value: paidCount, color: "#D528A2" },
+          { name: "Partial", value: partialCount, color: "#F4A863" },
+          { name: "Unpaid", value: unpaidCount, color: "#CBD5E1" },
+        ].filter(d => d.value > 0);
+
+        const collectedPct = data.stats?.totalFees > 0
+          ? Math.round((data.stats.totalPaid / data.stats.totalFees) * 100)
+          : 0;
+
+        return (
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row items-center gap-6">
+            {/* Donut */}
+            <div className="shrink-0">
+              <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider text-center mb-2">Fee Status Split</p>
+              <ResponsiveContainer width={160} height={160}>
+                <PieChart>
+                  <Pie data={donutData} cx="50%" cy="50%" innerRadius={44} outerRadius={66} paddingAngle={3} dataKey="value">
+                    {donutData.map((entry, i) => (
+                      <Cell key={i} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(val: any, name: any) => [`${val} students`, name]} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="flex items-center justify-center gap-3 mt-1">
+                {donutData.map(d => (
+                  <div key={d.name} className="flex items-center gap-1">
+                    <span className="h-2.5 w-2.5 rounded-full inline-block" style={{ background: d.color }} />
+                    <span className="text-[9px] font-bold text-slate-500">{d.name} ({d.value})</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* KPIs */}
+            <div className="flex-1 space-y-3 w-full">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-700">Collection Progress</span>
+                <span className="text-sm font-black text-[#D528A2]">{collectedPct}%</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-2.5">
+                <div className="h-2.5 rounded-full bg-gradient-to-r from-[#D528A2] to-pink-400 transition-all duration-700" style={{ width: `${collectedPct}%` }} />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="p-2 rounded-xl bg-[#D528A2]/5 border border-[#D528A2]/20 text-center">
+                  <p className="text-[10px] font-bold text-[#D528A2] uppercase">Fully Paid</p>
+                  <p className="text-base font-black text-[#D528A2] mt-0.5">{paidCount}</p>
+                </div>
+                <div className="p-2 rounded-xl bg-amber-50 border border-amber-200 text-center">
+                  <p className="text-[10px] font-bold text-amber-600 uppercase">Partial</p>
+                  <p className="text-base font-black text-amber-600 mt-0.5">{partialCount}</p>
+                </div>
+                <div className="p-2 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Unpaid</p>
+                  <p className="text-base font-black text-slate-600 mt-0.5">{unpaidCount}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Export Button */}
+            <div className="shrink-0">
+              <button
+                type="button"
+                onClick={() => exportFeeReport(students, fees, data.stats)}
+                className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                Export Excel
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Search */}
       <div className="flex items-center gap-3">
@@ -945,7 +1067,7 @@ let isFirstSidebarAnimationDone = false;
 const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> = ({ collegeId, camName }) => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const [dateStr, setDateStr] = useState(() => new Date().toISOString().split("T")[0]);
+  const [dateStr, setDateStr] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
   const [records, setRecords] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>({ total: 0, present: 0, od: 0, leave: 0, absent: 0, unpunched: 0 });
   const [search, setSearch] = useState("");
@@ -1034,6 +1156,37 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
       toast("Error: " + e.message, "error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExportMentorAttendance = async () => {
+    try {
+      const XLSX = await import("xlsx");
+      const headers = ["S.No", "Faculty Name", "Email", "Department", "Date", "Status", "Punch Time", "Remarks"];
+      const rows = records.map((r: any, idx: number) => [
+        idx + 1,
+        r.name || "—",
+        r.email || "—",
+        r.department || "General",
+        dateStr,
+        r.status || "Not Punched",
+        r.punchInTime || "—",
+        r.reason || "—"
+      ]);
+      const summaryRows = [
+        [],
+        ["Summary", "", "", "", "", "", "", ""],
+        ["Total", summary.total, "Present", summary.present, "OD", summary.od, "Leave", summary.leave],
+        ["Absent", summary.absent, "Unpunched", summary.unpunched, "", "", "", ""]
+      ];
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows, ...summaryRows]);
+      ws["!cols"] = [{ wch: 6 }, { wch: 26 }, { wch: 28 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Mentor Attendance");
+      XLSX.writeFile(wb, `Mentor_Attendance_${dateStr}.xlsx`);
+      toast(`Exported mentor attendance for ${dateStr}`, "success");
+    } catch (err: any) {
+      toast("Export failed: " + err.message, "error");
     }
   };
 
@@ -1191,6 +1344,15 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
                 <CheckCircle2 className="h-4 w-4" />
                 Mark All Present
               </button>
+
+              <button
+                type="button"
+                onClick={handleExportMentorAttendance}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Download className="h-4 w-4" />
+                Export Excel
+              </button>
             </>
           )}
         </div>
@@ -1288,8 +1450,10 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
         </div>
       ) : (
         <>
-          {/* Summary KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+          {/* Summary KPI Cards + Bar Chart */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* KPI Cards */}
+            <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-xs">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Faculty</p>
           <p className="text-xl font-black text-slate-900 mt-0.5">{summary.total}</p>
@@ -1314,7 +1478,41 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Unpunched</p>
           <p className="text-xl font-black text-slate-600 mt-0.5">{summary.unpunched}</p>
         </div>
-      </div>
+            </div>
+
+            {/* Punch Distribution Bar Chart */}
+            <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-xs flex flex-col">
+              <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-3">Today's Punch Distribution</p>
+              {summary.total > 0 ? (
+                <ResponsiveContainer width="100%" height={140}>
+                  <BarChart data={[
+                    { name: "Present", value: summary.present },
+                    { name: "OD", value: summary.od },
+                    { name: "Leave", value: summary.leave },
+                    { name: "Absent", value: summary.absent },
+                    { name: "—", value: summary.unpunched },
+                  ]} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                    <XAxis dataKey="name" tick={{ fontSize: 9, fontWeight: 700 }} />
+                    <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
+                    <Tooltip formatter={(val: any, name: any) => [`${val} faculty`, name]} />
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                      {[
+                        { fill: "#10b981" },
+                        { fill: "#6366f1" },
+                        { fill: "#f59e0b" },
+                        { fill: "#f43f5e" },
+                        { fill: "#cbd5e1" },
+                      ].map((entry, i) => (
+                        <Cell key={i} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-xs text-slate-400 italic">No data for this date</div>
+              )}
+            </div>
+          </div>
 
       {/* Filter & Table Container */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
@@ -1582,6 +1780,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     slots,
     requests,
     interviews,
+    interviewEvaluations,
     subjectsList,
     coursesList,
     assignSlot,
@@ -1819,9 +2018,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
   // Attendance Directory & Date-Wise Monitoring States
-  const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [attendanceDate, setAttendanceDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
   const [attendanceStartDate, setAttendanceStartDate] = useState("2026-06-15");
-  const [attendanceEndDate, setAttendanceEndDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [attendanceEndDate, setAttendanceEndDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
   const [attendanceMonthFilter, setAttendanceMonthFilter] = useState("all");
   const [showAttendanceImportModal, setShowAttendanceImportModal] = useState(false);
   const [attendanceImportPreview, setAttendanceImportPreview] = useState<{ parsed: any[]; warnings: string[]; targetDate: string } | null>(null);
@@ -2289,7 +2488,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const handleDownloadAttendanceTemplate = async (targetCG?: string, startStr?: string, endStr?: string) => {
     const XLSX = await import("xlsx");
     const sDate = startStr || attendanceStartDate || "2026-06-15";
-    const eDate = endStr || attendanceEndDate || new Date().toISOString().split("T")[0];
+    const eDate = endStr || attendanceEndDate || new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
     const workingDates = getSemesterWorkingDates(sDate, eDate);
 
     const filteredStudents = collegeStudents.filter(s => !targetCG || targetCG === "all" || isCohortMatch(s.classGroup, targetCG));
@@ -2656,7 +2855,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const handleExportDateAttendance = async (startStr: string, endStr: string, studentsToExport: any[]) => {
     const XLSX = await import("xlsx");
     const sDate = startStr || attendanceStartDate || "2026-06-15";
-    const eDate = endStr || attendanceEndDate || new Date().toISOString().split("T")[0];
+    const eDate = endStr || attendanceEndDate || new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
     const workingDates = getSemesterWorkingDates(sDate, eDate);
 
     const dateHeaders = workingDates.map(d => formatDateToDMY(d));
@@ -2959,6 +3158,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [camTrackerSemester, setCamTrackerSemester] = useState("");
   const [camTrackerSubject, setCamTrackerSubject] = useState("");
   const [camTrackerWeek, setCamTrackerWeek] = useState<number | "">("");
+  const [camTrackerFromDate, setCamTrackerFromDate] = useState<string>(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30);
+    return d.toISOString().split("T")[0];
+  });
+  const [camTrackerToDate, setCamTrackerToDate] = useState<string>(() =>
+    new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]
+  );
 
   // Mentor CRUD states
   const [showMentorModal, setShowMentorModal] = useState(false);
@@ -3340,8 +3546,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [collegeHours, setCollegeHours] = useState({ start: "08:30 AM", end: "04:30 PM" });
 
   // Daily Day Type & Day Order Config states
-  const [dailyStartDateStr, setDailyStartDateStr] = useState(new Date().toISOString().split("T")[0]);
-  const [dailyEndDateStr, setDailyEndDateStr] = useState(new Date().toISOString().split("T")[0]);
+  const [dailyStartDateStr, setDailyStartDateStr] = useState(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
+  const [dailyEndDateStr, setDailyEndDateStr] = useState(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
   const [dailyDayType, setDailyDayType] = useState<string>("working");
   const [dailyDayOrder, setDailyDayOrder] = useState("Day 1");
   const [dailySessionMode, setDailySessionMode] = useState<string>("Offline");
@@ -3955,7 +4161,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const handleOpenCreateEventModal = () => {
     setEditingEventObj(null);
     setEvFormName("");
-    setEvFormDate(new Date().toISOString().split("T")[0]);
+    setEvFormDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
     setEvFormEndDate("");
     setEvFormCategory("Coding Fest & Hackathon");
     setEvFormDept("All Departments");
@@ -6461,7 +6667,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </Button>
               </div>
 
-
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Panel
                   title="Timetable Conflicts & Substitutions Monitor"
@@ -7295,6 +7500,105 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <h3 className="text-xs font-black text-indigo-705 uppercase tracking-wider">Faculty Workload Distribution</h3>
                           <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Real-time teaching allocation mapped against weekly targets.</p>
                         </div>
+
+                        {/* ── FACULTY INFOGRAPHICS ── */}
+                        {(() => {
+                          const filtered = collegeMentors.filter(m => {
+                            const matchesSearch = m.name.toLowerCase().includes(facultySearch.toLowerCase());
+                            const matchesDept = facultyDeptFilter === "all" || m.department === facultyDeptFilter;
+                            return matchesSearch && matchesDept;
+                          });
+
+                          // Workload bar chart data
+                          const workloadData = filtered.slice(0, 10).map(m => {
+                            const hrs = collegeSlots.filter(s => s.mentorId === m.id).length;
+                            const limit = facultyWorkloadLimits[m.id] || 16;
+                            return {
+                              name: m.name.split(" ")[0],
+                              hrs,
+                              limit,
+                              fill: hrs > limit ? "#f43f5e" : hrs >= limit * 0.85 ? "#10b981" : "#6366f1",
+                            };
+                          });
+
+                          // Status counts
+                          const overloadCount = filtered.filter(m => collegeSlots.filter(s => s.mentorId === m.id).length > (facultyWorkloadLimits[m.id] || 16)).length;
+                          const optimalCount = filtered.filter(m => { const h = collegeSlots.filter(s => s.mentorId === m.id).length; const lim = facultyWorkloadLimits[m.id] || 16; return h >= lim * 0.85 && h <= lim; }).length;
+                          const underCount = filtered.length - overloadCount - optimalCount;
+
+                          // Dept distribution
+                          const deptCounts: Record<string, number> = {};
+                          filtered.forEach(m => { const d = m.department || "General"; deptCounts[d] = (deptCounts[d] || 0) + 1; });
+                          const deptData = Object.entries(deptCounts).map(([name, value]) => ({ name: name.length > 10 ? name.slice(0, 10) + "…" : name, value })).sort((a, b) => b.value - a.value).slice(0, 6);
+
+                          return (
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-2">
+                              {/* KPI summary cards */}
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
+                                  <p className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider">Total</p>
+                                  <p className="text-lg font-black text-indigo-700 mt-0.5">{filtered.length}</p>
+                                </div>
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+                                  <p className="text-[9px] font-extrabold text-amber-500 uppercase tracking-wider">Overload</p>
+                                  <p className="text-lg font-black text-amber-700 mt-0.5">{overloadCount}</p>
+                                </div>
+                                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+                                  <p className="text-[9px] font-extrabold text-emerald-500 uppercase tracking-wider">Optimal</p>
+                                  <p className="text-lg font-black text-emerald-700 mt-0.5">{optimalCount}</p>
+                                </div>
+                                <div className="col-span-3 bg-white border border-slate-200 rounded-xl p-3">
+                                  <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Status Split</p>
+                                  <div className="flex items-center gap-2 text-[9px] font-bold">
+                                    {[
+                                      { label: "Overload", count: overloadCount, color: "bg-rose-100 text-rose-700" },
+                                      { label: "Optimal", count: optimalCount, color: "bg-emerald-100 text-emerald-700" },
+                                      { label: "Under", count: underCount, color: "bg-slate-100 text-slate-600" },
+                                    ].map(s => (
+                                      <span key={s.label} className={`px-2 py-0.5 rounded-full font-black ${s.color}`}>{s.label}: {s.count}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Workload hours bar chart */}
+                              <div className="bg-white border border-slate-200 rounded-xl p-4">
+                                <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">Weekly Hours (top 10)</p>
+                                {workloadData.length > 0 ? (
+                                  <ResponsiveContainer width="100%" height={130}>
+                                    <BarChart data={workloadData} margin={{ top: 0, right: 4, bottom: 0, left: -20 }}>
+                                      <XAxis dataKey="name" tick={{ fontSize: 8, fontWeight: 700 }} />
+                                      <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
+                                      <Tooltip formatter={(v: any) => [`${v} hrs`]} />
+                                      <Bar dataKey="hrs" radius={[4, 4, 0, 0]}>
+                                        {workloadData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                                      </Bar>
+                                    </BarChart>
+                                  </ResponsiveContainer>
+                                ) : (
+                                  <div className="h-[130px] flex items-center justify-center text-xs text-slate-400 italic">No slot data</div>
+                                )}
+                              </div>
+
+                              {/* Dept distribution bar */}
+                              <div className="bg-white border border-slate-200 rounded-xl p-4">
+                                <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-2">Faculty by Department</p>
+                                {deptData.length > 0 ? (
+                                  <ResponsiveContainer width="100%" height={130}>
+                                    <BarChart data={deptData} layout="vertical" margin={{ top: 0, right: 10, bottom: 0, left: 0 }}>
+                                      <XAxis type="number" tick={{ fontSize: 9 }} allowDecimals={false} />
+                                      <YAxis dataKey="name" type="category" tick={{ fontSize: 8, fontWeight: 700 }} width={75} />
+                                      <Tooltip formatter={(v: any) => [`${v} faculty`]} />
+                                      <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                                    </BarChart>
+                                  </ResponsiveContainer>
+                                ) : (
+                                  <div className="h-[130px] flex items-center justify-center text-xs text-slate-400 italic">No data</div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 pt-2">
                           {collegeMentors
@@ -8528,13 +8832,211 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   })()}
 
                   {/* 5.5 INTERVIEW ALLOCATIONS & GMEET */}
-                  {activeTab === "interviews" && (
-                    <InterviewModule currentUserRole="cm" currentUserName={currentCAM?.name || "Campus Manager"} defaultCollegeId={activeCollegeId} />
-                  )}
+                  {activeTab === "interviews" && (() => {
+                    // Scope interviews to this campus
+                    const campusInterviews = interviews.filter(iv =>
+                      isGlobalAllCampuses || !iv.class_group || collegeStudents.some(s => s.classGroup === iv.class_group)
+                    );
+                    const campusEvals = interviewEvaluations.filter((ev: any) =>
+                      isGlobalAllCampuses || campusInterviews.some(iv => iv.id === ev.interview_id)
+                    );
+
+                    // ── KPI Counts ──
+                    const totalCount      = campusInterviews.length;
+                    const clearedCount    = campusInterviews.filter(iv => iv.status === "Cleared").length;
+                    const pendingCount    = campusInterviews.filter(iv => iv.status === "Pending" || iv.status?.includes("pending")).length;
+                    const needsImpCount   = campusInterviews.filter(iv => iv.status === "Needs Improvement").length;
+                    const failedCount     = campusInterviews.filter(iv => iv.status === "Failed").length;
+                    const internalCount   = campusInterviews.filter(iv => iv.type === "internal").length;
+                    const externalCount   = campusInterviews.filter(iv => iv.type === "external").length;
+                    const avgMarks = campusInterviews.length > 0
+                      ? (campusInterviews.reduce((s, iv) => s + (Number(iv.marks) || 0), 0) / campusInterviews.length).toFixed(1)
+                      : "—";
+
+                    // ── Chart data ──
+                    // 1. Status donut
+                    const statusDonut = [
+                      { name: "Cleared",          value: clearedCount,  color: "#10b981" },
+                      { name: "Pending",           value: pendingCount,  color: "#f59e0b" },
+                      { name: "Needs Improvement", value: needsImpCount, color: "#6366f1" },
+                      { name: "Failed",            value: failedCount,   color: "#f43f5e" },
+                    ].filter(d => d.value > 0);
+
+                    // 2. Subject distribution bar
+                    const subjectMap: Record<string, number> = {};
+                    campusInterviews.forEach(iv => {
+                      const s = iv.subject || "General";
+                      subjectMap[s] = (subjectMap[s] || 0) + 1;
+                    });
+                    const subjectBar = Object.entries(subjectMap)
+                      .map(([name, value]) => ({ name: name.length > 16 ? name.slice(0, 16) + "…" : name, value }))
+                      .sort((a, b) => b.value - a.value)
+                      .slice(0, 7);
+
+                    // 3. Marks distribution bar (buckets 0–3, 4–5, 6–7, 8–9, 10)
+                    const marksBuckets = [
+                      { label: "0–3",  count: 0, fill: "#f43f5e" },
+                      { label: "4–5",  count: 0, fill: "#f59e0b" },
+                      { label: "6–7",  count: 0, fill: "#6366f1" },
+                      { label: "8–9",  count: 0, fill: "#10b981" },
+                      { label: "10",   count: 0, fill: "#059669" },
+                    ];
+                    campusInterviews.forEach(iv => {
+                      const m = Number(iv.marks) || 0;
+                      if      (m <= 3)  marksBuckets[0].count++;
+                      else if (m <= 5)  marksBuckets[1].count++;
+                      else if (m <= 7)  marksBuckets[2].count++;
+                      else if (m <= 9)  marksBuckets[3].count++;
+                      else              marksBuckets[4].count++;
+                    });
+
+                    // ── Export ──
+                    const handleExportInterviews = async () => {
+                      try {
+                        const XLSX = await import("xlsx");
+                        const headers = ["S.No", "Student Name", "Class Group", "Subject", "Type", "Marks", "Total Marks", "Status", "Evaluator", "Evaluator Role", "Date"];
+                        const rows = campusInterviews.map((iv, idx) => [
+                          idx + 1,
+                          iv.student_name || "—",
+                          iv.class_group  || "—",
+                          iv.subject      || "—",
+                          iv.type         || "—",
+                          iv.marks        ?? "—",
+                          iv.total_marks  ?? "—",
+                          iv.status       || "—",
+                          iv.evaluator_name || "—",
+                          iv.evaluator_role || "—",
+                          iv.created_at ? new Date(iv.created_at).toLocaleDateString("en-IN") : "—",
+                        ]);
+                        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                        ws["!cols"] = [
+                          { wch: 5 }, { wch: 26 }, { wch: 22 }, { wch: 22 }, { wch: 10 },
+                          { wch: 8 }, { wch: 10 }, { wch: 20 }, { wch: 22 }, { wch: 16 }, { wch: 14 },
+                        ];
+                        const wb = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb, ws, "Interview Allocations");
+                        XLSX.writeFile(wb, `Interview_Allocations_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                        toast("Interview data exported!", "success");
+                      } catch (err: any) {
+                        toast("Export failed: " + err.message, "error");
+                      }
+                    };
+
+                    return (
+                      <div className="space-y-5 font-sans">
+
+                        {/* ── Header + Export ── */}
+                        <div className="bg-white border border-slate-200 rounded-2xl px-6 py-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div>
+                            <h2 className="text-base font-black text-slate-900">Campus Interview Management &amp; Allocation</h2>
+                            <p className="text-xs text-slate-400 font-medium mt-0.5">
+                              Schedule, allocate, and monitor student interview sessions with SME evaluators.
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={handleExportInterviews}
+                              disabled={campusInterviews.length === 0}
+                              className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                              Export Excel
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* ── KPI Cards Row ── */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                          {[
+                            { label: "Total",           value: totalCount,    bg: "bg-white",           text: "text-slate-800",  border: "border-slate-200"   },
+                            { label: "Cleared",         value: clearedCount,  bg: "bg-emerald-50",      text: "text-emerald-700",border: "border-emerald-200" },
+                            { label: "Pending",         value: pendingCount,  bg: "bg-amber-50",        text: "text-amber-700",  border: "border-amber-200"   },
+                            { label: "Needs Improv.",   value: needsImpCount, bg: "bg-indigo-50",       text: "text-indigo-700", border: "border-indigo-200"  },
+                            { label: "Failed",          value: failedCount,   bg: "bg-rose-50",         text: "text-rose-700",   border: "border-rose-200"    },
+                            { label: "Internal",        value: internalCount, bg: "bg-blue-50",         text: "text-blue-700",   border: "border-blue-200"    },
+                            { label: "Avg Marks",       value: avgMarks,      bg: "bg-purple-50",       text: "text-purple-700", border: "border-purple-200"  },
+                          ].map(c => (
+                            <div key={c.label} className={`${c.bg} border ${c.border} rounded-xl p-3 text-center shadow-xs`}>
+                              <p className={`text-[9px] font-extrabold uppercase tracking-wider ${c.text} opacity-70`}>{c.label}</p>
+                              <p className={`text-xl font-black ${c.text} mt-0.5`}>{c.value}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* ── Charts Row ── */}
+                        {totalCount > 0 && (
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+                            {/* Status Donut */}
+                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col">
+                              <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-3">Status Breakdown</p>
+                              <ResponsiveContainer width="100%" height={150}>
+                                <PieChart>
+                                  <Pie data={statusDonut} cx="50%" cy="50%" innerRadius={38} outerRadius={60} paddingAngle={3} dataKey="value">
+                                    {statusDonut.map((e, i) => <Cell key={i} fill={e.color} />)}
+                                  </Pie>
+                                  <Tooltip formatter={(v: any, n: any) => [`${v} interviews`, n]} />
+                                </PieChart>
+                              </ResponsiveContainer>
+                              <div className="flex flex-wrap gap-2 justify-center mt-2">
+                                {statusDonut.map(d => (
+                                  <span key={d.name} className="flex items-center gap-1 text-[9px] font-bold text-slate-500">
+                                    <span className="h-2 w-2 rounded-full inline-block" style={{ background: d.color }} />
+                                    {d.name} ({d.value})
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Subject Distribution Bar */}
+                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+                              <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-3">Interviews by Subject</p>
+                              {subjectBar.length > 0 ? (
+                                <ResponsiveContainer width="100%" height={150}>
+                                  <BarChart data={subjectBar} layout="vertical" margin={{ top: 0, right: 10, bottom: 0, left: 0 }}>
+                                    <XAxis type="number" tick={{ fontSize: 9 }} allowDecimals={false} />
+                                    <YAxis dataKey="name" type="category" tick={{ fontSize: 8, fontWeight: 700 }} width={100} />
+                                    <Tooltip formatter={(v: any) => [`${v} interviews`]} />
+                                    <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              ) : (
+                                <div className="h-[150px] flex items-center justify-center text-xs text-slate-400 italic">No data</div>
+                              )}
+                            </div>
+
+                            {/* Marks Distribution Bar */}
+                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+                              <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-3">Marks Distribution</p>
+                              <ResponsiveContainer width="100%" height={150}>
+                                <BarChart data={marksBuckets} margin={{ top: 0, right: 4, bottom: 0, left: -20 }}>
+                                  <XAxis dataKey="label" tick={{ fontSize: 9, fontWeight: 700 }} />
+                                  <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
+                                  <Tooltip formatter={(v: any) => [`${v} students`]} />
+                                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                                    {marksBuckets.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                                  </Bar>
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+
+                          </div>
+                        )}
+
+                        {/* ── InterviewModule (full functional UI) ── */}
+                        <InterviewModule
+                          currentUserRole="cm"
+                          currentUserName={currentCAM?.name || "Campus Manager"}
+                          defaultCollegeId={activeCollegeId}
+                        />
+                      </div>
+                    );
+                  })()}
 
                   {/* 6. ACADEMIC MONITORING / MASTER STUDENT ATTENDANCE DIRECTORY */}
                   {activeTab === "monitoring" && (() => {
-                    const todayStr = new Date().toISOString().split("T")[0];
+                    const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
 
                     // Build working dates from THREE sources so no date is ever missing:
                     // 1. Dates that actually have attendance records in context
@@ -8641,7 +9143,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                     // Preset helpers
                     const setPresetDates = (preset: string) => {
-                      const today = new Date().toISOString().split("T")[0];
+                      const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
                       if (preset === "all") {
                         setAttendanceStartDate("2026-06-15");
                         setAttendanceEndDate(today);
@@ -8733,6 +9235,135 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               </button>
                             </div>
                           </div>
+
+                          {/* ── ATTENDANCE INFOGRAPHICS ROW ── */}
+                          {(() => {
+                            // ── Per-student attendance % using the already-computed attendanceMap ──
+                            const studentPcts: { id: string; name: string; cg: string; pct: number; hasData: boolean }[] = filtered.map(st => {
+                              let presentDays = 0, totalMarkedDays = 0;
+                              workingDates.forEach(dStr => {
+                                const recs = attendanceMap.get(`${st.id}_${dStr}`) || [];
+                                if (recs.length === 0) return;
+                                totalMarkedDays++;
+                                const p = recs.filter((a: any) => a.status === "present" || a.status === "od").length;
+                                const ab = recs.filter((a: any) => a.status === "absent").length;
+                                if (p > 0 && ab === 0) presentDays += 1;
+                                else if (p > 0 && ab > 0) presentDays += 0.5;
+                              });
+                              const pct = totalMarkedDays > 0 ? Math.round((presentDays / totalMarkedDays) * 100) : -1;
+                              return { id: st.id, name: st.name, cg: st.classGroup || st.department || "General", pct, hasData: totalMarkedDays > 0 };
+                            });
+
+                            // ── Donut: Student-level compliance buckets ──
+                            const onTrack    = studentPcts.filter(s => s.pct >= 75).length;
+                            const atRisk     = studentPcts.filter(s => s.pct >= 65 && s.pct < 75).length;
+                            const critical   = studentPcts.filter(s => s.pct >= 0 && s.pct < 65).length;
+                            const noData     = studentPcts.filter(s => !s.hasData).length;
+                            const shortageCount = atRisk + critical;
+
+                            const donutData = [
+                              { name: `On Track (≥75%)`,   value: onTrack,  color: "#10b981" },
+                              { name: `At Risk (65–74%)`,  value: atRisk,   color: "#f59e0b" },
+                              { name: `Critical (<65%)`,   value: critical, color: "#f43f5e" },
+                              { name: `No Data`,           value: noData,   color: "#cbd5e1" },
+                            ].filter(d => d.value > 0);
+
+                            // ── Bar: class-group avg attendance % ──
+                            const cgMap: Record<string, { sum: number; count: number }> = {};
+                            studentPcts.filter(s => s.hasData).forEach(s => {
+                              if (!cgMap[s.cg]) cgMap[s.cg] = { sum: 0, count: 0 };
+                              cgMap[s.cg].sum   += s.pct;
+                              cgMap[s.cg].count += 1;
+                            });
+                            const cgChartData = Object.entries(cgMap)
+                              .map(([name, v]) => ({
+                                name: name.length > 16 ? name.slice(0, 16) + "…" : name,
+                                pct:  Math.round(v.sum / v.count),
+                              }))
+                              .sort((a, b) => b.pct - a.pct)
+                              .slice(0, 8);
+
+                            if (studentPcts.length === 0) return null;
+
+                            return (
+                              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-2">
+
+                                {/* KPI Cards */}
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                                    <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider">Campus Avg</p>
+                                    <p className="text-xl font-black text-emerald-700 mt-0.5">{overallAvgPct}%</p>
+                                    <p className="text-[9px] text-emerald-500 font-semibold mt-0.5">across {filtered.length} students</p>
+                                  </div>
+                                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-3">
+                                    <p className="text-[10px] font-extrabold text-rose-600 uppercase tracking-wider">Shortage Alert</p>
+                                    <p className="text-xl font-black text-rose-700 mt-0.5">{shortageCount}</p>
+                                    <p className="text-[9px] text-rose-400 font-semibold mt-0.5">students below 75%</p>
+                                  </div>
+                                  <div className="bg-white border border-slate-200 rounded-xl p-3">
+                                    <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">On Track</p>
+                                    <p className="text-xl font-black text-slate-800 mt-0.5">{onTrack}</p>
+                                    <p className="text-[9px] text-slate-400 font-semibold mt-0.5">students ≥ 75%</p>
+                                  </div>
+                                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                                    <p className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-wider">Tracked Days</p>
+                                    <p className="text-xl font-black text-indigo-700 mt-0.5">{workingDates.length}</p>
+                                    <p className="text-[9px] text-indigo-400 font-semibold mt-0.5">working days in range</p>
+                                  </div>
+                                </div>
+
+                                {/* Donut: student-level compliance */}
+                                <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col">
+                                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-1">Student Compliance Split</p>
+                                  <p className="text-[9px] text-slate-400 font-medium mb-2">Each segment = number of students</p>
+                                  <ResponsiveContainer width="100%" height={120}>
+                                    <PieChart>
+                                      <Pie data={donutData} cx="50%" cy="50%" innerRadius={32} outerRadius={54} paddingAngle={3} dataKey="value">
+                                        {donutData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                                      </Pie>
+                                      <Tooltip formatter={(v: any, n: any) => [`${v} students`, n]} />
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                  <div className="flex flex-col gap-1 mt-2">
+                                    {donutData.map(d => (
+                                      <div key={d.name} className="flex items-center justify-between text-[9px] font-bold text-slate-600">
+                                        <span className="flex items-center gap-1.5">
+                                          <span className="h-2 w-2 rounded-full shrink-0" style={{ background: d.color }} />
+                                          {d.name}
+                                        </span>
+                                        <span className="font-black">{d.value} students</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Bar: class-group avg % */}
+                                <div className="bg-white border border-slate-200 rounded-xl p-4">
+                                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-1">Avg Attendance % by Class</p>
+                                  <p className="text-[9px] text-slate-400 font-medium mb-2">
+                                    🟢 ≥75% &nbsp; 🟡 65–74% &nbsp; 🔴 &lt;65%
+                                  </p>
+                                  {cgChartData.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height={130}>
+                                      <BarChart data={cgChartData} layout="vertical" margin={{ top: 0, right: 28, bottom: 0, left: 0 }}>
+                                        <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 9 }} tickFormatter={v => `${v}%`} />
+                                        <YAxis dataKey="name" type="category" tick={{ fontSize: 8, fontWeight: 700 }} width={100} />
+                                        <Tooltip formatter={(v: any) => [`${v}%`, "Avg Attendance"]} />
+                                        <Bar dataKey="pct" radius={[0, 4, 4, 0]} label={{ position: "right", fontSize: 8, fontWeight: 700, formatter: (v: any) => `${v}%` }}>
+                                          {cgChartData.map((e, i) => (
+                                            <Cell key={i} fill={e.pct >= 75 ? "#10b981" : e.pct >= 65 ? "#f59e0b" : "#f43f5e"} />
+                                          ))}
+                                        </Bar>
+                                      </BarChart>
+                                    </ResponsiveContainer>
+                                  ) : (
+                                    <div className="h-[130px] flex items-center justify-center text-xs text-slate-400 italic">No attendance data in range</div>
+                                  )}
+                                </div>
+
+                              </div>
+                            );
+                          })()}
 
                           {/* Date Range + Filters Toolbar (single compact row) */}
                           <div className="flex flex-col lg:flex-row lg:items-center gap-3 flex-wrap">
@@ -8838,7 +9469,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   {workingDates.map(dStr => {
                                     const dObj = new Date(dStr + "T00:00:00");
                                     const dDay = dObj.toLocaleDateString("en-US", { weekday: "short" });
-                                    const todayStr = new Date().toISOString().split("T")[0];
+                                    const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
                                     const isToday = dStr === todayStr;
                                     const holidayObj = (holidays || []).find((h: any) => h?.date === dStr || h?.dateStr === dStr);
                                     const dayTypeLabel = holidayObj ? "Holiday" : (dDay === "Sat" || dDay === "Sun") ? "Weekend" : "Regular";
@@ -9241,6 +9872,39 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* 8. TASKS & ISSUES */}
                   {activeTab === "tasks" && (
+                    <div className="space-y-4">
+                      {/* Tasks Tab Export Banner */}
+                      <div className="flex items-center justify-between flex-wrap gap-3 bg-white border border-slate-200 rounded-xl px-5 py-3 shadow-xs">
+                        <div>
+                          <h3 className="text-sm font-extrabold text-slate-900">Tasks &amp; Issues Management</h3>
+                          <p className="text-xs text-slate-400 font-medium mt-0.5">KAM-assigned tasks and campus issue tickets.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const XLSX = await import("xlsx");
+                              const taskHeaders = ["S.No", "Title", "Priority", "Status", "Due Date", "Type"];
+                              const taskRows = localTasks.map((t, idx) => [idx + 1, t.title, t.priority, t.status, t.dueDate, "KAM Task"]);
+                              const issueHeaders = ["S.No", "Title", "Type", "Priority", "Status", "Description"];
+                              const issueRows = issues.map((i, idx) => [idx + 1, i.title, i.type, i.priority, i.status, i.desc]);
+                              const wb = XLSX.utils.book_new();
+                              const wsTasks = XLSX.utils.aoa_to_sheet([taskHeaders, ...taskRows]);
+                              const wsIssues = XLSX.utils.aoa_to_sheet([issueHeaders, ...issueRows]);
+                              XLSX.utils.book_append_sheet(wb, wsTasks, "KAM Tasks");
+                              XLSX.utils.book_append_sheet(wb, wsIssues, "Campus Issues");
+                              XLSX.writeFile(wb, `Tasks_Issues_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                              toast("Tasks & Issues exported!", "success");
+                            } catch (err: any) {
+                              toast("Export failed: " + err.message, "error");
+                            }
+                          }}
+                          className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                        >
+                          <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                          Export Excel
+                        </button>
+                      </div>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                       {/* Tasks from KAM */}
@@ -9447,6 +10111,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </div>
                       </div>
                     </div>
+                    </div>
                   )}
 
                   {/* Tab 8.5: Class Handovers */}
@@ -9461,9 +10126,43 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     return (
                       <div className="space-y-6">
                         <div className="bg-white p-6 rounded-xl border border-slate-205 shadow-sm space-y-6">
-                          <div>
-                            <h2 className="text-base font-black text-slate-905">Pending Handover Requests</h2>
-                            <p className="text-xs text-slate-400 font-semibold mt-0.5">Substitution requests awaiting receiver approval.</p>
+                          <div className="flex items-center justify-between flex-wrap gap-3">
+                            <div>
+                              <h2 className="text-base font-black text-slate-905">Pending Handover Requests</h2>
+                              <p className="text-xs text-slate-400 font-semibold mt-0.5">Substitution requests awaiting receiver approval.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const XLSX = await import("xlsx");
+                                  const headers = ["S.No", "Date", "Time", "Class", "Requestor", "Cover Staff", "Reason", "Status", "Submitted At"];
+                                  const rows = campusRequests.map((r, idx) => [
+                                    idx + 1,
+                                    r.dateStr || "—",
+                                    r.time || "—",
+                                    r.course || "—",
+                                    r.requestorName || "—",
+                                    r.targetStaffName || "—",
+                                    r.reason || "—",
+                                    r.status || "—",
+                                    r.timestamp ? new Date(r.timestamp).toLocaleDateString() : "—"
+                                  ]);
+                                  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                                  ws["!cols"] = [{ wch: 5 }, { wch: 12 }, { wch: 10 }, { wch: 20 }, { wch: 22 }, { wch: 22 }, { wch: 35 }, { wch: 14 }, { wch: 14 }];
+                                  const wb = XLSX.utils.book_new();
+                                  XLSX.utils.book_append_sheet(wb, ws, "Handovers");
+                                  XLSX.writeFile(wb, `Handover_Requests_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                                  toast("Handover requests exported!", "success");
+                                } catch (err: any) {
+                                  toast("Export failed: " + err.message, "error");
+                                }
+                              }}
+                              className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                            >
+                              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                              Export Excel
+                            </button>
                           </div>
                           
                           <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
@@ -9847,7 +10546,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                                      {swapRequests.slice().sort((a: any, b: any) => b.timestamp.localeCompare(a.timestamp)).map((req: any) => {
+                                      {swapRequests.slice().sort((a: any, b: any) => (b.timestamp || "").localeCompare(a.timestamp || "")).map((req: any) => {
                                         const debtorMentor = mentors.find(m => m.id === req.requestorId);
                                         const creditorMentor = mentors.find(m => m.id === req.targetStaffId);
                                         const isPending = req.status === "pending" || req.status === "pending_cam";
@@ -9989,8 +10688,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </div>
                         </div>
 
-                        {/* Cascading Filters — all values come from DB */}
-                        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                        {/* Cascading Filters — Dept / Semester / Subject / Date Range */}
+                        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs grid grid-cols-2 md:grid-cols-5 gap-4 items-end">
                           {/* 1. Department */}
                           <div className="space-y-1.5">
                             <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Department</label>
@@ -10038,66 +10737,81 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               {trackerSubjectObjs.length === 0 && <option value="">General Subject</option>}
                             </select>
                           </div>
-                          {/* 4. Week */}
+                          {/* 4. From Date */}
                           <div className="space-y-1.5">
-                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Week</label>
-                            <select
-                              value={activeWeek}
-                              onChange={(e) => setCamTrackerWeek(parseInt(e.target.value, 10))}
-                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
-                            >
-                              {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
-                                <option key={wk} value={wk}>
-                                  Week {wk} {assignedWeekNums.has(wk) ? "(Assigned)" : ""}
-                                </option>
-                              ))}
-                            </select>
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">From Date</label>
+                            <input
+                              type="date"
+                              value={camTrackerFromDate}
+                              onChange={e => e.target.value && setCamTrackerFromDate(e.target.value)}
+                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800"
+                            />
+                          </div>
+                          {/* 5. To Date */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">To Date</label>
+                            <input
+                              type="date"
+                              value={camTrackerToDate}
+                              onChange={e => e.target.value && setCamTrackerToDate(e.target.value)}
+                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800"
+                            />
                           </div>
                         </div>
 
-                      {/* Assigned Task Detail Card */}
+                      {/* Assigned Task Detail Card — shows all tasks for subject in date range */}
                       {(() => {
-                        if (!activeSubject || activeWeek === null) return null;
-                        const currentTask = weeklyTasks.find(
-                          t => (isSubjectNameMatch(t.subject, activeSubject) || t.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
-                               t.week_number === activeWeek &&
-                               (isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) ||
-                                t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim()))
-                        );
-                        const mentor = currentTask ? mentors.find(m => m.id === currentTask.mentor_id) : null;
+                        if (!activeSubject) return null;
+
+                        // Find weeks whose tasks overlap the selected date range
+                        const tasksInRange = weeklyTasks.filter(t => {
+                          const tDate = t.updated_at ? String(t.updated_at).split("T")[0] : "";
+                          const inRange = !tDate || (tDate >= camTrackerFromDate && tDate <= camTrackerToDate);
+                          return (
+                            inRange &&
+                            (isSubjectNameMatch(t.subject, activeSubject) || t.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
+                            (isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) ||
+                              t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim()))
+                          );
+                        }).sort((a, b) => a.week_number - b.week_number);
+
                         return (
-                          <div className="bg-gradient-to-r from-indigo-500/5 via-teal-500/5 to-transparent border border-indigo-100 rounded-xl p-6 shadow-xs space-y-3">
+                          <div className="bg-gradient-to-r from-indigo-500/5 via-teal-500/5 to-transparent border border-indigo-100 rounded-xl p-5 shadow-xs space-y-3">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <BookOpen className="h-4.5 w-4.5 text-indigo-500" />
+                              <BookOpen className="h-4 w-4 text-indigo-500" />
                               <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
-                                Week {activeWeek} — {activeSubject} — Task Details
+                                {activeSubject} — Tasks in Range ({camTrackerFromDate} → {camTrackerToDate})
                               </h3>
                               <span className="ml-auto flex gap-2 text-[9px] font-bold">
                                 <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700">{activeDept}</span>
                                 <span className="px-2 py-0.5 rounded-full bg-purple-50 border border-purple-100 text-purple-700">{activeSemester}</span>
                               </span>
                             </div>
-                            {currentTask ? (
-                              <div className="bg-white/80 border border-white/50 p-4 rounded-xl flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                                <div className="space-y-1">
-                                  <div className="text-xs font-extrabold text-slate-800">{currentTask.task_name}</div>
-                                  {currentTask.task_pdf_url && (
-                                    <a href={currentTask.task_pdf_url} target="_blank" rel="noreferrer"
-                                      className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1">
-                                      <BookOpen className="h-3 w-3" /> View Reference Document
-                                    </a>
-                                  )}
-                                </div>
-                                <div className="text-right">
-                                  <div className="text-[10px] font-bold text-slate-700">Assigned by: {mentor?.name || "Faculty"}</div>
-                                  <div className="text-[9px] text-slate-400 font-mono mt-0.5">
-                                    {parseDbDate(currentTask.updated_at).toLocaleString()}
-                                  </div>
-                                </div>
+                            {tasksInRange.length > 0 ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {tasksInRange.map(t => {
+                                  const mentor = mentors.find(m => m.id === t.mentor_id);
+                                  return (
+                                    <div key={t.id} className="bg-white/80 border border-indigo-100 p-3 rounded-xl space-y-1">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">Week {t.week_number}</span>
+                                        <span className="text-[9px] text-slate-400 font-mono">{t.updated_at ? String(t.updated_at).split("T")[0] : "—"}</span>
+                                      </div>
+                                      <div className="text-xs font-extrabold text-slate-800">{t.task_name}</div>
+                                      {t.task_pdf_url && (
+                                        <a href={t.task_pdf_url} target="_blank" rel="noreferrer"
+                                          className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1">
+                                          <BookOpen className="h-3 w-3" /> Reference Doc
+                                        </a>
+                                      )}
+                                      <div className="text-[10px] text-slate-500 font-semibold">By: {mentor?.name || "Faculty"}</div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             ) : (
                               <div className="text-center py-4 bg-white/50 border border-dashed border-indigo-200 rounded-xl">
-                                <p className="text-xs text-slate-455 italic">No task assigned for Week {activeWeek} · {activeSubject}.</p>
+                                <p className="text-xs text-slate-455 italic">No tasks assigned for {activeSubject} in this date range.</p>
                               </div>
                             )}
                           </div>
@@ -10106,7 +10820,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                       {/* ── Student Performance Analytics ── */}
                       {activeDept && activeSemester && activeSubject && (() => {
-                        // Compute students in this class group
+                        // Students in this class group
                         const chartClassGroup = `${activeDept} - ${activeSemester}`;
                         const classStudentsForChart = students.filter(s => {
                           if (s.college_id && activeCollegeId && s.college_id !== activeCollegeId) return false;
@@ -10119,25 +10833,29 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         const studentCount = classStudentsForChart.length;
                         if (studentCount === 0) return null;
 
-                        // ── Data for current week: marks distribution + submission rate ──
-                        const weekEntries = studentTracker.filter(
-                          e => classStudentsForChart.some(s => s.id === e.student_id) &&
-                               (isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
-                               e.week_number === activeWeek
-                        );
-                        const submitted = weekEntries.filter(e => e.submission_url).length;
-                        const graded = weekEntries.filter(e => e.marks !== null && e.marks !== undefined).length;
-                        const submissionRate = Math.round((submitted / studentCount) * 100);
-                        const gradingRate = Math.round((graded / studentCount) * 100);
+                        // ── Filter tracker entries by date range ──
+                        const rangeEntries = studentTracker.filter(e => {
+                          if (!classStudentsForChart.some(s => s.id === e.student_id)) return false;
+                          if (!(isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim())) return false;
+                          // Filter by updated_at date (the only date field on StudentTrackerEntry)
+                          const entryDate = e.updated_at ? String(e.updated_at).split("T")[0] : "";
+                          if (!entryDate) return true; // include if no date stamp yet
+                          return entryDate >= camTrackerFromDate && entryDate <= camTrackerToDate;
+                        });
 
-                        // Marks buckets: 0-4, 5-6, 7-8, 9-10
+                        const submitted    = rangeEntries.filter(e => e.submission_url).length;
+                        const graded       = rangeEntries.filter(e => e.marks !== null && e.marks !== undefined).length;
+                        const submissionRate = studentCount > 0 ? Math.round((submitted / studentCount) * 100) : 0;
+                        const gradingRate    = studentCount > 0 ? Math.round((graded / studentCount) * 100) : 0;
+
+                        // Marks buckets
                         const buckets = [
-                          { label: "0–4", color: "#ef4444", count: 0 },
-                          { label: "5–6", color: "#f59e0b", count: 0 },
-                          { label: "7–8", color: "#6366f1", count: 0 },
+                          { label: "0–4",  color: "#ef4444", count: 0 },
+                          { label: "5–6",  color: "#f59e0b", count: 0 },
+                          { label: "7–8",  color: "#6366f1", count: 0 },
                           { label: "9–10", color: "#10b981", count: 0 },
                         ];
-                        weekEntries.forEach(e => {
+                        rangeEntries.forEach(e => {
                           const m = e.marks;
                           if (m === null || m === undefined) return;
                           if (m <= 4) buckets[0].count++;
@@ -10147,39 +10865,27 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         });
                         const maxBucket = Math.max(...buckets.map(b => b.count), 1);
 
-                        // ── Week-over-week trend (all 15 weeks) ──
-                        const weekTrend = Array.from({ length: 15 }, (_, i) => {
-                          const wk = i + 1;
-                          const wkEntries = studentTracker.filter(
-                            e => classStudentsForChart.some(s => s.id === e.student_id) &&
-                                 (isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
-                                 e.week_number === wk &&
-                                 e.marks !== null && e.marks !== undefined
-                          );
+                        // ── Week-wise trend within date range ──
+                        // Determine which weeks have entries in range
+                        const weeksInRange = Array.from(new Set(rangeEntries.map(e => e.week_number))).sort((a, b) => a - b);
+                        const weekTrend = weeksInRange.map(wk => {
+                          const wkEntries = rangeEntries.filter(e => e.week_number === wk && e.marks !== null && e.marks !== undefined);
                           const avg = wkEntries.length > 0
                             ? wkEntries.reduce((s, e) => s + (e.marks ?? 0), 0) / wkEntries.length
                             : null;
-                          const sub = studentTracker.filter(
-                            e => classStudentsForChart.some(s => s.id === e.student_id) &&
-                                 (isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
-                                 e.week_number === wk && e.submission_url
-                          ).length;
+                          const sub = rangeEntries.filter(e => e.week_number === wk && e.submission_url).length;
                           return { week: wk, avg, sub, total: studentCount };
                         });
                         const hasAnyTrendData = weekTrend.some(w => w.avg !== null);
 
-                        // Donut helpers
+                        // SVG trend chart
                         const donutR = 36, donutCx = 50, donutCy = 50, donutSW = 14;
                         const donutCirc = 2 * Math.PI * donutR;
-
-                        // Trend chart dimensions
                         const tW = 400, tH = 80, tPad = 8;
                         const tPoints = weekTrend.map((w, i) => ({
-                          x: tPad + (i / 14) * (tW - tPad * 2),
+                          x: tPad + (weekTrend.length > 1 ? (i / (weekTrend.length - 1)) : 0.5) * (tW - tPad * 2),
                           y: w.avg !== null ? tH - tPad - ((w.avg / 10) * (tH - tPad * 2)) : null,
-                          avg: w.avg,
-                          sub: w.sub,
-                          week: w.week,
+                          avg: w.avg, sub: w.sub, week: w.week,
                         }));
                         const pathParts: string[] = [];
                         tPoints.forEach((p, i) => {
@@ -10194,9 +10900,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                             {/* Marks Distribution Bar Chart */}
                             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-                              <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider mb-3">
-                                Week {activeWeek} — Marks Distribution
+                              <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                                Marks Distribution
                               </h4>
+                              <p className="text-[9px] text-slate-400 font-medium mb-3">{camTrackerFromDate} → {camTrackerToDate} · {rangeEntries.filter(e => e.marks !== null).length} graded entries</p>
                               <div className="space-y-2.5">
                                 {buckets.map(b => (
                                   <div key={b.label} className="flex items-center gap-2">
@@ -10218,7 +10925,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 </div>
                                 <div>
                                   <div className="text-base font-black text-slate-800">
-                                    {graded > 0 ? (weekEntries.filter(e => e.marks !== null && e.marks !== undefined).reduce((s, e) => s + (e.marks ?? 0), 0) / graded).toFixed(1) : "—"}
+                                    {graded > 0 ? (rangeEntries.filter(e => e.marks !== null && e.marks !== undefined).reduce((s: number, e: any) => s + (e.marks ?? 0), 0) / graded).toFixed(1) : "—"}
                                   </div>
                                   <div className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Avg Marks</div>
                                 </div>
@@ -10227,9 +10934,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                             {/* Submission + Grading Rate Donuts */}
                             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col">
-                              <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider mb-3">
-                                Week {activeWeek} — Completion Rate
+                              <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                                Completion Rate
                               </h4>
+                              <p className="text-[9px] text-slate-400 font-medium mb-3">In selected date range</p>
                               <div className="flex flex-1 items-center justify-around">
                                 {[
                                   { label: "Submitted", value: submissionRate, count: submitted, color: "#6366f1", track: "#e0e7ff" },
@@ -10261,9 +10969,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                             {/* Week-over-Week Trend */}
                             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-                              <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider mb-3">
-                                Avg Marks Trend — All Weeks
+                              <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1">
+                                Avg Marks — Week Trend
                               </h4>
+                              <p className="text-[9px] text-slate-400 font-medium mb-3">Weeks with data in selected range</p>
                               {!hasAnyTrendData ? (
                                 <div className="h-20 flex items-center justify-center text-[10px] text-slate-400 italic">No graded data yet.</div>
                               ) : (
@@ -11140,7 +11849,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               const badgeClass = categoryColors[ev.category || "Coding Fest & Hackathon"] || "bg-slate-100 text-slate-700 border-slate-200";
 
                               // Countdown calculation
-                              const today = new Date().toISOString().split("T")[0];
+                              const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
                               const daysDiff = Math.ceil((new Date(ev.date).getTime() - new Date(today).getTime()) / (1000 * 3600 * 24));
                               
                               let countdownText = "Live Today";

@@ -221,7 +221,7 @@ export function DemoAllocationDashboard() {
       });
     }
 
-    return Array.from(groups).sort((a, b) => a.localeCompare(b));
+    return Array.from(groups).sort((a, b) => (a || "").localeCompare(b || ""));
   }, [mentors, smes, subjectGroups, demoRules, selectedCollegeId]);
 
   // Derived: List of 5 consecutive dates of the week containing selectedDateStr
