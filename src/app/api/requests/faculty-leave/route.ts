@@ -455,7 +455,7 @@ export async function POST(request: Request) {
                 handoverId, mentorId, mentor?.name || mentorId,
                 slotId, slot.course, slot.day, slot.time,
                 dateStr, dateFormatted,
-                "cam_allocation", "Needs CAM Allocation",
+                mentorId, "Needs CAM Allocation",
                 `[CAM Help Requested] Faculty on ${requestType} (${startDate} to ${effectiveEndDate}). Reason: ${finalReason}`,
                 new Date().toISOString(),
                 slot.classGroup || "General",
@@ -538,6 +538,7 @@ export async function POST(request: Request) {
       needsManualCover
     });
   } catch (error: any) {
+    console.error("POST /api/requests/faculty-leave error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

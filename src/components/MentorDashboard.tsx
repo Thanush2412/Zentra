@@ -1104,14 +1104,29 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
             {/* Modal Body: STEP 2 (Class Cover & Swap Mapping) */}
             {formStep === 2 && (
               <div className="p-5 space-y-3.5 bg-slate-50/40 max-h-[60vh] overflow-y-auto">
-                <div className="p-3 rounded-xl bg-indigo-50/80 border border-indigo-200 text-indigo-950 text-xs flex items-center gap-2.5">
-                  <div className="h-6 w-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black text-xs shrink-0">
-                    2
+                <div className="p-3 rounded-xl bg-indigo-50/80 border border-indigo-200 text-indigo-950 text-xs flex items-center justify-between gap-2.5 flex-wrap">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-6 w-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black text-xs shrink-0">
+                      2
+                    </div>
+                    <div>
+                      <div className="font-extrabold">Full-Day Class Cover Arrangement ({affectedSlots.length} Total)</div>
+                      <div className="text-[10.5px] text-indigo-700">Map a colleague for each period or request CAM help.</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-extrabold">Class Cover Arrangement</div>
-                    <div className="text-[10.5px] text-indigo-700">Map available colleagues or request CAM assistance for each class.</div>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allCAM: Record<string, string> = {};
+                      affectedSlots.forEach(item => {
+                        allCAM[`${item.slot.id}_${item.dateStr}`] = "cam_help";
+                      });
+                      setCoverSelections(allCAM);
+                    }}
+                    className="px-2.5 py-1 rounded-md text-[10px] font-black bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100/60 transition-all cursor-pointer shadow-2xs"
+                  >
+                    🛡️ Set All to CAM Help
+                  </button>
                 </div>
 
                 <div className="space-y-3">
