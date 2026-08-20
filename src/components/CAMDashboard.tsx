@@ -2736,7 +2736,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               return; // Ignored — auto-calculated dynamically by the system
             }
 
-            if (norm === "rollno" || norm === "rollnumber" || norm === "regno" || norm === "id" || norm === "studentid" || norm === "rollnostudentid") {
+            if (norm === "rollno" || norm === "rollnumber" || norm === "roll" || norm === "regno" || norm === "registerno" || norm === "registernumber" || norm === "reg" || norm === "register" || norm === "id" || norm === "studentid" || norm === "studentrollno" || norm === "rollnostudentid") {
               stIdOrRoll = val;
             } else if (norm === "name" || norm === "studentname") {
               stName = val;
@@ -2779,15 +2779,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           let targetDept = "";
           let targetClassGroup = "";
 
-          // 1. Check existing DB student first (by roll number, reg number, ID, or name)
-          const matchedStudent = collegeStudents.find(s =>
-            (stIdOrRoll && (
-              s.roll_number?.toLowerCase() === stIdOrRoll.toLowerCase() ||
-              s.register_number?.toLowerCase() === stIdOrRoll.toLowerCase() ||
-              s.id?.toLowerCase() === stIdOrRoll.toLowerCase()
-            )) ||
-            (stName && s.name?.trim().toLowerCase() === stName.trim().toLowerCase())
-          );
+          // 1. Check existing DB student EXCLUSIVELY by roll number, register number, or student ID (prevents identical name collisions)
+          const cleanRollKey = (stIdOrRoll || "").trim().toLowerCase();
+          const matchedStudent = cleanRollKey
+            ? collegeStudents.find(s =>
+                (s.roll_number && s.roll_number.trim().toLowerCase() === cleanRollKey) ||
+                (s.register_number && s.register_number.trim().toLowerCase() === cleanRollKey) ||
+                (s.id && s.id.trim().toLowerCase() === cleanRollKey)
+              )
+            : null;
 
           if (matchedStudent) {
             targetStudentId = matchedStudent.id;
@@ -2797,13 +2797,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             targetClassGroup = matchedStudent.classGroup || stClassGroupFromSheet || (studentBatchFilter !== "all" ? studentBatchFilter : "");
           } else {
             // 2. New student: generate stable ID based on roll number or index
-            const rollBasis = (stIdOrRoll || stName || `st_${idx + 1}`)
+            const rollBasis = (stIdOrRoll || `st_${idx + 1}`)
               .toLowerCase()
               .replace(/[^a-z0-9]/g, "_")
               .replace(/_+/g, "_")
               .replace(/^_|_$/g, "");
             targetStudentId = `std_${(activeCollegeId || "clg").toLowerCase()}_${rollBasis}`;
-            if (!targetStudentName) targetStudentName = stIdOrRoll || `Student ${idx + 1}`;
+            if (!targetStudentName) targetStudentName = stName || stIdOrRoll || `Student ${idx + 1}`;
             if (!targetRollNo) targetRollNo = stIdOrRoll || targetStudentId;
 
             // Resolve department dynamically from sheet, UI filter, college students, or DB departments
