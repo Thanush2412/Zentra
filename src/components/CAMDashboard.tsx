@@ -2640,6 +2640,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       "Roll No",
       "Name",
       "Department",
+      "Semester",
       "Class Group",
       ...dateHeaders
     ];
@@ -2651,6 +2652,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         st.roll_number || st.id,
         st.name,
         st.department || "",
+        st.semester || "",
         st.classGroup || "",
         ...defaultStatuses
       ];
@@ -2660,6 +2662,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "E24AI001",
         "Sample Student",
         "Computer Science",
+        "Semester 5",
         targetCG || "BCA - Semester 5",
         ...workingDates.map(() => "P")
       ]
@@ -3320,8 +3323,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     default_shift: "shift_1",
     shift_based: 0
   });
-  const [deptFormSections, setDeptFormSections] = useState<string[]>([]);
-  const [deptSectionInput, setDeptSectionInput] = useState("");
 
   const handleSendWarningEmail = async (item: any) => {
     if (!item.mentor?.email) {
@@ -3680,13 +3681,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [isDailyConfigModalOpen, setIsDailyConfigModalOpen] = useState<boolean>(false);
   const [dailySearchFilter, setDailySearchFilter] = useState<string>("");
 
-  // Manage Class & Sections Modal state
-  const [showManageSectionsModal, setShowManageSectionsModal] = useState(false);
-  const [sectionClassFilter, setSectionClassFilter] = useState<string>("");
-  const [newSectionInput, setNewSectionInput] = useState<string>("");
-  const [selectedStudentIdsForSection, setSelectedStudentIdsForSection] = useState<string[]>([]);
-  const [targetMoveSection, setTargetMoveSection] = useState<string>("");
-  const [isSectionActionLoading, setIsSectionActionLoading] = useState(false);
 
   const [classTeacherAssignments, setClassTeacherAssignments] = useState<any[]>([]);
   const [selectedAssignYear, setSelectedAssignYear] = useState("Year 1");
@@ -5026,7 +5020,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   // --- ACTIONS: DEPARTMENTS / COURSES & BATCH CRUD (FULL ADMIN-GRADE MODAL) ---
   const handleOpenDeptModal = (dept?: any) => {
     setModalError(null);
-    setDeptSectionInput("");
     if (dept) {
       const initialShift = dept.default_shift || (dept.shift_based === 1 ? "both" : "general");
       const isShiftSplit = initialShift === "both" || initialShift === "all";
@@ -5047,16 +5040,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         shift_based: isShiftSplit ? 1 : 0
       });
       // Pre-fill sections from existing class groups for this course
-      const existingSections = Array.from(new Set(
-        [...collegeStudents, ...students]
-          .filter(s => s.classGroup && s.classGroup.toLowerCase().includes((dept.name || "").toLowerCase()))
-          .map(s => {
-            const match = s.classGroup?.match(/[- ](Section\s*)?([A-Z])$/i);
-            return match ? match[2].toUpperCase() : null;
-          })
-          .filter(Boolean)
-      )) as string[];
-      setDeptFormSections(existingSections);
       setEditingDept(true);
     } else {
       setDeptForm({
@@ -5075,7 +5058,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         default_shift: "general",
         shift_based: 0
       });
-      setDeptFormSections([]);
       setEditingDept(false);
     }
     setShowDeptModal(true);
@@ -5174,9 +5156,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         description: deptForm.description.trim(),
         college_id: deptForm.college_id || activeCollegeId,
         default_shift: deptForm.default_shift || "general",
-        shift_based: isShiftSplit ? 1 : 0,
-        // Save sections as a JSON string for future reference
-        sections: deptFormSections.length > 0 ? JSON.stringify(deptFormSections) : null
+        shift_based: isShiftSplit ? 1 : 0
       };
 
       if (editingDept && deptForm.id) {
@@ -5191,12 +5171,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       } else {
         const res = await createCourse(payload);
         if (res.success) {
-          const sectionMsg = deptFormSections.length > 0
-            ? ` with ${deptFormSections.length} section(s) (${deptFormSections.join(", ")}). Class groups like "${deptForm.name.trim()} - Semester 1 - Section ${deptFormSections[0]}" are now available in timetable & student import.`
-            : ".";
-          toast(`Course & Batch created successfully${sectionMsg}`, "success");
+          toast("Course & Batch created successfully.", "success");
           setShowDeptModal(false);
-          setDeptFormSections([]);
           await refreshData();
         } else {
           setModalError(res.message || "Failed to create course.");
@@ -7267,18 +7243,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSectionClassFilter(distinctClasses[0] || "");
-                        setSelectedStudentIdsForSection([]);
-                        setShowManageSectionsModal(true);
-                      }}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-sm transition-all cursor-pointer flex items-center gap-2"
-                    >
-                      <Users className="h-4 w-4" />
-                      <span>Manage Class Sections</span>
-                    </button>
+
                   </div>
                 </div>
 
@@ -9697,10 +9662,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               onChange={e => setStudentBatchFilter(e.target.value)}
                               className="py-1.5 px-2.5 border border-slate-200 rounded-xl bg-slate-50 text-xs font-bold cursor-pointer outline-none"
                             >
-                              <option value="all">All Batches</option>
-                              {activeBatches.map(b => (
-                                <option key={b} value={b}>{b}</option>
-                              ))}
+                              <option value="all">All Batches &amp; Cohorts</option>
+                              {activeBatches.map(b => {
+                                const sample = collegeStudents.find(s => s.classGroup === b || isCohortMatch(s.classGroup, b));
+                                const sem = sample?.semester && !b.includes("Sem") ? ` · ${sample.semester}` : "";
+                                return (
+                                  <option key={b} value={b}>{b}{sem}</option>
+                                );
+                              })}
                             </select>
 
                             {/* Student count badge */}
@@ -9814,8 +9783,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <tr key={st.id} className="hover:bg-indigo-50/20 transition-colors">
                                       <td className="p-2.5 text-center font-bold text-slate-400 border-r border-slate-100 sticky left-0 z-10 bg-white">{rowSerial}</td>
                                       <td className="p-2.5 font-mono font-bold text-slate-600 border-r border-slate-100 sticky left-12 z-10 bg-white">{st.roll_number || st.id}</td>
-                                      <td className="p-2.5 font-extrabold text-slate-900 border-r border-slate-100 sticky left-[158px] z-10 bg-white whitespace-nowrap">{st.name}</td>
-                                      <td className="p-2.5 border-r border-slate-100 whitespace-nowrap text-slate-600">{st.department || "General"}</td>
+                                      <td className="p-2.5 border-r border-slate-100 whitespace-nowrap">
+                                        <div className="font-bold text-slate-800">{st.department || "General"}</div>
+                                        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                          {st.classGroup && (
+                                            <span className="text-[9px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded">
+                                              {st.classGroup}
+                                            </span>
+                                          )}
+                                          {st.semester && (
+                                            <span className="text-[8.5px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">
+                                              {st.semester}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
                                       <td className="p-2.5 text-center font-bold text-slate-700 border-r border-slate-100">{effectiveTotal}</td>
                                       <td className="p-2.5 text-center font-black text-emerald-700 border-r border-slate-100 bg-emerald-50/20">{presentDays}</td>
                                       <td className="p-2.5 text-center font-black text-rose-700 border-r border-slate-100 bg-rose-50/20">{absentDays}</td>
@@ -15207,121 +15189,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     />
                   </div>
 
-                  {/* ── SECTIONS / COHORTS ── */}
-                  <div className="space-y-3 sm:col-span-2 border-t border-slate-150 pt-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
-                          <Users className="h-3.5 w-3.5" /> Class Sections / Cohorts
-                        </h4>
-                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">
-                          Optional — define sections (A, B, C…) to create separate timetable cohorts.<br />
-                          e.g. Adding "A" and "B" for BCA creates: <span className="font-bold text-indigo-600">BCA - Semester 1 - Section A</span>, <span className="font-bold text-indigo-600">BCA - Semester 1 - Section B</span>
-                        </p>
-                      </div>
-                      {deptFormSections.length > 0 && (
-                        <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-700 border border-indigo-200">
-                          {deptFormSections.length} section{deptFormSections.length > 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </div>
 
-                    {/* Tag input */}
-                    <div className="flex gap-2 items-center">
-                      <input
-                        type="text"
-                        placeholder="Type section label (e.g. A) and press Enter"
-                        value={deptSectionInput}
-                        onChange={e => setDeptSectionInput(e.target.value.toUpperCase().slice(0, 4))}
-                        onKeyDown={e => {
-                          if ((e.key === "Enter" || e.key === ",") && deptSectionInput.trim()) {
-                            e.preventDefault();
-                            const sec = deptSectionInput.trim().toUpperCase();
-                            if (!deptFormSections.includes(sec)) {
-                              setDeptFormSections(prev => [...prev, sec]);
-                            }
-                            setDeptSectionInput("");
-                          }
-                          if (e.key === "Backspace" && !deptSectionInput && deptFormSections.length > 0) {
-                            setDeptFormSections(prev => prev.slice(0, -1));
-                          }
-                        }}
-                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800 uppercase"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const sec = deptSectionInput.trim().toUpperCase();
-                          if (sec && !deptFormSections.includes(sec)) {
-                            setDeptFormSections(prev => [...prev, sec]);
-                          }
-                          setDeptSectionInput("");
-                        }}
-                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0"
-                      >
-                        + Add
-                      </button>
-                    </div>
-
-                    {/* Section tags */}
-                    {deptFormSections.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {deptFormSections.map(sec => (
-                          <span key={sec} className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold">
-                            Section {sec}
-                            <button
-                              type="button"
-                              onClick={() => setDeptFormSections(prev => prev.filter(s => s !== sec))}
-                              className="text-indigo-400 hover:text-rose-600 transition-colors cursor-pointer font-black"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Live preview of class group names that will be created */}
-                    {deptFormSections.length > 0 && deptForm.name && (() => {
-                      const deptName = deptForm.name.trim().replace(/\(.*\)/g, "").trim().split(" ").map(w => w[0]).join("").toUpperCase() || deptForm.name.split(" ")[0];
-                      const courseName = deptForm.name.trim();
-                      const totalSems = (deptForm.years || 3) * 2;
-                      const isShiftBased = deptForm.default_shift === "shift_1" || deptForm.default_shift === "shift_2" || deptForm.default_shift === "both" || deptForm.default_shift === "all";
-                      const shifts = deptForm.default_shift === "both" || deptForm.default_shift === "all" ? ["Shift 1", "Shift 2"] :
-                                     deptForm.default_shift === "shift_1" ? ["Shift 1"] :
-                                     deptForm.default_shift === "shift_2" ? ["Shift 2"] : [];
-
-                      const previewGroups: string[] = [];
-                      const semList = [1]; // show only Semester 1 for preview
-                      semList.forEach(sem => {
-                        deptFormSections.forEach(sec => {
-                          if (shifts.length > 0) {
-                            shifts.forEach(shift => {
-                              previewGroups.push(`${courseName} - ${shift} - Semester ${sem} - Section ${sec}`);
-                            });
-                          } else {
-                            previewGroups.push(`${courseName} - Semester ${sem} - Section ${sec}`);
-                          }
-                        });
-                      });
-
-                      return (
-                        <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-3 space-y-1.5">
-                          <p className="text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider">
-                            Class Group Preview (Semester 1 shown · {totalSems} semesters total × {deptFormSections.length} sections{shifts.length > 0 ? ` × ${shifts.length} shifts` : ""})
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {previewGroups.map(g => (
-                              <span key={g} className="px-2 py-0.5 bg-white border border-indigo-200 text-indigo-800 rounded-lg text-[10px] font-bold shadow-xs">
-                                {g}
-                              </span>
-                            ))}
-                            <span className="px-2 py-0.5 text-slate-400 text-[10px] font-semibold">…and Semesters 2–{totalSems}</span>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
                 </div>
 
                 {/* Sticky Footer */}
@@ -15789,17 +15657,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   Select College / Campus
                 </label>
                 <select
-                  value={templateModalCollegeId}
-                  onChange={(e) => {
-                    setTemplateModalCollegeId(e.target.value);
-                    setTemplateModalCohort("all");
-                  }}
-                  className="w-full text-xs font-semibold px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  value={activeCollegeId}
+                  disabled
+                  className="w-full text-xs font-bold px-3 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-800 cursor-not-allowed opacity-90"
                 >
-                  <option value="all">All Colleges & Campuses (Combined)</option>
-                  {colleges.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
+                  <option value={activeCollegeId}>{activeCollegeName || colleges.find(c => c.id === activeCollegeId)?.name || "Current Campus"}</option>
                 </select>
               </div>
 
@@ -15813,15 +15675,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   onChange={(e) => setTemplateModalCohort(e.target.value)}
                   className="w-full text-xs font-semibold px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                 >
-                  <option value="all">All Classes / Cohorts in College</option>
+                  <option value="all">All Classes / Cohorts in {activeCollegeName || "Campus"}</option>
                   {(() => {
-                    const targetStudents = templateModalCollegeId && templateModalCollegeId !== "all"
-                      ? students.filter(s => s.college_id === templateModalCollegeId)
-                      : collegeStudents;
+                    const targetStudents = collegeStudents;
                     const cohorts = Array.from(new Set(targetStudents.map(s => s.classGroup).filter(Boolean))).sort();
-                    return cohorts.map(cg => (
-                      <option key={cg} value={cg}>{cg}</option>
-                    ));
+                    return cohorts.map(cg => {
+                      const sample = targetStudents.find(s => s.classGroup === cg || isCohortMatch(s.classGroup, cg));
+                      const sem = sample?.semester && !cg.includes("Sem") ? ` · ${sample.semester}` : "";
+                      const count = targetStudents.filter(s => s.classGroup === cg || isCohortMatch(s.classGroup, cg)).length;
+                      return (
+                        <option key={cg} value={cg}>
+                          {cg}{sem} ({count} Students)
+                        </option>
+                      );
+                    });
                   })()}
                 </select>
               </div>
@@ -15892,295 +15759,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           </div>
         </div>
       )}
-      {/* ── Manage Class Sections Modal ── */}
-      {showManageSectionsModal && (() => {
-        const activeClass = sectionClassFilter || distinctClasses[0] || "";
-        const classStudents = collegeStudents.filter(s => {
-          if (!activeClass) return true;
-          return s.classGroup && (s.classGroup === activeClass || s.classGroup.startsWith(activeClass.split(" - ")[0]));
-        });
 
-        // Group students by section
-        const sectionMap = new Map<string, typeof classStudents>();
-        classStudents.forEach(st => {
-          const sec = st.section || (st.classGroup ? (st.classGroup.match(/Sec\s*([A-Z0-9]+)/i)?.[1] || st.classGroup.match(/\s+([A-Z])$/i)?.[1]) : null) || "Unassigned";
-          if (!sectionMap.has(sec)) sectionMap.set(sec, []);
-          sectionMap.get(sec)!.push(st);
-        });
-
-        const handleAddSection = () => {
-          if (!newSectionInput.trim()) {
-            toast("Please enter a section name (e.g. A, B, C).", "warning");
-            return;
-          }
-          const cleanSec = newSectionInput.replace(/^sec(tion)?\s*/i, "").trim().toUpperCase();
-          if (sectionMap.has(cleanSec)) {
-            toast(`Section ${cleanSec} already exists for this class.`, "info");
-            return;
-          }
-          sectionMap.set(cleanSec, []);
-          setTargetMoveSection(cleanSec);
-          setNewSectionInput("");
-          toast(`Section ${cleanSec} added! You can now move students into it below.`, "success");
-        };
-
-        const handleReassignSelectedStudents = async () => {
-          if (selectedStudentIdsForSection.length === 0) {
-            toast("Please select at least one student to move.", "warning");
-            return;
-          }
-          if (!targetMoveSection) {
-            toast("Please choose a target section to move students into.", "warning");
-            return;
-          }
-
-          setIsSectionActionLoading(true);
-          try {
-            const cleanSec = targetMoveSection.replace(/^sec(tion)?\s*/i, "").trim().toUpperCase();
-            const studentsToUpdate = collegeStudents.filter(s => selectedStudentIdsForSection.includes(s.id));
-
-            const payload = studentsToUpdate.map(st => {
-              const baseCG = (st.classGroup || activeClass).replace(/\s*-\s*Sec\s+[A-Z0-9]+/i, "").replace(/\s+[A-Z]$/i, "").trim();
-              const finalCG = cleanSec === "UNASSIGNED" ? baseCG : `${baseCG} - Sec ${cleanSec}`;
-
-              return {
-                ...st,
-                classGroup: finalCG,
-                section: cleanSec === "UNASSIGNED" ? null : cleanSec,
-                college_id: activeCollegeId
-              };
-            });
-
-            const res = await fetch("/api/students", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-            if (data.success) {
-              toast(`Successfully moved ${selectedStudentIdsForSection.length} students to Section ${cleanSec}!`, "success");
-              setSelectedStudentIdsForSection([]);
-              await refreshData();
-            } else {
-              toast(data.message || "Failed to update sections.", "error");
-            }
-          } catch (err: any) {
-            toast("Error updating sections: " + err.message, "error");
-          } finally {
-            setIsSectionActionLoading(false);
-          }
-        };
-
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-3xl w-full p-6 space-y-5 animate-scaleUp max-h-[90vh] flex flex-col">
-              {/* Header */}
-              <div className="flex items-center justify-between border-b border-slate-150 pb-3.5 shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
-                    <Users className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 leading-tight">Manage Class Sections &amp; Cohorts</h3>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5">Create sections (e.g. BCA A, BCA B) and assign students between sections.</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowManageSectionsModal(false);
-                    setSelectedStudentIdsForSection([]);
-                  }}
-                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* Class Selector Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 shrink-0">
-                <div className="sm:col-span-2 space-y-1">
-                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">Select Class / Degree Cohort</label>
-                  <select
-                    value={activeClass}
-                    onChange={e => {
-                      setSectionClassFilter(e.target.value);
-                      setSelectedStudentIdsForSection([]);
-                    }}
-                    className="w-full text-xs font-bold px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    {distinctClasses.map(cls => (
-                      <option key={cls} value={cls}>{cls}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">Add New Section</label>
-                  <div className="flex gap-1.5">
-                    <input
-                      type="text"
-                      placeholder="e.g. A, B, C"
-                      value={newSectionInput}
-                      onChange={e => setNewSectionInput(e.target.value)}
-                      className="w-full text-xs font-semibold px-2.5 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 uppercase outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddSection}
-                      className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer"
-                    >
-                      + Add
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section Breakdown Pills */}
-              <div className="flex items-center gap-2 flex-wrap shrink-0">
-                <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Sections:</span>
-                {Array.from(sectionMap.entries()).map(([sec, stList]) => (
-                  <span
-                    key={sec}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold border flex items-center gap-1.5 ${
-                      sec === "Unassigned"
-                        ? "bg-slate-100 text-slate-600 border-slate-200"
-                        : "bg-indigo-50 text-indigo-700 border-indigo-200"
-                    }`}
-                  >
-                    <span>Section {sec}</span>
-                    <span className="px-1.5 py-0.2 rounded-full bg-white text-[10px] font-black shadow-2xs">
-                      {stList.length}
-                    </span>
-                  </span>
-                ))}
-              </div>
-
-              {/* Students Table with Selection */}
-              <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl overflow-hidden bg-white min-h-[220px]">
-                <div className="p-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-700">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={classStudents.length > 0 && selectedStudentIdsForSection.length === classStudents.length}
-                      onChange={e => {
-                        if (e.target.checked) {
-                          setSelectedStudentIdsForSection(classStudents.map(s => s.id));
-                        } else {
-                          setSelectedStudentIdsForSection([]);
-                        }
-                      }}
-                      className="h-4 w-4 text-indigo-600 rounded border-slate-300 cursor-pointer"
-                    />
-                    <span>Select All Students ({classStudents.length})</span>
-                  </label>
-                  <span className="text-slate-400 text-[11px]">
-                    {selectedStudentIdsForSection.length} selected
-                  </span>
-                </div>
-
-                <div className="divide-y divide-slate-100 max-h-[260px] overflow-y-auto">
-                  {classStudents.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400 italic text-xs">
-                      No students found in this class.
-                    </div>
-                  ) : (
-                    classStudents.map(st => {
-                      const isSelected = selectedStudentIdsForSection.includes(st.id);
-                      const sec = st.section || (st.classGroup ? (st.classGroup.match(/Sec\s*([A-Z0-9]+)/i)?.[1] || st.classGroup.match(/\s+([A-Z])$/i)?.[1]) : null) || "Unassigned";
-
-                      return (
-                        <div
-                          key={st.id}
-                          onClick={() => {
-                            if (isSelected) {
-                              setSelectedStudentIdsForSection(selectedStudentIdsForSection.filter(id => id !== st.id));
-                            } else {
-                              setSelectedStudentIdsForSection([...selectedStudentIdsForSection, st.id]);
-                            }
-                          }}
-                          className={`p-3 flex items-center justify-between gap-3 text-xs transition-colors cursor-pointer ${
-                            isSelected ? "bg-indigo-50/60" : "hover:bg-slate-50"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => {}}
-                              className="h-4 w-4 text-indigo-600 rounded border-slate-300 cursor-pointer pointer-events-none"
-                            />
-                            <div>
-                              <div className="font-extrabold text-slate-900">{st.name}</div>
-                              <div className="text-[10.5px] text-slate-400 font-semibold">{st.roll_number || st.id}</div>
-                            </div>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase border ${
-                            sec === "Unassigned"
-                              ? "bg-slate-100 text-slate-500 border-slate-200"
-                              : "bg-indigo-50 text-indigo-700 border-indigo-200"
-                          }`}>
-                            {sec === "Unassigned" ? "Unassigned" : `Sec ${sec}`}
-                          </span>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              {/* Bottom Reassign Bar */}
-              <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-150 flex-wrap shrink-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-bold text-slate-600">
-                    Move selected ({selectedStudentIdsForSection.length}) to:
-                  </span>
-                  <select
-                    value={targetMoveSection}
-                    onChange={e => setTargetMoveSection(e.target.value)}
-                    className="text-xs font-bold px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    <option value="">Choose Section...</option>
-                    {Array.from(sectionMap.keys()).map(sec => (
-                      <option key={sec} value={sec}>Section {sec}</option>
-                    ))}
-                    <option value="A">Section A</option>
-                    <option value="B">Section B</option>
-                    <option value="C">Section C</option>
-                    <option value="D">Section D</option>
-                  </select>
-                  <button
-                    type="button"
-                    disabled={isSectionActionLoading || selectedStudentIdsForSection.length === 0 || !targetMoveSection}
-                    onClick={handleReassignSelectedStudents}
-                    className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-sm transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                  >
-                    {isSectionActionLoading ? (
-                      <>
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        <span>Updating...</span>
-                      </>
-                    ) : (
-                      <span>Apply Section Move</span>
-                    )}
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowManageSectionsModal(false);
-                    setSelectedStudentIdsForSection([]);
-                  }}
-                  className="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 };
