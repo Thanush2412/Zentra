@@ -102,11 +102,9 @@ export async function GET(request: Request) {
 
     const attendanceSql = (role === "student" && userId)
       ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 1000"
-      : collegeId && (role === "cam")
-        ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) AND dateStr >= ? ORDER BY dateStr DESC LIMIT 10000"
-        : collegeId
-          ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) AND dateStr >= ? ORDER BY dateStr ASC"
-          : "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? ORDER BY dateStr DESC LIMIT 10000";
+      : collegeId
+        ? "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? ORDER BY sa.dateStr ASC"
+        : "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? ORDER BY dateStr ASC LIMIT 20000";
     const attendanceParams = (role === "student" && userId) 
       ? [userId] 
       : collegeId && (role === "cam")
@@ -165,16 +163,16 @@ export async function GET(request: Request) {
       collegeId
         ? db.all("SELECT * FROM student_tracker WHERE student_id IN (SELECT id FROM students WHERE college_id = ?) ORDER BY updated_at DESC LIMIT 150", collegeId).catch(() => [])
         : db.all("SELECT * FROM student_tracker ORDER BY updated_at DESC LIMIT 150").catch(() => []),
-      !isStudentOrMentor ? db.all("SELECT * FROM sme_users").catch(() => []) : Promise.resolve([]),
-      !isStudentOrMentor ? db.all("SELECT * FROM demo_sessions ORDER BY created_at DESC LIMIT 60").catch(() => []) : Promise.resolve([]),
+      isAdminOrKAM ? db.all("SELECT * FROM sme_users").catch(() => []) : Promise.resolve([]),
+      isAdminOrKAM ? db.all("SELECT * FROM demo_sessions ORDER BY created_at DESC LIMIT 60").catch(() => []) : Promise.resolve([]),
       !isStudent ? db.all("SELECT * FROM subject_groups ORDER BY name ASC").catch(() => []) : Promise.resolve([]),
-      !isStudentOrMentor ? db.all("SELECT * FROM demo_rules ORDER BY created_at DESC").catch(() => []) : Promise.resolve([]),
+      isAdminOrKAM ? db.all("SELECT * FROM demo_rules ORDER BY created_at DESC").catch(() => []) : Promise.resolve([]),
       role === "admin" ? db.all("SELECT * FROM signup_requests ORDER BY created_at DESC LIMIT 50").catch(() => []) : Promise.resolve([]),
-      !isStudentOrMentor ? db.all("SELECT * FROM demo_swap_requests ORDER BY created_at DESC LIMIT 50").catch(() => []) : Promise.resolve([]),
+      isAdminOrKAM ? db.all("SELECT * FROM demo_swap_requests ORDER BY created_at DESC LIMIT 50").catch(() => []) : Promise.resolve([]),
       isAdminOrKAM ? db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC LIMIT 60").catch(() => []) : Promise.resolve([]),
       isAdminOrKAM ? db.all("SELECT * FROM campus_issues ORDER BY created_at DESC LIMIT 60").catch(() => []) : Promise.resolve([]),
       !isStudent ? db.all("SELECT * FROM academic_years").catch(() => []) : Promise.resolve([]),
-      !isStudent ? db.all("SELECT * FROM academic_events ORDER BY date ASC").catch(() => []) : Promise.resolve([]),
+      isAdminOrKAM || isCAM ? db.all("SELECT * FROM academic_events ORDER BY date ASC").catch(() => []) : Promise.resolve([]),
       (!isStudent && collegeId)
         ? db.all("SELECT * FROM student_interviews WHERE origin_college_id = ? OR target_college_id = ? OR college_id = ? ORDER BY created_at DESC LIMIT 50", collegeId, collegeId, collegeId).catch(() => [])
         : (!isStudent ? db.all("SELECT * FROM student_interviews ORDER BY created_at DESC LIMIT 50").catch(() => []) : Promise.resolve([])),

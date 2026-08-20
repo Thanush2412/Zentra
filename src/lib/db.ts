@@ -827,10 +827,15 @@ export function getDb(): Promise<TursoDbAdapter> {
       CREATE INDEX IF NOT EXISTS idx_mentor_attendance_college_date ON mentor_attendance(college_id, date_str);
       CREATE INDEX IF NOT EXISTS idx_slots_location ON slots(location);
       CREATE INDEX IF NOT EXISTS idx_faculty_leave_college ON faculty_leave_requests(college_id);
-      CREATE INDEX IF NOT EXISTS idx_faculty_leave_mentor ON faculty_leave_requests(mentor_id);
       CREATE INDEX IF NOT EXISTS idx_student_interviews_college_status ON student_interviews(college_id, status);
       CREATE INDEX IF NOT EXISTS idx_handover_requests_status ON handover_requests(status);
       CREATE INDEX IF NOT EXISTS idx_approved_handovers_slot_date ON approved_handovers(slotId, dateStr);
+      CREATE INDEX IF NOT EXISTS idx_student_attendance_dateStr ON student_attendance(dateStr);
+      CREATE INDEX IF NOT EXISTS idx_student_attendance_dateStr_student ON student_attendance(dateStr, studentId);
+      CREATE INDEX IF NOT EXISTS idx_student_attendance_dateStr_slot ON student_attendance(dateStr, slotId);
+      CREATE INDEX IF NOT EXISTS idx_student_attendance_student_status ON student_attendance(studentId, status);
+      CREATE INDEX IF NOT EXISTS idx_slots_college_day ON slots(college_id, day);
+      CREATE INDEX IF NOT EXISTS idx_subjects_college ON subjects(college_id);
     `);
 
       await dbInstance.exec(`
