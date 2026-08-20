@@ -9783,7 +9783,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <tr key={st.id} className="hover:bg-indigo-50/20 transition-colors">
                                       <td className="p-2.5 text-center font-bold text-slate-400 border-r border-slate-100 sticky left-0 z-10 bg-white">{rowSerial}</td>
                                       <td className="p-2.5 font-mono font-bold text-slate-600 border-r border-slate-100 sticky left-12 z-10 bg-white">{st.roll_number || st.id}</td>
-                                      <td className="p-2.5 border-r border-slate-100 whitespace-nowrap">
+                                      <td className="p-2.5 border-r border-slate-100 sticky left-[158px] z-10 bg-white min-w-[150px]">
+                                        <div className="font-bold text-slate-800">{st.name}</div>
+                                        <div className="text-[10px] text-slate-400 font-medium truncate max-w-[180px]">{st.email}</div>
+                                      </td>
+                                      <td className="p-2.5 border-r border-slate-100 whitespace-nowrap min-w-[110px]">
                                         <div className="font-bold text-slate-800">{st.department || "General"}</div>
                                         <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                                           {st.classGroup && (
@@ -9818,7 +9822,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 })}
                                 {filtered.length === 0 && (
                                   <tr>
-                                    <td colSpan={9 + workingDates.length} className="p-8 text-center text-slate-400 italic">
+                                    <td colSpan={8 + workingDates.length} className="p-8 text-center text-slate-400 italic">
                                       No students matched the active filters.
                                     </td>
                                   </tr>
