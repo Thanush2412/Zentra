@@ -1267,3 +1267,37 @@ export function evaluateDailyStudentAttendance(
     tooltipInfo: "No valid status"
   };
 }
+
+export function isSkillSubject(subject: { name?: string; type?: string } | string | null | undefined): boolean {
+  if (!subject) return false;
+  const name = typeof subject === "string" ? subject : subject.name || "";
+  const type = typeof subject === "string" ? "" : (subject.type || "");
+  const n = name.toLowerCase().trim();
+  const t = type.toLowerCase().trim();
+
+  // 1. Explicit type check
+  if (t === "skill" || t === "practical" || t === "lab" || t.includes("skill") || t.includes("practical")) return true;
+
+  // 2. Keyword checks on subject name
+  if (
+    n.includes("skill") ||
+    n.includes("soft skills") ||
+    n.includes("communication") ||
+    n.includes("practical") ||
+    n.includes("lab") ||
+    n.includes("viva") ||
+    n.includes("aptitude") ||
+    n.includes("portfolio") ||
+    n.includes("project") ||
+    n.includes("nan mudhalvan") ||
+    n.includes("nmc") ||
+    n.includes("sec") ||
+    n.includes("internship") ||
+    n.includes("field work") ||
+    n.includes("training")
+  ) {
+    return true;
+  }
+
+  return false;
+}

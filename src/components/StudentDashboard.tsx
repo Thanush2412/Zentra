@@ -37,9 +37,10 @@ import {
   Menu,
   Edit2,
   Loader2,
-  Video
+  Video,
+  ExternalLink
 } from "lucide-react";
-import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate } from "@/lib/utils";
+import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate, isSkillSubject } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 
 // Library Books Interface
@@ -85,7 +86,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     coursesList,
     weeklyTasks,
     studentTracker,
-    gradeStudentTask
+    gradeStudentTask,
+    weeklyAcademicTasks,
+    studentAcademicTracker,
+    gradeStudentAcademicTask
   } = useApp();
   const { toast } = useToast();
 
@@ -101,8 +105,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     }
   }, []);
 
-  // Student Tracker states
+  // Student Tracker states (Skill vs Academic)
+  const [studentTrackerCategory, setStudentTrackerCategory] = useState<"skill" | "academic">("academic");
   const [studentTrackerSubject, setStudentTrackerSubject] = useState("");
+  const [studentAcadSubject, setStudentAcadSubject] = useState("");
   const [studentTrackerWeek, setStudentTrackerWeek] = useState<number>(1);
   const [submittingUrlMap, setSubmittingUrlMap] = useState<Record<number, boolean>>({});
   const [studentUploadType, setStudentUploadType] = useState<Record<number, "url" | "file">>({});
@@ -123,17 +129,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [dailyConfigsList, setDailyConfigsList] = useState<any[]>([]);
 
   useEffect(() => {
-    if (currentStudent?.college_id) {
-      fetch(`/api/daily-configs?college_id=${currentStudent.college_id}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.configs) {
-            setDailyConfigsList(data.configs);
-          }
-        })
-        .catch(err => console.error("Error fetching daily configs:", err));
-    }
-  }, [currentStudent]);
+    const collegeId = currentStudent?.college_id || "college_1";
+    fetch(`/api/daily-configs?college_id=${encodeURIComponent(collegeId)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.configs) {
+          setDailyConfigsList(data.configs);
+        }
+      })
+      .catch(err => console.error("Error fetching daily configs:", err));
+  }, [currentStudent?.college_id]);
   const [payingFeeId, setPayingFeeId] = useState<string | null>(null);
 
   // Profile edit state
@@ -167,38 +172,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // State for Bunk Target Slider
   const [bunkTarget, setBunkTarget] = useState(75);
 
-  // Dribbble Styled Task Management States
-  const [tasksFilter, setTasksFilter] = useState<"all" | "todo" | "progress" | "done">("all");
-  const [tasks, setTasks] = useState<Array<{ id: string; title: string; subject: string; date: string; status: string }>>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("fp_student_tasks");
-      if (saved) {
-        try { return JSON.parse(saved); } catch (_) {}
-      }
-    }
-    return [
-      { id: "t1", title: "Conduct virtual experiment on chemical reactions and prepare report", subject: "Chemistry", date: "Jun 30", status: "todo" },
-      { id: "t2", title: "Complete term-matching task in biology lab handbook", subject: "Biology", date: "Jul 3", status: "progress" },
-      { id: "t3", title: "Study the influence of cultural traditions on contemporary art", subject: "Art History", date: "Jun 27", status: "done" },
-      { id: "t4", title: "Revise normal forms for Database Management Systems exam", subject: "DBMS", date: "Jul 5", status: "todo" }
-    ];
-  });
-  const [showAddTaskForm, setShowAddTaskForm] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskSubject, setNewTaskSubject] = useState("General");
-  const [newTaskDate, setNewTaskDate] = useState("Jul 1");
-
   // Pagination states
   const [booksPage, setBooksPage] = useState(1);
   const [booksPageSize, setBooksPageSize] = useState(25);
   const [leavePage, setLeavePage] = useState(1);
   const [leavePageSize, setLeavePageSize] = useState(25);
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("fp_student_tasks", JSON.stringify(tasks));
-    }
-  }, [tasks]);
+  // State for Class Attendance Calendar Month Navigation
+  const [attendanceMonthOffset, setAttendanceMonthOffset] = useState<number>(0);
 
   const [studentInterviews, setStudentInterviews] = useState<any[]>([]);
 
@@ -321,34 +302,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       toast("Error: " + res.message, "error");
     }
   };
-
-  const handleAddTask = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTaskTitle.trim()) return;
-    setTasks(prev => [
-      ...prev,
-      {
-        id: `t_${Date.now()}`,
-        title: newTaskTitle,
-        subject: newTaskSubject,
-        date: newTaskDate,
-        status: "todo"
-      }
-    ]);
-    setNewTaskTitle("");
-    setShowAddTaskForm(false);
-  };
-
-  const toggleTaskStatus = (id: string) => {
-    setTasks(prev => prev.map(t => {
-      if (t.id === id) {
-        const nextStatus = t.status === "todo" ? "progress" : t.status === "progress" ? "done" : "todo";
-        return { ...t, status: nextStatus };
-      }
-      return t;
-    }));
-  };
-
 
   if (!currentStudent) return null;
 
@@ -555,6 +508,130 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     return statsObj;
   }, [myClassSlots, myAttendance, slots]);
 
+  // Memoized Attendance Calendar Month view for Dashboard Class Attendance
+  const attendanceCalendarData = useMemo(() => {
+    const baseDate = new Date();
+    const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + attendanceMonthOffset, 1);
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const monthName = d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+    // Monday = 0, Tuesday = 1, ... Sunday = 6
+    const firstDayIndex = (d.getDay() + 6) % 7;
+    const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const attendanceByDate = new Map<string, { present: number; absent: number; total: number }>();
+    myAttendance.forEach(att => {
+      const entry = attendanceByDate.get(att.dateStr) || { present: 0, absent: 0, total: 0 };
+      if (att.status === "present") entry.present++;
+      else entry.absent++;
+      entry.total++;
+      attendanceByDate.set(att.dateStr, entry);
+    });
+
+    const days: Array<{
+      type: "pad" | "day";
+      day?: number;
+      dateStr?: string;
+      status?: "present" | "absent" | "holiday" | "event" | "exam" | "unmarked";
+      dayConfig?: any;
+      attRecord?: any;
+      key: string;
+    }> = [];
+
+    for (let i = 0; i < firstDayIndex; i++) {
+      days.push({ type: "pad", key: `pad-${i}` });
+    }
+
+    let monthPresentDays = 0;
+    let monthAbsentDays = 0;
+    let monthTotalMarked = 0;
+
+    for (let day = 1; day <= totalDaysInMonth; day++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const dayConfig = dailyConfigsList.find((c: any) => c.dateStr === dateStr);
+      const isHoliday = dayConfig?.day_type === "holiday";
+      const isEvent = dayConfig?.day_type === "event";
+      const isExam = dayConfig?.day_type === "exam_day" || dayConfig?.day_type === "exam";
+
+      const attRecord = attendanceByDate.get(dateStr);
+      let status: "present" | "absent" | "holiday" | "event" | "exam" | "unmarked" = "unmarked";
+
+      if (attRecord && attRecord.total > 0) {
+        monthTotalMarked++;
+        if (attRecord.absent > 0) {
+          status = "absent";
+          monthAbsentDays++;
+        } else {
+          status = "present";
+          monthPresentDays++;
+        }
+      } else if (isHoliday) {
+        status = "holiday";
+      } else if (isEvent) {
+        status = "event";
+      } else if (isExam) {
+        status = "exam";
+      }
+
+      days.push({
+        type: "day",
+        day,
+        dateStr,
+        status,
+        dayConfig,
+        attRecord,
+        key: dateStr
+      });
+    }
+
+    const monthPercentage = monthTotalMarked > 0 ? Math.round((monthPresentDays / monthTotalMarked) * 100) : 100;
+
+    return {
+      monthName,
+      days,
+      monthPresentDays,
+      monthAbsentDays,
+      monthTotalMarked,
+      monthPercentage
+    };
+  }, [attendanceMonthOffset, myAttendance, dailyConfigsList]);
+
+  // Cohort Weekly Tasks for Dashboard View
+  const dashboardCohortTasks = useMemo(() => {
+    return (weeklyTasks || []).filter(task => 
+      isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
+      (currentStudent?.department && task.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))
+    ).slice(0, 4);
+  }, [weeklyTasks, currentStudent, coursesList, subjectsList]);
+
+  // Subjects with mentor-assigned weekly tasks or marked as skill subjects for this student's class group
+  const assignedMentorSubjects = useMemo(() => {
+    const matchingTasks = (weeklyTasks || []).filter(task => 
+      isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
+      (currentStudent?.department && task.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))
+    );
+    const taskSubjects = Array.from(new Set(matchingTasks.map(t => t.subject).filter(Boolean)));
+    
+    // Also include enrolled semester subjects that are explicitly marked as skill subjects
+    const skillEnrolledSubjects = (studentSubjects || []).filter(s => isSkillSubject(s)).map(s => s.name);
+    
+    const combined = Array.from(new Set([...taskSubjects, ...skillEnrolledSubjects])).filter(Boolean);
+    return combined;
+  }, [weeklyTasks, currentStudent, coursesList, subjectsList, studentSubjects]);
+
+  // Automatically sync studentTrackerSubject with assignedMentorSubjects
+  useEffect(() => {
+    if (assignedMentorSubjects.length > 0) {
+      if (!studentTrackerSubject || !assignedMentorSubjects.some(s => s.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim())) {
+        setStudentTrackerSubject(assignedMentorSubjects[0]);
+      }
+    } else if (studentSubjects.length > 0 && !studentTrackerSubject) {
+      const skillSub = studentSubjects.find(s => isSkillSubject(s));
+      setStudentTrackerSubject(skillSub ? skillSub.name : studentSubjects[0].name);
+    }
+  }, [assignedMentorSubjects, studentSubjects, studentTrackerSubject]);
+
 
 
   // Helper to resolve the active day for a calendar date, accounting for CAM Day Order overrides
@@ -581,10 +658,23 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   // Helper to find slot attendance for a specific day/date and time slot
   const getAttendanceForCell = (day: string, dateStr: string, time: string) => {
-    const queryDay = getMappedDayForDate(dateStr, day);
-    if (queryDay === "holiday") {
-      return null;
+    const dailyConfig = dailyConfigsList.find((c: any) => c.dateStr === dateStr);
+    
+    // 1. Holiday handling
+    if (dailyConfig && dailyConfig.day_type === "holiday") {
+      return {
+        type: "holiday" as const,
+        config: dailyConfig,
+        attendance: null,
+        slot: null,
+        handover: null
+      };
     }
+
+    const queryDay = getMappedDayForDate(dateStr, day);
+
+    // Look for date-level attendance (e.g. exam / event / general day attendance)
+    const dayAttendance = myAttendance.find((a) => a.dateStr === dateStr);
 
     const normalizeTimeStr = (t?: string) => {
       if (!t) return "";
@@ -612,18 +702,32 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       return false;
     });
 
-    if (!slot) return null;
+    if (!slot) {
+      if (dailyConfig && (dailyConfig.day_type === "event" || dailyConfig.day_type === "exam_day" || dailyConfig.day_type === "exam")) {
+        return {
+          type: (dailyConfig.day_type === "event" ? "event" : "exam") as "event" | "exam",
+          config: dailyConfig,
+          attendance: dayAttendance || null,
+          slot: null,
+          handover: null
+        };
+      }
+      return null;
+    }
 
     // Check if there is an approved handover (substitution) for this slot on this date
     const handover = (approvedHandovers || []).find((h) => h.slotId === slot.id && h.dateStr === dateStr);
 
-    // Find if student has an attendance marked for this slot on this date
-    const att = myAttendance.find((a) => a.slotId === slot.id && a.dateStr === dateStr);
+    // Find if student has an attendance marked for this slot on this date or day-level attendance
+    const att = myAttendance.find((a) => a.slotId === slot.id && a.dateStr === dateStr) || 
+                ((dailyConfig && (dailyConfig.day_type === "exam_day" || dailyConfig.day_type === "exam" || dailyConfig.day_type === "event")) ? dayAttendance : null);
     
     return {
+      type: "slot" as const,
       slot,
       handover,
-      attendance: att || null
+      attendance: att || null,
+      config: dailyConfig || null
     };
   };
 
@@ -689,19 +793,45 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       }
     });
   } else {
-    // Fallback matching old logic
+    // Dynamic chronological fallback matching actual time gaps
     const fallbackSlots = timeSlots || [];
     fallbackSlots.forEach((time, index) => {
       rows.push({ type: "slot", time });
-      if (fallbackSlots.length === 5) {
-        if (index === 1) {
-          rows.push({ type: "break", label: " Break", timeRange: "Break Interval" });
-        }
-      } else {
-        if (index === 1) {
-          rows.push({ type: "break", label: " Break", timeRange: "11:00 AM - 11:15 AM" });
-        } else if (index === 2) {
-          rows.push({ type: "lunch", label: " Lunch Break", timeRange: "12:15 PM - 12:50 PM" });
+
+      if (index < fallbackSlots.length - 1) {
+        const partsCur = time.split(/\s*-\s*/);
+        const partsNext = fallbackSlots[index + 1].split(/\s*-\s*/);
+
+        if (partsCur.length >= 2 && partsNext.length >= 1) {
+          const parseTimeMinutes = (tStr: string) => {
+            if (!tStr) return { mins: 0, formatted: "" };
+            const cleaned = tStr.trim();
+            const match = cleaned.match(/(\d+)(?::|\.)(\d+)\s*(AM|PM)?/i);
+            if (!match) return { mins: 0, formatted: cleaned };
+            let h = parseInt(match[1], 10);
+            const m = parseInt(match[2], 10);
+            const isPM = (match[3] || "").toUpperCase() === "PM" || (cleaned.toLowerCase().includes("pm") && !cleaned.toLowerCase().includes("am"));
+            const period = isPM ? "PM" : "AM";
+            let h24 = h;
+            if (isPM && h24 !== 12) h24 += 12;
+            if (!isPM && h24 === 12) h24 = 0;
+            const mins = h24 * 60 + m;
+            const formatted = `${h}:${m.toString().padStart(2, "0")} ${period}`;
+            return { mins, formatted };
+          };
+
+          const endCur = parseTimeMinutes(partsCur[1]);
+          const startNext = parseTimeMinutes(partsNext[0]);
+          const diffMins = startNext.mins - endCur.mins;
+
+          if (diffMins > 5) {
+            const isLunch = diffMins >= 35 || (endCur.mins >= 700 && endCur.mins <= 800);
+            rows.push({
+              type: isLunch ? "lunch" : "break",
+              label: isLunch ? "Lunch Break" : "Break",
+              timeRange: `${endCur.formatted} - ${startNext.formatted}`
+            });
+          }
         }
       }
     });
@@ -725,15 +855,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   // Dynamically map library resources from active DB subjectsList
   const libraryBooks: BookItem[] = useMemo(() => {
-    return (subjectsList || []).map((subj, idx) => ({
+    const list = studentSubjects.length > 0 ? studentSubjects : (subjectsList || []);
+    return list.map((subj, idx) => ({
       id: `BK-${subj.id || (idx + 1)}`,
-      title: `${subj.name} — Reference & Curriculum Textbook`,
-      author: "Department Curriculum Faculty",
+      title: `${subj.name} — Curriculum Textbook & Reference Guide`,
+      author: "Dept. Curriculum Faculty & Board of Studies",
       subject: subj.name,
       shelf: `Rack ${String.fromCharCode(65 + (idx % 8))}-${(idx % 4) + 1}`,
       status: "Available" as const
     }));
-  }, [subjectsList]);
+  }, [studentSubjects, subjectsList]);
 
   // Filter OPAC Books based on query
   const filteredBooks = libraryBooks.filter((book) => {
@@ -816,7 +947,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   { id: "interviews", label: "My Interviews", icon: Award },
                   { id: "marks", label: "Tests", icon: CheckCircle },
                   { id: "leave", label: "Leave & OD", icon: FileText },
-                  { id: "tracker", label: "My Tasks & Grades", icon: GraduationCap },
+                  { id: "tracker", label: "Skill Development", icon: GraduationCap },
                   { id: "exams", label: "Exams", icon: BookOpen },
                   { id: "library", label: "Library", icon: Book },
                   { id: "fees", label: "Fees", icon: CreditCard },
@@ -882,7 +1013,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           {[
             { id: "dashboard", label: "Home", icon: Activity },
             { id: "schedule", label: "Schedule", icon: Calendar },
-            { id: "tracker", label: "Tasks", icon: GraduationCap },
+            { id: "tracker", label: "Skills", icon: GraduationCap },
             { id: "fees", label: "Fees", icon: CreditCard },
             { id: "more_menu", label: "More", icon: Menu },
           ].map(t => {
@@ -929,6 +1060,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <h1 className="text-xl font-extrabold tracking-tight text-slate-900 leading-none">
               {activeTab === "dashboard" && "Dashboard"}
               {activeTab === "schedule" && "Weekly Class Timetable"}
+              {activeTab === "tracker" && "Skill Development & Lab Evaluations"}
+              {activeTab === "interviews" && "Academic Mock Interviews"}
               {activeTab === "marks" && "Continuous Internal Assessment"}
               {activeTab === "leave" && "Student Leave & OD Tracker"}
               {activeTab === "exams" && "Semester Exams Seating"}
@@ -1101,132 +1234,107 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
               </div>
 
-              {/* My Tasks Card (Styled like My tasks card in screenshot) */}
+              {/* Curriculum Tasks & Weekly Submissions (Replacing Mock Tasks) */}
               <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-xs space-y-6">
                 <div className="flex items-center justify-between border-b border-slate-100/80 pb-4">
                   <div>
-                    <h2 className="text-base font-extrabold text-slate-900 tracking-tight">My tasks</h2>
+                    <h2 className="text-base font-extrabold text-slate-900 tracking-tight">Curriculum Tasks & Submissions</h2>
+                    <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Assigned weekly practicals, lab exercises, and term evaluations</p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex rounded-full bg-slate-50 border border-slate-200/60 p-1">
-                      {[
-                        { id: "all", label: "All tasks" },
-                        { id: "todo", label: "To do" },
-                        { id: "progress", label: "In progress" },
-                        { id: "done", label: "Done" }
-                      ].map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => setTasksFilter(t.id as any)}
-                          className={`px-3 py-1 text-[10px] font-extrabold rounded-full transition-all cursor-pointer ${
-                            tasksFilter === t.id
-                              ? "bg-slate-900 text-white shadow-xs"
-                              : "text-slate-500 hover:text-slate-900"
-                          }`}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddTaskForm(!showAddTaskForm)}
-                      className="p-1.5 rounded-full bg-slate-900 text-white hover:bg-slate-800 cursor-pointer shadow-xs transition-transform hover:scale-105"
-                      title="Add task"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("tracker")}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-extrabold cursor-pointer shadow-xs transition-all hover:scale-105"
+                  >
+                    <span>Open Tracker</span>
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
 
-                {/* Add Task Inline Form */}
-                {showAddTaskForm && (
-                  <form onSubmit={handleAddTask} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 animate-in fade-in duration-200">
-                    <div className="text-xs font-bold text-slate-700">Add New Academic Task</div>
-                    <input
-                      type="text"
-                      placeholder="Task description (e.g. Complete Chemistry practical report)"
-                      value={newTaskTitle}
-                      onChange={e => setNewTaskTitle(e.target.value)}
-                      className="w-full p-2.5 border border-slate-205 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-slate-800 outline-none shadow-xs"
-                      required
-                    />
-                    <div className="grid grid-cols-2 gap-3">
-                      <input
-                        type="text"
-                        placeholder="Subject (e.g. Chemistry)"
-                        value={newTaskSubject}
-                        onChange={e => setNewTaskSubject(e.target.value)}
-                        className="p-2 border border-slate-205 rounded-xl bg-white text-xs font-semibold outline-none"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Date (e.g. Jul 4)"
-                        value={newTaskDate}
-                        onChange={e => setNewTaskDate(e.target.value)}
-                        className="p-2 border border-slate-205 rounded-xl bg-white text-xs font-semibold outline-none"
-                      />
-                    </div>
-                    <div className="flex justify-end gap-2 pt-1">
-                      <Button variant="secondary" size="sm" onClick={() => setShowAddTaskForm(false)}>Cancel</Button>
-                      <Button type="submit" variant="primary" size="sm" className="bg-slate-900 text-white hover:bg-slate-800 border-none shadow-xs">Add Task</Button>
-                    </div>
-                  </form>
-                )}
-
-                {/* Tasks List */}
+                {/* Tasks List from DB / Context */}
                 <div className="space-y-3.5">
-                  {tasks
-                    .filter(t => tasksFilter === "all" || t.status === tasksFilter)
-                    .map((task) => (
-                      <div
-                        key={task.id}
-                        className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-xl hover:bg-slate-50 hover:shadow-xs transition-all duration-200"
-                      >
-                        <div className="flex items-start gap-4">
-                          <button
-                            type="button"
-                            onClick={() => toggleTaskStatus(task.id)}
-                            className={`h-5 w-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 cursor-pointer transition-all duration-200 ${
-                              task.status === "done"
-                                ? "bg-emerald-500 border-emerald-550 text-white"
-                                : task.status === "progress"
-                                ? "bg-amber-400 border-amber-500 text-white"
-                                : "bg-white border-slate-250 hover:border-slate-400"
-                            }`}
-                          >
-                            {task.status === "done" && <Check className="h-3 w-3" />}
-                            {task.status === "progress" && <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />}
-                          </button>
-                          <div>
-                            <span className={`text-xs font-bold leading-tight block ${
-                              task.status === "done" ? "text-slate-400 line-through font-semibold" : "text-slate-800"
+                  {dashboardCohortTasks.length > 0 ? (
+                    dashboardCohortTasks.map((task) => {
+                      const studentSub = (studentTracker || []).find(
+                        (st) =>
+                          st.student_id === currentStudent.id &&
+                          st.week_number === task.week_number &&
+                          st.subject.toLowerCase() === task.subject.toLowerCase()
+                      );
+                      const isGraded = typeof studentSub?.marks === "number";
+                      const isSubmitted = !!studentSub?.submission_url;
+                      const formattedDate = task.created_at ? parseDbDate(task.created_at).toLocaleDateString() : undefined;
+
+                      return (
+                        <div
+                          key={task.id || `${task.subject}-${task.week_number}`}
+                          className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-xl hover:bg-slate-50 hover:shadow-xs transition-all duration-200"
+                        >
+                          <div className="flex items-start gap-3.5 min-w-0">
+                            <div className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-black uppercase ${
+                              isGraded
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                : isSubmitted
+                                ? "bg-indigo-100 text-indigo-800 border border-indigo-200"
+                                : "bg-amber-100 text-amber-800 border border-amber-200"
                             }`}>
-                              {task.title}
+                              W{task.week_number}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-slate-800 block truncate leading-tight">
+                                {task.task_name}
+                              </span>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[9.5px] text-slate-400 font-extrabold uppercase tracking-wider">
+                                  {task.subject}
+                                </span>
+                                {formattedDate && (
+                                  <span className="text-[9.5px] text-slate-400 font-medium flex items-center gap-0.5">
+                                    • Assigned: {formattedDate}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-wider select-none ${
+                              isGraded
+                                ? "bg-emerald-100 text-emerald-805 border border-emerald-200/50"
+                                : isSubmitted
+                                ? "bg-indigo-50 text-indigo-700 border border-indigo-200/50"
+                                : "bg-amber-50 text-amber-700 border border-amber-200/50"
+                            }`}>
+                              {isGraded ? `Score: ${studentSub.marks}/10` : isSubmitted ? "Submitted" : "Pending"}
                             </span>
-                            <span className="text-[9px] text-slate-400 font-extrabold uppercase mt-1 block tracking-wider">
-                              {task.subject}
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStudentTrackerSubject(task.subject);
+                                setActiveTab("tracker");
+                              }}
+                              className="p-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 cursor-pointer shadow-2xs transition-colors"
+                              title="Go to submission"
+                            >
+                              <ArrowUpRight className="h-3.5 w-3.5 text-slate-500" />
+                            </button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-[10px] text-slate-405 font-extrabold">{task.date}</span>
-                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider select-none ${
-                            task.status === "done"
-                              ? "bg-emerald-100 text-emerald-805 border border-emerald-200/50"
-                              : task.status === "progress"
-                              ? "bg-rose-105 text-rose-700 border border-rose-200/50"
-                              : "bg-slate-100 text-slate-600 border border-slate-200/50"
-                          }`}>
-                            {task.status === "done" ? "Done" : task.status === "progress" ? "In progress" : "To do"}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  {tasks.filter(t => tasksFilter === "all" || t.status === tasksFilter).length === 0 && (
-                    <div className="text-center py-6 text-slate-400 text-xs italic font-semibold">
-                      No tasks found in this section.
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-8 px-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                      <FileText className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs font-bold text-slate-700">No active weekly submissions</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Assigned faculty tasks and lab practicals will appear here.</p>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("tracker")}
+                        className="mt-3 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        <span>View Academic Tracker</span>
+                        <ArrowUpRight className="h-3 w-3" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1237,77 +1345,163 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             {/* Right Column (Col Span 1) */}
             <div className="lg:col-span-1 space-y-6">
               
-              {/* Class Attendance Grid Card */}
-              <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-xs space-y-6">
+              {/* Class Attendance Calendar Card with Dates & Ticks */}
+              <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-xs space-y-5">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-base font-extrabold text-slate-900 tracking-tight">Class attendance</h2>
-                  <span className="px-2 py-0.5 bg-slate-50 border border-slate-100 rounded-lg text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                    Last 20 classes
-                  </span>
+                  <div>
+                    <h2 className="text-base font-extrabold text-slate-900 tracking-tight">Class attendance</h2>
+                    <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
+                      {attendanceCalendarData.monthName}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceMonthOffset(prev => prev - 1)}
+                      className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-600 cursor-pointer shadow-2xs transition-colors"
+                      title="Previous Month"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceMonthOffset(0)}
+                      className={`px-2 py-1 text-[9px] font-black rounded-lg border transition-all cursor-pointer ${
+                        attendanceMonthOffset === 0
+                          ? "bg-slate-900 text-white border-slate-900"
+                          : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      Current
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceMonthOffset(prev => prev + 1)}
+                      className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-600 cursor-pointer shadow-2xs transition-colors"
+                      title="Next Month"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-4">
-                  {/* Grid header */}
-                  <div className="grid grid-cols-5 text-center text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                <div className="space-y-2">
+                  {/* Calendar 7-Day Header */}
+                  <div className="grid grid-cols-7 text-center text-[9px] font-black text-slate-400 uppercase tracking-wider">
                     <span>Mon</span>
                     <span>Tue</span>
                     <span>Wed</span>
                     <span>Thu</span>
                     <span>Fri</span>
+                    <span>Sat</span>
+                    <span>Sun</span>
                   </div>
 
-                  {/* Dynamic grid mapping of attendance */}
-                  <div className="grid grid-rows-4 gap-3.5">
-                    {Array.from({ length: 4 }).map((_, weekIndex) => (
-                      <div key={weekIndex} className="grid grid-cols-5 gap-3.5">
-                        {Array.from({ length: 5 }).map((_, dayIndex) => {
-                          const flatIndex = weekIndex * 5 + dayIndex;
-                          const record = myAttendance[myAttendance.length - 1 - flatIndex];
-                          
-                          if (!record) {
-                            return (
-                              <div key={dayIndex} className="flex justify-center items-center">
-                                <div 
-                                  className="h-8 w-8 rounded-full flex items-center justify-center border border-dashed border-slate-200 bg-slate-50/50 text-slate-350 text-[10px]"
-                                  title={`Period Slot ${flatIndex + 1} (Unmarked)`}
-                                >
-                                  -
-                                </div>
-                              </div>
-                            );
-                          }
+                  {/* Calendar Date Grid */}
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {attendanceCalendarData.days.map((item) => {
+                      if (item.type === "pad") {
+                        return <div key={item.key} className="h-9 w-full" />;
+                      }
 
-                          const isPresent = record.status === "present";
-                          
-                          return (
-                            <div key={dayIndex} className="flex justify-center items-center">
-                              <div className={`h-8 w-8 rounded-full flex items-center justify-center transition-all ${
-                                isPresent 
-                                  ? "bg-emerald-50 text-emerald-650 border border-emerald-100 hover:scale-105 duration-200" 
-                                  : "bg-rose-50 text-rose-650 border border-rose-100 hover:scale-105 duration-200"
-                              }`} title={`Date: ${record.dateStr} (${record.status === "present" ? "Present" : "Absent"})`}>
-                                {isPresent ? (
-                                  <Check className="h-4.5 w-4.5 text-emerald-600 stroke-[3]" />
-                                ) : (
-                                  <X className="h-4 w-4 text-rose-600 stroke-[3]" />
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
+                      const dayNum = item.day;
+                      const status = item.status;
+                      const dateStr = item.dateStr || "";
+
+                      if (status === "present") {
+                        return (
+                          <div
+                            key={item.key}
+                            className="h-9 rounded-xl flex flex-col items-center justify-center bg-emerald-50 border border-emerald-200 text-emerald-800 transition-all hover:scale-105 shadow-2xs cursor-default relative group"
+                            title={`Date: ${dateStr} - Present (Attended)`}
+                          >
+                            <span className="text-[9px] font-black leading-none">{dayNum}</span>
+                            <Check className="h-3 w-3 text-emerald-600 stroke-[3] mt-0.5" />
+                          </div>
+                        );
+                      }
+
+                      if (status === "absent") {
+                        return (
+                          <div
+                            key={item.key}
+                            className="h-9 rounded-xl flex flex-col items-center justify-center bg-rose-50 border border-rose-200 text-rose-800 transition-all hover:scale-105 shadow-2xs cursor-default relative group"
+                            title={`Date: ${dateStr} - Absent`}
+                          >
+                            <span className="text-[9px] font-black leading-none">{dayNum}</span>
+                            <X className="h-3 w-3 text-rose-600 stroke-[3] mt-0.5" />
+                          </div>
+                        );
+                      }
+
+                      if (status === "holiday") {
+                        return (
+                          <div
+                            key={item.key}
+                            className="h-9 rounded-xl flex flex-col items-center justify-center bg-rose-50/40 border border-dashed border-rose-200/80 text-rose-600 cursor-default"
+                            title={`Date: ${dateStr} - Holiday (${item.dayConfig?.notes || "College Holiday"})`}
+                          >
+                            <span className="text-[9px] font-black leading-none">{dayNum}</span>
+                            <span className="text-[7.5px] font-black text-rose-500 mt-0.5 uppercase">H</span>
+                          </div>
+                        );
+                      }
+
+                      if (status === "event") {
+                        return (
+                          <div
+                            key={item.key}
+                            className="h-9 rounded-xl flex flex-col items-center justify-center bg-amber-50/60 border border-amber-200 text-amber-700 cursor-default"
+                            title={`Date: ${dateStr} - Campus Event (${item.dayConfig?.notes || "Activity"})`}
+                          >
+                            <span className="text-[9px] font-black leading-none">{dayNum}</span>
+                            <span className="text-[7.5px] font-black text-amber-600 mt-0.5 uppercase">E</span>
+                          </div>
+                        );
+                      }
+
+                      if (status === "exam") {
+                        return (
+                          <div
+                            key={item.key}
+                            className="h-9 rounded-xl flex flex-col items-center justify-center bg-purple-50/60 border border-purple-200 text-purple-700 cursor-default"
+                            title={`Date: ${dateStr} - Exam Day (${item.dayConfig?.notes || "Assessment"})`}
+                          >
+                            <span className="text-[9px] font-black leading-none">{dayNum}</span>
+                            <span className="text-[7.5px] font-black text-purple-600 mt-0.5 uppercase">Ex</span>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={item.key}
+                          className="h-9 rounded-xl flex items-center justify-center border border-slate-100 bg-slate-50/40 text-slate-400 text-[10px] font-bold"
+                          title={`Date: ${dateStr}`}
+                        >
+                          {dayNum}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between border-t border-slate-100/85 pt-4 text-[10px] font-extrabold uppercase text-slate-405">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
-                    <span>Present</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-rose-500 shrink-0" />
-                    <span>Absent</span>
+                {/* Calendar Legend & Stats Bar */}
+                <div className="space-y-2 border-t border-slate-150/70 pt-3">
+                  <div className="flex items-center justify-between text-[10px] font-extrabold uppercase text-slate-500">
+                    <div className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                      <span>Present: <strong className="text-slate-800">{attendanceCalendarData.monthPresentDays}</strong></span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-rose-500 shrink-0" />
+                      <span>Absent: <strong className="text-slate-800">{attendanceCalendarData.monthAbsentDays}</strong></span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200/60">
+                        {attendanceCalendarData.monthPercentage}%
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1370,8 +1564,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                   {myClassSlots.slice(0, 3).map((slot, index) => {
                     const mentor = mentors.find(m => m.id === slot.mentorId);
-                    const teacherName = mentor?.name || "Dr. Instructor";
-                    const initial = teacherName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+                    const teacherName = mentor?.name || (slot.department ? `${slot.department} Faculty` : "Faculty Instructor");
+                    const initial = teacherName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "FA";
                     
                     return (
                       <div key={slot.id || index} className="p-4 bg-slate-50/50 border border-slate-100 rounded-xl flex items-center justify-between gap-4">
@@ -1387,7 +1581,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         <div className="text-right shrink-0">
                           <span className="text-[9.5px] font-extrabold text-slate-500 block">{slot.time.split(" - ")[0]}</span>
                           <span className="inline-block px-2 py-0.5 bg-slate-100 border border-slate-200/50 rounded-lg text-[8.5px] font-extrabold text-slate-600 mt-1 font-mono uppercase">
-                            {slot.location || "Room A"}
+                            {slot.location || "Classroom"}
                           </span>
                         </div>
                       </div>
@@ -1471,6 +1665,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-150 dark:divide-white/5 bg-white dark:bg-[#101015]">
                   {weekDates.map((date) => {
+                    const dayConfig = dailyConfigsList.find((c: any) => c.dateStr === date.dateStr);
+
                     return (
                       <tr key={date.day} className="h-24 hover:bg-slate-55/10 dark:hover:bg-white/[0.02] transition-colors">
                         {/* First Cell: Day / Date */}
@@ -1478,8 +1674,28 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           <div className="flex flex-col justify-center items-center">
                             <span className="text-sm font-black text-slate-900 leading-none">{date.day}</span>
                             <span className="text-[9px] text-slate-400 font-extrabold uppercase mt-1 leading-none">{date.formatted}</span>
+                            {dayConfig?.day_type === "holiday" && (
+                              <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[7.5px] font-black uppercase bg-rose-100 text-rose-700 border border-rose-200 shrink-0" title={dayConfig.notes || "Holiday"}>
+                                Holiday
+                              </span>
+                            )}
+                            {dayConfig?.day_type === "event" && (
+                              <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[7.5px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200 shrink-0" title={dayConfig.notes || "Campus Event"}>
+                                Event
+                              </span>
+                            )}
+                            {(dayConfig?.day_type === "exam_day" || dayConfig?.day_type === "exam") && (
+                              <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[7.5px] font-black uppercase bg-purple-100 text-purple-700 border border-purple-200 shrink-0" title={dayConfig.notes || "Exam Day"}>
+                                Exam Day
+                              </span>
+                            )}
+                            {dayConfig?.day_order && dayConfig.day_order !== "None" && dayConfig.day_type !== "holiday" && (
+                              <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[7.5px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
+                                {dayConfig.day_order}
+                              </span>
+                            )}
                             {studentInterviews.some((inv: any) => inv.target_date === date.dateStr) && (
-                              <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                              <span className="mt-1 px-1.5 py-0.5 rounded-full text-[7.5px] font-black uppercase bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
                                 Interview
                               </span>
                             )}
@@ -1584,9 +1800,82 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             );
                           }
 
+                          if (cellData?.type === "holiday") {
+                            return (
+                              <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-middle bg-rose-50/10 dark:bg-rose-950/5">
+                                <div className="h-full flex flex-col items-center justify-center p-2 rounded-xl border border-dashed border-rose-200 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-950/20 text-center">
+                                  <span className="text-[8.5px] font-black uppercase text-rose-700 dark:text-rose-400">College Holiday</span>
+                                  <span className="text-[8px] text-rose-500 font-medium truncate max-w-full mt-0.5">{cellData.config?.notes || "No Classes Scheduled"}</span>
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          if (cellData?.type === "event") {
+                            return (
+                              <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-amber-50/15 dark:bg-amber-950/5">
+                                <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-950/20 shadow-xs">
+                                  <div>
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-200/80 border border-amber-300 text-[7.5px] font-black text-amber-800 uppercase tracking-wide">
+                                      CAMPUS EVENT
+                                    </span>
+                                    <div className="text-[9.5px] font-bold text-amber-950 dark:text-amber-200 mt-1 line-clamp-1">
+                                      {cellData.config?.notes || "Campus Activity"}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[8px] mt-1 pt-1 border-t border-amber-200/60 font-black uppercase">
+                                    <span className="text-amber-700">Event Session</span>
+                                    {cellData.attendance ? (
+                                      <span className={`px-1.5 py-0.5 rounded ${
+                                        cellData.attendance.status === "present"
+                                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                          : "bg-rose-100 text-rose-800 border border-rose-300"
+                                      }`}>
+                                        {cellData.attendance.status}
+                                      </span>
+                                    ) : (
+                                      <span className="text-amber-600/70 italic">Unmarked</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          if (cellData?.type === "exam") {
+                            return (
+                              <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-purple-50/15 dark:bg-purple-950/5">
+                                <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-purple-200 dark:border-purple-900/40 bg-purple-50/60 dark:bg-purple-950/20 shadow-xs">
+                                  <div>
+                                    <span className="px-1.5 py-0.5 rounded bg-purple-200/80 border border-purple-300 text-[7.5px] font-black text-purple-800 uppercase tracking-wide">
+                                      EXAMINATION
+                                    </span>
+                                    <div className="text-[9.5px] font-bold text-purple-950 dark:text-purple-200 mt-1 line-clamp-1">
+                                      {cellData.config?.notes || "Assessment Session"}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[8px] mt-1 pt-1 border-t border-purple-200/60 font-black uppercase">
+                                    <span className="text-purple-700">Exam Day</span>
+                                    {cellData.attendance ? (
+                                      <span className={`px-1.5 py-0.5 rounded ${
+                                        cellData.attendance.status === "present"
+                                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                          : "bg-rose-100 text-rose-800 border border-rose-300"
+                                      }`}>
+                                        {cellData.attendance.status}
+                                      </span>
+                                    ) : (
+                                      <span className="text-purple-600/70 italic">Unmarked</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            );
+                          }
+
                           return (
                             <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-white dark:bg-[#101015]">
-                              {!cellData ? (
+                              {!cellData || !cellData.slot ? (
                                 <div className="h-full flex items-center justify-center text-[9px] text-slate-400 italic border border-dashed border-slate-150 rounded-xl bg-slate-55/30">
                                   Free Period
                                 </div>
@@ -1608,7 +1897,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                   <div className="flex justify-between items-center text-[8.5px] mt-2 border-t border-slate-100 pt-1.5">
                                     <span className="flex items-center gap-0.5 text-slate-500 dark:text-slate-300 font-semibold bg-white dark:bg-[#1c1c26] border border-slate-200 dark:border-white/10 px-1 rounded">
                                       <MapPin className="h-2 w-2 shrink-0" />
-                                      {cellData.slot.location.split(" ")[0]}
+                                      {cellData.slot.location ? cellData.slot.location.split(" ")[0] : "Class"}
                                     </span>
 
                                     {cellData.attendance ? (
@@ -1640,78 +1929,117 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         )}
 
         {/* Tab 3: Continuous Internal Assessment (CIA) */}
-        {activeTab === "marks" && (
-          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm">
-            <div>
-              <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Continuous Internal Assessment (CIA)</h2>
-              <p className="text-[11px] text-slate-450 mt-1">
-                Real-time subject-wise continuous evaluation sheets and internal grade projection dashboard.
-              </p>
-            </div>
+        {activeTab === "marks" && (() => {
+          const allCourses = Array.from(new Set([
+            ...studentSubjects.map(s => s.name),
+            ...Object.keys(courseStats)
+          ])).filter(Boolean);
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* GPA card summary */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 flex flex-col justify-between items-center text-center space-y-4">
-                <h3 className="text-xs font-extrabold text-slate-650 uppercase tracking-wider">GPA Status</h3>
-                
-                <div className="h-24 w-24 rounded-full border-4 border-indigo-600 bg-white flex flex-col items-center justify-center shadow-inner">
-                  <span className="text-2xl font-black text-indigo-700">8.42</span>
-                  <span className="text-[8px] text-slate-450 uppercase font-black">SGPA</span>
-                </div>
+          let totalScoreSum = 0;
+          let evaluatedSubjectCount = 0;
+          let totalTasksCount = 0;
+          let totalEvaluatedTasksCount = 0;
 
-                <div className="text-[10px] text-slate-400">
-                  Total Completed Credits: <span className="font-extrabold text-slate-800">22 / 22</span>
-                </div>
+          const courseRows = allCourses.map((courseName) => {
+            const stats = courseStats[courseName] || { present: 0, absent: 0, total: 0 };
+            const attPct = stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : (totalClasses > 0 ? Math.round(overallPercentage) : 0);
+            const trackerEntries = (studentTracker || []).filter(
+              (t) => t.student_id === currentStudent?.id && isSubjectNameMatch(t.subject, courseName)
+            );
+            const evaluatedTasks = trackerEntries.filter((t) => t.marks !== undefined && t.marks !== null);
+            totalTasksCount += trackerEntries.length;
+            totalEvaluatedTasksCount += evaluatedTasks.length;
+
+            const avgMarks = evaluatedTasks.length > 0
+              ? Math.round(evaluatedTasks.reduce((sum, t) => sum + Number(t.marks), 0) / evaluatedTasks.length)
+              : null;
+            const attScore = Math.min(10, Math.ceil(attPct / 10));
+
+            if (avgMarks !== null) {
+              const combinedScore = (attScore * 0.3) + ((avgMarks / 10) * 0.7);
+              totalScoreSum += combinedScore;
+              evaluatedSubjectCount++;
+            } else if (stats.total > 0) {
+              totalScoreSum += attScore;
+              evaluatedSubjectCount++;
+            }
+
+            return {
+              courseName,
+              stats,
+              attPct,
+              trackerEntries,
+              evaluatedTasks,
+              avgMarks,
+              attScore
+            };
+          });
+
+          const sgpa = evaluatedSubjectCount > 0
+            ? (totalScoreSum / evaluatedSubjectCount).toFixed(2)
+            : (overallPercentage > 0 ? (overallPercentage / 10).toFixed(2) : "0.00");
+
+          return (
+            <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm">
+              <div>
+                <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Continuous Internal Assessment (CIA)</h2>
+                <p className="text-[11px] text-slate-450 mt-1">
+                  Real-time subject-wise continuous evaluation sheets and internal grade projection dashboard.
+                </p>
               </div>
 
-              <div className="md:col-span-2 overflow-x-auto rounded-xl border border-slate-200 scroll-touch">
-                <table className="w-full border-collapse text-left text-xs min-w-[600px]">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
-                      <th className="p-3">Course / Subject</th>
-                      <th className="p-3 text-center">Attendance</th>
-                      <th className="p-3 text-center">Weekly Tasks</th>
-                      <th className="p-3 text-center">Evaluations</th>
-                      <th className="p-3 text-center">Attendance Mark (10)</th>
-                      <th className="p-3 text-center">Avg Evaluation Score</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                    {Object.keys(courseStats).length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="p-6 text-center text-slate-400 italic">No courses found.</td>
-                      </tr>
-                    ) : (
-                      Object.keys(courseStats).map((courseName) => {
-                        const stats = courseStats[courseName] || { present: 0, absent: 0, total: 0 };
-                        const attPct = stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0;
-                        const trackerEntries = (studentTracker || []).filter(
-                          (t) => t.student_id === currentStudent?.id && isSubjectNameMatch(t.subject, courseName)
-                        );
-                        const evaluatedTasks = trackerEntries.filter((t) => t.marks !== undefined && t.marks !== null);
-                        const avgMarks = evaluatedTasks.length > 0
-                          ? Math.round(evaluatedTasks.reduce((sum, t) => sum + Number(t.marks), 0) / evaluatedTasks.length)
-                          : "—";
-                        const attScore = Math.min(10, Math.ceil(attPct / 10));
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* GPA card summary */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 flex flex-col justify-between items-center text-center space-y-4">
+                  <h3 className="text-xs font-extrabold text-slate-650 uppercase tracking-wider">Projected SGPA</h3>
+                  
+                  <div className="h-24 w-24 rounded-full border-4 border-indigo-600 bg-white flex flex-col items-center justify-center shadow-inner">
+                    <span className="text-2xl font-black text-indigo-700">{sgpa}</span>
+                    <span className="text-[8px] text-slate-450 uppercase font-black">SGPA</span>
+                  </div>
 
-                        return (
+                  <div className="text-[10px] text-slate-500 font-semibold space-y-0.5">
+                    <div>Enrolled Courses: <span className="font-extrabold text-slate-800">{allCourses.length}</span></div>
+                    <div>Evaluated Tasks: <span className="font-extrabold text-slate-800">{totalEvaluatedTasksCount} / {totalTasksCount}</span></div>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2 overflow-x-auto rounded-xl border border-slate-200 scroll-touch">
+                  <table className="w-full border-collapse text-left text-xs min-w-[600px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
+                        <th className="p-3">Course / Subject</th>
+                        <th className="p-3 text-center">Attendance</th>
+                        <th className="p-3 text-center">Weekly Tasks</th>
+                        <th className="p-3 text-center">Evaluations</th>
+                        <th className="p-3 text-center">Attendance Mark (10)</th>
+                        <th className="p-3 text-center">Avg Evaluation Score</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                      {courseRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-6 text-center text-slate-400 italic">No courses found for the current semester.</td>
+                        </tr>
+                      ) : (
+                        courseRows.map(({ courseName, stats, attPct, trackerEntries, evaluatedTasks, avgMarks, attScore }) => (
                           <tr key={courseName} className="hover:bg-slate-50/50 transition-colors">
                             <td className="p-3 font-extrabold text-slate-900 truncate max-w-[160px]">{courseName}</td>
                             <td className="p-3 text-center text-slate-700">{stats.present} / {stats.total} ({attPct}%)</td>
                             <td className="p-3 text-center text-slate-700">{trackerEntries.length} Tasks</td>
                             <td className="p-3 text-center text-slate-700">{evaluatedTasks.length} Evaluated</td>
                             <td className="p-3 text-center text-slate-700">{attScore} / 10</td>
-                            <td className="p-3 text-center font-bold text-indigo-700">{avgMarks !== "—" ? `${avgMarks}%` : "Pending"}</td>
+                            <td className="p-3 text-center font-bold text-indigo-700">{avgMarks !== null ? `${avgMarks}%` : "Pending"}</td>
                           </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Tab: My Interviews & Evaluation Marks */}
         {activeTab === "interviews" && (
@@ -2002,64 +2330,84 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         )}
 
         {/* Tab 5: Exams & Seating */}
-        {activeTab === "exams" && (
-          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3">
-              <div>
-                <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Examination Schedule & Tickets</h2>
-                <p className="text-[11px] text-slate-450 mt-1">Download official hall tickets and verify allocated exam seating arrangements.</p>
+        {activeTab === "exams" && (() => {
+          const examCourses = Array.from(new Set([
+            ...studentSubjects.map(s => s.name),
+            ...Object.keys(courseStats)
+          ])).filter(Boolean);
+
+          return (
+            <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3">
+                <div>
+                  <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Examination Schedule & Tickets</h2>
+                  <p className="text-[11px] text-slate-450 mt-1">Download official hall tickets and verify allocated exam seating arrangements.</p>
+                </div>
+
+                {examCourses.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toast(`Hall Ticket generated for ${currentStudent.name} (${currentStudent.roll_number || currentStudent.register_number || currentStudent.id}).`, "success");
+                    }}
+                    className="py-1.5 px-3 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Download Hall Ticket (PDF)</span>
+                  </button>
+                )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => toast("Hall Ticket download started. Check your downloads directory.", "info")}
-                className="py-1.5 px-3 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer"
-              >
-                <Download className="h-4 w-4" />
-                <span>Download Hall Ticket (PDF)</span>
-              </button>
-            </div>
+              <div className="overflow-x-auto rounded-xl border border-slate-250 scroll-touch">
+                <table className="w-full border-collapse text-left text-xs min-w-[600px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
+                      <th className="p-3">Date</th>
+                      <th className="p-3">Subject / Course Code</th>
+                      <th className="p-3">Session</th>
+                      <th className="p-3">Block / Hall Room</th>
+                      <th className="p-3 text-center">Seat No.</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                    {examCourses.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-slate-400 italic">
+                          No examination schedules published for your enrolled courses at this time.
+                        </td>
+                      </tr>
+                    ) : (
+                      examCourses.map((courseName, idx) => {
+                        const examDaysAhead = idx * 2 + 7;
+                        const d = new Date();
+                        d.setDate(d.getDate() + examDaysAhead);
+                        const dateStr = d.toISOString().slice(0, 10);
+                        const blockName = currentStudent.department ? `${currentStudent.department.split(" ")[0]} Block` : "Academic Block A";
+                        const hall = `Hall ${101 + (idx % 3)}`;
+                        const seatNo = currentStudent.roll_number || currentStudent.register_number ? `${currentStudent.roll_number || currentStudent.register_number}` : `S-${100 + idx}`;
 
-            <div className="overflow-x-auto rounded-xl border border-slate-250 scroll-touch">
-              <table className="w-full border-collapse text-left text-xs min-w-[600px]">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
-                    <th className="p-3">Date</th>
-                    <th className="p-3">Subject / Course Code</th>
-                    <th className="p-3">Session</th>
-                    <th className="p-3">Block / Hall Room</th>
-                    <th className="p-3 text-center">Seat No.</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                  {(Object.keys(courseStats).length > 0 ? Object.keys(courseStats) : ["Computer Science & Programming", "Database Management Systems", "Data Structures & Algorithms", "Mathematics & Statistics"]).map((courseName, idx) => {
-                      // Deterministic exam schedule details
-                      const examDaysAhead = idx * 2 + 10;
-                      const d = new Date();
-                      d.setDate(d.getDate() + examDaysAhead);
-                      const dateStr = d.toISOString().slice(0, 10);
-                      const hall = `Hall ${101 + (idx % 3)}`;
-
-                      return (
-                        <tr key={courseName} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="p-3 text-slate-700 font-bold">{dateStr}</td>
-                          <td className="p-3 font-extrabold text-slate-900 truncate max-w-[200px]">{courseName}</td>
-                          <td className="p-3 text-slate-650">{idx % 2 === 0 ? "FN (09:30 AM - 12:30 PM)" : "AN (01:30 PM - 04:30 PM)"}</td>
-                          <td className="p-3">
-                            <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] text-slate-700 font-extrabold">
-                              <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
-                              {hall} (Campus Block A)
-                            </span>
-                          </td>
-                          <td className="p-3 text-center font-bold text-indigo-700">{idx * 4 + 17}</td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
+                        return (
+                          <tr key={courseName} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="p-3 text-slate-700 font-bold">{dateStr}</td>
+                            <td className="p-3 font-extrabold text-slate-900 truncate max-w-[200px]">{courseName}</td>
+                            <td className="p-3 text-slate-650">{idx % 2 === 0 ? "FN (09:30 AM - 12:30 PM)" : "AN (01:30 PM - 04:30 PM)"}</td>
+                            <td className="p-3">
+                              <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] text-slate-700 font-extrabold">
+                                <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
+                                {hall} ({blockName})
+                              </span>
+                            </td>
+                            <td className="p-3 text-center font-bold text-indigo-700">{seatNo}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Tab 6: Library OPAC Finder */}
         {activeTab === "library" && (
@@ -2068,11 +2416,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Library OPAC Book Finder</h2>
-                  <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[8.5px] font-black uppercase tracking-wider">
-                    Demo Catalog
+                  <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[8.5px] font-black uppercase tracking-wider">
+                    Curriculum Library
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-450 mt-1">Search the sample physical college library catalog and locate books instantly.</p>
+                <p className="text-[11px] text-slate-450 mt-1">Search curriculum textbooks, reference guides, and physical library availability.</p>
               </div>
 
               {/* Search input bar */}
@@ -2176,7 +2524,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   { label: "Total Fees", value: fmtR(stats.totalFees), color: "text-slate-800", bg: "bg-slate-50" },
                   { label: "Paid", value: fmtR(stats.totalPaid), color: "text-[#D528A2]", bg: "bg-slate-50" },
                   { label: "Due", value: fmtR(stats.totalOutstanding), color: "text-slate-500", bg: "bg-slate-50" },
-                  { label: "Status", value: stats.unpaidCount > 0 ? `${stats.unpaidCount} Unpaid` : "All Clear Yes", color: stats.unpaidCount > 0 ? "text-[#D528A2]" : "text-[#F4A863]", bg: "bg-slate-50" },
+                  { label: "Status", value: stats.unpaidCount > 0 ? `${stats.unpaidCount} Unpaid` : "All Clear", color: stats.unpaidCount > 0 ? "text-[#D528A2]" : "text-[#F4A863]", bg: "bg-slate-50" },
                 ].map(({ label, value, color, bg }) => (
                   <div key={label} className={`rounded-xl p-3.5 border border-slate-100 ${bg}`}>
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
@@ -2207,14 +2555,28 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       ) : (
                         <>
                           {fee.status === "partial" && <span className="px-2 py-0.5 rounded-full bg-[#F4A863]/10 text-[#F4A863] text-[10px] font-bold">Partial</span>}
-                          <a
-                            href={fee.pay_link || "https://google.com"}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="py-1.5 px-4 btn-gradient text-white rounded-xl text-[10px] font-extrabold shadow-sm transition-all cursor-pointer inline-block text-center"
-                          >
-                            Pay Now
-                          </a>
+                          {fee.pay_link ? (
+                            <a
+                              href={fee.pay_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="py-1.5 px-4 btn-gradient text-white rounded-xl text-[10px] font-extrabold shadow-sm transition-all cursor-pointer inline-block text-center"
+                            >
+                              Pay Now
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFeePayModal(fee);
+                                setFeePayAmount(String(fee.amount - fee.paid_amount));
+                                setFeePaySuccess(null);
+                              }}
+                              className="py-1.5 px-4 btn-gradient text-white rounded-xl text-[10px] font-extrabold shadow-sm transition-all cursor-pointer inline-block text-center"
+                            >
+                              Pay Now
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
@@ -2298,380 +2660,864 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           );
         })()}
 
-        {/* Student Tracker Tab */}
-        {activeTab === "tracker" && (
-          <div className="space-y-6 font-sans">
-            {/* Dropdown select for Subject */}
-            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-wrap gap-4 items-center justify-between">
-              <div className="space-y-1.5 flex-grow max-w-md">
-                <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Select Course Subject</label>
-                <select
-                  value={studentTrackerSubject}
-                  onChange={(e) => setStudentTrackerSubject(e.target.value)}
-                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800"
-                >
-                  {studentSubjects.map(s => (
-                    <option key={s.id} value={s.name}>{s.name}</option>
-                  ))}
-                  {studentSubjects.length === 0 && <option value="">No subjects in this semester</option>}
-                </select>
+        {/* Student Tracker / Skill Development Tab */}
+        {activeTab === "tracker" && (() => {
+          // Helper to calculate task stats and new indicator for any subject
+          const getSubjectTaskStats = (subjName: string) => {
+            const matchingTasks = (weeklyTasks || []).filter(task => 
+              (isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
+              (currentStudent?.department && task.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
+              task.subject.toLowerCase().trim() === subjName.toLowerCase().trim()
+            );
+            
+            const entries = (studentTracker || []).filter(
+              e => e.student_id === currentStudent?.id && e.subject.toLowerCase().trim() === subjName.toLowerCase().trim()
+            );
+
+            const submittedCount = matchingTasks.filter(t => entries.some(e => e.week_number === t.week_number && !!e.submission_url)).length;
+            const gradedEntries = entries.filter(e => e.marks !== undefined && e.marks !== null);
+            const pendingCount = Math.max(0, matchingTasks.length - submittedCount);
+
+            const hasNew = matchingTasks.some(t => {
+              const entry = entries.find(e => e.week_number === t.week_number);
+              if (entry?.submission_url) return false;
+              if (!t.created_at) return true;
+              const tDate = parseDbDate(t.created_at);
+              const diffDays = (new Date().getTime() - tDate.getTime()) / (1000 * 3600 * 24);
+              return diffDays <= 7;
+            });
+
+            const totalMarks = gradedEntries.reduce((sum, e) => sum + (e.marks || 0), 0);
+            const avgScore = gradedEntries.length > 0 ? (totalMarks / gradedEntries.length).toFixed(1) : null;
+
+            return {
+              totalAssigned: matchingTasks.length,
+              submittedCount,
+              gradedCount: gradedEntries.length,
+              pendingCount,
+              hasNew,
+              avgScore
+            };
+          };
+
+          const activeSubjectStats = getSubjectTaskStats(studentTrackerSubject);
+
+          const allWeeks = Array.from({ length: 15 }, (_, i) => i + 1);
+          const studentAcadSubjects = studentSubjects.filter(s => !isSkillSubject(s));
+          const availableAcadSubjects = studentAcadSubjects.length > 0 ? studentAcadSubjects : studentSubjects;
+          const activeAcadSubjName = studentAcadSubject || availableAcadSubjects[0]?.name || "";
+
+          // Academic stats for student
+          const getAcadSubjectStats = (subjName: string) => {
+            const matchingTasks = (weeklyAcademicTasks || []).filter(task =>
+              (isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
+                (currentStudent?.department && task.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
+              task.subject.toLowerCase().trim() === subjName.toLowerCase().trim()
+            );
+
+            const studentEmail = (currentStudent?.email || "").toLowerCase().trim();
+            const entries = (studentAcademicTracker || []).filter(
+              e => e.student_email.toLowerCase().trim() === studentEmail && e.subject.toLowerCase().trim() === subjName.toLowerCase().trim()
+            );
+
+            const evaluatedEntries = entries.filter(e => e.total_marks !== null || e.quiz_marks !== null || e.assessment_marks !== null || e.assignment_marks !== null);
+            const totalScoreSum = evaluatedEntries.reduce((sum, e) => sum + (e.total_marks || 0), 0);
+            const avgPct = evaluatedEntries.length > 0 ? Math.round((totalScoreSum / (evaluatedEntries.length * 30)) * 100) : null;
+
+            return {
+              totalAssigned: matchingTasks.length,
+              evaluatedCount: evaluatedEntries.length,
+              totalScoreSum,
+              avgPct
+            };
+          };
+
+          return (
+            <div className="space-y-6 font-sans">
+              {/* Category Switcher Banner: Academic vs Skill */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+                <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200/80 w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setStudentTrackerCategory("academic")}
+                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                      studentTrackerCategory === "academic"
+                        ? "bg-white text-indigo-650 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <BookOpen className="h-4 w-4 text-indigo-600" />
+                    <span>Academic Subjects (Quiz, Assessment, Assignment)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStudentTrackerCategory("skill")}
+                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                      studentTrackerCategory === "skill"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <GraduationCap className="h-4 w-4 text-indigo-600" />
+                    <span>Skill Development Tasks</span>
+                  </button>
+                </div>
+
+                <div className="text-[11px] font-bold text-slate-500 text-right">
+                  {studentClassDetails.sem} • {studentClassDetails.year}
+                </div>
               </div>
-              <div className="bg-indigo-50/50 border border-indigo-100 px-4 py-3 rounded-xl max-w-sm text-right shrink-0">
-                <div className="text-[10px] text-indigo-700 font-extrabold uppercase">Tracker Academic Session</div>
-                <div className="text-xs font-bold text-slate-800 mt-0.5">{studentClassDetails.sem} • {studentClassDetails.year}</div>
-              </div>
-            </div>
 
-            {/* Weeks List */}
-            <div className="space-y-4">
-              {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => {
-                const task = weeklyTasks.find(
-                  t => (isCohortMatching(t.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
-                        (currentStudent?.department && t.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
-                       t.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim() &&
-                       t.week_number === wk
-                );
-
-                const entry = studentTracker.find(
-                  e => e.student_id === currentStudent?.id &&
-                       e.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim() &&
-                       e.week_number === wk
-                );
-
-                const currentUrl = entry?.submission_url || "";
-                const isSubmitting = submittingUrlMap[wk] || false;
-
-                return (
-                  <div key={wk} className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4 hover:shadow-sm transition-all duration-200">
-                    <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="h-6.5 w-6.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 font-black text-xs flex items-center justify-center">
-                          {wk}
-                        </span>
-                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Week {wk} Task</h4>
-                        {wk % 2 === 0 && (
-                          <span className="px-2 py-0.5 bg-rose-100 text-rose-700 rounded-lg text-[9px] font-bold tracking-wide border border-rose-200">
-                            ASSESSMENT / VIVA
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Grades / Status Badge */}
-                      {entry?.marks !== undefined && entry?.marks !== null ? (
-                        <div className="flex items-center gap-2">
-                          {entry?.viva_assessment && (
-                            <span className="text-[9px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-md">
-                              {entry.viva_assessment}
-                            </span>
-                          )}
-                          <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">Graded</span>
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg border text-xs font-black uppercase tracking-wider ${
-                            entry.marks >= 8
-                              ? "bg-teal-50 border-teal-150 text-teal-700"
-                              : entry.marks >= 5
-                                ? "bg-amber-50 border-amber-150 text-amber-700"
-                                : "bg-rose-50 border-rose-150 text-rose-700"
-                          }`}>
-                            {entry.marks} / 10
-                          </span>
-                        </div>
-                      ) : currentUrl ? (
-                        <span className="text-[9.5px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200/50 uppercase tracking-wide">
-                          Submitted
-                        </span>
-                      ) : task ? (
-                        <span className="text-[9.5px] font-black text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-lg border border-amber-200/50 uppercase tracking-wide">
-                          {wk % 2 === 0 ? "Awaiting Assessment / Viva" : "Pending Submission"}
-                        </span>
-                      ) : (
-                        <span className="text-[9.5px] font-black text-slate-400 bg-slate-50 px-2.5 py-0.5 rounded-lg border border-slate-200/50 uppercase tracking-wide">
-                          No Task Assigned
-                        </span>
-                      )}
+              {/* ────────────────────────────────────────────────────────────────────────── */}
+              {/* SUB-VIEW 1: ACADEMIC WEEKLY TASKS & 3-COMPONENT EVALUATIONS                */}
+              {/* ────────────────────────────────────────────────────────────────────────── */}
+              {studentTrackerCategory === "academic" && (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* Subject Selector Bar */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">
+                        Select Academic Course
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-bold font-mono">
+                        User: {currentStudent?.email}
+                      </span>
                     </div>
 
-                    {task ? (
-                      (() => {
-                        const assignedDate = parseDbDate(task.created_at || task.updated_at);
-                        const deadlineDate = new Date(assignedDate.getTime() + 3 * 24 * 60 * 60 * 1000);
-                        const isPastDeadline = new Date() > deadlineDate;
+                    <div className="flex flex-wrap gap-2">
+                      {availableAcadSubjects.map(sub => {
+                        const isSelected = activeAcadSubjName.toLowerCase().trim() === sub.name.toLowerCase().trim();
+                        const stats = getAcadSubjectStats(sub.name);
 
                         return (
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {/* Task Details */}
-                            <div className="space-y-3">
-                              <div className="space-y-1.5">
-                                <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">Assignment Description</span>
-                                <p className="text-xs font-bold text-slate-800 leading-normal">{task.task_name}</p>
+                          <button
+                            key={sub.id || sub.name}
+                            type="button"
+                            onClick={() => setStudentAcadSubject(sub.name)}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 border ${
+                              isSelected
+                                ? "bg-indigo-600 border-indigo-600 text-white shadow-xs"
+                                : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                            }`}
+                          >
+                            <BookOpen className={`h-3.5 w-3.5 ${isSelected ? "text-white" : "text-slate-400"}`} />
+                            <span>{sub.name}</span>
+                            {stats.avgPct !== null && (
+                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold ${
+                                isSelected ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
+                              }`}>
+                                {stats.avgPct}%
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 15 Weeks Academic Tasks & Scoped Marks List */}
+                  <div className="space-y-4">
+                    {allWeeks.map(wk => {
+                      const task = (weeklyAcademicTasks || []).find(
+                        t => (isCohortMatching(t.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
+                          (currentStudent?.department && t.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
+                          t.subject.toLowerCase().trim() === activeAcadSubjName.toLowerCase().trim() &&
+                          t.week_number === wk
+                      );
+
+                      const studentEmail = (currentStudent?.email || "").toLowerCase().trim();
+                      const entry = (studentAcademicTracker || []).find(
+                        e => e.student_email.toLowerCase().trim() === studentEmail &&
+                          e.subject.toLowerCase().trim() === activeAcadSubjName.toLowerCase().trim() &&
+                          e.week_number === wk
+                      );
+
+                      const qMarks = entry?.quiz_marks;
+                      const asMarks = entry?.assessment_marks;
+                      const agMarks = entry?.assignment_marks;
+                      const totalMarks = entry?.total_marks ?? (
+                        (qMarks !== undefined && qMarks !== null) ||
+                        (asMarks !== undefined && asMarks !== null) ||
+                        (agMarks !== undefined && agMarks !== null)
+                          ? ((Number(qMarks) || 0) + (Number(asMarks) || 0) + (Number(agMarks) || 0))
+                          : null
+                      );
+
+                      const isEvaluated = totalMarks !== null;
+                      const isSubmitted = !!entry?.submission_url;
+
+                      return (
+                        <div
+                          key={`acad_wk_${wk}`}
+                          className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4 hover:shadow-sm transition-all"
+                        >
+                          {/* Week Card Header */}
+                          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-3">
+                              <span className="h-7 w-7 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 font-black text-xs flex items-center justify-center shrink-0 font-mono">
+                                W{wk}
+                              </span>
+                              <div>
+                                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                                  Week {wk} Academic Evaluation
+                                  {(() => {
+                                    if (!task) return null;
+                                    const targetTaskDate = task.task_date || task.created_at?.slice(0, 10);
+                                    const stAttLogs = (studentAttendance || []).filter(a => {
+                                      if (a.studentId !== currentStudent?.id) return false;
+                                      const slot = (slots || []).find(sl => sl.id === a.slotId);
+                                      const subj = a.coveredSubject || slot?.course || "";
+                                      return isSubjectNameMatch(subj, activeAcadSubjName);
+                                    });
+                                    const exactDateLog = targetTaskDate ? stAttLogs.find(a => a.dateStr === targetTaskDate) : null;
+                                    const sortedLogs = [...stAttLogs].sort((a, b) => (b.dateStr || "").localeCompare(a.dateStr || ""));
+                                    const effectiveLog = exactDateLog || sortedLogs[0];
+                                    let liveAtt = "Present";
+                                    if (effectiveLog) {
+                                      const st = (effectiveLog.status || "").toLowerCase();
+                                      liveAtt = st === "absent" ? "Absent" : st === "od" ? "OD" : "Present";
+                                    } else if (entry?.attendance_status) {
+                                      liveAtt = entry.attendance_status;
+                                    }
+
+                                    return (
+                                      <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase border ${
+                                        liveAtt === "Absent"
+                                          ? "bg-rose-50 text-rose-700 border-rose-200"
+                                          : liveAtt === "OD"
+                                            ? "bg-blue-50 text-blue-700 border-blue-200"
+                                            : liveAtt === "Present"
+                                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                              : "bg-slate-100 text-slate-500 border-slate-200"
+                                      }`}>
+                                        {liveAtt}
+                                      </span>
+                                    );
+                                  })()}
+                                </h4>
                               </div>
-                              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2">
-                                <div className="space-y-0.5">
-                                  <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block">Assigned On</span>
-                                  <span className="text-[10px] text-slate-700 font-semibold">{assignedDate.toLocaleDateString()} {assignedDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                                </div>
-                                <div className="space-y-0.5">
-                                  <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block">Deadline</span>
-                                  <span className={`text-[10px] font-bold ${isPastDeadline ? 'text-rose-600' : 'text-indigo-600'}`}>
-                                    {deadlineDate.toLocaleDateString()} {deadlineDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                  </span>
-                                </div>
-                              </div>
-                               <div className="pt-2">
-                                 <a
-                                   href={task.task_pdf_url}
-                                   target="_blank"
-                                   rel="noreferrer"
-                                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/20 dark:hover:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 shadow-xs hover:shadow-sm cursor-pointer"
-                                 >
-                                   <FileText className="h-4 w-4 shrink-0 text-indigo-500 animate-pulse-gentle" />
-                                   <span>Download Reference Document / PDF</span>
-                                 </a>
-                               </div>
                             </div>
 
-                                              <div className="space-y-4 lg:border-l lg:border-slate-100 lg:pl-6">
-                               <div className="space-y-1.5">
-                                 <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">Your Submission</span>
+                            {/* Overall Score Badge */}
+                            <div>
+                              {isEvaluated ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">Evaluated</span>
+                                  <span className={`inline-flex items-center px-3 py-1 rounded-lg border text-xs font-black ${
+                                    totalMarks! >= 24
+                                      ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                                      : totalMarks! >= 15
+                                        ? "bg-amber-50 border-amber-200 text-amber-800"
+                                        : "bg-rose-50 border-rose-200 text-rose-800"
+                                  }`}>
+                                    Total Score: {totalMarks} / 30 ({Math.round((totalMarks! / 30) * 100)}%)
+                                  </span>
+                                </div>
+                              ) : isSubmitted ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold">
+                                  <CheckCircle className="h-3.5 w-3.5" />
+                                  <span>Work Submitted (Awaiting Marks)</span>
+                                </span>
+                              ) : task ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold">
+                                  <Clock className="h-3.5 w-3.5" />
+                                  <span>Task Assigned</span>
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-0.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-400 text-xs font-medium">
+                                  No Task Guidelines
+                                </span>
+                              )}
+                            </div>
+                          </div>
 
-                                 {currentUrl && !editSubmissionMode[wk] ? (
-                                   <div className="space-y-3 mt-2">
-                                     <div className="rounded-xl border border-slate-150 p-4 bg-slate-50/50 space-y-3 shadow-xs">
-                                       <div className="flex items-start justify-between gap-3">
-                                         <div className="space-y-1 truncate">
-                                           <span className="text-[8px] text-slate-400 font-extrabold uppercase tracking-wider block">Submitted Link / File</span>
-                                           {currentUrl.startsWith("https://example.com/simulated-upload/") ? (
-                                             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                                               <FileText className="h-4 w-4 text-indigo-500 shrink-0" />
-                                               <span className="truncate">{decodeURIComponent(currentUrl.replace("https://example.com/simulated-upload/", ""))}</span>
-                                             </div>
-                                           ) : (
-                                             <a
-                                               href={currentUrl}
-                                               target="_blank"
-                                               rel="noreferrer"
-                                               className="inline-flex items-center gap-1 text-xs font-bold text-indigo-650 hover:underline truncate"
-                                             >
-                                               <span className="truncate">{currentUrl}</span>
-                                               <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
-                                             </a>
-                                           )}
-                                         </div>
-                                         <button
-                                           type="button"
-                                           disabled={isPastDeadline}
-                                           onClick={() => setEditSubmissionMode(prev => ({ ...prev, [wk]: true }))}
-                                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 font-bold text-[10px] transition-colors cursor-pointer disabled:opacity-50 shrink-0 shadow-xs"
-                                         >
-                                           <Edit2 className="h-3 w-3 text-slate-400" />
-                                           <span>Edit</span>
-                                         </button>
-                                       </div>
+                          {/* Task Topics & Marks Grid */}
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                            {/* Left: Mentor Assigned Topics & Guidelines */}
+                            <div className="space-y-3">
+                              {task ? (
+                                <>
+                                  <div className="space-y-1">
+                                    <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">
+                                      Weekly Focus &amp; Overview
+                                    </span>
+                                    <p className="text-xs font-bold text-slate-800 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-150">
+                                      {task.task_name}
+                                    </p>
+                                  </div>
 
-                                       {entry?.updated_at && (
-                                         <div className="flex items-center gap-1.5 text-[9px] text-slate-500 font-medium border-t border-slate-150/60 pt-2.5">
-                                           <Clock className="h-3.5 w-3.5 text-slate-400" />
-                                           <span>Submitted on:</span>
-                                           <span className="font-bold text-slate-700">{parseDbDate(entry.updated_at).toLocaleString()}</span>
-                                         </div>
-                                       )}
-                                     </div>
-                                   </div>
-                                 ) : (
-                                   <div className="space-y-3 mt-2">
-                                     {/* Toggle Selection */}
-                                     <div className="flex gap-2">
-                                       <button
-                                         type="button"
-                                         disabled={isPastDeadline || isSubmitting}
-                                         onClick={() => setStudentUploadType(prev => ({ ...prev, [wk]: "url" }))}
-                                         className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all ${
-                                           (studentUploadType[wk] || "url") === "url" 
-                                             ? "bg-[#D528A2]/10 border-[#D528A2]/30 text-[#D528A2]" 
-                                             : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                                         }`}
-                                       >
-                                         URL Link
-                                       </button>
-                                       <button
-                                         type="button"
-                                         disabled={isPastDeadline || isSubmitting}
-                                         onClick={() => setStudentUploadType(prev => ({ ...prev, [wk]: "file" }))}
-                                         className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all ${
-                                           (studentUploadType[wk] || "url") === "file" 
-                                             ? "bg-[#D528A2]/10 border-[#D528A2]/30 text-[#D528A2]" 
-                                             : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                                         }`}
-                                       >
-                                         Upload File
-                                       </button>
-                                     </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                                    {task.quiz_topic && (
+                                      <div className="p-2.5 bg-indigo-50/80 border border-indigo-200 rounded-xl space-y-1.5 shadow-2xs">
+                                        <span className="text-[9.5px] font-black text-indigo-800 uppercase block">Quiz Component</span>
+                                        {task.quiz_topic.startsWith("http") ? (
+                                          <a
+                                            href={task.quiz_topic}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-900 bg-indigo-100/90 px-2 py-0.5 rounded hover:bg-indigo-200 transition-colors"
+                                          >
+                                            <span>Open Quiz</span>
+                                            <ExternalLink className="h-3 w-3" />
+                                          </a>
+                                        ) : (
+                                          <span className="font-bold text-slate-800 text-[11px] block">{task.quiz_topic === "Enabled" ? "Active (0–10)" : task.quiz_topic}</span>
+                                        )}
+                                      </div>
+                                    )}
+                                    {task.assessment_topic && (
+                                      <div className="p-2.5 bg-purple-50/80 border border-purple-200 rounded-xl space-y-1.5 shadow-2xs">
+                                        <span className="text-[9.5px] font-black text-purple-800 uppercase block">Assessment Component</span>
+                                        {task.assessment_topic.startsWith("http") ? (
+                                          <a
+                                            href={task.assessment_topic}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-900 bg-purple-100/90 px-2 py-0.5 rounded hover:bg-purple-200 transition-colors"
+                                          >
+                                            <span>Open Test Link</span>
+                                            <ExternalLink className="h-3 w-3" />
+                                          </a>
+                                        ) : (
+                                          <span className="font-bold text-slate-800 text-[11px] block">{task.assessment_topic === "Enabled" ? "Active (0–10)" : task.assessment_topic}</span>
+                                        )}
+                                      </div>
+                                    )}
+                                    {task.assignment_topic && (
+                                      <div className="p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl space-y-1.5 shadow-2xs">
+                                        <span className="text-[9.5px] font-black text-emerald-800 uppercase block">Assignment Component</span>
+                                        {task.assignment_topic.startsWith("http") ? (
+                                          <a
+                                            href={task.assignment_topic}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-900 bg-emerald-100/90 px-2 py-0.5 rounded hover:bg-emerald-200 transition-colors"
+                                          >
+                                            <span>Open Assignment</span>
+                                            <ExternalLink className="h-3 w-3" />
+                                          </a>
+                                        ) : (
+                                          <span className="font-bold text-slate-800 text-[11px] block">{task.assignment_topic === "Enabled" ? "Active (0–10)" : task.assignment_topic}</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
 
-                                     {(studentUploadType[wk] || "url") === "url" ? (
-                                       <form
-                                         onSubmit={async (e) => {
-                                           e.preventDefault();
-                                           if (isPastDeadline) return;
-                                           const form = e.target as HTMLFormElement;
-                                           const urlInput = form.elements.namedItem("submissionUrl") as HTMLInputElement;
-                                           const url = urlInput.value.trim();
-                                           if (!url) return;
-                                           setSubmittingUrlMap(prev => ({ ...prev, [wk]: true }));
-                                           const res = await gradeStudentTask({
-                                             studentId: currentStudent?.id || "",
-                                             classGroup: currentStudent?.classGroup || "",
-                                             subject: studentTrackerSubject,
-                                             weekNumber: wk,
-                                             submissionUrl: url
-                                           });
-                                           setSubmittingUrlMap(prev => ({ ...prev, [wk]: false }));
-                                           if (!res.success) {
-                                             toast(res.message || "Submission failed.", "error");
-                                           } else {
-                                             toast("Submission URL saved!", "success");
-                                             setEditSubmissionMode(prev => ({ ...prev, [wk]: false }));
-                                           }
-                                         }}
-                                         className="flex flex-col sm:flex-row gap-2 mt-2"
-                                       >
-                                         <input
-                                           type="url"
-                                           required
-                                           name="submissionUrl"
-                                           defaultValue={currentUrl.startsWith("https://example.com/simulated-upload/") ? "" : currentUrl}
-                                           disabled={isPastDeadline || isSubmitting}
-                                           placeholder="e.g. GitHub Repository link, Drive PDF link"
-                                           className="flex-1 text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-205 focus:outline-none focus:border-[#D528A2] bg-white text-slate-805 disabled:bg-slate-50 disabled:text-slate-400"
-                                         />
-                                         <div className="flex gap-2 shrink-0">
-                                            <button
-                                              type="submit"
-                                              disabled={isPastDeadline || isSubmitting}
-                                              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 ${
-                                                isPastDeadline 
-                                                  ? "bg-slate-200 text-slate-500 cursor-not-allowed" 
-                                                  : "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
-                                              }`}
-                                            >
-                                              {isSubmitting ? (
-                                                <>
-                                                  <Loader2 className="h-4 w-4 animate-spin shrink-0 text-white" />
-                                                  <span>Submitting...</span>
-                                                </>
-                                              ) : isPastDeadline ? (
-                                                "Deadline Passed"
-                                              ) : currentUrl ? (
-                                                "Update"
-                                              ) : (
-                                                "Submit"
-                                              )}
-                                            </button>
-                                           {currentUrl && (
-                                             <button
-                                               type="button"
-                                               onClick={() => setEditSubmissionMode(prev => ({ ...prev, [wk]: false }))}
-                                               className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-all border border-slate-200 cursor-pointer"
-                                             >
-                                               Cancel
-                                             </button>
-                                           )}
-                                         </div>
-                                       </form>
-                                     ) : (
-                                       <div className="space-y-2 mt-2">
-                                         <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 hover:bg-slate-100 hover:border-[#D528A2]/45 transition-all">
-                                           <div className="flex flex-col items-center justify-center pt-4 pb-4">
-                                             <Upload className="w-5 h-5 mb-1 text-slate-400 animate-pulse-gentle" />
-                                             <p className="text-[10px] text-slate-500 font-medium">Click to upload answer file</p>
-                                             <p className="text-[9px] text-slate-400 font-semibold mt-0.5">PDF, DOCX, ZIP (MAX. 10MB)</p>
-                                           </div>
-                                           <input 
-                                             type="file" 
-                                             className="hidden" 
-                                             accept=".pdf,.docx,.doc,.zip,.rar" 
-                                             disabled={isPastDeadline || isSubmitting}
-                                             onChange={async (e) => {
-                                               if (e.target.files && e.target.files[0]) {
-                                                 const file = e.target.files[0];
-                                                 setSubmittingUrlMap(prev => ({ ...prev, [wk]: true }));
-                                                 const simulatedUrl = "https://example.com/simulated-upload/" + encodeURIComponent(file.name);
-                                                 const res = await gradeStudentTask({
-                                                   studentId: currentStudent?.id || "",
-                                                   classGroup: currentStudent?.classGroup || "",
-                                                   subject: studentTrackerSubject,
-                                                   weekNumber: wk,
-                                                   submissionUrl: simulatedUrl
-                                                 });
-                                                 setSubmittingUrlMap(prev => ({ ...prev, [wk]: false }));
-                                                 if (!res.success) {
-                                                   toast(res.message || "File upload failed.", "error");
-                                                 } else {
-                                                   toast(`Uploaded: ${file.name} successfully!`, "success");
-                                                   setEditSubmissionMode(prev => ({ ...prev, [wk]: false }));
-                                                 }
-                                               }
-                                             }}
-                                           />
-                                         </label>
-                                         
-                                         {currentUrl.startsWith("https://example.com/simulated-upload/") && (
-                                           <div className="text-[10px] text-emerald-600 font-bold flex items-center justify-between bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-250">
-                                             <div className="flex items-center gap-1.5 truncate">
-                                               <span>Current File:</span>
-                                               <span className="text-slate-700 truncate">{decodeURIComponent(currentUrl.replace("https://example.com/simulated-upload/", ""))}</span>
-                                             </div>
-                                             <a 
-                                               href={currentUrl} 
-                                               target="_blank" 
-                                               rel="noreferrer" 
-                                               className="text-[10px] text-[#D528A2] hover:underline shrink-0 ml-2"
-                                             >
-                                               View Document
-                                             </a>
-                                           </div>
-                                         )}
+                                  {task.task_pdf_url && (
+                                    <a
+                                      href={task.task_pdf_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors"
+                                    >
+                                      <FileText className="h-3.5 w-3.5 text-indigo-600" />
+                                      <span>View Task Material / PDF</span>
+                                    </a>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="py-4 text-center bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+                                  <p className="text-xs text-slate-400 font-medium">No guidelines assigned for Week {wk} yet.</p>
+                                </div>
+                              )}
+                            </div>
 
-                                         {currentUrl && (
-                                           <div className="flex justify-end pt-1">
-                                             <button
-                                               type="button"
-                                               onClick={() => setEditSubmissionMode(prev => ({ ...prev, [wk]: false }))}
-                                               className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-all border border-slate-200 cursor-pointer"
-                                             >
-                                               Cancel Editing
-                                             </button>
-                                           </div>
-                                         )}
-                                       </div>
-                                     )}
-                                   </div>
-                                 )}
+                            {/* Right: Evaluated 3-Component Score Breakdown */}
+                            <div className="space-y-3 lg:border-l lg:border-slate-100 lg:pl-5">
+                              <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">
+                                Your Evaluated Component Marks (Scoped to {currentStudent?.email})
+                              </span>
+
+                              <div className="grid grid-cols-3 gap-2 text-center">
+                                {/* Quiz Box */}
+                                <div className="p-3 bg-amber-50/40 border border-amber-200 rounded-xl space-y-1">
+                                  <span className="text-[9px] font-extrabold text-amber-800 uppercase block">Quiz</span>
+                                  <div className="text-base font-black text-amber-950">
+                                    {qMarks !== undefined && qMarks !== null ? `${qMarks} / 10` : "—"}
+                                  </div>
                                 </div>
 
+                                {/* Assessment Box */}
+                                <div className="p-3 bg-purple-50/40 border border-purple-200 rounded-xl space-y-1">
+                                  <span className="text-[9px] font-extrabold text-purple-800 uppercase block">Assessment</span>
+                                  <div className="text-base font-black text-purple-950">
+                                    {asMarks !== undefined && asMarks !== null ? `${asMarks} / 10` : "—"}
+                                  </div>
+                                </div>
 
-                          {/* Feedback */}
-                          {entry?.viva_assessment && (
-                            <div className="bg-indigo-50/50 border border-indigo-100/50 p-3 rounded-xl space-y-1">
-                              <span className="text-[9px] text-indigo-700 font-extrabold uppercase tracking-wider block">Faculty Feedback (VIVA / Assessment)</span>
-                              <p className="text-[11px] font-semibold text-indigo-950 italic leading-relaxed">
-                                &ldquo;{entry.viva_assessment}&rdquo;
-                              </p>
+                                {/* Assignment Box */}
+                                <div className="p-3 bg-emerald-50/40 border border-emerald-200 rounded-xl space-y-1">
+                                  <span className="text-[9px] font-extrabold text-emerald-800 uppercase block">Assignment</span>
+                                  <div className="text-base font-black text-emerald-950">
+                                    {agMarks !== undefined && agMarks !== null ? `${agMarks} / 10` : "—"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Faculty Feedback */}
+                              {entry?.feedback && (
+                                <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg space-y-1">
+                                  <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block">
+                                    Faculty Remarks &amp; Feedback
+                                  </span>
+                                  <p className="text-xs font-medium text-slate-700 italic leading-relaxed">
+                                    &ldquo;{entry.feedback}&rdquo;
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ────────────────────────────────────────────────────────────────────────── */}
+              {/* SUB-VIEW 2: SKILL DEVELOPMENT TASKS                                       */}
+              {/* ────────────────────────────────────────────────────────────────────────── */}
+              {studentTrackerCategory === "skill" && (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* Subject Selector / Header with Clean NEW Indicator */}
+                  {assignedMentorSubjects.length === 1 ? (
+                    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-wrap gap-4 items-center justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Skill Development Course</span>
+                          {activeSubjectStats.hasNew && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-200">
+                              <span className="h-1.5 w-1.5 rounded-full bg-rose-600 animate-pulse" />
+                              <span>New Tasks Active</span>
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                            <GraduationCap className="h-4 w-4" />
+                          </div>
+                          <span>{assignedMentorSubjects[0]}</span>
+                        </h3>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl text-right shrink-0">
+                        <div className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wide">Academic Session</div>
+                        <div className="text-xs font-bold text-slate-800 mt-0.5">{studentClassDetails.sem} • {studentClassDetails.year}</div>
+                      </div>
+                    </div>
+                  ) : assignedMentorSubjects.length > 1 ? (
+                    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Assigned Skill Development Courses</label>
+                        <span className="text-[10px] text-slate-500 font-bold">{studentClassDetails.sem} • {studentClassDetails.year}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {assignedMentorSubjects.map((subName) => {
+                          const isSelected = studentTrackerSubject.toLowerCase().trim() === subName.toLowerCase().trim();
+                          const subStats = getSubjectTaskStats(subName);
+
+                          return (
+                            <button
+                              key={subName}
+                              type="button"
+                              onClick={() => setStudentTrackerSubject(subName)}
+                              className={`relative px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 border ${
+                                isSelected
+                                  ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                                  : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                              }`}
+                            >
+                              <GraduationCap className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-indigo-300" : "text-slate-400"}`} />
+                              <span>{subName}</span>
+
+                              {subStats.hasNew && (
+                                <span className={`px-1.5 py-0.2 rounded text-[8px] font-black uppercase ${
+                                  isSelected ? "bg-rose-500 text-white" : "bg-rose-100 text-rose-700"
+                                }`}>
+                                  NEW
+                                </span>
+                              )}
+
+                              {subStats.pendingCount > 0 && (
+                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                  isSelected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                                }`}>
+                                  {subStats.pendingCount} Pending
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-wrap gap-4 items-center justify-between">
+                      <div className="space-y-1.5 flex-grow max-w-md">
+                        <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Select Skill Subject</label>
+                        <select
+                          value={studentTrackerSubject}
+                          onChange={(e) => setStudentTrackerSubject(e.target.value)}
+                          className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800"
+                        >
+                          {studentSubjects.filter(s => isSkillSubject(s)).map(s => (
+                            <option key={s.id} value={s.name}>{s.name}</option>
+                          ))}
+                          {studentSubjects.filter(s => isSkillSubject(s)).length === 0 && <option value="">No Skill Development subjects in this semester</option>}
+                        </select>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl max-w-sm text-right shrink-0">
+                        <div className="text-[10px] text-slate-500 font-extrabold uppercase">Academic Session</div>
+                        <div className="text-xs font-bold text-slate-800 mt-0.5">{studentClassDetails.sem} • {studentClassDetails.year}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Weeks Task Cards List */}
+                  <div className="space-y-4">
+                    {allWeeks.map(wk => {
+                      const task = weeklyTasks.find(
+                        t => (isCohortMatching(t.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
+                              (currentStudent?.department && t.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
+                             t.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim() &&
+                             t.week_number === wk
+                      );
+
+                      const entry = studentTracker.find(
+                        e => e.student_id === currentStudent?.id &&
+                             e.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim() &&
+                             e.week_number === wk
+                      );
+
+                      const currentUrl = entry?.submission_url || "";
+                      const isSubmitting = submittingUrlMap[wk] || false;
+                      const isGraded = entry?.marks !== undefined && entry?.marks !== null;
+                      const isSubmitted = !!currentUrl;
+
+                      const assignedDate = task ? parseDbDate(task.created_at || task.updated_at) : null;
+                      const isNewTask = task && !isSubmitted && assignedDate && ((new Date().getTime() - assignedDate.getTime()) / (1000 * 3600 * 24) <= 7);
+
+                      return (
+                        <div
+                          key={wk}
+                          className={`bg-white border rounded-xl p-5 shadow-xs space-y-4 transition-all duration-200 ${
+                            isNewTask ? "border-rose-300 ring-1 ring-rose-100" : "border-slate-200"
+                          }`}
+                        >
+                          {/* Task Card Header */}
+                          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-3">
+                              <span className="h-7 w-7 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center shrink-0">
+                                W{wk}
+                              </span>
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Week {wk} Practical Task</h4>
+                                  {isNewTask && (
+                                    <span className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded text-[9px] font-bold uppercase tracking-wide">
+                                      New Assignment
+                                    </span>
+                                  )}
+                                  {wk % 2 === 0 && (
+                                    <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded text-[9px] font-bold tracking-wide border border-purple-200">
+                                      Assessment / Viva Week
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Status / Grade Badge */}
+                            <div>
+                              {isGraded ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wide">Evaluated</span>
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg border text-xs font-bold uppercase tracking-wider ${
+                                    entry.marks! >= 8
+                                      ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                      : entry.marks! >= 5
+                                        ? "bg-amber-50 border-amber-200 text-amber-700"
+                                        : "bg-rose-50 border-rose-200 text-rose-700"
+                                  }`}>
+                                    Score: {entry.marks} / 10
+                                  </span>
+                                </div>
+                              ) : isSubmitted ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold tracking-wide">
+                                  <CheckCircle className="h-3.5 w-3.5" />
+                                  <span>Submitted</span>
+                                </span>
+                              ) : task ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold tracking-wide">
+                                  <Clock className="h-3.5 w-3.5" />
+                                  <span>Pending Submission</span>
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-0.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-400 text-xs font-medium tracking-wide">
+                                  No Task Assigned
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {task ? (
+                            (() => {
+                              const taskAssignedDate = parseDbDate(task.created_at || task.updated_at);
+                              const deadlineDate = new Date(taskAssignedDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+                              const isPastDeadline = new Date() > deadlineDate;
+
+                              return (
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                                  {/* Left Column: Task Details */}
+                                  <div className="space-y-3">
+                                    <div className="space-y-1">
+                                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Instructions</span>
+                                      <p className="text-xs font-medium text-slate-800 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-150">
+                                        {task.task_name}
+                                      </p>
+                                    </div>
+
+                                    <div className="flex flex-wrap items-center gap-4 text-xs">
+                                      <div className="space-y-0.5">
+                                        <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block">Assigned Date</span>
+                                        <span className="font-semibold text-slate-700">{taskAssignedDate.toLocaleDateString()}</span>
+                                      </div>
+                                      <div className="space-y-0.5">
+                                        <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block">Due Date</span>
+                                        <span className={`font-semibold ${isPastDeadline ? "text-rose-600" : "text-indigo-600"}`}>
+                                          {deadlineDate.toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {task.task_pdf_url && (
+                                      <div className="pt-1">
+                                        <a
+                                          href={task.task_pdf_url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-2 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold tracking-wider transition-all duration-200 cursor-pointer"
+                                        >
+                                          <FileText className="h-3.5 w-3.5 shrink-0 text-indigo-600" />
+                                          <span>Reference Document / PDF</span>
+                                        </a>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Right Column: Submission Area & Feedback */}
+                                  <div className="space-y-3 lg:border-l lg:border-slate-100 lg:pl-5">
+                                    <div className="space-y-2">
+                                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Student Submission</span>
+
+                                      {currentUrl && !editSubmissionMode[wk] ? (
+                                        <div className="rounded-lg border border-slate-200 p-3.5 bg-slate-50 space-y-2.5">
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="space-y-1 min-w-0">
+                                              <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block">Submitted Link / File</span>
+                                              {currentUrl.startsWith("data:") ? (
+                                                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                                                  <FileText className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                                                  <a
+                                                    href={currentUrl}
+                                                    download={`Week_${wk}_Submission`}
+                                                    className="inline-flex items-center gap-1 text-xs font-bold text-indigo-650 hover:underline truncate"
+                                                  >
+                                                    <span>Download Attached Document</span>
+                                                    <Download className="h-3.5 w-3.5 shrink-0 text-indigo-600" />
+                                                  </a>
+                                                </div>
+                                              ) : (
+                                                <a
+                                                  href={currentUrl}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="inline-flex items-center gap-1 text-xs font-bold text-indigo-650 hover:underline truncate max-w-full"
+                                                >
+                                                  <span className="truncate">{currentUrl}</span>
+                                                  <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-indigo-600" />
+                                                </a>
+                                              )}
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => setEditSubmissionMode(prev => ({ ...prev, [wk]: true }))}
+                                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[10px] transition-colors cursor-pointer shrink-0"
+                                            >
+                                              <Edit2 className="h-3 w-3 text-slate-500" />
+                                              <span>Edit</span>
+                                            </button>
+                                          </div>
+
+                                          {entry?.updated_at && (
+                                            <div className="flex items-center gap-1 text-[9px] text-slate-400 font-medium border-t border-slate-200 pt-2">
+                                              <Clock className="h-3 w-3 text-slate-400" />
+                                              <span>Submitted on: {parseDbDate(entry.updated_at).toLocaleString()}</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="space-y-2.5">
+                                          {/* Toggle URL / File */}
+                                          <div className="flex gap-2">
+                                            <button
+                                              type="button"
+                                              disabled={isSubmitting}
+                                              onClick={() => setStudentUploadType(prev => ({ ...prev, [wk]: "url" }))}
+                                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                                                (studentUploadType[wk] || "url") === "url"
+                                                  ? "bg-indigo-50 border-indigo-300 text-indigo-700"
+                                                  : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+                                              }`}
+                                            >
+                                              Web Link / URL
+                                            </button>
+                                            <button
+                                              type="button"
+                                              disabled={isSubmitting}
+                                              onClick={() => setStudentUploadType(prev => ({ ...prev, [wk]: "file" }))}
+                                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                                                studentUploadType[wk] === "file"
+                                                  ? "bg-indigo-50 border-indigo-300 text-indigo-700"
+                                                  : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+                                              }`}
+                                            >
+                                              Upload Document
+                                            </button>
+                                          </div>
+
+                                          {(studentUploadType[wk] || "url") === "url" ? (
+                                            <form
+                                              onSubmit={async (e) => {
+                                                e.preventDefault();
+                                                const form = e.target as HTMLFormElement;
+                                                const input = form.elements.namedItem("submissionUrl") as HTMLInputElement;
+                                                const url = input.value.trim();
+                                                if (!url) return;
+
+                                                setSubmittingUrlMap(prev => ({ ...prev, [wk]: true }));
+                                                const res = await gradeStudentTask({
+                                                  studentId: currentStudent?.id || "",
+                                                  classGroup: currentStudent?.classGroup || "",
+                                                  subject: studentTrackerSubject,
+                                                  weekNumber: wk,
+                                                  submissionUrl: url
+                                                });
+                                                setSubmittingUrlMap(prev => ({ ...prev, [wk]: false }));
+                                                if (!res.success) {
+                                                  toast(res.message || "Failed to submit URL.", "error");
+                                                } else {
+                                                  toast("Work submitted successfully!", "success");
+                                                  setEditSubmissionMode(prev => ({ ...prev, [wk]: false }));
+                                                }
+                                              }}
+                                              className="flex gap-2"
+                                            >
+                                              <input
+                                                type="url"
+                                                name="submissionUrl"
+                                                defaultValue={currentUrl.startsWith("http") ? currentUrl : ""}
+                                                placeholder="https://github.com/..."
+                                                required
+                                                disabled={isSubmitting}
+                                                className="flex-1 px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                                              />
+                                              <button
+                                                type="submit"
+                                                disabled={isSubmitting}
+                                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition-colors shadow-2xs disabled:opacity-50"
+                                              >
+                                                {isSubmitting ? "Saving..." : "Submit"}
+                                              </button>
+                                            </form>
+                                          ) : (
+                                            <div className="space-y-2 mt-1.5">
+                                              <label className="flex flex-col items-center justify-center w-full h-20 border border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-all">
+                                                <div className="flex flex-col items-center justify-center pt-2 pb-2">
+                                                  <Upload className="w-4 h-4 mb-1 text-slate-400" />
+                                                  <p className="text-xs text-slate-600 font-semibold">Click to select document</p>
+                                                  <p className="text-[9px] text-slate-400">PDF, DOCX, ZIP (MAX. 10MB)</p>
+                                                </div>
+                                                <input
+                                                  type="file"
+                                                  className="hidden"
+                                                  accept=".pdf,.docx,.doc,.zip,.rar"
+                                                  disabled={isSubmitting}
+                                                  onChange={async (e) => {
+                                                    if (e.target.files && e.target.files[0]) {
+                                                      const file = e.target.files[0];
+                                                      setSubmittingUrlMap(prev => ({ ...prev, [wk]: true }));
+                                                      const reader = new FileReader();
+                                                      reader.onload = async () => {
+                                                        const dataUrl = (reader.result as string) || "";
+                                                        const res = await gradeStudentTask({
+                                                          studentId: currentStudent?.id || "",
+                                                          classGroup: currentStudent?.classGroup || "",
+                                                          subject: studentTrackerSubject,
+                                                          weekNumber: wk,
+                                                          submissionUrl: dataUrl
+                                                        });
+                                                        setSubmittingUrlMap(prev => ({ ...prev, [wk]: false }));
+                                                        if (!res.success) {
+                                                          toast(res.message || "File upload failed.", "error");
+                                                        } else {
+                                                          toast(`Uploaded ${file.name} successfully.`, "success");
+                                                          setEditSubmissionMode(prev => ({ ...prev, [wk]: false }));
+                                                        }
+                                                      };
+                                                      reader.onerror = () => {
+                                                        setSubmittingUrlMap(prev => ({ ...prev, [wk]: false }));
+                                                        toast("Failed to read file.", "error");
+                                                      };
+                                                      reader.readAsDataURL(file);
+                                                    }
+                                                  }}
+                                                />
+                                              </label>
+
+                                              {currentUrl && (
+                                                <div className="flex justify-end pt-1">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setEditSubmissionMode(prev => ({ ...prev, [wk]: false }))}
+                                                    className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold border border-slate-200 cursor-pointer"
+                                                  >
+                                                    Cancel Editing
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Mentor Viva Feedback & Remarks */}
+                                    {entry?.viva_assessment && (
+                                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg space-y-1">
+                                        <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">Faculty Feedback</span>
+                                        <p className="text-xs font-medium text-slate-700 italic leading-relaxed">
+                                          &ldquo;{entry.viva_assessment}&rdquo;
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()
+                          ) : (
+                            <div className="py-3 text-center bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+                              <p className="text-xs text-slate-400 font-medium">No tasks assigned for Week {wk} yet.</p>
                             </div>
                           )}
                         </div>
-                      </div>
-                        );
-                      })()
-                    ) : (
-                      <div className="py-2">
-                        <p className="text-xs text-slate-400 italic">No tasks have been assigned by your mentor for this week yet.</p>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Tab 8: My Profile */}
         {activeTab === "profile" && currentStudent && (() => {

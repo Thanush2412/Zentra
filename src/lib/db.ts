@@ -452,6 +452,60 @@ export function getDb(): Promise<TursoDbAdapter> {
       FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS academic_tracker (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      period_slot TEXT NOT NULL,
+      class_group TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      unit TEXT NOT NULL,
+      topic TEXT NOT NULL,
+      comments TEXT,
+      status TEXT DEFAULT 'Conducted',
+      mentor_id TEXT NOT NULL,
+      mentor_name TEXT,
+      college_id TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(mentor_id, date, period_slot, subject, class_group)
+    );
+
+    CREATE TABLE IF NOT EXISTS weekly_academic_tasks (
+      id TEXT PRIMARY KEY,
+      class_group TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      week_number INTEGER NOT NULL,
+      task_name TEXT NOT NULL,
+      task_pdf_url TEXT,
+      task_date TEXT,
+      quiz_topic TEXT,
+      assessment_topic TEXT,
+      assignment_topic TEXT,
+      mentor_id TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(class_group, subject, week_number)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_academic_tracker (
+      id TEXT PRIMARY KEY,
+      student_email TEXT NOT NULL,
+      student_id TEXT,
+      class_group TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      week_number INTEGER NOT NULL,
+      attendance_status TEXT DEFAULT 'Present',
+      submission_url TEXT,
+      quiz_marks REAL,
+      assessment_marks REAL,
+      assignment_marks REAL,
+      total_marks REAL,
+      feedback TEXT,
+      graded_by TEXT,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(student_email, class_group, subject, week_number)
+    );
+
     CREATE TABLE IF NOT EXISTS student_interviews (
       id TEXT PRIMARY KEY,
       student_id TEXT NOT NULL DEFAULT 'batch_all',
@@ -836,6 +890,7 @@ export function getDb(): Promise<TursoDbAdapter> {
       CREATE INDEX IF NOT EXISTS idx_student_attendance_student_status ON student_attendance(studentId, status);
       CREATE INDEX IF NOT EXISTS idx_slots_college_day ON slots(college_id, day);
       CREATE INDEX IF NOT EXISTS idx_subjects_college ON subjects(college_id);
+      CREATE INDEX IF NOT EXISTS idx_academic_tracker_lookup ON academic_tracker(college_id, mentor_id, subject, date);
     `);
 
       await dbInstance.exec(`

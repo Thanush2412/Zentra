@@ -11,7 +11,7 @@ import {
   ShieldCheck, RefreshCw, ChevronDown, ChevronUp, Star, FileText,
   ExternalLink, AlertTriangle, Loader2, Filter, Trash2, HelpCircle,
   CheckCircle, ArrowRight, User, Sparkles, ChevronLeft, ChevronRight, X,
-  Globe, CheckSquare, Activity, Eye, History, ListFilter
+  Globe, CheckSquare, Activity, Eye, History, ListFilter, Download, FileSpreadsheet
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -1659,6 +1659,91 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     }
   };
 
+  // ── Excel Export for KAM, CM, and Mentor ────────────────────────────────────
+  const handleExportInterviews = async () => {
+    try {
+      const XLSX = await import("xlsx");
+      
+      // 1. Interviews Sessions Sheet
+      const sessionsRows = (interviewsList || []).map((iv, idx) => {
+        const originCol = activeCollegesList.find(c => c.id === iv.origin_college_id || c.id === iv.college_id);
+        const targetCol = activeCollegesList.find(c => c.id === iv.target_college_id);
+        return {
+          "S.No": idx + 1,
+          "Interview ID": iv.id,
+          "Campus": originCol?.name || iv.origin_college_id || iv.college_id || "—",
+          "Target Campus": targetCol?.name || iv.target_college_id || "—",
+          "Class Group / Cohort": iv.class_group || "—",
+          "Subject": iv.subject || "—",
+          "Type": iv.type ? (iv.type.charAt(0).toUpperCase() + iv.type.slice(1)) : "Internal",
+          "Target Date": iv.target_date || (iv.created_at ? String(iv.created_at).split("T")[0] : "—"),
+          "Time Slot": iv.preferred_start_time || "09:00 AM",
+          "Requested Students": iv.student_count || iv.requested_students || 0,
+          "Allocated Students": iv.allocated_students || (iv.student_slots?.length || 0),
+          "Status": iv.status || "Pending",
+          "Lead Evaluator": iv.evaluator_name || iv.mentor_name || "—",
+          "Evaluator Role": iv.evaluator_role || "SME Evaluator",
+          "GMeet / Video Link": iv.gmeet_link || "—",
+          "Coverage Topics": iv.topics || "—",
+          "Created Date": iv.created_at ? String(iv.created_at).split("T")[0] : "—"
+        };
+      });
+
+      // 2. Candidate Evaluations Sheet
+      const evalRows = (evaluationsList || []).map((ev, idx) => {
+        const iv = (interviewsList || []).find(i => i.id === ev.interview_id);
+        return {
+          "S.No": idx + 1,
+          "Student ID": ev.student_id || "—",
+          "Student Name": ev.student_name || "—",
+          "Register / Roll No": ev.register_number || ev.roll_number || "—",
+          "Class Group": ev.class_group || iv?.class_group || "—",
+          "Subject": iv?.subject || ev.subject || "—",
+          "Interview Date": iv?.target_date || (ev.created_at ? String(ev.created_at).split("T")[0] : "—"),
+          "Attendance": ev.attendance ? (ev.attendance.charAt(0).toUpperCase() + ev.attendance.slice(1)) : "Present",
+          "Communication Score (1-10)": ev.communication_score ?? "—",
+          "Content Score (1-10)": ev.content_score ?? "—",
+          "Technical Score (1-10)": ev.technical_score ?? "—",
+          "Confidence Score (1-10)": ev.confidence_score ?? "—",
+          "Overall Score / Marks": ev.marks ?? ev.score ?? "—",
+          "Result Status": ev.status || (Number(ev.marks) >= 6 ? "Cleared" : "Needs Improvement"),
+          "Evaluator Name": ev.mentor_name || ev.evaluator_name || iv?.mentor_name || "—",
+          "Evaluation Feedback": ev.feedback || ev.notes || "—"
+        };
+      });
+
+      const workbook = XLSX.utils.book_new();
+
+      const wsSessions = XLSX.utils.json_to_sheet(sessionsRows.length > 0 ? sessionsRows : [{ "Status": "No interview sessions recorded" }]);
+      wsSessions["!cols"] = [
+        { wch: 6 }, { wch: 22 }, { wch: 25 }, { wch: 25 }, { wch: 22 },
+        { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 18 },
+        { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 30 },
+        { wch: 30 }, { wch: 14 }
+      ];
+      XLSX.utils.book_append_sheet(workbook, wsSessions, "Interview Sessions");
+
+      if (evalRows.length > 0) {
+        const wsEvals = XLSX.utils.json_to_sheet(evalRows);
+        wsEvals["!cols"] = [
+          { wch: 6 }, { wch: 16 }, { wch: 25 }, { wch: 20 }, { wch: 22 },
+          { wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 25 }, { wch: 20 },
+          { wch: 20 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 22 },
+          { wch: 35 }
+        ];
+        XLSX.utils.book_append_sheet(workbook, wsEvals, "Student Evaluations");
+      }
+
+      const rolePrefix = isKAM ? "KAM_Region" : isCM ? "CAM_Campus" : "Mentor";
+      const fileName = `${rolePrefix}_Interview_Audit_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      toast(`Exported interview report: ${fileName}`, "success");
+    } catch (err: any) {
+      console.error("Export error:", err);
+      toast("Failed to export interview report: " + err.message, "error");
+    }
+  };
+
   // ── Derived Data ─────────────────────────────────────────────────────────────
 
   const pendingRequests = useMemo(() => {
@@ -1967,7 +2052,18 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
               </>
             )}
 
-            <button onClick={fetchInterviews} className="p-1.5 rounded-lg text-slate-400 hover:text-[#D528A2] hover:bg-white transition-all border border-transparent hover:border-slate-200" title="Refresh">
+            <button
+              type="button"
+              onClick={handleExportInterviews}
+              disabled={interviewsList.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-extrabold transition-all cursor-pointer shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Export Interview Sessions & Evaluations to Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Export (.xlsx)</span>
+            </button>
+
+            <button onClick={fetchInterviews} className="p-1.5 rounded-lg text-slate-400 hover:text-[#D528A2] hover:bg-white transition-all border border-transparent hover:border-slate-200 cursor-pointer" title="Refresh">
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>

@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { DashboardLayout } from "@/components/DashboardLayout";
+import { KAMDashboard } from "@/components/KAMDashboard";
 
 export default function KAMIndexPage() {
   const router = useRouter();
-  useEffect(() => {
-    router.replace("/kam/overview");
-  }, [router]);
-  return null;
+  return (
+    <DashboardLayout requiredRole="kam">
+      <KAMDashboard
+        activeTab="overview"
+        onTabChange={(newTab: string) => router.push(`/kam/${newTab}`)}
+      />
+    </DashboardLayout>
+  );
 }
+

@@ -43,10 +43,14 @@ import {
   Loader2,
   Award,
   Video,
-  BellRing
+  BellRing,
+  FileSpreadsheet,
+  Edit2,
+  Layers,
+  ArrowUpRight
 } from "lucide-react";
 import { InterviewModule } from "./InterviewModule";
-import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate } from "@/lib/utils";
+import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 import { Pagination } from "@/components/ui/Pagination";
 
@@ -1263,8 +1267,8 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
 };
 
 export interface MentorDashboardProps {
-  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews";
-  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews") => void;
+  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews";
+  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews") => void;
 }
 
 export const MentorDashboard: React.FC<MentorDashboardProps> = ({
@@ -1298,9 +1302,18 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     leaveRequests,
     weeklyTasks,
     studentTracker,
+    academicTracker,
+    saveAcademicTrackerEntry,
+    deleteAcademicTrackerEntry,
     assignWeeklyTask,
     gradeStudentTask,
     deleteWeeklyTask,
+    weeklyAcademicTasks,
+    studentAcademicTracker,
+    assignWeeklyAcademicTask,
+    gradeStudentAcademicTask,
+    bulkUploadAcademicMarks,
+    deleteWeeklyAcademicTask,
     demoSessions,
     demoSwapRequests,
     resolveDemoSwap,
@@ -1501,6 +1514,48 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [demoSwapStep, setDemoSwapStep] = useState<number>(1);
   const [selectedProposedPeer, setSelectedProposedPeer] = useState<any | null>(null);
   const [demoSwapSubmitting, setDemoSwapSubmitting] = useState<boolean>(false);
+
+  // ── Academic Tracker state hooks (Date-wise period topic/unit logging) ──────
+  const [acadTrackerSubject, setAcadTrackerSubject] = useState<string>("");
+  const [acadTrackerUnitFilter, setAcadTrackerUnitFilter] = useState<string>("all");
+  const [acadTrackerSearch, setAcadTrackerSearch] = useState<string>("");
+  const [acadTrackerStartDate, setAcadTrackerStartDate] = useState<string>("");
+  const [acadTrackerEndDate, setAcadTrackerEndDate] = useState<string>("");
+  const [showAcadLogModal, setShowAcadLogModal] = useState<boolean>(false);
+  const [editingAcadEntry, setEditingAcadEntry] = useState<any | null>(null);
+  const [acadFormDate, setAcadFormDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
+  const [acadFormPeriodSlot, setAcadFormPeriodSlot] = useState<string>("Period 1 (09:00 - 10:00 AM)");
+  const [acadFormClassGroup, setAcadFormClassGroup] = useState<string>("");
+  const [acadFormSubject, setAcadFormSubject] = useState<string>("");
+  const [acadFormUnit, setAcadFormUnit] = useState<string>("Unit 1");
+  const [acadFormTopic, setAcadFormTopic] = useState<string>("");
+  const [acadFormComments, setAcadFormComments] = useState<string>("");
+  const [acadFormStatus, setAcadFormStatus] = useState<string>("Conducted");
+  const [isSavingAcadEntry, setIsSavingAcadEntry] = useState<boolean>(false);
+
+  // ── Weekly Academic Tracker Sub-view states ──────────────────────────────
+  const [acadActiveSubTab, setAcadActiveSubTab] = useState<"ledger" | "weekly">("ledger");
+  const [acadWeeklyDept, setAcadWeeklyDept] = useState<string>("");
+  const [acadWeeklySem, setAcadWeeklySem] = useState<string>("");
+  const [acadWeeklySubject, setAcadWeeklySubject] = useState<string>("");
+  const [acadWeeklyWeek, setAcadWeeklyWeek] = useState<number>(1);
+  const [acadWeeklySearch, setAcadWeeklySearch] = useState<string>("");
+  const deferredAcadWeeklySearch = useDeferredValue(acadWeeklySearch);
+  const [acadWeeklyStatusFilter, setAcadWeeklyStatusFilter] = useState<string>("all");
+  const [acadWeeklyPage, setAcadWeeklyPage] = useState<number>(1);
+  const [acadWeeklyPageSize, setAcadWeeklyPageSize] = useState<number>(25);
+  const [acadTaskName, setAcadTaskName] = useState<string>("");
+  const [acadTaskDate, setAcadTaskDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [acadTaskPdf, setAcadTaskPdf] = useState<string>("");
+  const [acadIncludeQuiz, setAcadIncludeQuiz] = useState<boolean>(true);
+  const [acadQuizUrl, setAcadQuizUrl] = useState<string>("");
+  const [acadIncludeAssessment, setAcadIncludeAssessment] = useState<boolean>(true);
+  const [acadAssessmentUrl, setAcadAssessmentUrl] = useState<string>("");
+  const [acadIncludeAssignment, setAcadIncludeAssignment] = useState<boolean>(true);
+  const [acadAssignmentUrl, setAcadAssignmentUrl] = useState<string>("");
+  const [isEditingAcadTask, setIsEditingAcadTask] = useState<boolean>(false);
+  const [isUploadingAcadExcel, setIsUploadingAcadExcel] = useState<boolean>(false);
+  const [acadSaveStatusMap, setAcadSaveStatusMap] = useState<{ [key: string]: "idle" | "saving" | "saved" | "error" }>({});
 
   // Find peer mentors within same college/subject free at this slot
   const getInternalSwapRecommendations = (demo: any) => {
@@ -2912,6 +2967,23 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     });
   };
 
+  const parseTimeMinutes = (tStr: string) => {
+    if (!tStr) return { mins: 0, formatted: "" };
+    const cleaned = tStr.trim();
+    const match = cleaned.match(/(\d+)(?::|\.)(\d+)\s*(AM|PM)?/i);
+    if (!match) return { mins: 0, formatted: cleaned };
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    const isPM = (match[3] || "").toUpperCase() === "PM" || (cleaned.toLowerCase().includes("pm") && !cleaned.toLowerCase().includes("am"));
+    const period = isPM ? "PM" : "AM";
+    let h24 = h;
+    if (isPM && h24 !== 12) h24 += 12;
+    if (!isPM && h24 === 12) h24 = 0;
+    const mins = h24 * 60 + m;
+    const formatted = `${h}:${m.toString().padStart(2, "0")} ${period}`;
+    return { mins, formatted };
+  };
+
   const rows: (
     | { type: "slot"; time: string }
     | { type: "break" | "lunch"; label: string; timeRange: string }
@@ -2920,15 +2992,23 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   timeSlots.forEach((time, index) => {
     rows.push({ type: "slot", time });
 
-    if (currentShift === "shift_1" && index === 1) {
-      rows.push({ type: "break", label: "Break", timeRange: "10:00 AM - 10:20 AM" });
-    } else if (currentShift === "shift_2" && index === 1) {
-      rows.push({ type: "break", label: "Break", timeRange: "02:40 PM - 03:00 PM" });
-    } else if (currentShift === "general") {
-      if (index === 1) {
-        rows.push({ type: "break", label: "Break", timeRange: "11:00 AM - 11:15 AM" });
-      } else if (index === 2) {
-        rows.push({ type: "lunch", label: "Lunch Break", timeRange: "12:15 PM - 12:50 PM" });
+    if (index < timeSlots.length - 1) {
+      const partsCur = time.split(/\s*-\s*/);
+      const partsNext = timeSlots[index + 1].split(/\s*-\s*/);
+
+      if (partsCur.length >= 2 && partsNext.length >= 1) {
+        const endCur = parseTimeMinutes(partsCur[1]);
+        const startNext = parseTimeMinutes(partsNext[0]);
+        const diffMins = startNext.mins - endCur.mins;
+
+        if (diffMins > 5) {
+          const isLunch = diffMins >= 35 || (endCur.mins >= 700 && endCur.mins <= 800);
+          rows.push({
+            type: isLunch ? "lunch" : "break",
+            label: isLunch ? "Lunch Break" : "Break",
+            timeRange: `${endCur.formatted} - ${startNext.formatted}`
+          });
+        }
       }
     }
   });
@@ -3325,6 +3405,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   { id: "interviews", label: "Interview Module", icon: Award },
                   { id: "demo_evaluations", label: "My Demo", icon: Sparkles },
                   { id: "attendance", label: "Student Attendance", icon: ClipboardList },
+                  { id: "academic_tracker", label: "Academic Tracker", icon: BookOpen },
                   { id: "tracker", label: "Skill Development Tracker", icon: GraduationCap },
                   { id: "leave_requests", label: "Leave & Permissions", icon: CalendarCheck2 },
                   { id: "handovers", label: "Handovers", icon: Clock },
@@ -6310,6 +6391,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         })()}
 
         {(activeTab === "tracker") && (() => {
+          const mentorClassDepts = Array.from(new Set([
+            ...mentorClasses.map(c => getDeptFromClassGroup(c) || c),
+            ...mySlots.map(s => s.department || getDeptFromClassGroup(s.classGroup) || "").filter(Boolean),
+            ...(currentMentor?.mentor_group ? [currentMentor.mentor_group] : [])
+          ])).filter(Boolean);
+
           const campusDepts = Array.from(new Set(
             coursesList
               .filter(c => !c.college_id || c.college_id === currentMentor?.college_id)
@@ -6317,11 +6404,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               .filter(Boolean)
           )).sort();
 
-          const deptOptions = campusDepts.length > 0
-            ? campusDepts
-            : Array.from(new Set(mentorClasses.map(c => getDeptFromClassGroup(c) || c))).filter(Boolean);
+          const deptOptions = mentorClassDepts.length > 0
+            ? mentorClassDepts
+            : (campusDepts.length > 0 ? campusDepts : (currentMentor?.mentor_group ? [currentMentor.mentor_group] : ["General Department"]));
 
-          const activeDept = trackerDept || deptOptions[0] || currentMentor?.mentor_group || "";
+          const activeDept = trackerDept && deptOptions.includes(trackerDept)
+            ? trackerDept
+            : deptOptions[0] || currentMentor?.mentor_group || "";
 
           const semesterOptions = Array.from(new Set(
             subjectsList
@@ -6342,7 +6431,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
           const defaultSems = ["Semester 5", "Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 6", "Semester 7", "Semester 8"];
           const finalSemOptions = semesterOptions.length > 0 ? semesterOptions : defaultSems;
-          const activeSem = trackerSem || finalSemOptions[0] || "Semester 5";
+          const activeSem = trackerSem && finalSemOptions.includes(trackerSem)
+            ? trackerSem
+            : finalSemOptions[0] || "Semester 5";
 
           const subjectObjs = subjectsList.filter(s => {
             if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
@@ -6353,19 +6444,30 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             const semNum = (s.semester || "").replace(/\D/g, "");
             const actSemNum = activeSem.replace(/\D/g, "");
             const matchSem = s.semester?.toLowerCase().trim() === activeSem.toLowerCase().trim() || (semNum && actSemNum && semNum === actSemNum);
-            return matchDept && matchSem;
+            return matchDept && matchSem && isSkillSubject(s);
           });
-          // Only show subjects THIS mentor actually handles (from their slots or profile subjects)
-          // mentorSubjects contains the mentor's actual subjects derived from slots + profile
-          const mentorSubjectNames = new Set(mentorSubjects.map(s => s.toLowerCase().trim()));
+
+          // Mentor's own subjects (from profile + timetable slots + mentor group)
+          const explicitMentorSubjects = Array.from(new Set([
+            ...mentorSubjects,
+            ...(Array.isArray(currentMentor?.subjects) ? currentMentor.subjects : (currentMentor?.subjects ? currentMentor.subjects.split(/,|\n/).map((s: string) => s.trim()) : [])),
+            ...mySlots.map(s => s.course?.trim())
+          ])).filter(Boolean);
+
+          const mentorSubjectNames = new Set(explicitMentorSubjects.map(s => s.toLowerCase().trim()));
           const mentorFilteredSubjectObjs = subjectObjs.filter(s => mentorSubjectNames.has(s.name.toLowerCase().trim()));
+          const mentorSkillSubjects = explicitMentorSubjects.filter(s => isSkillSubject(s));
+
+          // STRICT: ONLY show the mentor's own assigned subjects
           const subjectOptions = mentorFilteredSubjectObjs.length > 0
             ? mentorFilteredSubjectObjs.map(s => s.name)
-            : subjectObjs.length > 0
-              ? subjectObjs.map(s => s.name)   // fallback: show all in dept/sem if none match mentor's subjects
-              : mentorSubjects.length > 0 ? mentorSubjects : ["General Subject"];
+            : mentorSkillSubjects.length > 0
+              ? mentorSkillSubjects
+              : (explicitMentorSubjects.length > 0 ? explicitMentorSubjects : ["Skill Development"]);
 
-          const activeSubj = trackerSubject || subjectOptions[0] || "";
+          const activeSubj = trackerSubject && subjectOptions.includes(trackerSubject)
+            ? trackerSubject
+            : subjectOptions[0] || "";
           const activeClassGroup = `${activeDept} - ${activeSem}`;
 
           const currentTask = weeklyTasks.find(
@@ -6401,7 +6503,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   );
                   rowObj[`W${wk} Status`] = entry?.submission_url ? "Submitted" : "Not Submitted";
                   rowObj[`W${wk} Link`] = entry?.submission_url || "—";
-                  rowObj[`W${wk} Eval / Spot Topic`] = entry?.viva_assessment || "—";
                   rowObj[`W${wk} Marks`] = entry?.marks !== undefined && entry?.marks !== null ? entry.marks : "—";
                 }
 
@@ -6795,7 +6896,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               <th className="p-4 border-r border-slate-100/60 min-w-[260px]">15-Week Progress Matrix</th>
                               <th className="p-4 border-r border-slate-100/60 w-[130px]">W{trackerWeek} Status</th>
                               <th className="p-4 text-center border-r border-slate-100/60 w-[130px]">Submission Link</th>
-                              <th className="p-4 border-r border-slate-100/60 min-w-[210px]">Evaluation / Spot Topic</th>
                               <th className="p-4 text-center w-[110px]">Marks (0-10)</th>
                             </tr>
                           </thead>
@@ -6926,95 +7026,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     ) : (
                                       <span className="text-slate-350 text-xs">—</span>
                                     )}
-                                  </td>
-                                  <td className="p-3 border-r border-slate-100/60 space-y-1.5 min-w-[210px]">
-                                    {(() => {
-                                      const isEnglishSubject = activeSubj.toLowerCase().includes("english") ||
-                                        activeSubj.toLowerCase().includes("communication") ||
-                                        activeSubj.toLowerCase().includes("soft skills") ||
-                                        activeSubj.toLowerCase().includes("tamil");
-                                      const isSpotTopic = currentFeedback.startsWith("Spot Topic") || isEnglishSubject;
-                                      return (
-                                        <>
-                                          <select
-                                            value={
-                                              currentFeedback.startsWith("Spot Topic")
-                                                ? "spot_topic"
-                                                : currentFeedback === "VIVA conducted"
-                                                  ? "viva"
-                                                  : currentFeedback === "Assessment completed"
-                                                    ? "assessment"
-                                                    : currentFeedback === "Practical Lab"
-                                                      ? "practical"
-                                                      : ""
-                                            }
-                                            onChange={async (e) => {
-                                              const val = e.target.value;
-                                              let newFeedback = "";
-                                              if (val === "viva") newFeedback = "VIVA conducted";
-                                              else if (val === "assessment") newFeedback = "Assessment completed";
-                                              else if (val === "practical") newFeedback = "Practical Lab";
-                                              else if (val === "spot_topic") {
-                                                const existingTopic = currentFeedback.replace(/^Spot Topic:\s*/i, "").replace(/^Spot Topic$/i, "").trim();
-                                                newFeedback = existingTopic ? `Spot Topic: ${existingTopic}` : "Spot Topic";
-                                              }
-
-                                              setSaveStatusMap(prev => ({ ...prev, [student.id]: "saving" }));
-                                              const res = await gradeStudentTask({
-                                                studentId: student.id,
-                                                classGroup: student.classGroup || activeClassGroup,
-                                                subject: activeSubj,
-                                                weekNumber: trackerWeek,
-                                                vivaAssessment: newFeedback,
-                                                gradedBy: currentMentor?.id || ""
-                                              });
-                                              setSaveStatusMap(prev => ({ ...prev, [student.id]: res.success ? "saved" : "error" }));
-                                              setTimeout(() => {
-                                                setSaveStatusMap(prev => ({ ...prev, [student.id]: "idle" }));
-                                              }, 2000);
-                                            }}
-                                            className="w-full text-xs font-bold px-2 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-[#D528A2] bg-white text-slate-700 cursor-pointer"
-                                          >
-                                            <option value="">Select Evaluation...</option>
-                                            <option value="spot_topic">Spot Topic (English/Speaking)</option>
-                                            <option value="viva">VIVA Voice</option>
-                                            <option value="assessment">Written Assessment</option>
-                                            <option value="practical">Practical Lab</option>
-                                          </select>
-
-                                          {isSpotTopic && (
-                                            <div className="relative mt-1">
-                                              <input
-                                                type="text"
-                                                key={`${student.id}_spot_${currentFeedback}`}
-                                                defaultValue={currentFeedback.replace(/^Spot Topic:\s*/i, "").replace(/^Spot Topic$/i, "")}
-                                                onBlur={async (e) => {
-                                                  const topicName = e.target.value.trim();
-                                                  const newFeedback = topicName ? `Spot Topic: ${topicName}` : "Spot Topic";
-                                                  if (newFeedback === currentFeedback) return;
-
-                                                  setSaveStatusMap(prev => ({ ...prev, [student.id]: "saving" }));
-                                                  const res = await gradeStudentTask({
-                                                    studentId: student.id,
-                                                    classGroup: student.classGroup || activeClassGroup,
-                                                    subject: activeSubj,
-                                                    weekNumber: trackerWeek,
-                                                    vivaAssessment: newFeedback,
-                                                    gradedBy: currentMentor?.id || ""
-                                                  });
-                                                  setSaveStatusMap(prev => ({ ...prev, [student.id]: res.success ? "saved" : "error" }));
-                                                  setTimeout(() => {
-                                                    setSaveStatusMap(prev => ({ ...prev, [student.id]: "idle" }));
-                                                  }, 2000);
-                                                }}
-                                                placeholder="Enter Spot Topic title..."
-                                                className="w-full text-[11px] font-semibold px-2.5 py-1 rounded-md border border-amber-250 bg-amber-50/70 text-amber-900 focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-amber-400/80"
-                                              />
-                                            </div>
-                                          )}
-                                        </>
-                                      );
-                                    })()}
                                   </td>
                                   <td className="p-4">
                                     <input
@@ -7297,6 +7308,1973 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             <InterviewModule currentUserRole="mentor" currentUserName={currentMentor?.name || "Mentor"} />
           </div>
         )}
+
+        {/* ── Tab: Academic Tracker (Date-Wise Period Topic, Unit, and Remarks Log) ── */}
+        {activeTab === "academic_tracker" && (() => {
+          // Mentor's assigned academic (theory/practical) subjects
+          const mentorAcademicSubjects = mentorSubjects.filter(s => !isSkillSubject(s));
+          const availableAcadSubjects = mentorAcademicSubjects.length > 0 ? mentorAcademicSubjects : mentorSubjects;
+          const currentSelectedSubject = acadTrackerSubject || availableAcadSubjects[0] || "";
+
+          // Mentor's class groups
+          const mentorClassesList = Array.from(new Set([
+            ...mentorClasses,
+            ...mySlots.map(s => s.classGroup).filter(Boolean)
+          ]));
+
+          // Mentor's academic tracker records
+          const myLogs = (academicTracker || []).filter(log => log.mentor_id === currentMentor.id);
+          
+          // Filtered logs
+          const filteredLogs = myLogs.filter(log => {
+            if (currentSelectedSubject && currentSelectedSubject !== "all") {
+              if (log.subject.toLowerCase().trim() !== currentSelectedSubject.toLowerCase().trim()) return false;
+            }
+            if (acadTrackerUnitFilter && acadTrackerUnitFilter !== "all") {
+              if (!log.unit.toLowerCase().includes(acadTrackerUnitFilter.toLowerCase().trim())) return false;
+            }
+            if (acadTrackerStartDate && log.date < acadTrackerStartDate) return false;
+            if (acadTrackerEndDate && log.date > acadTrackerEndDate) return false;
+            if (acadTrackerSearch.trim()) {
+              const q = acadTrackerSearch.toLowerCase().trim();
+              const matchTopic = (log.topic || "").toLowerCase().includes(q);
+              const matchComments = (log.comments || "").toLowerCase().includes(q);
+              const matchUnit = (log.unit || "").toLowerCase().includes(q);
+              const matchClass = (log.class_group || "").toLowerCase().includes(q);
+              if (!matchTopic && !matchComments && !matchUnit && !matchClass) return false;
+            }
+            return true;
+          }).sort((a, b) => b.date.localeCompare(a.date));
+
+          // Metrics
+          const totalPeriodsCount = myLogs.length;
+          const subjectPeriodsCount = filteredLogs.length;
+          const uniqueUnitsCovered = Array.from(new Set(myLogs.map(l => l.unit).filter(Boolean))).length;
+          const uniqueSubjectsCovered = Array.from(new Set(myLogs.map(l => l.subject).filter(Boolean))).length;
+          const latestLogDate = myLogs.length > 0 ? myLogs.map(l => l.date).sort().reverse()[0] : "—";
+
+          // Period Slot Options (derived from mentor schedule or standard defaults)
+          const standardPeriods = [
+            "Period 1 (09:00 - 10:00 AM)",
+            "Period 2 (10:00 - 11:00 AM)",
+            "Period 3 (11:15 - 12:15 PM)",
+            "Period 4 (01:00 - 02:00 PM)",
+            "Period 5 (02:00 - 03:00 PM)",
+            "Period 6 (03:00 - 04:00 PM)",
+            "Period 7 (04:00 - 05:00 PM)"
+          ];
+
+          // Helper: Resolve mentor's actual timetable slots for a selected date
+          const getMentorSlotsForDate = (dateStr: string) => {
+            if (!dateStr) return { dateSlots: [], dayOrder: null, dayType: "working", mappedDay: "", dayName: "" };
+            const defaultDay = new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+            const dailyConfig = dailyConfigsMap.get(dateStr);
+            const mappedDay = getMappedDayForDate(dateStr, defaultDay);
+            const dayType = dailyConfig?.day_type || (mappedDay === "holiday" ? "holiday" : "working");
+            const dayOrder = dailyConfig?.day_order || null;
+            const dayName = defaultDay;
+
+            if (mappedDay === "holiday") {
+              return { dateSlots: [], dayOrder, dayType, mappedDay, dayName };
+            }
+
+            // 1. Regular assigned slots for this day order / weekday
+            const ownSlots = mySlots.filter(s => s.day === mappedDay && (!s.college_id || !currentMentor.college_id || s.college_id === currentMentor.college_id));
+            const activeOwnSlots = ownSlots.filter(s => !approvedHandovers.some(h => h.slotId === s.id && h.dateStr === dateStr));
+
+            // 2. Covered slots assigned to this mentor on this date
+            const coveredHandovers = approvedHandovers.filter(h => h.coverStaffId === currentMentor.id && h.dateStr === dateStr);
+            const activeCoveredSlots = coveredHandovers.map(h => slots.find(s => s.id === h.slotId)).filter(Boolean) as Slot[];
+
+            const dateSlots = [...activeOwnSlots, ...activeCoveredSlots];
+            return { dateSlots, dayOrder, dayType, mappedDay, dayName };
+          };
+
+          const openNewLogModal = () => {
+            const todayStr = new Date().toISOString().split("T")[0];
+            setEditingAcadEntry(null);
+            setAcadFormDate(todayStr);
+
+            const { dateSlots } = getMentorSlotsForDate(todayStr);
+            if (dateSlots.length > 0) {
+              const firstSlot = dateSlots[0];
+              setAcadFormPeriodSlot(firstSlot.time);
+              setAcadFormClassGroup(firstSlot.classGroup || "");
+              setAcadFormSubject(firstSlot.course || availableAcadSubjects[0] || "Academic Course");
+            } else {
+              setAcadFormPeriodSlot(standardPeriods[0]);
+              setAcadFormClassGroup(mentorClassesList[0] || (currentMentor?.mentor_group ? `${currentMentor.mentor_group} - Semester 1` : "General Batch"));
+              setAcadFormSubject(currentSelectedSubject || availableAcadSubjects[0] || "Academic Course");
+            }
+
+            setAcadFormUnit("Unit 1");
+            setAcadFormTopic("");
+            setAcadFormComments("");
+            setAcadFormStatus("Delivered");
+            setShowAcadLogModal(true);
+          };
+
+          const openEditLogModal = (entry: any) => {
+            setEditingAcadEntry(entry);
+            setAcadFormDate(entry.date);
+            setAcadFormPeriodSlot(entry.period_slot || standardPeriods[0]);
+            setAcadFormClassGroup(entry.class_group || "");
+            setAcadFormSubject(entry.subject || "");
+            setAcadFormUnit(entry.unit || "Unit 1");
+            setAcadFormTopic(entry.topic || "");
+            setAcadFormComments(entry.comments || "");
+            setAcadFormStatus(entry.status || "Delivered");
+            setShowAcadLogModal(true);
+          };
+
+          const handleDateChangeInModal = (newDate: string) => {
+            setAcadFormDate(newDate);
+            const { dateSlots } = getMentorSlotsForDate(newDate);
+            if (dateSlots.length > 0) {
+              const firstSlot = dateSlots[0];
+              setAcadFormPeriodSlot(firstSlot.time);
+              setAcadFormClassGroup(firstSlot.classGroup || "");
+              setAcadFormSubject(firstSlot.course || availableAcadSubjects[0] || "Academic Course");
+            }
+          };
+
+          const handlePeriodSelectInModal = (val: string, dateSlots: Slot[]) => {
+            const matchedSlot = dateSlots.find(s => s.id === val || s.time === val);
+            if (matchedSlot) {
+              setAcadFormPeriodSlot(matchedSlot.time);
+              setAcadFormClassGroup(matchedSlot.classGroup || "");
+              setAcadFormSubject(matchedSlot.course || availableAcadSubjects[0] || "Academic Course");
+            } else {
+              setAcadFormPeriodSlot(val);
+            }
+          };
+
+          const handleSaveLog = async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (!acadFormDate || !acadFormPeriodSlot || !acadFormClassGroup || !acadFormSubject || !acadFormUnit || !acadFormTopic.trim()) {
+              toast("Please fill in all required fields (Date, Period, Class Group, Subject, Unit, and Topic).", "warning");
+              return;
+            }
+
+            setIsSavingAcadEntry(true);
+            try {
+              const res = await saveAcademicTrackerEntry({
+                id: editingAcadEntry?.id,
+                date: acadFormDate,
+                periodSlot: acadFormPeriodSlot,
+                classGroup: acadFormClassGroup,
+                subject: acadFormSubject,
+                unit: acadFormUnit,
+                topic: acadFormTopic.trim(),
+                comments: acadFormComments.trim(),
+                status: acadFormStatus,
+                mentorId: currentMentor.id,
+                mentorName: currentMentor.name,
+                collegeId: currentMentor.college_id
+              });
+
+              if (res.success) {
+                toast(editingAcadEntry ? "Academic period log updated!" : "Academic period logged successfully!", "success");
+                setShowAcadLogModal(false);
+                setEditingAcadEntry(null);
+              } else {
+                toast(res.message || "Failed to save academic log.", "error");
+              }
+            } catch (err: any) {
+              toast("Error saving academic log: " + err.message, "error");
+            } finally {
+              setIsSavingAcadEntry(false);
+            }
+          };
+
+          const handleDeleteLog = async (id: string) => {
+            if (!(await showConfirm({
+              title: "Delete Academic Log?",
+              message: "Are you sure you want to delete this period log? This action cannot be undone.",
+              danger: true,
+              confirmLabel: "Delete Log"
+            }))) return;
+
+            const res = await deleteAcademicTrackerEntry(id);
+            if (res.success) {
+              toast("Academic period log deleted.", "success");
+            } else {
+              toast(res.message || "Failed to delete log.", "error");
+            }
+          };
+
+          const exportMentorAcademicLogs = async () => {
+            try {
+              const XLSX = await import("xlsx");
+              const headers = ["S.No", "Date", "Period / Time Slot", "Class Group", "Subject", "Unit", "Topic Covered", "Status", "Delivery Remarks / Comments", "Logged At"];
+              const rows = filteredLogs.map((l, idx) => [
+                idx + 1,
+                l.date,
+                l.period_slot,
+                l.class_group,
+                l.subject,
+                l.unit,
+                l.topic,
+                l.status || "Delivered",
+                l.comments || "—",
+                l.updated_at ? new Date(l.updated_at).toLocaleString() : "—"
+              ]);
+
+              const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+              ws["!cols"] = [
+                { wch: 6 }, { wch: 14 }, { wch: 26 }, { wch: 22 }, { wch: 24 },
+                { wch: 14 }, { wch: 35 }, { wch: 16 }, { wch: 35 }, { wch: 22 }
+              ];
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, "Academic_Lesson_Log");
+              XLSX.writeFile(wb, `Mentor_Academic_Tracker_${currentMentor.name.replace(/[^a-zA-Z0-9]/g, "_")}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+              toast("Academic log exported to Excel!", "success");
+            } catch (err: any) {
+              toast("Export failed: " + err.message, "error");
+            }
+          };
+
+          return (
+            <div className="space-y-6 font-sans">
+              {/* ── Sub-Tabs Switcher ── */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+                <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-xl border border-slate-200/80 w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setAcadActiveSubTab("ledger")}
+                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                      acadActiveSubTab === "ledger"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <BookOpen className="h-4 w-4 text-indigo-600" />
+                    <span>Lesson Conduction Ledger</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAcadActiveSubTab("weekly")}
+                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                      acadActiveSubTab === "weekly"
+                        ? "bg-white text-indigo-650 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <Layers className="h-4 w-4 text-indigo-600" />
+                    <span>Weekly Academic Tasks & Marks (Quiz / Assessment / Assignment)</span>
+                  </button>
+                </div>
+
+                <div className="text-[11px] font-bold text-slate-400">
+                  {acadActiveSubTab === "ledger" ? "Authoritative Syllabus Conduction Feed" : "Weekly Evaluations & Marks Ledger"}
+                </div>
+              </div>
+
+              {/* ────────────────────────────────────────────────────────────────────────── */}
+              {/* SUB-VIEW 1: LESSON CONDUCTION LEDGER                                      */}
+              {/* ────────────────────────────────────────────────────────────────────────── */}
+              {acadActiveSubTab === "ledger" && (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* Header Banner */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-1">
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Academic Curriculum &amp; Syllabus Coverage</span>
+                      </div>
+                      <h2 className="text-base font-black text-slate-900">Academic Period &amp; Lesson Conduction Tracker</h2>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        Record date-wise teaching logs, syllabus unit progression, topics covered, and lecture delivery notes for your theory and practical subjects.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+                      <button
+                        type="button"
+                        onClick={exportMentorAcademicLogs}
+                        disabled={filteredLogs.length === 0}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-extrabold transition-all cursor-pointer shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Export (.xlsx)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={openNewLogModal}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs font-extrabold transition-all cursor-pointer shadow-xs"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Log Teaching Period</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 4 Summary KPI Boxes */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Periods Logged</span>
+                      <div className="text-xl font-black text-slate-900">{totalPeriodsCount}</div>
+                      <span className="text-[9px] text-slate-400 font-semibold block">{subjectPeriodsCount} in active view</span>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                      <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block">Units in Progress</span>
+                      <div className="text-xl font-black text-indigo-900">{uniqueUnitsCovered} Units</div>
+                      <span className="text-[9px] text-indigo-500/80 font-semibold block">Syllabus progression</span>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                      <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">Academic Courses</span>
+                      <div className="text-xl font-black text-emerald-900">{availableAcadSubjects.length} Subjects</div>
+                      <span className="text-[9px] text-emerald-600/80 font-semibold block">{uniqueSubjectsCovered} with logged classes</span>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Latest Conduction Date</span>
+                      <div className="text-sm font-black text-slate-900 truncate mt-1">{latestLogDate}</div>
+                      <span className="text-[9px] text-slate-400 font-semibold block">Authoritative date log</span>
+                    </div>
+                  </div>
+
+                  {/* Subject Selector Bar */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Select Academic Subject to Filter</span>
+                      <span className="text-xs font-bold text-slate-500">{currentMentor.name} • {currentMentor.mentor_group || "Faculty"}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAcadTrackerSubject("")}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                          !acadTrackerSubject
+                            ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                            : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                        }`}
+                      >
+                        All My Subjects ({availableAcadSubjects.length})
+                      </button>
+                      {availableAcadSubjects.map(subName => {
+                        const isSelected = acadTrackerSubject.toLowerCase().trim() === subName.toLowerCase().trim();
+                        const count = myLogs.filter(l => l.subject.toLowerCase().trim() === subName.toLowerCase().trim()).length;
+                        return (
+                          <button
+                            key={subName}
+                            type="button"
+                            onClick={() => setAcadTrackerSubject(subName)}
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 border ${
+                              isSelected
+                                ? "bg-indigo-600 border-indigo-600 text-white shadow-xs"
+                                : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                            }`}
+                          >
+                            <BookOpen className={`w-3.5 h-3.5 ${isSelected ? "text-white" : "text-slate-400"}`} />
+                            <span>{subName}</span>
+                            {count > 0 && (
+                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                isSelected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                              }`}>
+                                {count}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Filter Controls Bar */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap flex-1 min-w-[280px]">
+                      {/* Search Input */}
+                      <div className="relative flex-1 min-w-[200px]">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          placeholder="Search topics, unit or notes..."
+                          value={acadTrackerSearch}
+                          onChange={e => setAcadTrackerSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-indigo-500 outline-none"
+                        />
+                      </div>
+
+                      {/* Unit Filter */}
+                      <select
+                        value={acadTrackerUnitFilter}
+                        onChange={e => setAcadTrackerUnitFilter(e.target.value)}
+                        className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                      >
+                        <option value="all">All Units</option>
+                        <option value="Unit 1">Unit 1</option>
+                        <option value="Unit 2">Unit 2</option>
+                        <option value="Unit 3">Unit 3</option>
+                        <option value="Unit 4">Unit 4</option>
+                        <option value="Unit 5">Unit 5</option>
+                        <option value="Revision">Revision / Test</option>
+                      </select>
+
+                      {/* Date Filters */}
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-bold">
+                        <span>From:</span>
+                        <input
+                          type="date"
+                          value={acadTrackerStartDate}
+                          onChange={e => setAcadTrackerStartDate(e.target.value)}
+                          className="p-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 outline-none"
+                        />
+                        <span>To:</span>
+                        <input
+                          type="date"
+                          value={acadTrackerEndDate}
+                          onChange={e => setAcadTrackerEndDate(e.target.value)}
+                          className="p-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {(acadTrackerSearch || acadTrackerUnitFilter !== "all" || acadTrackerStartDate || acadTrackerEndDate) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAcadTrackerSearch("");
+                          setAcadTrackerUnitFilter("all");
+                          setAcadTrackerStartDate("");
+                          setAcadTrackerEndDate("");
+                        }}
+                        className="px-2.5 py-1 text-xs text-rose-600 font-bold hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Clear Filters
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Date-wise Period Conduction Feed */}
+                  <div className="space-y-4">
+                    {filteredLogs.length === 0 ? (
+                      <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center space-y-3 shadow-xs">
+                        <div className="h-12 w-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mx-auto">
+                          <BookOpen className="w-6 h-6" />
+                        </div>
+                        <h3 className="text-sm font-bold text-slate-800">No academic periods logged yet</h3>
+                        <p className="text-xs text-slate-400 max-w-md mx-auto">
+                          {acadTrackerSearch || acadTrackerUnitFilter !== "all"
+                            ? "No period records match your filter criteria."
+                            : "Click 'Log Teaching Period' to record the date, period, unit, topic, and delivery notes for your classes."}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={openNewLogModal}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Log Your First Period</span>
+                        </button>
+                      </div>
+                    ) : (
+                      filteredLogs.map(log => {
+                        const dateObj = new Date(log.date + "T00:00:00");
+                        const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+                        const formattedDate = dateObj.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
+                        const isNotDelivered = (log.status || "").toLowerCase().includes("not") || (log.status || "").toLowerCase().includes("missed");
+
+                        return (
+                          <div
+                            key={log.id}
+                            className={`bg-white border rounded-xl p-5 shadow-2xs hover:shadow-xs transition-all space-y-3 ${
+                              isNotDelivered ? "border-rose-200/80 bg-rose-50/10" : "border-slate-200"
+                            }`}
+                          >
+                            {/* Card Header */}
+                            <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-slate-100">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                    {log.unit || "Unit 1"}
+                                  </span>
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                    {log.period_slot}
+                                  </span>
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase border ${
+                                    isNotDelivered
+                                      ? "bg-rose-100 text-rose-800 border-rose-200"
+                                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  }`}>
+                                    {isNotDelivered ? "Not Delivered" : "Delivered"}
+                                  </span>
+                                </div>
+                                <h3 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-2 mt-1">
+                                  <span>{log.subject}</span>
+                                  <span className="text-slate-300">•</span>
+                                  <span className="text-xs font-bold text-slate-500">{log.class_group}</span>
+                                </h3>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <div className="text-right pr-2">
+                                  <div className="text-xs font-black text-slate-800">{formattedDate}</div>
+                                  <div className="text-[10px] text-slate-400 font-semibold">{dayName}</div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => openEditLogModal(log)}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                  title="Edit Entry"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteLog(log.id)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  title="Delete Entry"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Topic Covered Body */}
+                            <div className="space-y-1.5">
+                              <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Topic Covered</span>
+                              <p className="text-xs font-bold text-slate-800 leading-relaxed bg-slate-50/80 border border-slate-150 p-3 rounded-xl">
+                                {log.topic}
+                              </p>
+                            </div>
+
+                            {/* Delivery Comments / Remarks */}
+                            {log.comments && (
+                              <div className="space-y-1">
+                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Delivery Remarks &amp; Practice Assigned</span>
+                                <p className="text-xs font-medium text-slate-600 italic bg-amber-50/30 border border-amber-100 p-2.5 rounded-lg">
+                                  &ldquo;{log.comments}&rdquo;
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ────────────────────────────────────────────────────────────────────────── */}
+              {/* SUB-VIEW 2: WEEKLY ACADEMIC TASKS & 3-COMPONENT MARKS EVALUATION           */}
+              {/* ────────────────────────────────────────────────────────────────────────── */}
+              {acadActiveSubTab === "weekly" && (() => {
+                const mentorClassDepts = Array.from(new Set(mentorClasses.map(c => getDeptFromClassGroup(c) || c))).filter(Boolean);
+                const campusDepts = Array.from(new Set(
+                  coursesList
+                    .filter(c => !c.college_id || c.college_id === currentMentor?.college_id)
+                    .map(c => c.name.trim())
+                    .filter(Boolean)
+                )).sort();
+
+                const deptOptions = mentorClassDepts.length > 0
+                  ? mentorClassDepts
+                  : (campusDepts.length > 0 ? campusDepts : (currentMentor?.mentor_group ? [currentMentor.mentor_group] : ["General Department"]));
+
+                const activeWeeklyDept = acadWeeklyDept || deptOptions[0] || currentMentor?.mentor_group || "";
+
+                const semesterOptions = Array.from(new Set(
+                  subjectsList
+                    .filter(s => {
+                      if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+                      const d = (s.department || "").toLowerCase().trim();
+                      const mg = (s.mentor_group || "").toLowerCase().trim();
+                      const act = activeWeeklyDept.toLowerCase().trim();
+                      return d === act || mg === act || (d.length > 2 && act.includes(d)) || (act.length > 2 && d.includes(act));
+                    })
+                    .map(s => s.semester)
+                    .filter(Boolean)
+                )).sort((a, b) => {
+                  const na = parseInt((a || "").replace(/\D/g, "") || "0");
+                  const nb = parseInt((b || "").replace(/\D/g, "") || "0");
+                  return na - nb;
+                });
+
+                const defaultSems = ["Semester 5", "Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 6", "Semester 7", "Semester 8"];
+                const finalSemOptions = semesterOptions.length > 0 ? semesterOptions : defaultSems;
+                const activeWeeklySem = acadWeeklySem || finalSemOptions[0] || "Semester 5";
+
+                // Filter academic subjects (theory/practical)
+                const subjectObjs = subjectsList.filter(s => {
+                  if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+                  const d = (s.department || "").toLowerCase().trim();
+                  const mg = (s.mentor_group || "").toLowerCase().trim();
+                  const act = activeWeeklyDept.toLowerCase().trim();
+                  const matchDept = d === act || mg === act || (d.length > 2 && act.includes(d)) || (act.length > 2 && d.includes(act));
+                  const semNum = (s.semester || "").replace(/\D/g, "");
+                  const actSemNum = activeWeeklySem.replace(/\D/g, "");
+                  const matchSem = s.semester?.toLowerCase().trim() === activeWeeklySem.toLowerCase().trim() || (semNum && actSemNum && semNum === actSemNum);
+                  return matchDept && matchSem && !isSkillSubject(s);
+                });
+
+                // Mentor's own subjects (from mentor profile + scheduled timetable slots)
+                const explicitMentorSubjects = Array.from(new Set([
+                  ...mentorSubjects,
+                  ...(Array.isArray(currentMentor?.subjects) ? currentMentor.subjects : (currentMentor?.subjects ? currentMentor.subjects.split(/,|\n/).map((s: string) => s.trim()) : [])),
+                  ...mySlots.map(s => s.course?.trim())
+                ])).filter(Boolean);
+
+                const mentorSubjectNames = new Set(explicitMentorSubjects.map(s => s.toLowerCase().trim()));
+
+                // Filter academic subjects (theory/practical) matching the dept/sem AND assigned to this mentor
+                const mentorFilteredSubjectObjs = subjectObjs.filter(s => mentorSubjectNames.has(s.name.toLowerCase().trim()));
+                const mentorAcadSubjects = explicitMentorSubjects.filter(s => !isSkillSubject(s));
+
+                // STRICT: ONLY show the mentor's own assigned subjects
+                const subjectOptions = mentorFilteredSubjectObjs.length > 0
+                  ? mentorFilteredSubjectObjs.map(s => s.name)
+                  : mentorAcadSubjects.length > 0
+                    ? mentorAcadSubjects
+                    : (explicitMentorSubjects.length > 0 ? explicitMentorSubjects : ["Assigned Academic Subject"]);
+
+                const activeWeeklySubj = acadWeeklySubject && subjectOptions.includes(acadWeeklySubject)
+                  ? acadWeeklySubject
+                  : subjectOptions[0] || "";
+                const activeWeeklyClassGroup = `${activeWeeklyDept} - ${activeWeeklySem}`;
+
+                // Current task
+                const currentWeeklyTask = (weeklyAcademicTasks || []).find(
+                  t => t.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                    t.week_number === acadWeeklyWeek &&
+                    (isCohortMatching(t.class_group, activeWeeklyClassGroup, coursesList, subjectsList) ||
+                      t.class_group.toLowerCase().includes(activeWeeklyDept.toLowerCase().trim()))
+                );
+
+                // Students belonging to this cohort
+                const cohortStudents = students.filter(s =>
+                  isCohortMatching(s.classGroup, activeWeeklyClassGroup, coursesList, subjectsList) ||
+                  (s.department && s.department.toLowerCase().trim() === activeWeeklyDept.toLowerCase().trim() && (!s.semester || s.semester.toLowerCase().includes(activeWeeklySem.toLowerCase().trim())))
+                );
+
+                // Filter students by search
+                const qSearch = (deferredAcadWeeklySearch || "").toLowerCase().trim();
+                const filteredWeeklyStudents = cohortStudents.filter(student => {
+                  const matchesSearch = !qSearch || student.name.toLowerCase().includes(qSearch) ||
+                    student.id.toLowerCase().includes(qSearch) ||
+                    student.email.toLowerCase().includes(qSearch) ||
+                    (student.register_number || "").toLowerCase().includes(qSearch);
+
+                  const entry = (studentAcademicTracker || []).find(
+                    e => e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim() &&
+                      e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                      e.week_number === acadWeeklyWeek
+                  );
+
+                  const hasMarks = entry && (entry.quiz_marks !== null || entry.assessment_marks !== null || entry.assignment_marks !== null || entry.total_marks !== null);
+
+                  if (acadWeeklyStatusFilter === "submitted") return matchesSearch && hasMarks;
+                  if (acadWeeklyStatusFilter === "not_submitted") return matchesSearch && !hasMarks;
+                  return matchesSearch;
+                });
+
+                // Pagination
+                const totalItems = filteredWeeklyStudents.length;
+                const totalPages = acadWeeklyPageSize === -1 ? 1 : Math.ceil(totalItems / acadWeeklyPageSize);
+                const validPage = Math.min(Math.max(1, acadWeeklyPage), totalPages || 1);
+                const paginatedWeeklyStudents = acadWeeklyPageSize === -1
+                  ? filteredWeeklyStudents
+                  : filteredWeeklyStudents.slice((validPage - 1) * acadWeeklyPageSize, validPage * acadWeeklyPageSize);
+
+                // Helper: Download Smart Attendance-Aware Excel Template
+                const handleDownloadAcademicTemplate = async () => {
+                  try {
+                    const XLSX = await import("xlsx");
+                    const headers = [
+                      "S.No",
+                      "Student Email (Primary Key)",
+                      "Student ID",
+                      "Student Name",
+                      "Register Number",
+                      "Class Group",
+                      "Subject",
+                      "Week Number",
+                      "Attendance Status (Present/Absent)",
+                      "Quiz Marks (0-10)",
+                      "Assessment Marks (0-10)",
+                      "Assignment Marks (0-10)",
+                      "Feedback / Remarks"
+                    ];
+
+                    const targetTaskDate = currentWeeklyTask?.task_date || currentWeeklyTask?.created_at?.slice(0, 10);
+                    const rows = cohortStudents.map((s, idx) => {
+                      // Retrieve direct attendance marking from mentor's session on the task date
+                      const attLogs = studentAttendance.filter(a => {
+                        if (a.studentId !== s.id) return false;
+                        if (!activeWeeklySubj) return true;
+                        const slot = slots.find(sl => sl.id === a.slotId);
+                        const subj = a.coveredSubject || slot?.course || "";
+                        return isSubjectNameMatch(subj, activeWeeklySubj);
+                      });
+                      const existingEntry = (studentAcademicTracker || []).find(
+                        e => e.student_email.toLowerCase().trim() === s.email.toLowerCase().trim() &&
+                          e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                          e.week_number === acadWeeklyWeek
+                      );
+
+                      const exactDateLog = targetTaskDate ? attLogs.find(a => a.dateStr === targetTaskDate) : null;
+                      const sortedLogs = [...attLogs].sort((a, b) => (b.dateStr || "").localeCompare(a.dateStr || ""));
+                      const effectiveLog = exactDateLog || sortedLogs[0];
+                      let attStatus = "Present";
+                      if (effectiveLog) {
+                        const st = (effectiveLog.status || "").toLowerCase();
+                        attStatus = st === "absent" ? "Absent" : st === "od" ? "OD" : "Present";
+                      } else if (existingEntry?.attendance_status) {
+                        attStatus = existingEntry.attendance_status;
+                      }
+
+                      return [
+                        idx + 1,
+                        s.email,
+                        s.id,
+                        s.name,
+                        s.register_number || "—",
+                        activeWeeklyClassGroup,
+                        activeWeeklySubj,
+                        acadWeeklyWeek,
+                        existingEntry?.attendance_status || attStatus,
+                        existingEntry?.quiz_marks ?? "",
+                        existingEntry?.assessment_marks ?? "",
+                        existingEntry?.assignment_marks ?? "",
+                        existingEntry?.feedback || ""
+                      ];
+                    });
+
+                    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                    ws["!cols"] = [
+                      { wch: 5 }, { wch: 28 }, { wch: 14 }, { wch: 22 }, { wch: 16 },
+                      { wch: 20 }, { wch: 24 }, { wch: 12 }, { wch: 32 },
+                      { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 30 }
+                    ];
+
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Academic_Marks_Template");
+                    const filename = `Academic_Marks_Template_${activeWeeklyClassGroup.replace(/[^a-zA-Z0-9]/g, "_")}_${activeWeeklySubj.replace(/[^a-zA-Z0-9]/g, "_")}_W${acadWeeklyWeek}.xlsx`;
+                    XLSX.writeFile(wb, filename);
+                    toast("Excel template downloaded with attendance pre-filled!", "success");
+                  } catch (err: any) {
+                    toast("Failed to generate Excel template: " + err.message, "error");
+                  }
+                };
+
+                // Helper: Bulk Excel Upload
+                const handleUploadAcademicExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+                  const files = e.target.files;
+                  if (!files || files.length === 0) return;
+                  const file = files[0];
+                  setIsUploadingAcadExcel(true);
+
+                  try {
+                    const XLSX = await import("xlsx");
+                    const data = await file.arrayBuffer();
+                    const wb = XLSX.read(data);
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const jsonData: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+                    if (!jsonData || jsonData.length === 0) {
+                      toast("The uploaded Excel file contains no data rows.", "warning");
+                      return;
+                    }
+
+                    const parsedRecords = jsonData.map(row => {
+                      const studentEmail = String(
+                        row["Student Email (Primary Key)"] ||
+                        row["Student Email"] ||
+                        row["Email"] ||
+                        row["Mail ID"] ||
+                        row["Email ID"] ||
+                        row["student_email"] ||
+                        ""
+                      ).trim().toLowerCase();
+
+                      const studentId = String(row["Student ID"] || row["student_id"] || row["ID"] || "").trim();
+                      const quizMarks = row["Quiz Marks (0-10)"] ?? row["Quiz Marks"] ?? row["Quiz"] ?? "";
+                      const assessmentMarks = row["Assessment Marks (0-10)"] ?? row["Assessment Marks"] ?? row["Assessment"] ?? "";
+                      const assignmentMarks = row["Assignment Marks (0-10)"] ?? row["Assignment Marks"] ?? row["Assignment"] ?? "";
+                      const attendanceStatus = String(row["Attendance Status (Present/Absent)"] || row["Attendance Status"] || row["Attendance"] || "Present").trim();
+                      const feedback = String(row["Feedback / Remarks"] || row["Feedback"] || row["Remarks"] || "").trim();
+
+                      const targetTaskDate = currentWeeklyTask?.task_date || currentWeeklyTask?.created_at?.slice(0, 10);
+                      const st = cohortStudents.find(s => s.email.toLowerCase().trim() === studentEmail || s.id === studentId);
+                      let realAttendance = attendanceStatus || "Present";
+                      if (st) {
+                        const attLogs = studentAttendance.filter(a => {
+                          if (a.studentId !== st.id) return false;
+                          if (!activeWeeklySubj) return true;
+                          const slot = slots.find(sl => sl.id === a.slotId);
+                          const subj = a.coveredSubject || slot?.course || "";
+                          return isSubjectNameMatch(subj, activeWeeklySubj);
+                        });
+                        const exactDateLog = targetTaskDate ? attLogs.find(a => a.dateStr === targetTaskDate) : null;
+                        const sortedLogs = [...attLogs].sort((a, b) => (b.dateStr || "").localeCompare(a.dateStr || ""));
+                        const effectiveLog = exactDateLog || sortedLogs[0];
+                        if (effectiveLog) {
+                          const st = (effectiveLog.status || "").toLowerCase();
+                          realAttendance = st === "absent" ? "Absent" : st === "od" ? "OD" : "Present";
+                        }
+                      }
+
+                      return {
+                        studentEmail,
+                        studentId,
+                        classGroup: activeWeeklyClassGroup,
+                        subject: activeWeeklySubj,
+                        weekNumber: acadWeeklyWeek,
+                        quizMarks,
+                        assessmentMarks,
+                        assignmentMarks,
+                        attendanceStatus: realAttendance,
+                        feedback,
+                        gradedBy: currentMentor.id
+                      };
+                    }).filter(r => Boolean(r.studentEmail));
+
+                    if (parsedRecords.length === 0) {
+                      toast("Could not match any rows with valid 'Student Email'. Please check column headers.", "error");
+                      return;
+                    }
+
+                    const res = await bulkUploadAcademicMarks({
+                      records: parsedRecords,
+                      classGroup: activeWeeklyClassGroup,
+                      subject: activeWeeklySubj,
+                      weekNumber: acadWeeklyWeek,
+                      gradedBy: currentMentor.id
+                    });
+
+                    if (res.success) {
+                      toast(res.message || `Successfully mapped and updated marks for ${res.updatedCount} students!`, "success");
+                    } else {
+                      toast(res.message || "Failed to bulk upload academic marks.", "error");
+                    }
+                  } catch (err: any) {
+                    toast("Error parsing Excel: " + err.message, "error");
+                  } finally {
+                    setIsUploadingAcadExcel(false);
+                    e.target.value = "";
+                  }
+                };
+
+                // Helper: Export Full Academic 15-Week Marks Ledger
+                const exportFullAcademicLedger = async () => {
+                  try {
+                    const XLSX = await import("xlsx");
+                    const dataRows = cohortStudents.map((student, idx) => {
+                      const rowObj: Record<string, any> = {
+                        "S.No": idx + 1,
+                        "Student Email": student.email,
+                        "Student ID": student.id,
+                        "Student Name": student.name,
+                        "Register No": student.register_number || "—",
+                        "Department": activeWeeklyDept,
+                        "Semester": activeWeeklySem,
+                        "Subject": activeWeeklySubj,
+                        "Class Group": student.classGroup || activeWeeklyClassGroup
+                      };
+
+                      let totalScoreSum = 0;
+                      let evaluatedWeeksCount = 0;
+
+                      for (let wk = 1; wk <= 15; wk++) {
+                        const entry = (studentAcademicTracker || []).find(
+                          e => e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim() &&
+                            e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                            e.week_number === wk
+                        );
+
+                        const qm = entry?.quiz_marks !== undefined && entry?.quiz_marks !== null ? entry.quiz_marks : "—";
+                        const asm = entry?.assessment_marks !== undefined && entry?.assessment_marks !== null ? entry.assessment_marks : "—";
+                        const agm = entry?.assignment_marks !== undefined && entry?.assignment_marks !== null ? entry.assignment_marks : "—";
+                        const tot = entry?.total_marks !== undefined && entry?.total_marks !== null ? entry.total_marks : (typeof qm === "number" || typeof asm === "number" || typeof agm === "number" ? ((Number(qm) || 0) + (Number(asm) || 0) + (Number(agm) || 0)) : "—");
+
+                        rowObj[`W${wk} Attendance`] = entry?.attendance_status || "Present";
+                        rowObj[`W${wk} Quiz (10)`] = qm;
+                        rowObj[`W${wk} Assess (10)`] = asm;
+                        rowObj[`W${wk} Assign (10)`] = agm;
+                        rowObj[`W${wk} Total (30)`] = tot;
+
+                        if (typeof tot === "number") {
+                          totalScoreSum += tot;
+                          evaluatedWeeksCount++;
+                        }
+                      }
+
+                      rowObj["Cumulative Academic Score"] = evaluatedWeeksCount > 0 ? `${totalScoreSum} / ${evaluatedWeeksCount * 30}` : "—";
+                      rowObj["Cumulative %"] = evaluatedWeeksCount > 0 ? `${Math.round((totalScoreSum / (evaluatedWeeksCount * 30)) * 100)}%` : "—";
+
+                      return rowObj;
+                    });
+
+                    const ws = XLSX.utils.json_to_sheet(dataRows);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Academic_Marks_Ledger");
+                    const filename = `Academic_Marks_Ledger_${activeWeeklyClassGroup.replace(/[^a-zA-Z0-9]/g, "_")}_${activeWeeklySubj.replace(/[^a-zA-Z0-9]/g, "_")}.xlsx`;
+                    XLSX.writeFile(wb, filename);
+                    toast("Academic weekly marks ledger exported successfully!", "success");
+                  } catch (err: any) {
+                    toast("Export failed: " + err.message, "error");
+                  }
+                };
+
+                return (
+                  <div className="space-y-6 font-sans animate-fadeIn">
+                    {/* Interactive 4-Dropdown Filter Bar */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
+                          {/* 1. Department */}
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Department</label>
+                            <select
+                              value={activeWeeklyDept}
+                              onChange={(e) => {
+                                setAcadWeeklyDept(e.target.value);
+                                setAcadWeeklySem("");
+                                setAcadWeeklySubject("");
+                              }}
+                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                            >
+                              {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                            </select>
+                          </div>
+
+                          {/* 2. Semester */}
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Semester</label>
+                            <select
+                              value={activeWeeklySem}
+                              onChange={(e) => {
+                                setAcadWeeklySem(e.target.value);
+                                setAcadWeeklySubject("");
+                              }}
+                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                            >
+                              {finalSemOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+
+                          {/* 3. Subject */}
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Academic Course</label>
+                            <select
+                              value={activeWeeklySubj}
+                              onChange={(e) => setAcadWeeklySubject(e.target.value)}
+                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                            >
+                              {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+
+                          {/* 4. Week */}
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Target Week</label>
+                            <select
+                              value={acadWeeklyWeek}
+                              onChange={(e) => setAcadWeeklyWeek(parseInt(e.target.value, 10))}
+                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer font-bold text-indigo-700"
+                            >
+                              {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
+                                <option key={wk} value={wk}>Week {wk} (Quiz, Assessment, Assignment)</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Excel Export Action Button */}
+                        <div className="flex items-center gap-2 shrink-0 pt-2 lg:pt-0">
+                          <button
+                            type="button"
+                            onClick={exportFullAcademicLedger}
+                            disabled={cohortStudents.length === 0}
+                            className="px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-50 text-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-white shadow-xs"
+                          >
+                            <Download className="h-4 w-4 text-slate-500" />
+                            <span>Export Full Ledger (.xlsx)</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Task Assignment Box */}
+                    <div className="bg-gradient-to-r from-indigo-500/5 via-teal-500/5 to-transparent border border-indigo-100 rounded-xl p-5 shadow-xs space-y-3 font-sans">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100/50 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600">
+                            <Layers className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                              Week {acadWeeklyWeek} Academic Task &amp; Evaluation Setup
+                              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-md text-[9px] font-extrabold tracking-wide border border-indigo-200">
+                                3-COMPONENT EVALUATION (QUIZ + ASSESSMENT + ASSIGNMENT)
+                              </span>
+                            </h3>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {currentWeeklyTask ? (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setAcadTaskName(currentWeeklyTask.task_name || "");
+                                  setAcadTaskDate(currentWeeklyTask.task_date || currentWeeklyTask.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10));
+                                  setAcadTaskPdf(currentWeeklyTask.task_pdf_url || "");
+                                  setAcadIncludeQuiz(Boolean(currentWeeklyTask.quiz_topic));
+                                  setAcadQuizUrl(currentWeeklyTask.quiz_topic && currentWeeklyTask.quiz_topic !== "Enabled" ? currentWeeklyTask.quiz_topic : "");
+                                  setAcadIncludeAssessment(Boolean(currentWeeklyTask.assessment_topic));
+                                  setAcadAssessmentUrl(currentWeeklyTask.assessment_topic && currentWeeklyTask.assessment_topic !== "Enabled" ? currentWeeklyTask.assessment_topic : "");
+                                  setAcadIncludeAssignment(Boolean(currentWeeklyTask.assignment_topic));
+                                  setAcadAssignmentUrl(currentWeeklyTask.assignment_topic && currentWeeklyTask.assignment_topic !== "Enabled" ? currentWeeklyTask.assignment_topic : "");
+                                  setIsEditingAcadTask(true);
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-50 text-slate-700 bg-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+                              >
+                                <Edit2 className="h-3.5 w-3.5 text-indigo-600" />
+                                <span>Edit Guidelines</span>
+                              </button>
+
+                              <button
+                                onClick={async () => {
+                                  if (!(await showConfirm({
+                                    title: `Delete Week ${acadWeeklyWeek} Academic Task?`,
+                                    message: `Are you sure you want to delete the academic task "${currentWeeklyTask.task_name}" for ${activeWeeklySubj} (Week ${acadWeeklyWeek})? This will reset all student marks for this week.`,
+                                    danger: true,
+                                    confirmLabel: "Delete Task"
+                                  }))) return;
+
+                                  const res = await deleteWeeklyAcademicTask(activeWeeklyClassGroup, activeWeeklySubj, acadWeeklyWeek);
+                                  if (res.success) {
+                                    toast(`Week ${acadWeeklyWeek} academic task deleted successfully.`, "success");
+                                  } else {
+                                    toast(res.message || "Failed to delete task.", "error");
+                                  }
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold border border-rose-200 hover:bg-rose-50 text-rose-600 bg-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                                <span>Delete Task</span>
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setAcadTaskName("");
+                                setAcadTaskDate(new Date().toISOString().slice(0, 10));
+                                setAcadTaskPdf("");
+                                setAcadIncludeQuiz(true);
+                                setAcadQuizUrl("");
+                                setAcadIncludeAssessment(true);
+                                setAcadAssessmentUrl("");
+                                setAcadIncludeAssignment(true);
+                                setAcadAssignmentUrl("");
+                                setIsEditingAcadTask(true);
+                              }}
+                              className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              <span>Assign Week {acadWeeklyWeek} Task</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {currentWeeklyTask ? (
+                        <div className="bg-white border border-slate-150 p-4 rounded-xl flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-xs">
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold font-mono rounded border border-indigo-150">
+                                Week {acadWeeklyWeek}
+                              </span>
+                              <span className="px-2 py-0.5 bg-slate-50 text-slate-700 text-[10px] font-bold rounded border border-slate-200 flex items-center gap-1">
+                                <Calendar className="h-3 w-3 text-indigo-600" />
+                                <span>Task Date: {currentWeeklyTask.task_date || currentWeeklyTask.created_at?.slice(0, 10) || "Today"}</span>
+                              </span>
+                              <div className="text-sm font-extrabold text-slate-900 leading-snug">
+                                {currentWeeklyTask.task_name}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
+                              {currentWeeklyTask.quiz_topic && (
+                                <span className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded-lg border border-amber-200 font-bold inline-flex items-center gap-1.5">
+                                  <span>Quiz (0–10)</span>
+                                  {currentWeeklyTask.quiz_topic.startsWith("http") && (
+                                    <a
+                                      href={currentWeeklyTask.quiz_topic}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-amber-900 hover:underline inline-flex items-center gap-0.5 text-[10px] bg-amber-100/80 px-1.5 py-0.2 rounded"
+                                    >
+                                      <span>Open Link</span>
+                                      <ArrowUpRight className="w-2.5 h-2.5" />
+                                    </a>
+                                  )}
+                                </span>
+                              )}
+                              {currentWeeklyTask.assessment_topic && (
+                                <span className="bg-purple-50 text-purple-800 px-2.5 py-1 rounded-lg border border-purple-200 font-bold inline-flex items-center gap-1.5">
+                                  <span>Assessment (0–10)</span>
+                                  {currentWeeklyTask.assessment_topic.startsWith("http") && (
+                                    <a
+                                      href={currentWeeklyTask.assessment_topic}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-purple-900 hover:underline inline-flex items-center gap-0.5 text-[10px] bg-purple-100/80 px-1.5 py-0.2 rounded"
+                                    >
+                                      <span>Open Link</span>
+                                      <ArrowUpRight className="w-2.5 h-2.5" />
+                                    </a>
+                                  )}
+                                </span>
+                              )}
+                              {currentWeeklyTask.assignment_topic && (
+                                <span className="bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold inline-flex items-center gap-1.5">
+                                  <span>Assignment (0–10)</span>
+                                  {currentWeeklyTask.assignment_topic.startsWith("http") && (
+                                    <a
+                                      href={currentWeeklyTask.assignment_topic}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-emerald-900 hover:underline inline-flex items-center gap-0.5 text-[10px] bg-emerald-100/80 px-1.5 py-0.2 rounded"
+                                    >
+                                      <span>Open Link</span>
+                                      <ArrowUpRight className="w-2.5 h-2.5" />
+                                    </a>
+                                  )}
+                                </span>
+                              )}
+                            </div>
+
+                            {currentWeeklyTask.task_pdf_url && (
+                              <a
+                                href={currentWeeklyTask.task_pdf_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-150 px-3 py-1 rounded-lg hover:bg-indigo-100 transition-colors"
+                              >
+                                <FileText className="h-3.5 w-3.5 text-indigo-600" />
+                                <span>View Reference Material</span>
+                              </a>
+                            )}
+                          </div>
+
+                          <div className="text-right text-[10px] text-slate-400 font-semibold">
+                            Updated: {new Date(currentWeeklyTask.updated_at || currentWeeklyTask.created_at || Date.now()).toLocaleDateString()}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 bg-white/60 border border-dashed border-indigo-200 rounded-xl flex flex-col items-center justify-center gap-2">
+                          <p className="text-xs text-slate-500 font-medium">No guidelines assigned for Week {acadWeeklyWeek} in {activeWeeklySubj} yet.</p>
+                          <button
+                            onClick={() => {
+                              setAcadTaskName("");
+                              setAcadTaskPdf("");
+                              setAcadIncludeQuiz(true);
+                              setAcadQuizUrl("");
+                              setAcadIncludeAssessment(true);
+                              setAcadAssessmentUrl("");
+                              setAcadIncludeAssignment(true);
+                              setAcadAssignmentUrl("");
+                              setIsEditingAcadTask(true);
+                            }}
+                            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>Assign Week {acadWeeklyWeek} Task Guidelines</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Student Submissions & 3-Component Evaluation Table */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-5">
+                      {/* Top Action Bar */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 rounded-xl bg-indigo-650 text-white">
+                            <ClipboardList className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
+                              Student Marks &amp; Evaluation Ledger (Week {acadWeeklyWeek})
+                            </h3>
+                            <span className="text-[10px] text-slate-400 font-semibold">
+                              Primary Key: <strong className="text-indigo-600">Student Email</strong> • Marks: Quiz (10) + Assessment (10) + Assignment (10)
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Filter Bar */}
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-150">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={acadWeeklySearch}
+                              onChange={(e) => setAcadWeeklySearch(e.target.value)}
+                              placeholder="Search student email, name or roll..."
+                              className="pl-4 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 w-64 bg-white font-medium text-slate-800"
+                            />
+                          </div>
+                          <select
+                            value={acadWeeklyStatusFilter}
+                            onChange={(e) => setAcadWeeklyStatusFilter(e.target.value)}
+                            className="px-3.5 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-bold text-slate-700 cursor-pointer"
+                          >
+                            <option value="all">All Records ({cohortStudents.length})</option>
+                            <option value="submitted">Marks Entered</option>
+                            <option value="not_submitted">Marks Pending</option>
+                          </select>
+                        </div>
+
+                        <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">
+                          Showing {paginatedWeeklyStudents.length} of {filteredWeeklyStudents.length} Filtered ({cohortStudents.length} Total Enrolled)
+                        </div>
+                      </div>
+
+                      {/* Marks Matrix Table */}
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs bg-white scroll-touch">
+                        <table className="w-full border-collapse text-left text-xs font-semibold min-w-[1050px]">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[9.5px] whitespace-nowrap">
+                              <th className="p-3.5 w-12 text-center border-r border-slate-100">#</th>
+                              <th className="p-3.5 border-r border-slate-100 min-w-[200px]">Student (Email ID &amp; Name)</th>
+                              <th className="p-3.5 border-r border-slate-100 w-[120px] text-center">Attendance</th>
+                              <th className="p-3.5 border-r border-slate-100 w-[110px] text-center bg-amber-50/40 text-amber-900">Quiz (0-10)</th>
+                              <th className="p-3.5 border-r border-slate-100 w-[110px] text-center bg-purple-50/40 text-purple-900">Assessment (0-10)</th>
+                              <th className="p-3.5 border-r border-slate-100 w-[110px] text-center bg-emerald-50/40 text-emerald-900">Assignment (0-10)</th>
+                              <th className="p-3.5 border-r border-slate-100 w-[120px] text-center bg-indigo-50/40 text-indigo-900">Total (30)</th>
+                              <th className="p-3.5 min-w-[200px]">Remarks / Feedback</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                            {paginatedWeeklyStudents.length === 0 ? (
+                              <tr>
+                                <td colSpan={8} className="p-8 text-center text-xs text-slate-400 italic">
+                                  No student records found matching the current search criteria.
+                                </td>
+                              </tr>
+                            ) : (
+                              paginatedWeeklyStudents.map((student, idx) => {
+                                const rowNum = acadWeeklyPageSize === -1 ? idx + 1 : (validPage - 1) * acadWeeklyPageSize + idx + 1;
+                                const entry = (studentAcademicTracker || []).find(
+                                  e => e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim() &&
+                                    e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                                    e.week_number === acadWeeklyWeek
+                                );
+
+                                const qm = entry?.quiz_marks !== undefined && entry?.quiz_marks !== null ? entry.quiz_marks : "";
+                                const asm = entry?.assessment_marks !== undefined && entry?.assessment_marks !== null ? entry.assessment_marks : "";
+                                const agm = entry?.assignment_marks !== undefined && entry?.assignment_marks !== null ? entry.assignment_marks : "";
+                                const totalScore = (qm !== "" || asm !== "" || agm !== "")
+                                  ? ((Number(qm) || 0) + (Number(asm) || 0) + (Number(agm) || 0))
+                                  : null;
+
+                                const targetTaskDate = currentWeeklyTask?.task_date || currentWeeklyTask?.created_at?.slice(0, 10);
+                                let currentAttStatus = "—";
+                                if (currentWeeklyTask) {
+                                  const attLogs = studentAttendance.filter(a => {
+                                    if (a.studentId !== student.id) return false;
+                                    if (!activeWeeklySubj) return true;
+                                    const slot = slots.find(sl => sl.id === a.slotId);
+                                    const subj = a.coveredSubject || slot?.course || "";
+                                    return isSubjectNameMatch(subj, activeWeeklySubj);
+                                  });
+                                  const exactDateLog = targetTaskDate ? attLogs.find(a => a.dateStr === targetTaskDate) : null;
+                                  const sortedLogs = [...attLogs].sort((a, b) => (b.dateStr || "").localeCompare(a.dateStr || ""));
+                                  const effectiveLog = exactDateLog || sortedLogs[0];
+                                  if (effectiveLog) {
+                                    const st = (effectiveLog.status || "").toLowerCase();
+                                    currentAttStatus = st === "absent" ? "Absent" : st === "od" ? "OD" : "Present";
+                                  } else if (entry?.attendance_status) {
+                                    currentAttStatus = entry.attendance_status;
+                                  } else {
+                                    currentAttStatus = "Present";
+                                  }
+                                }
+                                const status = acadSaveStatusMap[student.email] || "idle";
+
+                                return (
+                                  <tr key={`${student.email}_wk${acadWeeklyWeek}`} className="hover:bg-slate-50/60 transition-colors">
+                                    <td className="p-3 text-center font-bold text-slate-400 border-r border-slate-100">
+                                      {rowNum}
+                                    </td>
+                                    <td className="p-3 border-r border-slate-100">
+                                      <div className="font-bold text-slate-900 leading-tight">{student.name}</div>
+                                      <div className="text-[10px] text-indigo-650 font-mono font-bold mt-0.5 select-all">
+                                        {student.email}
+                                      </div>
+                                      <div className="text-[9.5px] text-slate-400 font-mono">
+                                        ID: {student.id} {student.register_number ? `• Reg: ${student.register_number}` : ""}
+                                      </div>
+                                    </td>
+                                    <td className="p-3 text-center border-r border-slate-100">
+                                      {currentAttStatus === "—" ? (
+                                        <span className="inline-flex items-center justify-center text-xs font-bold text-slate-350 select-none">
+                                          —
+                                        </span>
+                                      ) : (
+                                        <span
+                                          className={`inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border shadow-2xs ${
+                                            currentAttStatus === "Absent"
+                                              ? "bg-rose-50 text-rose-700 border-rose-200"
+                                              : currentAttStatus === "OD"
+                                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                                : currentAttStatus === "Present"
+                                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                  : "bg-slate-100 text-slate-500 border-slate-200"
+                                          }`}
+                                          title={`Marked attendance from class session: ${currentAttStatus}`}
+                                        >
+                                          <span className={`h-1.5 w-1.5 rounded-full ${
+                                            currentAttStatus === "Absent" ? "bg-rose-600" : currentAttStatus === "OD" ? "bg-blue-600" : currentAttStatus === "Present" ? "bg-emerald-600" : "bg-slate-400"
+                                          }`} />
+                                          <span>{currentAttStatus}</span>
+                                        </span>
+                                      )}
+                                    </td>
+                                    {/* Quiz Marks */}
+                                    <td className="p-3 border-r border-slate-100 bg-amber-50/15">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="10"
+                                        step="0.5"
+                                        defaultValue={qm}
+                                        onBlur={async (e) => {
+                                          const val = e.target.value;
+                                          if (val === String(qm)) return;
+                                          if (val !== "" && (parseFloat(val) < 0 || parseFloat(val) > 10)) {
+                                            toast("Quiz marks must be between 0 and 10.", "warning");
+                                            return;
+                                          }
+                                          setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: "saving" }));
+                                          const res = await gradeStudentAcademicTask({
+                                            studentEmail: student.email,
+                                            studentId: student.id,
+                                            classGroup: student.classGroup || activeWeeklyClassGroup,
+                                            subject: activeWeeklySubj,
+                                            weekNumber: acadWeeklyWeek,
+                                            quizMarks: val !== "" ? parseFloat(val) : null,
+                                            assessmentMarks: asm !== "" ? parseFloat(String(asm)) : null,
+                                            assignmentMarks: agm !== "" ? parseFloat(String(agm)) : null,
+                                            attendanceStatus: currentAttStatus,
+                                            feedback: entry?.feedback,
+                                            gradedBy: currentMentor.id
+                                          });
+                                          setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: res.success ? "saved" : "error" }));
+                                          setTimeout(() => {
+                                            setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: "idle" }));
+                                          }, 2000);
+                                        }}
+                                        placeholder="—"
+                                        className="w-full text-center text-xs font-black px-2 py-1.5 rounded-lg border border-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white text-slate-900"
+                                      />
+                                    </td>
+                                    {/* Assessment Marks */}
+                                    <td className="p-3 border-r border-slate-100 bg-purple-50/15">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="10"
+                                        step="0.5"
+                                        defaultValue={asm}
+                                        onBlur={async (e) => {
+                                          const val = e.target.value;
+                                          if (val === String(asm)) return;
+                                          if (val !== "" && (parseFloat(val) < 0 || parseFloat(val) > 10)) {
+                                            toast("Assessment marks must be between 0 and 10.", "warning");
+                                            return;
+                                          }
+                                          setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: "saving" }));
+                                          const res = await gradeStudentAcademicTask({
+                                            studentEmail: student.email,
+                                            studentId: student.id,
+                                            classGroup: student.classGroup || activeWeeklyClassGroup,
+                                            subject: activeWeeklySubj,
+                                            weekNumber: acadWeeklyWeek,
+                                            quizMarks: qm !== "" ? parseFloat(String(qm)) : null,
+                                            assessmentMarks: val !== "" ? parseFloat(val) : null,
+                                            assignmentMarks: agm !== "" ? parseFloat(String(agm)) : null,
+                                            attendanceStatus: currentAttStatus,
+                                            feedback: entry?.feedback,
+                                            gradedBy: currentMentor.id
+                                          });
+                                          setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: res.success ? "saved" : "error" }));
+                                          setTimeout(() => {
+                                            setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: "idle" }));
+                                          }, 2000);
+                                        }}
+                                        placeholder="—"
+                                        className="w-full text-center text-xs font-black px-2 py-1.5 rounded-lg border border-purple-200 focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white text-slate-900"
+                                      />
+                                    </td>
+                                    {/* Assignment Marks */}
+                                    <td className="p-3 border-r border-slate-100 bg-emerald-50/15">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="10"
+                                        step="0.5"
+                                        defaultValue={agm}
+                                        onBlur={async (e) => {
+                                          const val = e.target.value;
+                                          if (val === String(agm)) return;
+                                          if (val !== "" && (parseFloat(val) < 0 || parseFloat(val) > 10)) {
+                                            toast("Assignment marks must be between 0 and 10.", "warning");
+                                            return;
+                                          }
+                                          setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: "saving" }));
+                                          const res = await gradeStudentAcademicTask({
+                                            studentEmail: student.email,
+                                            studentId: student.id,
+                                            classGroup: student.classGroup || activeWeeklyClassGroup,
+                                            subject: activeWeeklySubj,
+                                            weekNumber: acadWeeklyWeek,
+                                            quizMarks: qm !== "" ? parseFloat(String(qm)) : null,
+                                            assessmentMarks: asm !== "" ? parseFloat(String(asm)) : null,
+                                            assignmentMarks: val !== "" ? parseFloat(val) : null,
+                                            attendanceStatus: currentAttStatus,
+                                            feedback: entry?.feedback,
+                                            gradedBy: currentMentor.id
+                                          });
+                                          setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: res.success ? "saved" : "error" }));
+                                          setTimeout(() => {
+                                            setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: "idle" }));
+                                          }, 2000);
+                                        }}
+                                        placeholder="—"
+                                        className="w-full text-center text-xs font-black px-2 py-1.5 rounded-lg border border-emerald-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white text-slate-900"
+                                      />
+                                    </td>
+                                    {/* Total Marks */}
+                                    <td className="p-3 text-center border-r border-slate-100 bg-indigo-50/20">
+                                      {totalScore !== null ? (
+                                        <div>
+                                          <span className="text-xs font-black text-indigo-900 block">
+                                            {totalScore} / 30
+                                          </span>
+                                          <span className="text-[9.5px] font-extrabold text-indigo-600">
+                                            ({Math.round((totalScore / 30) * 100)}%)
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-slate-350 text-xs">—</span>
+                                      )}
+                                    </td>
+                                    {/* Remarks & Save Status */}
+                                    <td className="p-3">
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="text"
+                                          defaultValue={entry?.feedback || ""}
+                                          onBlur={async (e) => {
+                                            const val = e.target.value.trim();
+                                            if (val === (entry?.feedback || "")) return;
+                                            setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: "saving" }));
+                                            const res = await gradeStudentAcademicTask({
+                                              studentEmail: student.email,
+                                              studentId: student.id,
+                                              classGroup: student.classGroup || activeWeeklyClassGroup,
+                                              subject: activeWeeklySubj,
+                                              weekNumber: acadWeeklyWeek,
+                                              quizMarks: qm !== "" ? parseFloat(String(qm)) : null,
+                                              assessmentMarks: asm !== "" ? parseFloat(String(asm)) : null,
+                                              assignmentMarks: agm !== "" ? parseFloat(String(agm)) : null,
+                                              attendanceStatus: currentAttStatus,
+                                              feedback: val,
+                                              gradedBy: currentMentor.id
+                                            });
+                                            setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: res.success ? "saved" : "error" }));
+                                            setTimeout(() => {
+                                              setAcadSaveStatusMap(prev => ({ ...prev, [student.email]: "idle" }));
+                                            }, 2000);
+                                          }}
+                                          placeholder="Enter feedback or notes..."
+                                          className="flex-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 bg-slate-50 text-slate-800"
+                                        />
+                                        {status === "saving" && (
+                                          <span className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0"></span>
+                                        )}
+                                        {status === "saved" && (
+                                          <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                                        )}
+                                        {status === "error" && (
+                                          <AlertCircle className="h-4 w-4 text-rose-500 shrink-0" />
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination Controls */}
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-150 text-xs font-bold text-slate-700">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider">Rows per page:</span>
+                          <select
+                            value={acadWeeklyPageSize}
+                            onChange={(e) => {
+                              setAcadWeeklyPageSize(parseInt(e.target.value, 10));
+                              setAcadWeeklyPage(1);
+                            }}
+                            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer shadow-xs"
+                          >
+                            <option value={10}>10 per page</option>
+                            <option value={25}>25 per page</option>
+                            <option value={50}>50 per page</option>
+                            <option value={100}>100 per page</option>
+                            <option value={-1}>Show All ({cohortStudents.length})</option>
+                          </select>
+                        </div>
+
+                        {acadWeeklyPageSize !== -1 && totalPages > 1 && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={validPage <= 1}
+                              onClick={() => setAcadWeeklyPage(p => Math.max(1, p - 1))}
+                              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-bold"
+                            >
+                              Previous
+                            </button>
+                            <span className="px-3 py-1.5 text-xs text-slate-600">
+                              Page {validPage} of {totalPages}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={validPage >= totalPages}
+                              onClick={() => setAcadWeeklyPage(p => Math.min(totalPages, p + 1))}
+                              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-bold"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Task Assignment Modal */}
+                    {isEditingAcadTask && (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn">
+                        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-2xl max-w-lg w-full space-y-4">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2">
+                              <Layers className="h-5 w-5 text-indigo-600" />
+                              <h3 className="text-sm font-black text-slate-900">
+                                Assign Week {acadWeeklyWeek} Academic Tasks ({activeWeeklySubj})
+                              </h3>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingAcadTask(false)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+
+                          <form
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              if (!acadTaskName.trim()) {
+                                toast("Please enter a task title or instructions.", "warning");
+                                return;
+                              }
+
+                              const res = await assignWeeklyAcademicTask({
+                                classGroup: activeWeeklyClassGroup,
+                                subject: activeWeeklySubj,
+                                weekNumber: acadWeeklyWeek,
+                                taskName: acadTaskName.trim(),
+                                taskDate: acadTaskDate,
+                                taskPdfUrl: acadTaskPdf.trim() || undefined,
+                                quizTopic: acadIncludeQuiz ? (acadQuizUrl.trim() || "Enabled") : undefined,
+                                assessmentTopic: acadIncludeAssessment ? (acadAssessmentUrl.trim() || "Enabled") : undefined,
+                                assignmentTopic: acadIncludeAssignment ? (acadAssignmentUrl.trim() || "Enabled") : undefined,
+                                mentorId: currentMentor.id
+                              });
+
+                              if (res.success) {
+                                toast(`Week ${acadWeeklyWeek} task guidelines saved!`, "success");
+                                setIsEditingAcadTask(false);
+                              } else {
+                                toast(res.message || "Failed to save task.", "error");
+                              }
+                            }}
+                            className="space-y-4"
+                          >
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div className="sm:col-span-2 space-y-1">
+                                <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
+                                  Overall Task Title / Topic / Weekly Overview <span className="text-rose-500">*</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={acadTaskName}
+                                  onChange={(e) => setAcadTaskName(e.target.value)}
+                                  placeholder="e.g. Unit 2: Sorting Algorithms & Hash Maps Evaluation"
+                                  className="w-full px-3.5 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white shadow-2xs"
+                                />
+                              </div>
+
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
+                                  Task / Session Date <span className="text-rose-500">*</span>
+                                </label>
+                                <input
+                                  type="date"
+                                  required
+                                  value={acadTaskDate}
+                                  onChange={(e) => setAcadTaskDate(e.target.value)}
+                                  className="w-full px-3 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white shadow-2xs"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Active Evaluation Components Checkboxes & URLs */}
+                            <div className="space-y-3 p-4 bg-slate-50/90 rounded-2xl border border-slate-200 shadow-2xs">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider block">
+                                  Select Evaluation Components for Week {acadWeeklyWeek}
+                                </label>
+                                <span className="text-[9.5px] font-bold text-slate-400">
+                                  Tick to activate &amp; paste link
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                {/* 1. Quiz */}
+                                <div className={`p-3 rounded-xl border transition-all ${acadIncludeQuiz ? "bg-indigo-50/80 border-indigo-300 ring-2 ring-indigo-500/25 shadow-xs" : "bg-white border-slate-200 opacity-60"}`}>
+                                  <label className="flex items-center gap-2 cursor-pointer font-black text-xs text-indigo-950 select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={acadIncludeQuiz}
+                                      onChange={(e) => setAcadIncludeQuiz(e.target.checked)}
+                                      className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer accent-indigo-600"
+                                    />
+                                    <span>Quiz (0–10)</span>
+                                  </label>
+                                  {acadIncludeQuiz && (
+                                    <div className="mt-2.5">
+                                      <input
+                                        type="url"
+                                        value={acadQuizUrl}
+                                        onChange={(e) => setAcadQuizUrl(e.target.value)}
+                                        placeholder="Paste Quiz Link"
+                                        className="w-full px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 bg-white text-slate-900 shadow-2xs"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* 2. Assessment */}
+                                <div className={`p-3 rounded-xl border transition-all ${acadIncludeAssessment ? "bg-purple-50/80 border-purple-300 ring-2 ring-purple-500/25 shadow-xs" : "bg-white border-slate-200 opacity-60"}`}>
+                                  <label className="flex items-center gap-2 cursor-pointer font-black text-xs text-purple-950 select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={acadIncludeAssessment}
+                                      onChange={(e) => setAcadIncludeAssessment(e.target.checked)}
+                                      className="h-4 w-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600"
+                                    />
+                                    <span>Assessment (0–10)</span>
+                                  </label>
+                                  {acadIncludeAssessment && (
+                                    <div className="mt-2.5">
+                                      <input
+                                        type="url"
+                                        value={acadAssessmentUrl}
+                                        onChange={(e) => setAcadAssessmentUrl(e.target.value)}
+                                        placeholder="Paste Test Link"
+                                        className="w-full px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 bg-white text-slate-900 shadow-2xs"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* 3. Assignment */}
+                                <div className={`p-3 rounded-xl border transition-all ${acadIncludeAssignment ? "bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-500/25 shadow-xs" : "bg-white border-slate-200 opacity-60"}`}>
+                                  <label className="flex items-center gap-2 cursor-pointer font-black text-xs text-emerald-950 select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={acadIncludeAssignment}
+                                      onChange={(e) => setAcadIncludeAssignment(e.target.checked)}
+                                      className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                                    />
+                                    <span>Assignment (0–10)</span>
+                                  </label>
+                                  {acadIncludeAssignment && (
+                                    <div className="mt-2.5">
+                                      <input
+                                        type="url"
+                                        value={acadAssignmentUrl}
+                                        onChange={(e) => setAcadAssignmentUrl(e.target.value)}
+                                        placeholder="Paste Task Link"
+                                        className="w-full px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border border-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 bg-white text-slate-900 shadow-2xs"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                              <button
+                                type="button"
+                                onClick={() => setIsEditingAcadTask(false)}
+                                className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-50 text-slate-600 cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit"
+                                className="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm cursor-pointer"
+                              >
+                                Save Guidelines
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* ── LOG / EDIT ACADEMIC PERIOD MODAL ── */}
+              {showAcadLogModal && (() => {
+                const { dateSlots, dayOrder, dayType, mappedDay, dayName } = getMentorSlotsForDate(acadFormDate);
+                const isHoliday = dayType === "holiday" || mappedDay === "holiday";
+
+                return (
+                  <div
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 transition-all"
+                    onClick={() => setShowAcadLogModal(false)}
+                  >
+                    <div
+                      className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100">
+                            <BookOpen className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-black text-slate-900">
+                              {editingAcadEntry ? "Edit Academic Period Log" : "Log Teaching Period"}
+                            </h3>
+                            <p className="text-xs text-slate-400 font-medium">Record syllabus and topic conduction for your scheduled slot</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowAcadLogModal(false)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      {/* Day Order & Timetable Status Info Badge */}
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2 text-xs">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-extrabold text-slate-800">{dayName}</span>
+                            {dayOrder ? (
+                              <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase">
+                                {dayOrder} ({mappedDay} Timetable)
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 text-[10px] font-black uppercase">
+                                Regular Schedule
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10.5px] text-slate-500 font-medium block">
+                            {isHoliday
+                              ? "Holiday / Off Day declared"
+                              : dateSlots.length > 0
+                              ? `${dateSlots.length} scheduled class${dateSlots.length !== 1 ? 'es' : ''} assigned to you`
+                              : "No scheduled timetable slots found for you on this day"}
+                          </span>
+                        </div>
+
+                        {dateSlots.length > 0 && (
+                          <span className="px-2 py-1 bg-emerald-50 text-emerald-700 font-black text-[9.5px] rounded-lg border border-emerald-200 uppercase shrink-0">
+                            Auto-Mapped
+                          </span>
+                        )}
+                      </div>
+
+                      <form onSubmit={handleSaveLog} className="space-y-4">
+                        {/* Date & Period Slot */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Conduction Date *</label>
+                            <input
+                              type="date"
+                              value={acadFormDate}
+                              onChange={e => handleDateChangeInModal(e.target.value)}
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white"
+                              required
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Scheduled Period Slot *</label>
+                            <select
+                              value={
+                                dateSlots.some(s => s.time === acadFormPeriodSlot)
+                                  ? dateSlots.find(s => s.time === acadFormPeriodSlot)?.id || acadFormPeriodSlot
+                                  : acadFormPeriodSlot
+                              }
+                              onChange={e => handlePeriodSelectInModal(e.target.value, dateSlots)}
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer"
+                              required
+                            >
+                              {dateSlots.length > 0 ? (
+                                dateSlots.map(slot => (
+                                  <option key={slot.id} value={slot.id}>
+                                    {slot.time} • {slot.classGroup} ({slot.course})
+                                  </option>
+                                ))
+                              ) : (
+                                <option value="" disabled>No scheduled timetable periods on this date</option>
+                              )}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Class Group & Subject */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Class Group / Cohort *</label>
+                            <select
+                              value={acadFormClassGroup}
+                              onChange={e => setAcadFormClassGroup(e.target.value)}
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer"
+                              required
+                            >
+                              {mentorClassesList.map(cg => (
+                                <option key={cg} value={cg}>{cg}</option>
+                              ))}
+                              {mentorClassesList.length === 0 && <option value="General Batch">General Batch</option>}
+                            </select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Academic Subject *</label>
+                            <select
+                              value={acadFormSubject}
+                              onChange={e => setAcadFormSubject(e.target.value)}
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer"
+                              required
+                            >
+                              {availableAcadSubjects.map(sub => (
+                                <option key={sub} value={sub}>{sub}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Unit & Conduction Status */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Syllabus Unit *</label>
+                            <select
+                              value={acadFormUnit}
+                              onChange={e => setAcadFormUnit(e.target.value)}
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer"
+                              required
+                            >
+                              <option value="Unit 1">Unit 1</option>
+                              <option value="Unit 2">Unit 2</option>
+                              <option value="Unit 3">Unit 3</option>
+                              <option value="Unit 4">Unit 4</option>
+                              <option value="Unit 5">Unit 5</option>
+                              <option value="Revision & Problem Solving">Revision & Problem Solving</option>
+                              <option value="Unit Test / Assessment">Unit Test / Assessment</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Conduction Status *</label>
+                            <select
+                              value={acadFormStatus}
+                              onChange={e => setAcadFormStatus(e.target.value)}
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer"
+                              required
+                            >
+                              <option value="Delivered">Delivered</option>
+                              <option value="Not Delivered">Not Delivered</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Topic Covered */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Topic Covered During Class *</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Introduction to Binary Search Trees & Node Insertion"
+                            value={acadFormTopic}
+                            onChange={e => setAcadFormTopic(e.target.value)}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none"
+                            required
+                          />
+                        </div>
+
+                        {/* Comments / Practice Assigned */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Delivery Comments & Homework Remarks</label>
+                          <textarea
+                            rows={3}
+                            placeholder="e.g. Completed textbook derivation, assigned 3 practice problems from chapter 4 for next class."
+                            value={acadFormComments}
+                            onChange={e => setAcadFormComments(e.target.value)}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:ring-1 focus:ring-indigo-500 outline-none resize-none"
+                          />
+                        </div>
+
+                        <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => setShowAcadLogModal(false)}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+
+                          <button
+                            type="submit"
+                            disabled={isSavingAcadEntry}
+                            className="px-5 py-2 rounded-xl text-xs font-extrabold text-white bg-slate-900 hover:bg-indigo-600 transition-all cursor-pointer flex items-center gap-2 shadow-xs disabled:opacity-50"
+                          >
+                            {isSavingAcadEntry && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            <span>{editingAcadEntry ? "Update Log" : "Save Teaching Period"}</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          );
+        })()}
 
         {/* Tab: Demo Evaluations */}
         {((activeTab as string) === "demo_evaluations") && (() => {

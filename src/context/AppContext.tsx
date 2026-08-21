@@ -134,6 +134,7 @@ export interface StudentAttendance {
   type?: "Regular" | "Non-Regular";
   mode?: "Online" | "Offline";
   attendanceTypeSub?: string;
+  coveredSubject?: string;
 }
 
 export interface Holiday {
@@ -282,6 +283,57 @@ export interface Department {
 }
 
 export type Course = Department;
+
+export interface AcademicTrackerEntry {
+  id: string;
+  date: string;
+  period_slot: string;
+  class_group: string;
+  subject: string;
+  unit: string;
+  topic: string;
+  comments?: string;
+  status?: string;
+  mentor_id: string;
+  mentor_name?: string;
+  college_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WeeklyAcademicTask {
+  id: string;
+  class_group: string;
+  subject: string;
+  week_number: number;
+  task_name: string;
+  task_pdf_url?: string;
+  task_date?: string;
+  quiz_topic?: string;
+  assessment_topic?: string;
+  assignment_topic?: string;
+  mentor_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StudentAcademicTrackerEntry {
+  id: string;
+  student_email: string;
+  student_id?: string;
+  class_group: string;
+  subject: string;
+  week_number: number;
+  attendance_status?: string;
+  submission_url?: string;
+  quiz_marks?: number | null;
+  assessment_marks?: number | null;
+  assignment_marks?: number | null;
+  total_marks?: number | null;
+  feedback?: string;
+  graded_by?: string;
+  updated_at?: string;
+}
 
 interface WeekDate {
   day: string;
@@ -435,6 +487,22 @@ interface AppContextProps {
   bulkDeleteStudents: (ids: string[]) => Promise<{ success: boolean; message: string; count?: number }>;
   weeklyTasks: WeeklyTask[];
   studentTracker: StudentTrackerEntry[];
+  academicTracker: AcademicTrackerEntry[];
+  saveAcademicTrackerEntry: (entryData: {
+    id?: string;
+    date: string;
+    periodSlot: string;
+    classGroup: string;
+    subject: string;
+    unit: string;
+    topic: string;
+    comments?: string;
+    status?: string;
+    mentorId: string;
+    mentorName?: string;
+    collegeId?: string;
+  }) => Promise<{ success: boolean; entry?: AcademicTrackerEntry; message?: string }>;
+  deleteAcademicTrackerEntry: (id: string) => Promise<{ success: boolean; message?: string }>;
   interviews: StudentInterview[];
   interviewEvaluations: any[];
   approvals: any[];
@@ -445,6 +513,12 @@ interface AppContextProps {
   assignWeeklyTask: (taskData: { classGroup: string; subject: string; weekNumber: number; taskName: string; taskPdfUrl?: string; mentorId: string }) => Promise<{ success: boolean; task?: WeeklyTask; message?: string }>;
   gradeStudentTask: (entryData: { studentId: string; classGroup: string; subject: string; weekNumber: number; submissionUrl?: string; vivaAssessment?: string; marks?: number; gradedBy?: string }) => Promise<{ success: boolean; entry?: StudentTrackerEntry; message?: string }>;
   deleteWeeklyTask: (classGroup: string, subject: string, weekNumber: number) => Promise<{ success: boolean; message?: string }>;
+  weeklyAcademicTasks: WeeklyAcademicTask[];
+  studentAcademicTracker: StudentAcademicTrackerEntry[];
+  assignWeeklyAcademicTask: (taskData: { classGroup: string; subject: string; weekNumber: number; taskName: string; taskPdfUrl?: string; taskDate?: string; quizTopic?: string; assessmentTopic?: string; assignmentTopic?: string; mentorId: string }) => Promise<{ success: boolean; task?: WeeklyAcademicTask; message?: string }>;
+  gradeStudentAcademicTask: (entryData: { studentEmail: string; studentId?: string; classGroup: string; subject: string; weekNumber: number; quizMarks?: number | null; assessmentMarks?: number | null; assignmentMarks?: number | null; attendanceStatus?: string; submissionUrl?: string; feedback?: string; gradedBy?: string }) => Promise<{ success: boolean; entry?: StudentAcademicTrackerEntry; message?: string }>;
+  bulkUploadAcademicMarks: (bulkData: { records: any[]; classGroup: string; subject: string; weekNumber: number; gradedBy?: string }) => Promise<{ success: boolean; updatedCount?: number; message?: string }>;
+  deleteWeeklyAcademicTask: (classGroup: string, subject: string, weekNumber: number) => Promise<{ success: boolean; message?: string }>;
   subjectGroups: Array<{ id: string; name: string; description: string; lead_sme_id?: string; lead_sme_name?: string }>;
   createSubjectGroup: (name: string, description: string, subjectIds?: string[], mentorIds?: string[], lead_sme_id?: string, lead_sme_name?: string) => Promise<{ success: boolean; message: string }>;
   updateSubjectGroup: (id: string, name: string, description: string, subjectIds?: string[], mentorIds?: string[], lead_sme_id?: string, lead_sme_name?: string) => Promise<{ success: boolean; message: string }>;
@@ -564,6 +638,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [weeklyTasks, setWeeklyTasks] = useState<WeeklyTask[]>([]);
   const [studentTracker, setStudentTracker] = useState<StudentTrackerEntry[]>([]);
+  const [academicTracker, setAcademicTracker] = useState<AcademicTrackerEntry[]>([]);
+  const [weeklyAcademicTasks, setWeeklyAcademicTasks] = useState<WeeklyAcademicTask[]>([]);
+  const [studentAcademicTracker, setStudentAcademicTracker] = useState<StudentAcademicTrackerEntry[]>([]);
   const [interviews, setInterviews] = useState<StudentInterview[]>([]);
   const [interviewEvaluations, setInterviewEvaluations] = useState<any[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
@@ -690,6 +767,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setHolidays(data.holidays || []);
         setWeeklyTasks(data.weeklyTasks || []);
         setStudentTracker(data.studentTracker || []);
+        setAcademicTracker(data.academicTracker || []);
         setInterviews(data.interviews || []);
         setInterviewEvaluations(data.interviewEvaluations || []);
         setApprovals(data.approvals || []);
@@ -2626,6 +2704,217 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const saveAcademicTrackerEntry = async (entryData: {
+    id?: string;
+    date: string;
+    periodSlot: string;
+    classGroup: string;
+    subject: string;
+    unit: string;
+    topic: string;
+    comments?: string;
+    status?: string;
+    mentorId: string;
+    mentorName?: string;
+    collegeId?: string;
+  }) => {
+    try {
+      const res = await fetch("/api/academic-tracker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entryData)
+      });
+      const data = await res.json();
+      if (data.success && data.entry) {
+        setAcademicTracker(prev => {
+          const filtered = prev.filter(e => e.id !== data.entry.id && !(
+            e.mentor_id === data.entry.mentor_id &&
+            e.date === data.entry.date &&
+            e.period_slot === data.entry.period_slot &&
+            e.subject.toLowerCase().trim() === data.entry.subject.toLowerCase().trim() &&
+            e.class_group.toLowerCase().trim() === data.entry.class_group.toLowerCase().trim()
+          ));
+          return [data.entry, ...filtered];
+        });
+        return { success: true, entry: data.entry, message: data.message };
+      }
+      return { success: false, message: data.message || "Failed to record academic log." };
+    } catch (e: any) {
+      console.error("saveAcademicTrackerEntry error:", e);
+      return { success: false, message: e.message };
+    }
+  };
+
+  const deleteAcademicTrackerEntry = async (id: string) => {
+    try {
+      const res = await fetch(`/api/academic-tracker?id=${encodeURIComponent(id)}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAcademicTracker(prev => prev.filter(e => e.id !== id));
+        return { success: true, message: data.message };
+      }
+      return { success: false, message: data.message || "Failed to delete log." };
+    } catch (e: any) {
+      console.error("deleteAcademicTrackerEntry error:", e);
+      return { success: false, message: e.message };
+    }
+  };
+
+  const assignWeeklyAcademicTask = async (taskData: {
+    classGroup: string;
+    subject: string;
+    weekNumber: number;
+    taskName: string;
+    taskPdfUrl?: string;
+    taskDate?: string;
+    quizTopic?: string;
+    assessmentTopic?: string;
+    assignmentTopic?: string;
+    mentorId: string;
+  }) => {
+    try {
+      const res = await fetch("/api/academic-tracker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "assign_weekly_task", ...taskData })
+      });
+      const data = await res.json();
+      if (data.success && data.task) {
+        setWeeklyAcademicTasks(prev => {
+          const filtered = prev.filter(
+            t => !(
+              t.class_group.toLowerCase().trim() === taskData.classGroup.toLowerCase().trim() &&
+              t.subject.toLowerCase().trim() === taskData.subject.toLowerCase().trim() &&
+              t.week_number === taskData.weekNumber
+            )
+          );
+          return [...filtered, data.task];
+        });
+        return { success: true, task: data.task };
+      }
+      return { success: false, message: data.message || "Failed to assign academic task." };
+    } catch (e: any) {
+      console.error("assignWeeklyAcademicTask error:", e);
+      return { success: false, message: e.message };
+    }
+  };
+
+  const gradeStudentAcademicTask = async (entryData: {
+    studentEmail: string;
+    studentId?: string;
+    classGroup: string;
+    subject: string;
+    weekNumber: number;
+    quizMarks?: number | null;
+    assessmentMarks?: number | null;
+    assignmentMarks?: number | null;
+    attendanceStatus?: string;
+    submissionUrl?: string;
+    feedback?: string;
+    gradedBy?: string;
+  }) => {
+    try {
+      const res = await fetch("/api/academic-tracker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "grade_student", ...entryData })
+      });
+      const data = await res.json();
+      if (data.success && data.entry) {
+        setStudentAcademicTracker(prev => {
+          const filtered = prev.filter(
+            e => !(
+              e.student_email.toLowerCase().trim() === entryData.studentEmail.toLowerCase().trim() &&
+              e.class_group.toLowerCase().trim() === entryData.classGroup.toLowerCase().trim() &&
+              e.subject.toLowerCase().trim() === entryData.subject.toLowerCase().trim() &&
+              e.week_number === entryData.weekNumber
+            )
+          );
+          return [...filtered, data.entry];
+        });
+        return { success: true, entry: data.entry };
+      }
+      return { success: false, message: data.message || "Failed to update grade." };
+    } catch (e: any) {
+      console.error("gradeStudentAcademicTask error:", e);
+      return { success: false, message: e.message };
+    }
+  };
+
+  const bulkUploadAcademicMarks = async (bulkData: {
+    records: any[];
+    classGroup: string;
+    subject: string;
+    weekNumber: number;
+    gradedBy?: string;
+  }) => {
+    try {
+      const res = await fetch("/api/academic-tracker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "bulk_upload_marks", ...bulkData })
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.studentTracker) {
+          setStudentAcademicTracker(prev => {
+            const keysToReplace = new Set(
+              data.studentTracker.map((e: any) =>
+                `${e.student_email.toLowerCase().trim()}_${e.class_group.toLowerCase().trim()}_${e.subject.toLowerCase().trim()}_${e.week_number}`
+              )
+            );
+            const filtered = prev.filter(
+              e => !keysToReplace.has(`${e.student_email.toLowerCase().trim()}_${e.class_group.toLowerCase().trim()}_${e.subject.toLowerCase().trim()}_${e.week_number}`)
+            );
+            return [...filtered, ...data.studentTracker];
+          });
+        }
+        return { success: true, updatedCount: data.updatedCount, message: data.message };
+      }
+      return { success: false, message: data.message || "Failed to bulk upload academic marks." };
+    } catch (e: any) {
+      console.error("bulkUploadAcademicMarks error:", e);
+      return { success: false, message: e.message };
+    }
+  };
+
+  const deleteWeeklyAcademicTask = async (classGroup: string, subject: string, weekNumber: number) => {
+    try {
+      const res = await fetch(
+        `/api/academic-tracker?action=delete_weekly_task&classGroup=${encodeURIComponent(classGroup)}&subject=${encodeURIComponent(subject)}&weekNumber=${weekNumber}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json();
+      if (data.success) {
+        setWeeklyAcademicTasks(prev =>
+          prev.filter(
+            t => !(
+              t.class_group.toLowerCase().trim() === classGroup.toLowerCase().trim() &&
+              t.subject.toLowerCase().trim() === subject.toLowerCase().trim() &&
+              t.week_number === weekNumber
+            )
+          )
+        );
+        setStudentAcademicTracker(prev =>
+          prev.filter(
+            e => !(
+              e.class_group.toLowerCase().trim() === classGroup.toLowerCase().trim() &&
+              e.subject.toLowerCase().trim() === subject.toLowerCase().trim() &&
+              e.week_number === weekNumber
+            )
+          )
+        );
+        return { success: true, message: data.message };
+      }
+      return { success: false, message: data.message || "Failed to delete task." };
+    } catch (e: any) {
+      console.error("deleteWeeklyAcademicTask error:", e);
+      return { success: false, message: e.message };
+    }
+  };
+
   const addInterview = async (interviewData: Partial<StudentInterview>) => {
     try {
       const res = await fetch("/api/interviews", {
@@ -2988,6 +3277,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleLeaveRequest,
         weeklyTasks,
         studentTracker,
+        academicTracker,
+        saveAcademicTrackerEntry,
+        deleteAcademicTrackerEntry,
         interviews,
         interviewEvaluations,
         approvals,
@@ -3021,6 +3313,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         assignWeeklyTask,
         gradeStudentTask,
         deleteWeeklyTask,
+        weeklyAcademicTasks,
+        studentAcademicTracker,
+        assignWeeklyAcademicTask,
+        gradeStudentAcademicTask,
+        bulkUploadAcademicMarks,
+        deleteWeeklyAcademicTask,
         subjectGroups,
         createSubjectGroup,
         updateSubjectGroup,

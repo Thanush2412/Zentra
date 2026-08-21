@@ -17,7 +17,7 @@ import {
   PieChart, Pie, Cell, Legend,
   AreaChart, Area, CartesianGrid
 } from "recharts";
-import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate } from "../lib/utils";
+import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate, isSkillSubject } from "../lib/utils";
 import { InterviewModule } from "./InterviewModule";
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
@@ -62,6 +62,149 @@ const formatYearWiseRooms = (defaultRoomStr?: string) => {
   }
 };
 
+
+/* ─── Premium Checkmark Dropdown Component ─── */
+interface CheckmarkSelectProps {
+  label: string;
+  value: string;
+  onChange: (val: string) => void;
+  options: { value: string; label: string; subtext?: string }[];
+  searchable?: boolean;
+  placeholder?: string;
+}
+
+const CheckmarkSelect: React.FC<CheckmarkSelectProps> = ({
+  label,
+  value,
+  onChange,
+  options,
+  searchable = false,
+  placeholder = "Select..."
+}) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+    };
+  }, [open]);
+
+  const selectedOpt = options.find(o => o.value === value) || options[0];
+
+  const visibleOpts = searchable && query.trim()
+    ? options.filter(o => 
+        o.label.toLowerCase().includes(query.toLowerCase().trim()) ||
+        (o.subtext && o.subtext.toLowerCase().includes(query.toLowerCase().trim()))
+      )
+    : options;
+
+  return (
+    <div
+      className={`relative ${open ? "z-[100]" : "z-10"}`}
+      ref={dropdownRef}
+      onMouseDown={e => e.stopPropagation()}
+    >
+      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">
+        {label}
+      </label>
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(prev => !prev);
+          setQuery("");
+        }}
+        className="w-full flex items-center justify-between p-2 bg-slate-50 hover:bg-slate-100/90 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none transition-all cursor-pointer text-left focus:ring-1 focus:ring-[#D528A2]"
+      >
+        <span className="truncate pr-1.5">{selectedOpt ? selectedOpt.label : placeholder}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-200 ${open ? "rotate-180 text-[#D528A2]" : ""}`} />
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1.5 w-full min-w-[220px] max-w-[340px] bg-white border border-slate-200 rounded-xl shadow-2xl z-[200] overflow-hidden animate-fadeIn"
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+        >
+          {searchable && options.length > 4 && (
+            <div className="p-2 border-b border-slate-100 bg-slate-50/70" onMouseDown={e => e.stopPropagation()}>
+              <div className="relative">
+                <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder={`Search ${label.toLowerCase()}...`}
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}
+                  autoFocus
+                  className="w-full pl-7 pr-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md outline-none focus:border-[#D528A2] font-medium text-slate-800"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="max-h-56 overflow-y-auto custom-scrollbar p-1 space-y-0.5" onMouseDown={e => e.stopPropagation()}>
+            {visibleOpts.length === 0 ? (
+              <div className="p-3 text-center text-xs text-slate-400">
+                No matching options
+              </div>
+            ) : (
+              visibleOpts.map(opt => {
+                const isSelected = opt.value === value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onChange(opt.value);
+                      setOpen(false);
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onChange(opt.value);
+                      setOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs text-left transition-colors cursor-pointer ${
+                      isSelected
+                        ? "bg-[#D528A2]/10 text-[#D528A2] font-black"
+                        : "text-slate-700 hover:bg-slate-50 font-semibold"
+                    }`}
+                  >
+                    <div className="truncate pr-1.5 flex-1 min-w-0">
+                      <div className="truncate">{opt.label}</div>
+                      {opt.subtext && (
+                        <div className="text-[10px] text-slate-400 font-normal truncate">
+                          {opt.subtext}
+                        </div>
+                      )}
+                    </div>
+                    {isSelected && (
+                      <Check className="w-3.5 h-3.5 text-[#D528A2] stroke-[3] shrink-0 ml-1.5" />
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 /* ─── CAM Fee Collection Panel ─── */
 const fmt = (n: number) => "₹" + n.toLocaleString("en-IN", { maximumFractionDigits: 0 });
@@ -409,35 +552,46 @@ const CAMCampusInsightPanel: React.FC<{
   campusSlots: Slot[];
   collegeStudents: Student[];
   collegeSubjects: Subject[];
+  initialStudentAttendance?: any[];
 }> = ({
   activeCollegeId,
   activeCollegeName,
   collegeMentors,
   campusSlots = [],
   collegeStudents,
-  collegeSubjects
+  collegeSubjects,
+  initialStudentAttendance
 }) => {
   const { toast } = useToast();
   const [selectedSubTab, setSelectedSubTab] = useState<"all" | "workload" | "attendance" | "syllabus" | "demos">("all");
   const [selectedCohort, setSelectedCohort] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [studentAttendance, setStudentAttendance] = useState<any[]>([]);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const [studentAttendance, setStudentAttendance] = useState<any[]>(() => initialStudentAttendance || []);
   const [demoSessions, setDemoSessions] = useState<any[]>([]);
 
-  // Fetch Attendance records
+  // Synchronize when initial prop updates
+  useEffect(() => {
+    if (initialStudentAttendance && initialStudentAttendance.length > 0) {
+      setStudentAttendance(initialStudentAttendance);
+    }
+  }, [initialStudentAttendance]);
+
+  // Fetch only if not provided by parent
   useEffect(() => {
     if (!activeCollegeId) return;
-    // Limit to last 60 days to prevent unbounded full-table scan
-    const sixtyDaysAgo = new Date();
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-    const startDate = sixtyDaysAgo.toISOString().split("T")[0];
-    fetch(`/api/attendance?college_id=${encodeURIComponent(activeCollegeId)}&startDate=${startDate}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.records) setStudentAttendance(d.records);
-        else if (Array.isArray(d)) setStudentAttendance(d);
-      })
-      .catch(() => {});
+    if (!initialStudentAttendance || initialStudentAttendance.length === 0) {
+      const sixtyDaysAgo = new Date();
+      sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+      const startDate = sixtyDaysAgo.toISOString().split("T")[0];
+      fetch(`/api/attendance?college_id=${encodeURIComponent(activeCollegeId)}&startDate=${startDate}`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.records) setStudentAttendance(d.records);
+          else if (Array.isArray(d)) setStudentAttendance(d);
+        })
+        .catch(() => {});
+    }
 
     fetch(`/api/demo-sessions?college_id=${encodeURIComponent(activeCollegeId)}`)
       .then(r => r.json())
@@ -446,7 +600,7 @@ const CAMCampusInsightPanel: React.FC<{
         else if (Array.isArray(d)) setDemoSessions(d);
       })
       .catch(() => {});
-  }, [activeCollegeId]);
+  }, [activeCollegeId, initialStudentAttendance]);
 
   // Distinct Class Groups / Cohorts in Campus
   const campusCohorts = useMemo(() => {
@@ -454,6 +608,44 @@ const CAMCampusInsightPanel: React.FC<{
     const fromSlots = campusSlots.map(s => s.classGroup).filter(Boolean);
     return Array.from(new Set([...fromStudents, ...fromSlots])).sort();
   }, [collegeStudents, campusSlots]);
+
+  // O(1) Pre-aggregated student attendance summaries
+  const studentAttendanceSummaryMap = useMemo(() => {
+    const map = new Map<string, { present: number; absent: number; total: number }>();
+    (studentAttendance || []).forEach(a => {
+      if (!a.studentId) return;
+      let entry = map.get(a.studentId);
+      if (!entry) {
+        entry = { present: 0, absent: 0, total: 0 };
+        map.set(a.studentId, entry);
+      }
+      entry.total += 1;
+      if (a.status === "present" || a.status === "od") entry.present += 1;
+      else if (a.status === "absent") entry.absent += 1;
+    });
+    return map;
+  }, [studentAttendance]);
+
+  // O(1) Slot to Course mapping
+  const slotCourseMap = useMemo(() => {
+    const map = new Map<string, string>();
+    (campusSlots || []).forEach(s => {
+      if (s.id && s.course) map.set(s.id, s.course);
+    });
+    return map;
+  }, [campusSlots]);
+
+  // O(1) Pre-aggregated subject conducted counts
+  const subjectConductedCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    (studentAttendance || []).forEach(a => {
+      const subj = a.coveredSubject || (a.slotId ? slotCourseMap.get(a.slotId) : "");
+      if (!subj) return;
+      const clean = subj.trim().toLowerCase();
+      map.set(clean, (map.get(clean) || 0) + 1);
+    });
+    return map;
+  }, [studentAttendance, slotCourseMap]);
 
   // Export helpers
   const exportToCSV = (fileName: string, headers: string[], rows: any[][]) => {
@@ -557,8 +749,9 @@ const CAMCampusInsightPanel: React.FC<{
   // REPORT 1: Faculty Workload & Allocation Ledger
   // ─────────────────────────────────────────────────────────────────────────────
   const facultyWorkloadData = useMemo(() => {
+    const q = (deferredSearchQuery || "").toLowerCase().trim();
     return collegeMentors
-      .filter(m => !searchQuery || m.name.toLowerCase().includes(searchQuery.toLowerCase()) || (m.department || '').toLowerCase().includes(searchQuery.toLowerCase()))
+      .filter(m => !q || m.name.toLowerCase().includes(q) || (m.department || '').toLowerCase().includes(q))
       .map((mentor, idx) => {
         const assignedSlots = campusSlots.filter(s => s.mentorId === mentor.id);
         const assignedHours = assignedSlots.length;
@@ -578,7 +771,7 @@ const CAMCampusInsightPanel: React.FC<{
           subjects: mentor.subjects || "—"
         };
       });
-  }, [collegeMentors, campusSlots, searchQuery]);
+  }, [collegeMentors, campusSlots, deferredSearchQuery]);
 
   const exportFacultyWorkload = (format: "excel" | "csv" | "pdf") => {
     const headers = ["S.No", "Faculty Name", "Email", "Department", "Assigned Weekly Hours", "Target Limit (16h)", "Variance", "Workload Status", "Allocated Subjects"];
@@ -596,21 +789,18 @@ const CAMCampusInsightPanel: React.FC<{
     if (selectedCohort !== "all") {
       filteredStudents = filteredStudents.filter(s => isCohortMatch(s.classGroup, selectedCohort));
     }
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
+    if (deferredSearchQuery) {
+      const q = deferredSearchQuery.toLowerCase().trim();
       filteredStudents = filteredStudents.filter(s => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q) || (s.register_number || '').toLowerCase().includes(q));
     }
 
     const records: any[] = [];
     filteredStudents.forEach(student => {
-      // Find attendance records for this student
-      const studentAtts = studentAttendance.filter(a => a.studentId === student.id);
-      const totalConducted = studentAtts.length;
-      if (totalConducted === 0) return; // Skip students with 0 marked periods
+      // O(1) lookup from pre-aggregated map (was O(N) array filter)
+      const att = studentAttendanceSummaryMap.get(student.id);
+      if (!att || att.total === 0) return; // Skip students with 0 marked periods
 
-      const presentCount = studentAtts.filter(a => a.status === "present" || a.status === "od").length;
-      const absentCount = studentAtts.filter(a => a.status === "absent").length;
-      const percentage = Math.round((presentCount / totalConducted) * 100);
+      const percentage = Math.round((att.present / att.total) * 100);
 
       if (percentage < 75) {
         records.push({
@@ -619,9 +809,9 @@ const CAMCampusInsightPanel: React.FC<{
           regNo: student.register_number || student.id,
           dept: student.department || "General",
           classGroup: student.classGroup || "General",
-          conducted: totalConducted,
-          present: presentCount,
-          absent: absentCount,
+          conducted: att.total,
+          present: att.present,
+          absent: att.absent,
           percentage,
           severity: percentage < 65 ? "Critical Shortage (<65%)" : "Warning Shortage (65-74%)"
         });
@@ -629,7 +819,7 @@ const CAMCampusInsightPanel: React.FC<{
     });
 
     return records.sort((a, b) => a.percentage - b.percentage);
-  }, [collegeStudents, studentAttendance, selectedCohort, searchQuery]);
+  }, [collegeStudents, studentAttendanceSummaryMap, selectedCohort, deferredSearchQuery]);
 
   const exportAttendanceShortage = (format: "excel" | "csv" | "pdf") => {
     const headers = ["S.No", "Student ID", "Student Name", "Register No", "Department", "Class Group", "Conducted Periods", "Attended (Present)", "Absent", "Attendance %", "Status"];
@@ -644,21 +834,21 @@ const CAMCampusInsightPanel: React.FC<{
   // REPORT 3: Subject Completion & Syllabus Pace Report
   // ─────────────────────────────────────────────────────────────────────────────
   const syllabusPaceData = useMemo(() => {
+    const q = (deferredSearchQuery || "").toLowerCase().trim();
+    const avgCohortDivisor = Math.max(1, collegeStudents.length / 5);
+
     return collegeSubjects
-      .filter(s => !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase()) || (s.department || '').toLowerCase().includes(searchQuery.toLowerCase()))
+      .filter(s => !q || s.name.toLowerCase().includes(q) || (s.department || '').toLowerCase().includes(q))
       .map((sub, idx) => {
         const weeklyHrs = Number(sub.weekly_hours) || 4;
         const targetSemesterHours = weeklyHrs * 15; // 15-week academic semester
+        const cleanSub = sub.name.trim().toLowerCase();
 
-        // Count sessions conducted in studentAttendance for this subject
-        const conductedCount = studentAttendance.filter(a => {
-          if (a.coveredSubject && isSubjectNameMatch(a.coveredSubject, sub.name)) return true;
-          const matchingSlot = campusSlots.find(slot => slot.id === a.slotId);
-          return matchingSlot && isSubjectNameMatch(matchingSlot.course, sub.name);
-        }).length;
+        // O(1) count lookup from pre-aggregated map
+        const conductedCount = subjectConductedCountMap.get(cleanSub) || 0;
 
         // Distinct session count estimate
-        const distinctSessions = Math.min(targetSemesterHours, Math.round(conductedCount / Math.max(1, collegeStudents.length / 5)));
+        const distinctSessions = Math.min(targetSemesterHours, Math.round(conductedCount / avgCohortDivisor));
         const actualHours = distinctSessions > 0 ? distinctSessions : Math.min(targetSemesterHours, campusSlots.filter(s => isSubjectNameMatch(s.course, sub.name)).length * 10);
         const completionPct = Math.min(100, Math.round((actualHours / targetSemesterHours) * 100));
         const status = completionPct >= 80 ? "On Track" : completionPct >= 50 ? "In Progress" : "Lagging Behind";
@@ -675,7 +865,7 @@ const CAMCampusInsightPanel: React.FC<{
           status
         };
       });
-  }, [collegeSubjects, studentAttendance, campusSlots, collegeStudents, searchQuery]);
+  }, [collegeSubjects, subjectConductedCountMap, campusSlots, collegeStudents, deferredSearchQuery]);
 
   const exportSyllabusPace = (format: "excel" | "csv" | "pdf") => {
     const headers = ["S.No", "Subject Name", "Department", "Semester", "Type", "Target Semester Hours", "Actual Conducted Hours", "Syllabus Pace %", "Delivery Status"];
@@ -689,8 +879,9 @@ const CAMCampusInsightPanel: React.FC<{
   // REPORT 4: Mentor Demo & Evaluation Report
   // ─────────────────────────────────────────────────────────────────────────────
   const demoEvaluationData = useMemo(() => {
+    const q = (deferredSearchQuery || "").toLowerCase().trim();
     return (demoSessions || [])
-      .filter(d => !searchQuery || d.mentorName?.toLowerCase().includes(searchQuery.toLowerCase()) || d.subject?.toLowerCase().includes(searchQuery.toLowerCase()))
+      .filter(d => !q || d.mentorName?.toLowerCase().includes(q) || d.subject?.toLowerCase().includes(q))
       .map((d, idx) => ({
         sNo: idx + 1,
         id: d.id,
@@ -704,7 +895,7 @@ const CAMCampusInsightPanel: React.FC<{
         marks: d.marks !== undefined && d.marks !== null ? `${d.marks}/100` : "Pending",
         comments: d.comments || "—"
       }));
-  }, [demoSessions, searchQuery]);
+  }, [demoSessions, deferredSearchQuery]);
 
   const exportDemoEvaluations = (format: "excel" | "csv" | "pdf") => {
     const headers = ["S.No", "Mentor Name", "SME Evaluator", "Subject Demo", "Stream / Class", "Session Date", "Time Slot", "Status", "Score", "Evaluator Feedback"];
@@ -1871,8 +2062,8 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
 };
 
 export interface CAMDashboardProps {
-  activeTab?: "overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events";
-  onTabChange?: (tab: "overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events") => void;
+  activeTab?: "overview" | "config" | "curriculum" | "academic_tracker" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events";
+  onTabChange?: (tab: "overview" | "config" | "curriculum" | "academic_tracker" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events") => void;
 }
 
 export const CAMDashboard: React.FC<CAMDashboardProps> = ({
@@ -1911,6 +2102,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     handleRequest,
     weeklyTasks,
     studentTracker,
+    academicTracker,
     createMentor,
     bulkImportMentors,
     updateMentor,
@@ -2083,7 +2275,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   useEffect(() => {
     if (["overview"].includes(activeTab)) {
       setExpandedGroups({ dashboard: true });
-    } else if (["config", "curriculum"].includes(activeTab)) {
+    } else if (["config", "curriculum", "academic_tracker"].includes(activeTab)) {
       setExpandedGroups({ academics: true });
     } else if (["faculty", "handovers"].includes(activeTab)) {
       setExpandedGroups({ faculty: true });
@@ -2258,6 +2450,19 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       }
     }
   };
+
+  // ── CAM Academic Tracker Filters ──
+  const [camAcadDeptFilter, setCamAcadDeptFilter] = useState<string>("all");
+  const [camAcadCohortFilter, setCamAcadCohortFilter] = useState<string>("all");
+  const [camAcadSemFilter, setCamAcadSemFilter] = useState<string>("all");
+  const [camAcadMentorFilter, setCamAcadMentorFilter] = useState<string>("all");
+  const [camAcadSubjectFilter, setCamAcadSubjectFilter] = useState<string>("all");
+  const [camAcadUnitFilter, setCamAcadUnitFilter] = useState<string>("all");
+  const [camAcadStartDate, setCamAcadStartDate] = useState<string>("");
+  const [camAcadEndDate, setCamAcadEndDate] = useState<string>("");
+  const [camAcadSearch, setCamAcadSearch] = useState<string>("");
+  const [camAcadPage, setCamAcadPage] = useState<number>(1);
+  const [camAcadPageSize, setCamAcadPageSize] = useState<number>(20);
   // Template download selectors (3 separate pickers)
   const [templateDept, setTemplateDept] = useState<string>("");
   const [templateShift, setTemplateShift] = useState<string>("Shift 1");
@@ -2587,6 +2792,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const dateSet = new Set<string>();
     const start = new Date(startStr + "T00:00:00");
     const end = new Date(endStr + "T00:00:00");
+    const holidaySet = new Set<string>();
+    (holidays || []).forEach((h: any) => {
+      if (h?.date) holidaySet.add(h.date);
+      if (h?.dateStr) holidaySet.add(h.dateStr);
+    });
     
     // 1. Calendar working days (Mon-Sat, excluding holidays)
     if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
@@ -2594,9 +2804,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       while (cur <= end) {
         const dayOfWeek = cur.getDay(); // 0 = Sun
         const ymd = cur.toISOString().split("T")[0];
-        const isHoliday = (holidays || []).some((h: any) => h?.date === ymd || h?.dateStr === ymd);
 
-        if (dayOfWeek !== 0 && !isHoliday) {
+        if (dayOfWeek !== 0 && !holidaySet.has(ymd)) {
           dateSet.add(ymd);
         }
         cur.setDate(cur.getDate() + 1);
@@ -2609,6 +2818,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         dateSet.add(att.dateStr);
       }
     });
+
+    // 3. Today (if within range)
+    const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+    if (todayStr >= startStr && todayStr <= endStr) {
+      dateSet.add(todayStr);
+    }
 
     return Array.from(dateSet).sort();
   };
@@ -2646,7 +2861,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     ];
 
     const dataRows = filteredStudents.length > 0 ? filteredStudents.map((st, idx) => {
-      const defaultStatuses = workingDates.map(() => "P");
+      const defaultStatuses = workingDates.map(() => "");
       return [
         idx + 1,
         st.roll_number || st.id,
@@ -2664,7 +2879,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "Computer Science",
         "Semester 5",
         targetCG || "BCA - Semester 5",
-        ...workingDates.map(() => "P")
+        ...workingDates.map(() => "")
       ]
     ];
 
@@ -3119,17 +3334,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         setShowClearAttendanceModal(false);
         // Surgical immediate update: remove matching records from local state so matrix clears instantly
         setStudentAttendance(prev => {
-          const campusStudentIds = new Set(collegeStudents.map((s: any) => s.id));
+          const studentMap = new Map(collegeStudents.map((s: any) => [s.id, s]));
           return prev.filter(a => {
-            if (!campusStudentIds.has(a.studentId)) return true; // keep other colleges
-            if (clearDeptFilter !== "all") {
-              const st = collegeStudents.find((s: any) => s.id === a.studentId);
-              if (!st || st.department !== clearDeptFilter) return true;
-            }
-            if (clearBatchFilter !== "all") {
-              const st = collegeStudents.find((s: any) => s.id === a.studentId);
-              if (!st || st.classGroup !== clearBatchFilter) return true;
-            }
+            const st = studentMap.get(a.studentId);
+            if (!st) return true; // keep other colleges / unmapped
+            if (clearDeptFilter !== "all" && st.department !== clearDeptFilter) return true;
+            if (clearBatchFilter !== "all" && st.classGroup !== clearBatchFilter) return true;
             if (clearScope === "range") {
               return !(a.dateStr >= attendanceStartDate && a.dateStr <= attendanceEndDate);
             }
@@ -4059,28 +4269,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     return map;
   }, [studentAttendance]);
 
-  /** Sorted working dates in the selected date range (Mon–Sat, excl. holidays) */
+  /** Sorted working dates in the selected date range (Mon–Sat, excl. holidays) — unified source of truth */
   const attMonitoringWorkingDates = useMemo(() => {
-    const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
-    const dateSet = new Set<string>();
-    // Source 1: dates that actually have attendance records
-    (studentAttendance || []).forEach(a => { if (a.dateStr) dateSet.add(a.dateStr); });
-    // Source 2: every Mon–Sat in the selected range
-    const rangeStart = new Date(attendanceStartDate + "T00:00:00");
-    const rangeEnd   = new Date(attendanceEndDate   + "T00:00:00");
-    if (!isNaN(rangeStart.getTime()) && !isNaN(rangeEnd.getTime())) {
-      const cur = new Date(rangeStart);
-      while (cur <= rangeEnd) {
-        const dow = cur.getDay();
-        const ymd = cur.toISOString().split("T")[0];
-        const isHol = (holidays || []).some((h: any) => h?.date === ymd || h?.dateStr === ymd);
-        if (dow !== 0 && !isHol) dateSet.add(ymd);
-        cur.setDate(cur.getDate() + 1);
-      }
-    }
-    // Source 3: today
-    if (todayStr >= attendanceStartDate && todayStr <= attendanceEndDate) dateSet.add(todayStr);
-    return Array.from(dateSet).filter(d => d >= attendanceStartDate && d <= attendanceEndDate).sort();
+    return getSemesterWorkingDates(attendanceStartDate, attendanceEndDate);
   }, [attendanceStartDate, attendanceEndDate, holidays, studentAttendance]);
 
   /** Set of exam dates (O(1) lookup to replace per-cell isExamDate() scan) */
@@ -4091,6 +4282,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     });
     return s;
   }, [attMonitoringWorkingDates, dailyConfigsList, studentAttendance]);
+
+  /** O(1) Holiday map lookup (avoids linear holiday search in headers) */
+  const attMonitoringHolidayMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (holidays || []).forEach((h: any) => {
+      if (h?.date) map.set(h.date, h);
+      if (h?.dateStr) map.set(h.dateStr, h);
+    });
+    return map;
+  }, [holidays]);
 
   /** Pre-computed day name for each working date (avoids per-cell new Date().toLocaleDateString) */
   const attMonitoringDayNameMap = useMemo(() => {
@@ -4105,10 +4306,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const attMonitoringSlotMap = useMemo(() => {
     const map = new Map<string, any[]>();
     collegeSlots.forEach(s => {
-      const key = `${s.day}__${(s.classGroup || "").toLowerCase()}`;
-      const existing = map.get(key);
+      const rawKey = `${s.day}__${(s.classGroup || "").toLowerCase()}`;
+      const normKey = `${s.day}__${(s.classGroup || "").replace(/\s*\(\d{4}[–\-]\d{4}\)/g, "").replace(/\s*-\s*Batch\s*\d{4}[–\-]\d{4}/gi, "").trim().toLowerCase()}`;
+
+      const existing = map.get(rawKey);
       if (existing) existing.push(s);
-      else map.set(key, [s]);
+      else map.set(rawKey, [s]);
+
+      if (normKey !== rawKey) {
+        const normArr = map.get(normKey);
+        if (normArr) normArr.push(s);
+        else map.set(normKey, [s]);
+      }
     });
     return map;
   }, [collegeSlots]);
@@ -4131,8 +4340,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     return attMonitoringFiltered.map(st => {
       let presentDays = 0, absentDays = 0, totalMarkedDays = 0;
       attMonitoringWorkingDates.forEach(dStr => {
-        const recs  = attMonitoringMap.get(`${st.id}_${dStr}`) || [];
-        if (recs.length === 0) return;
+        const recs = attMonitoringMap.get(`${st.id}_${dStr}`);
+        if (!recs || recs.length === 0) return;
         totalMarkedDays++;
         const isExam = attMonitoringExamDateSet.has(dStr);
         const ev     = evaluateDailyStudentAttendance(recs, 0, isExam);
@@ -4148,6 +4357,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       };
     });
   }, [attMonitoringFiltered, attMonitoringWorkingDates, attMonitoringMap, attMonitoringExamDateSet]);
+
+  /** O(1) Student Stats Map lookup */
+  const attMonitoringStudentStatsMap = useMemo(() => {
+    return new Map(attMonitoringStudentStats.map(s => [s.id, s]));
+  }, [attMonitoringStudentStats]);
 
   /** Infographic aggregates derived from studentStats */
   const attMonitoringChartData = useMemo(() => {
@@ -4169,6 +4383,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const overallAvgPct   = totalPossible > 0 ? Math.round((totalPresent / totalPossible) * 100) : 0;
     return { onTrack, atRisk, critical, noData, cgChartData, overallAvgPct };
   }, [attMonitoringStudentStats]);
+
+  /** Memoized Donut data — stable array reference ensures React.memo(AttMonitoringCharts) works */
+  const attMonitoringDonutData = useMemo(() => {
+    const { onTrack, atRisk, critical, noData } = attMonitoringChartData;
+    return [
+      { name: "On Track (≥75%)",  value: onTrack,  color: "#10b981" },
+      { name: "At Risk (65–74%)", value: atRisk,   color: "#f59e0b" },
+      { name: "Critical (<65%)",  value: critical, color: "#f43f5e" },
+      { name: "No Data",          value: noData,   color: "#cbd5e1" },
+    ].filter(d => d.value > 0);
+  }, [attMonitoringChartData]);
 
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -6504,16 +6729,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     title: "Academics",
                     icon: BookOpen,
                     items: [
+                      { id: "academic_tracker", label: "Academic Tracker", icon: BookOpen },
                       { id: "config", label: "Academic Configuration", icon: Settings },
-                      { id: "curriculum", label: "Batch Creation", icon: BookOpen }
-                    ]
-                  },
-                  {
-                    id: "events",
-                    title: "Event Management",
-                    icon: Calendar,
-                    items: [
-                      { id: "events", label: "Event Management", icon: Calendar }
+                      { id: "curriculum", label: "Batch Creation", icon: Layers }
                     ]
                   },
                   {
@@ -6565,6 +6783,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     icon: FileText,
                     items: [
                       { id: "reports", label: "Campus Insight", icon: FileText }
+                    ]
+                  },
+                  {
+                    id: "events",
+                    title: "Event Creation",
+                    icon: Calendar,
+                    items: [
+                      { id: "events", label: "Event Creation", icon: Calendar }
                     ]
                   },
                   {
@@ -6810,8 +7036,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <Calendar className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Event Management</span>
-                    <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Campus events, exams &amp; milestone tracker</span>
+                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Event Creation</span>
+                    <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Campus events, exams &amp; milestone creation</span>
                   </div>
                 </button>
 
@@ -7170,9 +7396,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <Calendar className="h-5 w-5" />
                       </div>
                       <div>
-                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">Academic Event Management &amp; Milestone Tracker</h4>
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">Academic Event Creation &amp; Milestone Tracker</h4>
                         <p className="text-xs text-slate-600 font-semibold mt-0.5">
-                          Academic milestones, continuous assessments, and campus events are managed in the dedicated <span className="text-[#D528A2] font-bold">Event Management</span> console.
+                          Academic milestones, continuous assessments, and campus events are created in the dedicated <span className="text-[#D528A2] font-bold">Event Creation</span> console.
                         </p>
                       </div>
                     </div>
@@ -7181,7 +7407,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       onClick={() => setActiveTab("events")}
                       className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#D528A2] to-pink-600 hover:opacity-95 text-white font-extrabold text-xs shadow-md shadow-[#D528A2]/20 transition-all cursor-pointer flex items-center gap-2 shrink-0"
                     >
-                      <span>Open Event Management</span>
+                      <span>Open Event Creation</span>
                       <ChevronRight className="h-4 w-4" />
                     </button>
                   </div>
@@ -9441,13 +9667,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
 
                     // ── Use component-level pre-computed memos (no useMemo inside IIFE) ──
-                    const workingDates  = attMonitoringWorkingDates;
-                    const attendanceMap = attMonitoringMap;
-                    const examDateSet   = attMonitoringExamDateSet;
-                    const dayNameMap    = attMonitoringDayNameMap;
-                    const filtered      = attMonitoringFiltered;
-                    const studentStats  = attMonitoringStudentStats;   // per-student { pct, presentDays, absentDays, totalMarkedDays }
-                    const chartData     = attMonitoringChartData;
+                    const workingDates   = attMonitoringWorkingDates;
+                    const attendanceMap  = attMonitoringMap;
+                    const examDateSet    = attMonitoringExamDateSet;
+                    const holidayMap     = attMonitoringHolidayMap;
+                    const dayNameMap     = attMonitoringDayNameMap;
+                    const filtered       = attMonitoringFiltered;
+                    const studentStats   = attMonitoringStudentStats;   // per-student { pct, presentDays, absentDays, totalMarkedDays }
+                    const studentStatsMap = attMonitoringStudentStatsMap; // O(1) lookup map
+                    const chartData      = attMonitoringChartData;
+                    const donutData      = attMonitoringDonutData;      // Memoized stable array
                     const { onTrack, atRisk, critical, noData, cgChartData, overallAvgPct } = chartData;
 
                     const getStudentSlots = (dayName: string, classGroup?: string) => {
@@ -9569,12 +9798,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {/* ── ATTENDANCE INFOGRAPHICS ROW (memoized component — only re-renders when chart data changes) ── */}
                           {attMonitoringStudentStats.length > 0 && (
                             <AttMonitoringCharts
-                              donutData={[
-                                { name: `On Track (≥75%)`,  value: onTrack,  color: "#10b981" },
-                                { name: `At Risk (65–74%)`, value: atRisk,   color: "#f59e0b" },
-                                { name: `Critical (<65%)`,  value: critical, color: "#f43f5e" },
-                                { name: `No Data`,          value: noData,   color: "#cbd5e1" },
-                              ].filter(d => d.value > 0)}
+                              donutData={donutData}
                               cgChartData={cgChartData}
                               onTrack={onTrack}
                               atRisk={atRisk}
@@ -9692,10 +9916,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <th className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-rose-700">Total Absent</th>
                                   <th className="p-2.5 border-r border-slate-200 text-center min-w-[65px] text-indigo-700">%</th>
                                   {workingDates.map(dStr => {
-                                    // Use pre-computed dayNameMap — no new Date() per cell
-                                    const dDay = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+                                    // Use pre-computed dayNameMap and holidayMap — O(1)
+                                    const dDay = (dayNameMap[dStr] || "").slice(0, 3) || new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
                                     const isToday = dStr === todayStr;
-                                    const holidayObj = (holidays || []).find((h: any) => h?.date === dStr || h?.dateStr === dStr);
+                                    const holidayObj = holidayMap.get(dStr);
                                     const isExam = examDateSet.has(dStr); // O(1) — was isExamDate() scan
                                     const dayTypeLabel = holidayObj ? "Holiday" : isExam ? "Exam" : (dDay === "Sat" || dDay === "Sun") ? "Weekend" : "Regular";
 
@@ -9730,12 +9954,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               </thead>
                               <tbody className="divide-y divide-slate-100 bg-white text-slate-700 text-xs">
                                 {paginatedStudents.map((st, idx) => {
-                                  // Use pre-computed stats — no per-row re-computation
-                                  const stStats = studentStats.find(s => s.id === st.id);
+                                  // Use pre-computed stats map — O(1) lookup
+                                  const stStats = studentStatsMap.get(st.id);
                                   const rowSerial = attendancePageSize > 0 ? ((safePage - 1) * attendancePageSize) + idx + 1 : idx + 1;
 
                                   const dateCells = workingDates.map(dStr => {
-                                    const dayName  = dayNameMap[dStr];              // O(1) — was new Date().toLocaleDateString()
+                                    const dayName  = dayNameMap[dStr];              // O(1)
                                     const stSlots  = getStudentSlots(dayName, st.classGroup);
                                     const stDayAtt = attendanceMap.get(`${st.id}_${dStr}`) || [];
 
@@ -10112,6 +10336,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       campusSlots={collegeSlots}
                       collegeStudents={collegeStudents}
                       collegeSubjects={collegeSubjects}
+                      initialStudentAttendance={studentAttendance}
                     />
                   )}
 
@@ -10986,28 +11211,80 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     const finalSemesters = trackerSemesters.length > 0 ? trackerSemesters : defaultSems;
                     const activeSemester = camTrackerSemester || finalSemesters[0] || "Semester 1";
 
-                    // Step 3: Subjects from DB filtered by dept + semester
-                    const trackerSubjectObjs = subjectsList.filter(
+                    // Step 3: Subjects from DB filtered by dept + semester & ONLY Skill Subjects
+                    const allDeptSemSubjects = subjectsList.filter(
                       s => matchesCollege(s.college_id) &&
                            (s.department?.trim().toLowerCase() === activeDept.trim().toLowerCase() ||
                             s.department?.trim().toLowerCase().includes(activeDept.trim().toLowerCase()) ||
                             activeDept.trim().toLowerCase().includes(s.department?.trim().toLowerCase() || "")) &&
                            (s.semester?.trim().toLowerCase() === activeSemester.trim().toLowerCase() || !s.semester)
                     );
+                    const skillSubjectObjs = allDeptSemSubjects.filter(s => isSkillSubject(s));
+                    const trackerSubjectObjs = skillSubjectObjs.length > 0 ? skillSubjectObjs : allDeptSemSubjects.filter(s => isSkillSubject(s));
 
-                    const activeSubject = camTrackerSubject || trackerSubjectObjs[0]?.name || "";
+                    const activeSubject = camTrackerSubject !== "" ? camTrackerSubject : "ALL";
+                    const isAllSubjects = activeSubject === "ALL";
                     const activeClassGroup = `${activeDept} - ${activeSemester}`;
 
-                    // Step 4: Weeks 1 to 15 (always selectable so CAM can audit any week)
-                    const assignedWeekNums = new Set(
-                      weeklyTasks
-                        .filter(t => (isSubjectNameMatch(t.subject, activeSubject) || t.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
-                                     (isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) ||
-                                      t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim())))
-                        .map(t => t.week_number)
-                    );
-
                     const activeWeek: number = typeof camTrackerWeek === "number" ? camTrackerWeek : 1;
+
+                    // Export Tracker Data to Excel
+                    const exportTrackerData = async () => {
+                      try {
+                        const XLSX = await import("xlsx");
+
+                        const classStudents = students.filter(s => {
+                          if (s.college_id && activeCollegeId && s.college_id !== activeCollegeId) return false;
+                          if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
+                          const sDept = (s.department || "").toLowerCase().trim();
+                          const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
+                          return (sDept === activeDept.toLowerCase().trim() || sDept.includes(activeDept.toLowerCase().trim()) || activeDept.toLowerCase().trim().includes(sDept)) &&
+                                 (sSem === activeSemester.toLowerCase().trim() || !activeSemester);
+                        });
+
+                        if (classStudents.length === 0) {
+                          toast("No students found to export for the selected cohort.", "warning");
+                          return;
+                        }
+
+                        const dataRows = classStudents.map((student, idx) => {
+                          const entry = studentTracker.find(
+                            e => e.student_id === student.id &&
+                                 (isAllSubjects || isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
+                                 e.week_number === activeWeek
+                          );
+
+                          return {
+                            "S.No": idx + 1,
+                            "Student ID": student.id,
+                            "Student Name": student.name,
+                            "Register No": student.register_number || "—",
+                            "Email": student.email || "—",
+                            "Department": activeDept,
+                            "Semester": activeSemester,
+                            "Subject": isAllSubjects ? (entry?.subject || "All Subjects") : activeSubject,
+                            "Week Number": `Week ${activeWeek}`,
+                            "Submission Status": entry?.submission_url ? "Submitted" : "Pending",
+                            "Submission Link": entry?.submission_url || "—",
+                            "Marks (0-10)": entry?.marks !== undefined && entry?.marks !== null ? entry.marks : "Not Graded",
+                            "VIVA / Feedback Comments": entry?.viva_assessment || "—",
+                            "Graded By": entry?.graded_by || "—",
+                            "Last Updated": entry?.updated_at ? String(entry.updated_at).split("T")[0] : "—"
+                          };
+                        });
+
+                        const worksheet = XLSX.utils.json_to_sheet(dataRows);
+                        const workbook = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(workbook, worksheet, "Skill Tracker Audit");
+
+                        const fileName = `Skill_Development_Tracker_${activeDept.replace(/[^a-zA-Z0-9]/g, "_")}_${activeSemester.replace(/[^a-zA-Z0-9]/g, "_")}_Wk${activeWeek}.xlsx`;
+                        XLSX.writeFile(workbook, fileName);
+                        toast(`Export Complete: Saved ${fileName}`, "success");
+                      } catch (err) {
+                        console.error("Export error:", err);
+                        toast("Failed to generate Excel export.", "error");
+                      }
+                    };
 
                     return (
                       <div className="space-y-6 font-sans">
@@ -11018,11 +11295,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <GraduationCap className="h-5 w-5" />
                             </div>
                             <div>
-                              <h2 className="text-lg font-black text-slate-800 leading-tight">Student Task Tracker Audit Console</h2>
+                              <h2 className="text-lg font-black text-slate-800 leading-tight">Student Skill Development Tracker Audit</h2>
                               <p className="text-xs text-slate-455 font-medium mt-0.5">
-                                Audit student task submissions and progress across subjects and cohorts.
+                                Audit student task submissions, marks, viva evaluations, and weekly portfolios across cohorts.
                               </p>
                             </div>
+                          </div>
+
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            {/* Export Excel Button */}
+                            <button
+                              type="button"
+                              onClick={exportTrackerData}
+                              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs hover:shadow-md transition-all cursor-pointer"
+                            >
+                              <Download className="h-4 w-4" />
+                              <span>Export Report (.xlsx)</span>
+                            </button>
                           </div>
                         </div>
 
@@ -11036,7 +11325,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               onChange={(e) => {
                                 setCamTrackerDept(e.target.value);
                                 setCamTrackerSemester("");
-                                setCamTrackerSubject("");
+                                setCamTrackerSubject("ALL");
                                 setCamTrackerWeek("");
                               }}
                               className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
@@ -11052,7 +11341,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               value={activeSemester}
                               onChange={(e) => {
                                 setCamTrackerSemester(e.target.value);
-                                setCamTrackerSubject("");
+                                setCamTrackerSubject("ALL");
                                 setCamTrackerWeek(1);
                               }}
                               className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
@@ -11062,17 +11351,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </div>
                           {/* 3. Subject */}
                           <div className="space-y-1.5">
-                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Subject</label>
+                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Skill Subject</label>
                             <select
                               value={activeSubject}
                               onChange={(e) => {
                                 setCamTrackerSubject(e.target.value);
                                 setCamTrackerWeek(1);
                               }}
-                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                              className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white font-sans"
                             >
+                              <option value="ALL">All Skill Subjects (Combined)</option>
                               {trackerSubjectObjs.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                              {trackerSubjectObjs.length === 0 && <option value="">General Subject</option>}
                             </select>
                           </div>
                           {/* 4. From Date */}
@@ -11107,7 +11396,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           const inRange = !tDate || (tDate >= camTrackerFromDate && tDate <= camTrackerToDate);
                           return (
                             inRange &&
-                            (isSubjectNameMatch(t.subject, activeSubject) || t.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
+                            (isAllSubjects || isSubjectNameMatch(t.subject, activeSubject) || t.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
                             (isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) ||
                               t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim()))
                           );
@@ -11118,7 +11407,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             <div className="flex items-center gap-2 flex-wrap">
                               <BookOpen className="h-4 w-4 text-indigo-500" />
                               <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
-                                {activeSubject} — Tasks in Range ({camTrackerFromDate} → {camTrackerToDate})
+                                {isAllSubjects ? "All Subjects" : activeSubject} — Tasks in Range ({camTrackerFromDate} → {camTrackerToDate})
                               </h3>
                               <span className="ml-auto flex gap-2 text-[9px] font-bold">
                                 <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700">{activeDept}</span>
@@ -11174,7 +11463,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         // ── Filter tracker entries by date range ──
                         const rangeEntries = studentTracker.filter(e => {
                           if (!classStudentsForChart.some(s => s.id === e.student_id)) return false;
-                          if (!(isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim())) return false;
+                          if (!isAllSubjects && !(isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim())) return false;
                           // Filter by updated_at date (the only date field on StudentTrackerEntry)
                           const entryDate = e.updated_at ? String(e.updated_at).split("T")[0] : "";
                           if (!entryDate) return true; // include if no date stamp yet
@@ -11411,7 +11700,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   {classStudents.map(student => {
                                     const entry = studentTracker.find(
                                       e => e.student_id === student.id &&
-                                           (isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
+                                           (isAllSubjects || isSubjectNameMatch(e.subject, activeSubject) || e.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
                                            e.week_number === activeWeek
                                     );
 
@@ -12698,6 +12987,548 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       )}
                     </div>
                   )}
+
+                  {/* Tab: Academic Tracker (Campus-Wide Syllabus & Period Conduction Audit) */}
+                  {activeTab === "academic_tracker" && (() => {
+                    // Campus scoped records
+                    const campusMentorIds = new Set(collegeMentors.map(m => m.id));
+                    const campusLogs = (academicTracker || []).filter(log => {
+                      if (log.college_id && log.college_id === activeCollegeId) return true;
+                      if (campusMentorIds.has(log.mentor_id)) return true;
+                      return false;
+                    });
+
+                    // Unique values for dropdown filters
+                    const availableDepts = Array.from(new Set([
+                      ...departmentsList.filter(d => !activeCollegeId || d.college_id === activeCollegeId).map(d => d.name),
+                      ...collegeCourses.map(c => c.name)
+                    ])).filter(Boolean).sort();
+
+                    const availableCohorts = Array.from(new Set([
+                      ...campusLogs.map(l => l.class_group),
+                      ...(collegeSlots || []).map(s => s.classGroup),
+                      ...(collegeStudents || []).map(st => st.classGroup)
+                    ].filter(Boolean))).sort();
+
+                    const availableSemesters = [
+                      "Semester 1",
+                      "Semester 2",
+                      "Semester 3",
+                      "Semester 4",
+                      "Semester 5",
+                      "Semester 6",
+                      "Semester 7",
+                      "Semester 8"
+                    ];
+
+                    const availableFaculty = collegeMentors.sort((a, b) => a.name.localeCompare(b.name));
+
+                    // Collect available academic subjects dynamically based on selected mentor
+                    let availableSubjects: string[] = [];
+
+                    if (camAcadMentorFilter !== "all") {
+                      const selectedMentor = collegeMentors.find(m => m.id === camAcadMentorFilter);
+                      const mentorAssignedSubs: string[] = [];
+                      if (selectedMentor) {
+                        if (Array.isArray(selectedMentor.subjects)) {
+                          mentorAssignedSubs.push(...selectedMentor.subjects);
+                        } else if (typeof selectedMentor.subjects === "string") {
+                          mentorAssignedSubs.push(...selectedMentor.subjects.split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean));
+                        }
+                        if ((selectedMentor as any).specialization) {
+                          mentorAssignedSubs.push((selectedMentor as any).specialization.trim());
+                        }
+                      }
+
+                      const mentorSlotSubs = (slots || [])
+                        .filter(s => s.mentorId === camAcadMentorFilter && s.course && (!activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId))
+                        .map(s => s.course.trim());
+
+                      const mentorLogSubs = campusLogs
+                        .filter(l => l.mentor_id === camAcadMentorFilter)
+                        .map(l => l.subject?.trim())
+                        .filter(Boolean);
+
+                      const mentorCandidates = [
+                        ...mentorAssignedSubs,
+                        ...mentorSlotSubs,
+                        ...mentorLogSubs
+                      ];
+
+                      availableSubjects = Array.from(
+                        new Set(
+                          mentorCandidates.filter(s => {
+                            if (!s) return false;
+                            if (mentorLogSubs.includes(s)) return true;
+                            return !isSkillSubject(s);
+                          })
+                        )
+                      ).sort((a, b) => a.localeCompare(b));
+                    } else {
+                      // All faculty scope — collect all campus academic subjects
+                      const subjectsFromList = (subjectsList || [])
+                        .filter(s => (!activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId))
+                        .map(s => s.name?.trim())
+                        .filter(Boolean);
+
+                      const subjectsFromSlots = (slots || [])
+                        .filter(s => (!activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId))
+                        .map(s => s.course?.trim())
+                        .filter(Boolean);
+
+                      const subjectsFromFaculty = collegeMentors.flatMap(m => {
+                        if (!m) return [];
+                        const subs: string[] = [];
+                        if (Array.isArray(m.subjects)) {
+                          subs.push(...m.subjects);
+                        } else if (typeof m.subjects === "string") {
+                          subs.push(...m.subjects.split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean));
+                        }
+                        if ((m as any).specialization) subs.push((m as any).specialization.trim());
+                        return subs;
+                      });
+
+                      const subjectsFromLogs = campusLogs.map(l => l.subject?.trim()).filter(Boolean);
+
+                      const allSubjectCandidates = [
+                        ...subjectsFromList,
+                        ...subjectsFromSlots,
+                        ...subjectsFromFaculty,
+                        ...subjectsFromLogs
+                      ];
+
+                      availableSubjects = Array.from(
+                        new Set(
+                          allSubjectCandidates.filter(s => {
+                            if (!s) return false;
+                            if (subjectsFromLogs.includes(s)) return true;
+                            return !isSkillSubject(s);
+                          })
+                        )
+                      ).sort((a, b) => a.localeCompare(b));
+                    }
+
+                    // Filtered records
+                    const filteredLogs = campusLogs.filter(log => {
+                      if (camAcadDeptFilter !== "all") {
+                        if (!(log.class_group || "").toLowerCase().includes(camAcadDeptFilter.toLowerCase().trim())) return false;
+                      }
+                      if (camAcadCohortFilter !== "all") {
+                        if ((log.class_group || "").toLowerCase().trim() !== camAcadCohortFilter.toLowerCase().trim()) return false;
+                      }
+                      if (camAcadSemFilter !== "all") {
+                        const logSem = getSemesterFromClassGroup(log.class_group || "");
+                        if (logSem.toLowerCase() !== camAcadSemFilter.toLowerCase()) return false;
+                      }
+                      if (camAcadMentorFilter !== "all") {
+                        if (log.mentor_id !== camAcadMentorFilter) return false;
+                      }
+                      if (camAcadSubjectFilter !== "all") {
+                        if ((log.subject || "").toLowerCase().trim() !== camAcadSubjectFilter.toLowerCase().trim()) return false;
+                      }
+                      if (camAcadUnitFilter !== "all") {
+                        if (!(log.unit || "").toLowerCase().includes(camAcadUnitFilter.toLowerCase().trim())) return false;
+                      }
+                      if (camAcadStartDate && log.date < camAcadStartDate) return false;
+                      if (camAcadEndDate && log.date > camAcadEndDate) return false;
+                      if (camAcadSearch.trim()) {
+                        const q = camAcadSearch.toLowerCase().trim();
+                        const matchTopic = (log.topic || "").toLowerCase().includes(q);
+                        const matchRemarks = (log.comments || "").toLowerCase().includes(q);
+                        const matchMentor = (log.mentor_name || "").toLowerCase().includes(q);
+                        const matchSubject = (log.subject || "").toLowerCase().includes(q);
+                        const matchClass = (log.class_group || "").toLowerCase().includes(q);
+                        if (!matchTopic && !matchRemarks && !matchMentor && !matchSubject && !matchClass) return false;
+                      }
+                      return true;
+                    }).sort((a, b) => b.date.localeCompare(a.date));
+
+                    // KPIs
+                    const totalLogged = campusLogs.length;
+                    const filteredLogged = filteredLogs.length;
+                    const activeFacultyCount = new Set(campusLogs.map(l => l.mentor_id)).size;
+                    const subjectsTrackedCount = new Set(campusLogs.map(l => l.subject)).size;
+                    const unitsLoggedCount = new Set(campusLogs.map(l => l.unit)).size;
+
+                    // Pagination
+                    const totalPages = Math.ceil(filteredLogs.length / camAcadPageSize) || 1;
+                    const paginatedLogs = filteredLogs.slice((camAcadPage - 1) * camAcadPageSize, camAcadPage * camAcadPageSize);
+
+                    const exportCampusAcademicAudit = async () => {
+                      try {
+                        const XLSX = await import("xlsx");
+                        const headers = [
+                          "S.No",
+                          "Date",
+                          "Period / Slot",
+                          "Department & Class Group",
+                          "Academic Subject",
+                          "Faculty / Mentor Name",
+                          "Faculty ID",
+                          "Syllabus Unit",
+                          "Topic Covered",
+                          "Conduction Status",
+                          "Delivery Remarks / Homework",
+                          "Logged At"
+                        ];
+
+                        const rows = filteredLogs.map((l, idx) => {
+                          const mentorObj = collegeMentors.find(m => m.id === l.mentor_id);
+                          return [
+                            idx + 1,
+                            l.date,
+                            l.period_slot,
+                            l.class_group,
+                            l.subject,
+                            l.mentor_name || mentorObj?.name || l.mentor_id,
+                            l.mentor_id,
+                            l.unit,
+                            l.topic,
+                            l.status || "Conducted",
+                            l.comments || "—",
+                            l.updated_at ? new Date(l.updated_at).toLocaleString() : "—"
+                          ];
+                        });
+
+                        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                        ws["!cols"] = [
+                          { wch: 6 }, { wch: 14 }, { wch: 26 }, { wch: 24 }, { wch: 28 },
+                          { wch: 24 }, { wch: 16 }, { wch: 14 }, { wch: 38 }, { wch: 16 },
+                          { wch: 35 }, { wch: 22 }
+                        ];
+                        const wb = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb, ws, "Campus_Academic_Audit");
+                        XLSX.writeFile(wb, `Campus_Academic_Syllabus_Tracker_${activeCollegeId}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                        toast("Campus syllabus audit exported to Excel!", "success");
+                      } catch (err: any) {
+                        toast("Export failed: " + err.message, "error");
+                      }
+                    };
+
+                    return (
+                      <div className="space-y-6 font-sans">
+                        {/* 4 Summary KPI Cards */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Periods Logged</span>
+                            <div className="text-2xl font-black text-slate-900">{totalLogged}</div>
+                            <span className="text-[9px] text-slate-400 font-semibold block">{filteredLogged} in active filter</span>
+                          </div>
+
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                            <span className="text-[10px] text-[#D528A2] font-bold uppercase tracking-wider block">Active Faculty Loggers</span>
+                            <div className="text-2xl font-black text-[#D528A2]">{activeFacultyCount} / {collegeMentors.length}</div>
+                            <span className="text-[9px] text-slate-400 font-semibold block">Mentors recording lessons</span>
+                          </div>
+
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                            <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block">Academic Courses</span>
+                            <div className="text-2xl font-black text-indigo-900">{subjectsTrackedCount} Subjects</div>
+                            <span className="text-[9px] text-indigo-500 font-semibold block">With documented lessons</span>
+                          </div>
+
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                            <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">Syllabus Units</span>
+                            <div className="text-2xl font-black text-emerald-900">{unitsLoggedCount} Units</div>
+                            <span className="text-[9px] text-emerald-600 font-semibold block">Across all batches</span>
+                          </div>
+                        </div>
+
+                        {/* Multi-Filter Bar with Checkmark Dropdowns */}
+                        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3 relative z-30 overflow-visible">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs font-semibold relative z-40">
+                            {/* Department Filter */}
+                            <CheckmarkSelect
+                              label="Department"
+                              value={camAcadDeptFilter}
+                              onChange={val => {
+                                setCamAcadDeptFilter(val);
+                                setCamAcadPage(1);
+                              }}
+                              options={[
+                                { value: "all", label: "All Departments" },
+                                ...availableDepts.map(d => ({ value: d, label: d }))
+                              ]}
+                            />
+
+                            {/* Semester Filter */}
+                            <CheckmarkSelect
+                              label="Semester"
+                              value={camAcadSemFilter}
+                              onChange={val => {
+                                setCamAcadSemFilter(val);
+                                setCamAcadPage(1);
+                              }}
+                              options={[
+                                { value: "all", label: "All Semesters" },
+                                ...availableSemesters.map(s => ({ value: s, label: s }))
+                              ]}
+                            />
+
+                            {/* Faculty / Mentor Filter */}
+                            <CheckmarkSelect
+                              label="Faculty Member"
+                              value={camAcadMentorFilter}
+                              searchable
+                              onChange={val => {
+                                setCamAcadMentorFilter(val);
+                                setCamAcadPage(1);
+                                if (val !== "all") {
+                                  setCamAcadSubjectFilter("all");
+                                }
+                              }}
+                              options={[
+                                { value: "all", label: `All Faculty (${collegeMentors.length})` },
+                                ...availableFaculty.map(m => ({
+                                  value: m.id,
+                                  label: m.name,
+                                  subtext: m.mentor_group ? `${m.mentor_group} • ID: ${m.id}` : `ID: ${m.id}`
+                                }))
+                              ]}
+                            />
+
+                            {/* Subject Filter (Reactively scoped to mentor when selected) */}
+                            <CheckmarkSelect
+                              label={camAcadMentorFilter !== "all" ? "Faculty's Subjects" : "Academic Subject"}
+                              value={camAcadSubjectFilter}
+                              searchable
+                              onChange={val => {
+                                setCamAcadSubjectFilter(val);
+                                setCamAcadPage(1);
+                              }}
+                              options={[
+                                {
+                                  value: "all",
+                                  label: camAcadMentorFilter !== "all"
+                                    ? `All Mentor's Subjects (${availableSubjects.length})`
+                                    : `All Subjects (${availableSubjects.length})`
+                                },
+                                ...availableSubjects.map(s => ({ value: s, label: s }))
+                              ]}
+                            />
+
+                            {/* Unit Filter */}
+                            <CheckmarkSelect
+                              label="Syllabus Unit"
+                              value={camAcadUnitFilter}
+                              onChange={val => {
+                                setCamAcadUnitFilter(val);
+                                setCamAcadPage(1);
+                              }}
+                              options={[
+                                { value: "all", label: "All Units" },
+                                { value: "Unit 1", label: "Unit 1" },
+                                { value: "Unit 2", label: "Unit 2" },
+                                { value: "Unit 3", label: "Unit 3" },
+                                { value: "Unit 4", label: "Unit 4" },
+                                { value: "Unit 5", label: "Unit 5" },
+                                { value: "Revision", label: "Revision / Problem Solving" }
+                              ]}
+                            />
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 relative z-10">
+                            <div className="flex items-center gap-2 flex-1 min-w-[260px]">
+                              {/* Search */}
+                              <div className="relative flex-1">
+                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input
+                                  type="text"
+                                  placeholder="Search by topic, faculty name, notes, or class group..."
+                                  value={camAcadSearch}
+                                  onChange={e => {
+                                    setCamAcadSearch(e.target.value);
+                                    setCamAcadPage(1);
+                                  }}
+                                  className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-indigo-500 outline-none"
+                                />
+                              </div>
+
+                              {/* Date Range */}
+                              <div className="flex items-center gap-1.5 text-xs text-slate-500 font-bold">
+                                <span>From:</span>
+                                <input
+                                  type="date"
+                                  value={camAcadStartDate}
+                                  onChange={e => {
+                                    setCamAcadStartDate(e.target.value);
+                                    setCamAcadPage(1);
+                                  }}
+                                  className="p-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 outline-none"
+                                />
+                                <span>To:</span>
+                                <input
+                                  type="date"
+                                  value={camAcadEndDate}
+                                  onChange={e => {
+                                    setCamAcadEndDate(e.target.value);
+                                    setCamAcadPage(1);
+                                  }}
+                                  className="p-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 outline-none"
+                                />
+                              </div>
+                            </div>
+
+                            {(camAcadDeptFilter !== "all" || camAcadCohortFilter !== "all" || camAcadSemFilter !== "all" || camAcadMentorFilter !== "all" || camAcadSubjectFilter !== "all" || camAcadUnitFilter !== "all" || camAcadStartDate || camAcadEndDate || camAcadSearch) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCamAcadDeptFilter("all");
+                                  setCamAcadCohortFilter("all");
+                                  setCamAcadSemFilter("all");
+                                  setCamAcadMentorFilter("all");
+                                  setCamAcadSubjectFilter("all");
+                                  setCamAcadUnitFilter("all");
+                                  setCamAcadStartDate("");
+                                  setCamAcadEndDate("");
+                                  setCamAcadSearch("");
+                                  setCamAcadPage(1);
+                                }}
+                                className="px-3 py-1 text-xs text-rose-600 font-bold hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              >
+                                Reset All Filters
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Audit Ledger Table */}
+                        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs relative z-10">
+                          {/* Table Header Bar with Export in Corner */}
+                          <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-7 w-7 rounded-lg bg-[#D528A2]/10 flex items-center justify-center text-[#D528A2]">
+                                <BookOpen className="w-3.5 h-3.5" />
+                              </div>
+                              <div>
+                                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                                  Academic Conduction Ledger
+                                </h3>
+                                <span className="text-[10px] text-slate-400 font-semibold">
+                                  {filteredLogs.length} matching period record{filteredLogs.length === 1 ? "" : "s"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={exportCampusAcademicAudit}
+                              disabled={filteredLogs.length === 0}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition-all cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed self-start sm:self-auto"
+                            >
+                              <FileSpreadsheet className="w-4 h-4" />
+                              <span>Export Campus Audit (.xlsx)</span>
+                            </button>
+                          </div>
+                          {paginatedLogs.length === 0 ? (
+                            <div className="p-12 text-center space-y-3">
+                              <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto">
+                                <BookOpen className="w-6 h-6" />
+                              </div>
+                              <h3 className="text-sm font-bold text-slate-800">No academic log records found</h3>
+                              <p className="text-xs text-slate-400">Try adjusting your filters or search terms.</p>
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
+                                    <th className="p-3 w-12 text-center">#</th>
+                                    <th className="p-3">Date & Slot</th>
+                                    <th className="p-3">Class Group</th>
+                                    <th className="p-3">Academic Subject</th>
+                                    <th className="p-3">Faculty Member</th>
+                                    <th className="p-3">Unit</th>
+                                    <th className="p-3">Topic Covered</th>
+                                    <th className="p-3">Status</th>
+                                    <th className="p-3">Delivery Remarks</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {paginatedLogs.map((log, idx) => {
+                                    const mentorObj = collegeMentors.find(m => m.id === log.mentor_id);
+                                    const rowNum = (camAcadPage - 1) * camAcadPageSize + idx + 1;
+                                    return (
+                                      <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
+                                        <td className="p-3 text-center font-bold text-slate-400 text-[11px]">{rowNum}</td>
+                                        <td className="p-3 whitespace-nowrap">
+                                          <div className="font-extrabold text-slate-900">{log.date}</div>
+                                          <div className="text-[10px] text-slate-500 font-semibold">{log.period_slot}</div>
+                                        </td>
+                                        <td className="p-3 font-bold text-slate-700 whitespace-nowrap">
+                                          {log.class_group}
+                                        </td>
+                                        <td className="p-3">
+                                          <div className="font-black text-slate-900">{log.subject}</div>
+                                        </td>
+                                        <td className="p-3 whitespace-nowrap">
+                                          <div className="font-bold text-slate-800">{log.mentor_name || mentorObj?.name || log.mentor_id}</div>
+                                          <div className="text-[10px] text-slate-400 font-mono">{log.mentor_id}</div>
+                                        </td>
+                                        <td className="p-3 whitespace-nowrap">
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                            {log.unit || "Unit 1"}
+                                          </span>
+                                        </td>
+                                        <td className="p-3 max-w-xs">
+                                          <div className="font-semibold text-slate-800 text-[11px] leading-relaxed">
+                                            {log.topic}
+                                          </div>
+                                        </td>
+                                        <td className="p-3 whitespace-nowrap">
+                                          {(() => {
+                                            const isNotDelivered = (log.status || "").toLowerCase().includes("not") || (log.status || "").toLowerCase().includes("missed");
+                                            return (
+                                              <span className={`px-2.5 py-0.5 rounded-full text-[9.5px] font-black uppercase border ${
+                                                isNotDelivered
+                                                  ? "bg-rose-100 text-rose-800 border-rose-200"
+                                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                              }`}>
+                                                {isNotDelivered ? "Not Delivered" : "Delivered"}
+                                              </span>
+                                            );
+                                          })()}
+                                        </td>
+                                        <td className="p-3 max-w-xs text-slate-500 italic text-[10.5px]">
+                                          {log.comments ? `"${log.comments}"` : "—"}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                          {/* Pagination Footer */}
+                          {filteredLogs.length > camAcadPageSize && (
+                            <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                              <span>Showing {(camAcadPage - 1) * camAcadPageSize + 1} to {Math.min(camAcadPage * camAcadPageSize, filteredLogs.length)} of {filteredLogs.length} logs</span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={camAcadPage === 1}
+                                  onClick={() => setCamAcadPage(prev => Math.max(1, prev - 1))}
+                                  className="px-2.5 py-1 border border-slate-200 rounded-lg font-bold hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                                >
+                                  Previous
+                                </button>
+                                <span className="px-2 font-bold text-slate-700">Page {camAcadPage} of {totalPages}</span>
+                                <button
+                                  type="button"
+                                  disabled={camAcadPage === totalPages}
+                                  onClick={() => setCamAcadPage(prev => Math.min(totalPages, prev + 1))}
+                                  className="px-2.5 py-1 border border-slate-200 rounded-lg font-bold hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                                >
+                                  Next
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Tab 9: My Profile */}
                   {activeTab === "profile" && currentCAM && (

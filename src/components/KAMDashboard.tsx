@@ -1,2798 +1,1824 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
-import { useApp } from "../context/AppContext";
-import { useToast } from "../context/ToastContext";
-import { gsap } from "gsap";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useApp, Slot, Mentor, Student, Subject, College } from "@/context/AppContext";
+import { useToast } from "@/context/ToastContext";
 import {
-  Building2, Users, ClipboardList, ShieldAlert, CheckCircle2,
-  PlusCircle, Trash2, RefreshCw, Compass, ChevronsLeft, ChevronsRight, User,
-  ArrowRightLeft, TrendingUp, Clock, XCircle, ChevronRight,
-  GraduationCap, BookOpen, Eye, CheckCircle, Calendar,
-  ChevronDown, ChevronUp, Search, Activity, Layers,
-  IndianRupee, BarChart2, BookMarked, AlertCircle, UserCheck, Loader2, Award, Download
+  Building2,
+  Users,
+  Calendar,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  BookOpen,
+  Settings,
+  Award,
+  TrendingUp,
+  FileText,
+  RefreshCw,
+  Search,
+  ChevronDown,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  GraduationCap,
+  CalendarCheck2,
+  IndianRupee,
+  User,
+  SlidersHorizontal,
+  Download,
+  Filter,
+  Eye,
+  ArrowUpRight,
+  ShieldCheck,
+  Mail,
+  Phone,
+  BarChart3,
+  Layers,
+  Sparkles,
+  HeartPulse,
+  Percent,
+  CheckCircle,
+  XCircle,
+  FileSpreadsheet
 } from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
+  AreaChart, Area, CartesianGrid
+} from "recharts";
+import { Student360 } from "./kam/students/Student360";
+import { Mentor360 } from "./kam/mentors/Mentor360";
+import { StudentDirectory } from "./kam/students/StudentDirectory";
+import { KAMAnalytics } from "./kam/analytics/KAMAnalytics";
 import { InterviewModule } from "./InterviewModule";
-import { LoadingButton } from "./ui/LoadingButton";
-import { Button } from "./Button";
 import { Card } from "./Card";
 import { Panel } from "./Panel";
-import { Input } from "./Input";
-import { Select } from "./Select";
-import { Pagination } from "./ui/Pagination";
+import { Button } from "./Button";
+import { formatDisplayDob, parseDateToYMD, evaluateDailyStudentAttendance } from "@/lib/utils";
 
-// Persistent global flag to prevent sidebar animating on every re-mount
-let isFirstSidebarAnimationDone = false;
+/* ─── 1. Attendance Monitoring Infographics Banner ─── */
+interface AttMonitoringChartProps {
+  donutData: { name: string; value: number; color: string }[];
+  cgChartData: { name: string; pct: number }[];
+  onTrack: number;
+  atRisk: number;
+  critical: number;
+  noData: number;
+  overallAvgPct: number;
+  filteredCount: number;
+  workingDatesCount: number;
+}
 
-// Static color map for Tailwind classes (prevents purging in production)
-const colorMap: Record<string, string> = {
-  indigo: "bg-indigo-50 border-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:border-indigo-500/20 dark:text-indigo-300",
-  emerald: "bg-emerald-50 border-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-300",
-  rose: "bg-rose-50 border-rose-100 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-300",
-  amber: "bg-amber-50 border-amber-100 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-300",
-  purple: "bg-purple-50 border-purple-100 text-purple-700 dark:bg-purple-500/10 dark:border-purple-500/20 dark:text-purple-300",
-  teal: "bg-teal-50 border-teal-100 text-teal-700 dark:bg-teal-500/10 dark:border-teal-500/20 dark:text-teal-300",
-  slate: "bg-slate-100 border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400",
-  blue: "bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-500/10 dark:border-blue-500/20 dark:text-blue-300",
-  cyan: "bg-cyan-50 border-cyan-100 text-cyan-700 dark:bg-cyan-500/10 dark:border-cyan-500/20 dark:text-cyan-300",
-  fuchsia: "bg-fuchsia-50 border-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/10 dark:border-fuchsia-500/20 dark:text-fuchsia-300",
-};
-
-/* ─── KAM Mentor Attendance Audit Panel ─── */
-const KAMMentorAttendanceTab: React.FC<{ kamId: string }> = ({ kamId }) => {
-  const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
-  const [dateStr, setDateStr] = useState(() => new Date().toISOString().split("T")[0]);
-  const [records, setRecords] = useState<any[]>([]);
-  const [colleges, setColleges] = useState<any[]>([]);
-  const [summary, setSummary] = useState<any>({ total: 0, present: 0, od: 0, leave: 0, absent: 0, unpunched: 0 });
-  const [search, setSearch] = useState("");
-  const [selectedCollege, setSelectedCollege] = useState("all");
-  const [selectedStatus, setSelectedStatus] = useState("all");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-
-  const fetchAttendance = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/mentor-attendance?kamId=${encodeURIComponent(kamId)}&dateStr=${encodeURIComponent(dateStr)}`);
-      const json = await res.json();
-      if (json.success) {
-        setRecords(json.records || []);
-        setColleges(json.colleges || []);
-        setSummary(json.summary || { total: 0, present: 0, od: 0, leave: 0, absent: 0, unpunched: 0 });
-      }
-    } catch (e) {
-      console.error(e);
-      toast("Failed to fetch cross-college mentor attendance data", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      fetchAttendance();
-    }, 350);
-    return () => clearTimeout(handler);
-  }, [kamId, dateStr]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [search, selectedCollege, selectedStatus, dateStr]);
-
-  const filteredRecords = useMemo(() => {
-    return records.filter(r => {
-      const matchesSearch = !search || r.name.toLowerCase().includes(search.toLowerCase()) || (r.collegeName && r.collegeName.toLowerCase().includes(search.toLowerCase()));
-      const matchesCollege = selectedCollege === "all" || r.collegeId === selectedCollege;
-      const matchesStatus = selectedStatus === "all" || r.status === selectedStatus;
-      return matchesSearch && matchesCollege && matchesStatus;
-    });
-  }, [records, search, selectedCollege, selectedStatus]);
-
-  const paginatedRecords = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredRecords.slice(start, start + pageSize);
-  }, [filteredRecords, page, pageSize]);
-
-  const attendanceRate = summary.total > 0 ? Math.round(((summary.present + summary.od) / summary.total) * 100) : 0;
-
+const AttMonitoringCharts = React.memo<AttMonitoringChartProps>(({
+  donutData, cgChartData, onTrack, atRisk, critical, noData,
+  overallAvgPct, filteredCount, workingDatesCount,
+}) => {
+  const shortageCount = atRisk + critical;
   return (
-    <div className="space-y-6">
-      {/* Header & Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
-            <UserCheck className="h-5 w-5" />
-          </div>
-          <div>
-            <h2 className="text-lg font-black text-slate-800 dark:text-white leading-tight">Cross-College Mentor Attendance Audit</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-              Read-only daily mentor punch logs, OD status, and attendance compliance across all assigned campuses.
-            </p>
-          </div>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-2">
+      {/* 4 Mini KPI Cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 shadow-xs">
+          <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider">Campus Avg</p>
+          <p className="text-xl font-black text-emerald-700 mt-0.5">{overallAvgPct}%</p>
+          <p className="text-[9px] text-emerald-500 font-semibold mt-0.5">across {filteredCount} students</p>
         </div>
+        <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 shadow-xs">
+          <p className="text-[10px] font-extrabold text-rose-600 uppercase tracking-wider">Shortage Alert</p>
+          <p className="text-xl font-black text-rose-700 mt-0.5">{shortageCount}</p>
+          <p className="text-[9px] text-rose-400 font-semibold mt-0.5">students below 75%</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs">
+          <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">On Track</p>
+          <p className="text-xl font-black text-slate-800 mt-0.5">{onTrack}</p>
+          <p className="text-[9px] text-slate-400 font-semibold mt-0.5">students ≥ 75%</p>
+        </div>
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 shadow-xs">
+          <p className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-wider">Tracked Days</p>
+          <p className="text-xl font-black text-indigo-700 mt-0.5">{workingDatesCount}</p>
+          <p className="text-[9px] text-indigo-400 font-semibold mt-0.5">working days in range</p>
+        </div>
+      </div>
 
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 pl-2">Date:</span>
-            <input
-              type="date"
-              value={dateStr}
-              onChange={(e) => setDateStr(e.target.value)}
-              className="bg-white dark:bg-slate-900 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
-            />
-          </div>
+      {/* Donut: Student-level Compliance Split */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col shadow-xs">
+        <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-1">Student Compliance Split</p>
+        <p className="text-[9px] text-slate-400 font-medium mb-2">Each segment = number of students</p>
+        {donutData.length > 0 ? (
+          <PieChart width={240} height={120} style={{ margin: "0 auto" }}>
+            <Pie
+              data={donutData} cx="50%" cy="50%"
+              innerRadius={32} outerRadius={54}
+              paddingAngle={3} dataKey="value"
+              isAnimationActive={false}
+            >
+              {donutData.map((e, i) => <Cell key={i} fill={e.color} />)}
+            </Pie>
+            <Tooltip formatter={(v: any, n: any) => [`${v} students`, n]} />
+          </PieChart>
+        ) : (
+          <div className="h-[120px] flex items-center justify-center text-xs text-slate-400 italic">No data</div>
+        )}
+        <div className="flex flex-col gap-1 mt-2">
+          {donutData.map(d => (
+            <div key={d.name} className="flex items-center justify-between text-[9px] font-bold text-slate-600">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full shrink-0" style={{ background: d.color }} />
+                {d.name}
+              </span>
+              <span className="font-black">{d.value} students</span>
+            </div>
+          ))}
+        </div>
+      </div>
 
-          <button
-            type="button"
-            onClick={fetchAttendance}
-            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
-            title="Refresh Attendance Data"
+      {/* Bar: Class-group / Department Avg % */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+        <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-1">Avg Attendance % by Class</p>
+        <p className="text-[9px] text-slate-400 font-medium mb-2">≥75% Good &nbsp; 65–74% Average &nbsp; &lt;65% Low</p>
+        {cgChartData.length > 0 ? (
+          <BarChart
+            width={320} height={Math.max(120, cgChartData.length * 24)}
+            data={cgChartData} layout="vertical"
+            margin={{ top: 0, right: 32, bottom: 0, left: 0 }}
           >
-            <RefreshCw className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Mentors</p>
-          <p className="text-xl font-black text-slate-900 dark:text-white mt-0.5">{summary.total}</p>
-        </div>
-        <div className="p-4 rounded-xl bg-emerald-50/60 dark:bg-emerald-500/10 border border-emerald-200/80 dark:border-emerald-500/20 shadow-xs">
-          <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Present</p>
-          <p className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-0.5">{summary.present}</p>
-        </div>
-        <div className="p-4 rounded-xl bg-indigo-50/60 dark:bg-indigo-500/10 border border-indigo-200/80 dark:border-indigo-500/20 shadow-xs">
-          <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">On Duty (OD)</p>
-          <p className="text-xl font-black text-indigo-700 dark:text-indigo-300 mt-0.5">{summary.od}</p>
-        </div>
-        <div className="p-4 rounded-xl bg-amber-50/60 dark:bg-amber-500/10 border border-amber-200/80 dark:border-amber-500/20 shadow-xs">
-          <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">On Leave</p>
-          <p className="text-xl font-black text-amber-700 dark:text-amber-300 mt-0.5">{summary.leave}</p>
-        </div>
-        <div className="p-4 rounded-xl bg-rose-50/60 dark:bg-rose-500/10 border border-rose-200/80 dark:border-rose-500/20 shadow-xs">
-          <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Absent</p>
-          <p className="text-xl font-black text-rose-700 dark:text-rose-300 mt-0.5">{summary.absent}</p>
-        </div>
-        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Overall Rate</p>
-          <p className={`text-xl font-black mt-0.5 ${attendanceRate >= 80 ? "text-emerald-600" : "text-amber-600"}`}>
-            {attendanceRate}%
-          </p>
-        </div>
-      </div>
-
-      {/* Main Filter & Table Container */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4">
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search mentor or campus name..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full text-xs font-semibold pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-            {/* Campus Filter */}
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">Campus:</label>
-              <select
-                value={selectedCollege}
-                onChange={(e) => setSelectedCollege(e.target.value)}
-                className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
-              >
-                <option value="all">All Campuses ({colleges.length})</option>
-                {colleges.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Status Filter */}
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">Status:</label>
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
-              >
-                <option value="all">All Statuses</option>
-                <option value="Present">Present</option>
-                <option value="OD">On Duty (OD)</option>
-                <option value="Leave">On Leave</option>
-                <option value="Absent">Absent</option>
-                <option value="Not Punched">Unpunched</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Audit Roster Table */}
-        <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-extrabold uppercase text-[10px] tracking-wider">
-                <th className="p-3">Campus / College</th>
-                <th className="p-3">Faculty / Mentor</th>
-                <th className="p-3">Department</th>
-                <th className="p-3">Punch Time</th>
-                <th className="p-3">Attendance Status</th>
-                <th className="p-3">OD / Leave Remarks</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 font-medium text-slate-800 dark:text-slate-200">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
-                    Loading cross-college attendance logs...
-                  </td>
-                </tr>
-              ) : filteredRecords.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
-                    No mentor attendance records found matching criteria.
-                  </td>
-                </tr>
-              ) : (
-                paginatedRecords.map((m, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
-                    <td className="p-3">
-                      <div className="font-extrabold text-indigo-600 dark:text-indigo-400">{m.collegeName}</div>
-                    </td>
-                    <td className="p-3">
-                      <div className="font-extrabold text-slate-900 dark:text-white">{m.name}</div>
-                      <div className="text-[10px] font-mono text-slate-400">{m.email}</div>
-                    </td>
-                    <td className="p-3">
-                      <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold">
-                        {m.department || "General"}
-                      </span>
-                    </td>
-                    <td className="p-3 font-mono text-[11px] text-slate-600 dark:text-slate-400">
-                      {m.punchInTime || <span className="text-slate-350 dark:text-slate-600 italic">—</span>}
-                    </td>
-                    <td className="p-3">
-                      {m.status === "Present" && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-[10px] font-black">
-                          <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> Present
-                        </span>
-                      )}
-                      {m.status === "OD" && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-800 dark:text-indigo-300 text-[10px] font-black">
-                          <Activity className="h-3 w-3 text-indigo-600 dark:text-indigo-400" /> OD (On Duty)
-                        </span>
-                      )}
-                      {m.status === "Leave" && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 text-[10px] font-black">
-                          <Clock className="h-3 w-3 text-amber-600 dark:text-amber-400" /> On Leave
-                        </span>
-                      )}
-                      {m.status === "Absent" && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 text-[10px] font-black">
-                          <XCircle className="h-3 w-3 text-rose-600 dark:text-rose-400" /> Absent
-                        </span>
-                      )}
-                      {m.status === "Not Punched" && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-bold">
-                          Unpunched
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 text-[11px] text-slate-600 dark:text-slate-400 max-w-[250px] truncate">
-                      {m.reason ? (
-                        <span className="italic text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-100 dark:border-indigo-500/20" title={m.reason}>
-                          {m.reason}
-                        </span>
-                      ) : (
-                        <span className="text-slate-350 dark:text-slate-600 italic">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-          <Pagination
-            currentPage={page}
-            totalItems={filteredRecords.length}
-            pageSize={pageSize}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
-          />
-        </div>
+            <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 9 }} tickFormatter={v => `${v}%`} />
+            <YAxis dataKey="name" type="category" tick={{ fontSize: 8, fontWeight: 700 }} width={100} />
+            <Tooltip formatter={(v: any) => [`${v}%`, "Avg Attendance"]} />
+            <Bar dataKey="pct" radius={[0, 4, 4, 0]} isAnimationActive={false}
+              label={{ position: "right", fontSize: 8, fontWeight: 700, formatter: (v: any) => `${v}%` }}>
+              {cgChartData.map((e, i) => (
+                <Cell key={i} fill={e.pct >= 75 ? "#10b981" : e.pct >= 65 ? "#f59e0b" : "#f43f5e"} />
+              ))}
+            </Bar>
+          </BarChart>
+        ) : (
+          <div className="h-[120px] flex items-center justify-center text-xs text-slate-400 italic">No attendance data in range</div>
+        )}
       </div>
     </div>
   );
-};
+});
+AttMonitoringCharts.displayName = "AttMonitoringCharts";
 
 export interface KAMDashboardProps {
-  activeTab?: "overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "interviews" | "profile" | "mentor_attendance";
-  onTabChange?: (tab: "overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "interviews" | "profile" | "mentor_attendance") => void;
+  activeTab?: string;
+  onTabChange?: (tab: string) => void;
 }
 
-// ── CAM Detail Card: shows one CAM's full college data ──────────────────────
-interface CAMCollegeCardProps {
-  cam: any;
-  college: any;
-  mentors: any[];
-  students: any[];
-  slots: any[];
-  requests: any[];
-  approvedHandovers: any[];
-  escalations: any[];
-  tasks: any[];
-  subjects: any[];
-  departments: any[];
-  attendance: any[];
-  leaveRequests: any[];
-  feeStats: { totalFees: number; totalPaid: number; collectionRate: number; paidCount: number; partialCount: number; unpaidCount: number } | null;
-}
-
-const CAMCollegeCard: React.FC<CAMCollegeCardProps> = ({
-  cam, college, mentors, students, slots, requests, approvedHandovers, escalations, tasks,
-  subjects, departments, attendance, leaveRequests, feeStats
-}) => {
-  const [expanded, setExpanded] = useState(false);
-  const [activeSection, setActiveSection] = useState<"mentors" | "students" | "handovers" | "requests" | "issues" | "curriculum" | "attendance" | "fees">("mentors");
-  const [search, setSearch] = useState("");
-
-  const pendingRequests = requests.filter(r => r.status === "pending" || r.status === "pending_cam");
-  const openIssues = escalations.filter(e => e.status === "pending" || e.status === "open");
-  const pendingTasks = tasks.filter(t => t.collegeId === college?.id && t.status === "pending");
-
-  // Attendance health: % present across all recorded sessions for this college
-  const collegeStudentIds = new Set(students.map((s: any) => s.id));
-  const collegeAttendance = attendance.filter((a: any) => collegeStudentIds.has(a.studentId));
-  const presentCount = collegeAttendance.filter((a: any) => a.status === "present" || a.status === "od").length;
-  const attendanceRate = collegeAttendance.length > 0 ? Math.round((presentCount / collegeAttendance.length) * 100) : null;
-
-  // Curriculum health: subjects mapped vs departments
-  const collegeDepts = departments.length;
-  const mappedDepts = new Set(subjects.map((s: any) => s.mentor_group)).size;
-  const subjectCount = subjects.length;
-
-  // Leave requests for this college's mentors
-  const mentorIds = new Set(mentors.map((m: any) => m.id));
-  const pendingLeaves = leaveRequests.filter((l: any) => mentorIds.has(l.mentorId) && l.status === "pending").length;
-
-  const filteredMentors = mentors.filter(m =>
-    !search || (m.name || "").toLowerCase().includes(search.toLowerCase()) || (m.mentor_group || "").toLowerCase().includes(search.toLowerCase())
-  );
-  const filteredStudents = students.filter(s =>
-    !search || (s.name || "").toLowerCase().includes(search.toLowerCase()) || (s.classGroup || "").toLowerCase().includes(search.toLowerCase())
-  );
-
-  return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden transition-all" data-kam-card>
-      {/* Card Header */}
-      <div className="p-5 flex flex-col gap-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-start gap-4">
-            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-indigo-500 to-[#D528A2] flex items-center justify-center text-white font-black text-lg shadow-md shrink-0">
-              {(cam?.name || "C").substring(0, 1)}
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-sm font-black text-slate-800 dark:text-white">{cam?.name || "Campus Manager"}</h3>
-                <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-100 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[9px] font-black uppercase tracking-wider">CM</span>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">{cam?.email || "—"}</p>
-              <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mt-0.5">
-                <Building2 className="inline h-3 w-3 mr-1 text-indigo-500" />
-                {college?.name || "Unassigned College"}
-                {college?.address ? ` · ${college.address}` : ""}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => setExpanded(p => !p)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-black hover:bg-indigo-100 dark:hover:bg-indigo-500/30 transition-all cursor-pointer self-start sm:self-center"
-          >
-            <Eye className="h-3 w-3" />
-            {expanded ? "Collapse" : "View Details"}
-            {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-          </button>
-        </div>
-
-        {/* Health & KPI grid */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
-          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700">
-            <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{mentors.length}</span>
-            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">Faculty</span>
-          </div>
-          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700">
-            <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">{students.length}</span>
-            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">Students</span>
-          </div>
-          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700">
-            <span className="text-sm font-black text-amber-600 dark:text-amber-400">{slots.length}</span>
-            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">Slots</span>
-          </div>
-          <div className={`flex flex-col items-center justify-center p-2 rounded-xl border ${
-            attendanceRate === null ? "bg-slate-50 dark:bg-slate-800/60 border-slate-100 dark:border-slate-700"
-            : attendanceRate >= 75 ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
-            : "bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20"
-          }`}>
-            <span className={`text-sm font-black ${
-              attendanceRate === null ? "text-slate-400"
-              : attendanceRate >= 75 ? "text-emerald-600 dark:text-emerald-400"
-              : "text-rose-600 dark:text-rose-400"
-            }`}>{attendanceRate !== null ? `${attendanceRate}%` : "—"}</span>
-            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">Attend.</span>
-          </div>
-          <div className={`flex flex-col items-center justify-center p-2 rounded-xl border ${
-            feeStats === null ? "bg-slate-50 dark:bg-slate-800/60 border-slate-100 dark:border-slate-700"
-            : feeStats.collectionRate >= 80 ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
-            : "bg-amber-50 dark:bg-amber-500/10 border-amber-100 dark:border-amber-500/20"
-          }`}>
-            <span className={`text-sm font-black ${
-              feeStats === null ? "text-slate-400"
-              : feeStats.collectionRate >= 80 ? "text-emerald-600 dark:text-emerald-400"
-              : "text-amber-600 dark:text-amber-400"
-            }`}>{feeStats !== null ? `${feeStats.collectionRate}%` : "—"}</span>
-            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">Fees</span>
-          </div>
-          <div className={`flex flex-col items-center justify-center p-2 rounded-xl border ${
-            openIssues.length > 0 ? "bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20"
-            : pendingRequests.length > 0 ? "bg-amber-50 dark:bg-amber-500/10 border-amber-100 dark:border-amber-500/20"
-            : "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
-          }`}>
-            <span className={`text-sm font-black ${
-              openIssues.length > 0 ? "text-rose-600 dark:text-rose-400"
-              : pendingRequests.length > 0 ? "text-amber-600 dark:text-amber-400"
-              : "text-emerald-600 dark:text-emerald-400"
-            }`}>{openIssues.length > 0 ? openIssues.length : pendingRequests.length > 0 ? pendingRequests.length : "✓"}</span>
-            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">{openIssues.length > 0 ? "Issues" : "Requests"}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Expandable Detail Section */}
-      {expanded && (
-        <div className="border-t border-slate-100 dark:border-slate-800">
-          {/* Section Tabs */}
-          <div className="flex items-center gap-1 px-5 pt-4 pb-0 overflow-x-auto">
-            {[
-              { id: "mentors", label: "Faculty", icon: Users, count: mentors.length },
-              { id: "students", label: "Students", icon: GraduationCap, count: students.length },
-              { id: "attendance", label: "Attendance", icon: UserCheck, count: attendanceRate !== null ? `${attendanceRate}%` as any : null },
-              { id: "curriculum", label: "Curriculum", icon: BookMarked, count: subjectCount },
-              { id: "fees", label: "Fees", icon: IndianRupee, count: feeStats?.collectionRate !== undefined ? `${feeStats.collectionRate}%` as any : null },
-              { id: "handovers", label: "Handovers", icon: ArrowRightLeft, count: approvedHandovers.length },
-              { id: "requests", label: "Requests", icon: Clock, count: pendingRequests.length, alert: pendingRequests.length > 0 },
-              { id: "issues", label: "Issues", icon: ShieldAlert, count: openIssues.length, alert: openIssues.length > 0 },
-            ].map(sec => {
-              const Icon = sec.icon;
-              const isActive = activeSection === sec.id;
-              return (
-                <button
-                  key={sec.id}
-                  onClick={() => { setActiveSection(sec.id as any); setSearch(""); }}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-t-xl text-[10px] font-black whitespace-nowrap transition-all cursor-pointer border-b-2 ${
-                    isActive
-                      ? "border-indigo-500 text-indigo-700 dark:text-indigo-300 bg-indigo-50/50 dark:bg-indigo-500/10"
-                      : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                  }`}
-                >
-                  <Icon className="h-3 w-3" />
-                  {sec.label}
-                  <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-black ${
-                    sec.alert ? "bg-rose-500 text-white" :
-                    isActive ? "bg-indigo-500 text-white" : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
-                  }`}>{sec.count}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="p-5 space-y-3">
-            {/* Search bar for mentors/students */}
-            {(activeSection === "mentors" || activeSection === "students") && (
-              <div className="relative max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-                <input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder={`Search ${activeSection}…`}
-                  className="pl-8 pr-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 w-full"
-                />
-              </div>
-            )}
-
-            {/* MENTORS section */}
-            {activeSection === "mentors" && (
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-                {filteredMentors.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-slate-400 italic">No faculty found.</div>
-                ) : (
-                  <table className="w-full text-xs font-semibold min-w-[560px]">
-                    <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-widest text-slate-500 dark:text-slate-400 font-black">
-                        <th className="p-3 text-left">Faculty Name</th>
-                        <th className="p-3 text-left">Department</th>
-                        <th className="p-3 text-left">Email</th>
-                        <th className="p-3 text-center">Slots</th>
-                        <th className="p-3 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                      {filteredMentors.map((m: any) => {
-                        const mentorSlots = slots.filter(s => s.mentorId === m.id);
-                        return (
-                          <tr key={m.id} className="hover:bg-indigo-50/20 dark:hover:bg-indigo-500/5 transition-colors">
-                            <td className="p-3">
-                              <div className="flex items-center gap-2">
-                                <div className="h-7 w-7 rounded-full bg-gradient-to-br from-indigo-400 to-[#D528A2] flex items-center justify-center text-white text-[9px] font-black shrink-0">
-                                  {(m.name || "Faculty").substring(0, 2).toUpperCase()}
-                                </div>
-                                <span className="font-bold text-slate-800 dark:text-white">{m.name}</span>
-                              </div>
-                            </td>
-                            <td className="p-3 text-slate-600 dark:text-slate-400">{m.mentor_group || "—"}</td>
-                            <td className="p-3 text-slate-500 dark:text-slate-400 font-mono text-[10px]">{m.email}</td>
-                            <td className="p-3 text-center font-black text-slate-800 dark:text-white">{mentorSlots.length}</td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
-                                m.status === "Active" || !m.status
-                                  ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300"
-                                  : "bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400"
-                              }`}>{m.status || "Active"}</span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            )}
-
-            {/* STUDENTS section */}
-            {activeSection === "students" && (
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-                {filteredStudents.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-slate-400 italic">No students found.</div>
-                ) : (
-                  <table className="w-full text-xs font-semibold min-w-[500px]">
-                    <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-widest text-slate-500 dark:text-slate-400 font-black">
-                        <th className="p-3 text-left">Student Name</th>
-                        <th className="p-3 text-left">Class Group</th>
-                        <th className="p-3 text-left">Email</th>
-                        <th className="p-3 text-center">Semester</th>
-                        <th className="p-3 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                      {filteredStudents.map((s: any) => (
-                        <tr key={s.id} className="hover:bg-emerald-50/20 dark:hover:bg-emerald-500/5 transition-colors">
-                          <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="h-7 w-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-[9px] font-black shrink-0">
-                                {(s.name || "Student").substring(0, 2).toUpperCase()}
-                              </div>
-                              <span className="font-bold text-slate-800 dark:text-white">{s.name}</span>
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[9px] font-black">
-                              {s.classGroup || "—"}
-                            </span>
-                          </td>
-                          <td className="p-3 text-slate-500 dark:text-slate-400 font-mono text-[10px]">{s.email}</td>
-                          <td className="p-3 text-center text-slate-600 dark:text-slate-400 text-[10px] font-bold">{s.semester || "—"}</td>
-                          <td className="p-3 text-center">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
-                              s.status === "Active" || !s.status
-                                ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300"
-                                : "bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700"
-                            }`}>{s.status || "Active"}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            )}
-
-            {/* HANDOVERS section */}
-            {activeSection === "handovers" && (
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-                {approvedHandovers.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-slate-400 italic">No approved handovers yet.</div>
-                ) : (
-                  <table className="w-full text-xs font-semibold min-w-[580px]">
-                    <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-widest text-slate-500 dark:text-slate-400 font-black">
-                        <th className="p-3 text-left">Original Faculty</th>
-                        <th className="p-3 text-left">Cover Faculty</th>
-                        <th className="p-3 text-left">Course</th>
-                        <th className="p-3 text-center">Date</th>
-                        <th className="p-3 text-center">Month</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                      {approvedHandovers.map((h: any) => {
-                        const orig = mentors.find((m: any) => m.id === h.originalMentorId);
-                        const cover = mentors.find((m: any) => m.id === h.coverStaffId);
-                        return (
-                          <tr key={h.id || h.requestId} className="hover:bg-teal-50/20 dark:hover:bg-teal-500/5 transition-colors">
-                            <td className="p-3 font-bold text-rose-700 dark:text-rose-400">{orig?.name || h.originalMentorId}</td>
-                            <td className="p-3 font-bold text-emerald-700 dark:text-emerald-400">{cover?.name || h.coverStaffName}</td>
-                            <td className="p-3 text-slate-700 dark:text-slate-300 max-w-[160px] truncate" title={h.course}>{h.course || "—"}</td>
-                            <td className="p-3 text-center text-slate-500 dark:text-slate-400 whitespace-nowrap">{h.dateStr}</td>
-                            <td className="p-3 text-center">
-                              <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] font-black text-slate-600 dark:text-slate-300">
-                                {h.ledger_month || h.dateStr?.slice(0, 7) || "—"}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            )}
-
-            {/* REQUESTS section */}
-            {activeSection === "requests" && (
-              <div className="space-y-2">
-                {requests.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-slate-400 italic">No handover requests found.</div>
-                ) : (
-                  requests.slice().sort((a, b) => b.timestamp?.localeCompare(a.timestamp || "") || 0).map((r: any) => {
-                    const isPending = r.status === "pending" || r.status === "pending_cam";
-                    const isApproved = r.status === "approved";
-                    const isRejected = r.status === "rejected";
-                    return (
-                      <div key={r.id} className={`p-4 rounded-xl border transition-all ${
-                        isPending ? "border-amber-200 dark:border-amber-500/30 bg-amber-50/40 dark:bg-amber-500/5" :
-                        isApproved ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/30 dark:bg-emerald-500/5" :
-                        "border-slate-200 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/20"
-                      }`}>
-                        <div className="flex items-start justify-between gap-3 flex-wrap">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs font-black text-slate-800 dark:text-white">{r.requestorName}</span>
-                              <ArrowRightLeft className="h-3 w-3 text-slate-400" />
-                              <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">{r.targetStaffName}</span>
-                              {r.request_type === "swap_compensate" && (
-                                <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 text-[8px] font-black uppercase">Swap</span>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-slate-600 dark:text-slate-400">
-                              <span className="font-bold">{r.course}</span> · {r.dateFormatted || r.dateStr} · {r.time}
-                            </p>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400 italic">"{r.reason}"</p>
-                          </div>
-                          <span className={`shrink-0 px-2.5 py-1 rounded-full text-[9px] font-black border uppercase ${
-                            isPending ? "bg-amber-100 border-amber-300 text-amber-800 dark:bg-amber-500/20 dark:border-amber-500/40 dark:text-amber-300" :
-                            isApproved ? "bg-emerald-100 border-emerald-300 text-emerald-800 dark:bg-emerald-500/20 dark:border-emerald-500/40 dark:text-emerald-300" :
-                            "bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700"
-                          }`}>
-                            {r.status === "pending_cam" ? "⚡ Emergency" : r.status}
-                          </span>
-                        </div>
-
-                        {/* Approve / Reject Actions for KAM */}
-                        {isPending && (
-                          <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-amber-200/60 dark:border-amber-500/20 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await fetch("/api/requests/review", {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ requestId: r.id, status: "approved", reviewerRole: "Key Account Manager", reviewNotes: "Approved by KAM" })
-                                  });
-                                  window.location.reload();
-                                } catch (_) {}
-                              }}
-                              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all flex items-center gap-1 shadow-xs"
-                            >
-                              <CheckCircle className="h-3 w-3" /> Approve Request
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await fetch("/api/requests/review", {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ requestId: r.id, status: "rejected", reviewerRole: "Key Account Manager", reviewNotes: "Rejected by KAM" })
-                                  });
-                                  window.location.reload();
-                                } catch (_) {}
-                              }}
-                              className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all flex items-center gap-1 shadow-xs"
-                            >
-                              <XCircle className="h-3 w-3" /> Reject Request
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-            {/* ISSUES section */}
-            {activeSection === "issues" && (
-              <div className="space-y-2">
-                {escalations.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-slate-400 italic">No campus issues reported.</div>
-                ) : (
-                  escalations.map((esc: any) => (
-                    <div key={esc.id} className={`p-4 rounded-xl border transition-all ${
-                      esc.status === "pending" || esc.status === "open"
-                        ? "border-rose-200 dark:border-rose-500/30 bg-rose-50/30 dark:bg-rose-500/5"
-                        : "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-500/5"
-                    }`}>
-                      <div className="flex items-start justify-between gap-3 flex-wrap">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-black text-slate-800 dark:text-white">{esc.title}</span>
-                            {esc.priority && (
-                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
-                                esc.priority === "high" ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300" :
-                                esc.priority === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300" :
-                                "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                              }`}>{esc.priority}</span>
-                            )}
-                          </div>
-                          {esc.desc && <p className="text-[10px] text-slate-500 dark:text-slate-400 italic">"{esc.desc}"</p>}
-                          <p className="text-[10px] text-slate-400">{esc.type || "General"} · {esc.created_at?.slice(0, 10) || "—"}</p>
-                        </div>
-                        <span className={`shrink-0 px-2.5 py-1 rounded-full text-[9px] font-black border uppercase ${
-                          esc.status === "resolved"
-                            ? "bg-emerald-100 border-emerald-300 text-emerald-800 dark:bg-emerald-500/20 dark:border-emerald-500/40 dark:text-emerald-300"
-                            : "bg-rose-100 border-rose-300 text-rose-800 dark:bg-rose-500/20 dark:border-rose-500/40 dark:text-rose-300"
-                        }`}>{esc.status || "pending"}</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {/* ATTENDANCE section */}
-            {activeSection === "attendance" && (
-              <div className="space-y-4">
-                {/* Summary row */}
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { label: "Present", value: presentCount, color: "emerald" },
-                    { label: "Absent", value: collegeAttendance.filter((a: any) => a.status === "absent").length, color: "rose" },
-                    { label: "OD", value: collegeAttendance.filter((a: any) => a.status === "od").length, color: "amber" },
-                  ].map(s => (
-                    <div key={s.label} className={`p-3 rounded-xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
-                      <div className={`text-xl font-black ${s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" : s.color === "rose" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}`}>{s.value}</div>
-                      <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
-                    </div>
-                  ))}
-                </div>
-                {/* Progress bar */}
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-[10px] font-bold text-slate-600 dark:text-slate-400">
-                    <span>Overall Attendance Rate</span>
-                    <span className={attendanceRate !== null && attendanceRate < 75 ? "text-rose-600" : "text-emerald-600"}>
-                      {attendanceRate !== null ? `${attendanceRate}%` : "No data"}
-                    </span>
-                  </div>
-                  {attendanceRate !== null && (
-                    <div className="h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${attendanceRate >= 75 ? "bg-emerald-500" : "bg-rose-500"}`}
-                        style={{ width: `${attendanceRate}%` }}
-                      />
-                    </div>
-                  )}
-                  {attendanceRate !== null && attendanceRate < 75 && (
-                    <p className="text-[10px] text-rose-600 dark:text-rose-400 font-bold flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" /> Below 75% threshold — CAM action required
-                    </p>
-                  )}
-                </div>
-                {/* Per-mentor slot attendance breakdown */}
-                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-                  <table className="w-full text-xs font-semibold min-w-[420px]">
-                    <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-widest text-slate-500 font-black">
-                        <th className="p-3 text-left">Faculty</th>
-                        <th className="p-3 text-left">Dept</th>
-                        <th className="p-3 text-center">Slots</th>
-                        <th className="p-3 text-center">Att. Sessions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                      {mentors.slice(0, 10).map((m: any) => {
-                        const mSlots = slots.filter((s: any) => s.mentorId === m.id);
-                        const mAttCount = collegeAttendance.filter((a: any) => mSlots.some((s: any) => s.id === a.slotId)).length;
-                        return (
-                          <tr key={m.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                            <td className="p-3 font-bold text-slate-800 dark:text-white">{m.name}</td>
-                            <td className="p-3 text-slate-500 dark:text-slate-400 text-[10px]">{m.mentor_group || "—"}</td>
-                            <td className="p-3 text-center text-slate-700 dark:text-slate-300 font-black">{mSlots.length}</td>
-                            <td className="p-3 text-center text-slate-700 dark:text-slate-300 font-black">{mAttCount}</td>
-                          </tr>
-                        );
-                      })}
-                      {mentors.length === 0 && (
-                        <tr><td colSpan={4} className="p-4 text-center text-xs text-slate-400 italic">No faculty data.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                {pendingLeaves > 0 && (
-                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-2">
-                    <Clock className="h-3.5 w-3.5 shrink-0" />
-                    {pendingLeaves} faculty leave request{pendingLeaves !== 1 ? "s" : ""} pending CAM approval
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* CURRICULUM section */}
-            {activeSection === "curriculum" && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { label: "Departments", value: collegeDepts, color: "indigo" },
-                    { label: "Mapped Depts", value: mappedDepts, color: mappedDepts === collegeDepts && collegeDepts > 0 ? "emerald" : "amber" },
-                    { label: "Subjects", value: subjectCount, color: "purple" },
-                  ].map(s => (
-                    <div key={s.label} className={`p-3 rounded-xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
-                      <div className={`text-xl font-black ${
-                        s.color === "indigo" ? "text-indigo-600 dark:text-indigo-400" :
-                        s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
-                        s.color === "amber" ? "text-amber-600 dark:text-amber-400" :
-                        "text-purple-600 dark:text-purple-400"
-                      }`}>{s.value}</div>
-                      <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
-                    </div>
-                  ))}
-                </div>
-                {collegeDepts > 0 && mappedDepts < collegeDepts && (
-                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-[11px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-2">
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                    {collegeDepts - mappedDepts} department{collegeDepts - mappedDepts !== 1 ? "s" : ""} have no subjects mapped
-                  </div>
-                )}
-                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-                  <table className="w-full text-xs font-semibold min-w-[480px]">
-                    <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-widest text-slate-500 font-black">
-                        <th className="p-3 text-left">Department</th>
-                        <th className="p-3 text-center">Subjects</th>
-                        <th className="p-3 text-center">Shift</th>
-                        <th className="p-3 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                      {departments.length === 0 ? (
-                        <tr><td colSpan={4} className="p-4 text-center text-xs text-slate-400 italic">No departments found.</td></tr>
-                      ) : departments.map((dept: any) => {
-                        const deptSubs = subjects.filter((s: any) => s.mentor_group === dept.name);
-                        const mapped = deptSubs.length > 0;
-                        return (
-                          <tr key={dept.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                            <td className="p-3 font-bold text-slate-800 dark:text-white">{dept.name}</td>
-                            <td className="p-3 text-center font-black text-slate-700 dark:text-slate-300">{deptSubs.length}</td>
-                            <td className="p-3 text-center">
-                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 uppercase">
-                                {dept.default_shift || "General"}
-                              </span>
-                            </td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
-                                mapped ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300" : "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
-                              }`}>{mapped ? "Mapped" : "Unmapped"}</span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* FEES section */}
-            {activeSection === "fees" && (
-              <div className="space-y-4">
-                {feeStats === null ? (
-                  <div className="text-center py-8 text-xs text-slate-400 italic">Fee data unavailable — no CM assigned or no fees recorded.</div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {[
-                        { label: "Total Fees", value: `₹${(feeStats.totalFees).toLocaleString()}`, color: "indigo" },
-                        { label: "Collected", value: `₹${(feeStats.totalPaid).toLocaleString()}`, color: "emerald" },
-                        { label: "Outstanding", value: `₹${(Math.max(0, feeStats.totalFees - feeStats.totalPaid)).toLocaleString()}`, color: feeStats.totalFees - feeStats.totalPaid > 0 ? "rose" : "emerald" },
-                        { label: "Collection Rate", value: `${feeStats.collectionRate}%`, color: feeStats.collectionRate >= 80 ? "emerald" : "amber" },
-                      ].map(s => (
-                        <div key={s.label} className={`p-3 rounded-xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
-                          <div className={`text-sm font-black ${
-                            s.color === "indigo" ? "text-indigo-600 dark:text-indigo-400" :
-                            s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
-                            s.color === "rose" ? "text-rose-600 dark:text-rose-400" :
-                            "text-amber-600 dark:text-amber-400"
-                          }`}>{s.value}</div>
-                          <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-[10px] font-bold text-slate-600 dark:text-slate-400">
-                        <span>Collection Progress</span>
-                        <span className={feeStats.collectionRate >= 80 ? "text-emerald-600" : "text-amber-600"}>{feeStats.collectionRate}%</span>
-                      </div>
-                      <div className="h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${feeStats.collectionRate >= 80 ? "bg-emerald-500" : "bg-amber-500"}`}
-                          style={{ width: `${feeStats.collectionRate}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      {[
-                        { label: "Paid", value: feeStats.paidCount, color: "emerald" },
-                        { label: "Partial", value: feeStats.partialCount, color: "amber" },
-                        { label: "Unpaid", value: feeStats.unpaidCount, color: "rose" },
-                      ].map(s => (
-                        <div key={s.label} className={`p-3 rounded-xl border text-center ${colorMap[s.color] || colorMap.slate}`}>
-                          <div className={`text-xl font-black ${
-                            s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
-                            s.color === "amber" ? "text-amber-600 dark:text-amber-400" :
-                            "text-rose-600 dark:text-rose-400"
-                          }`}>{s.value}</div>
-                          <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ── Main KAMDashboard Component ─────────────────────────────────────────────
-export const KAMDashboard: React.FC<KAMDashboardProps> = ({
-  activeTab: propActiveTab,
-  onTabChange
-}) => {
+export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboardProps = {}) {
   const {
-    currentKAM,
     colleges,
+    currentKAM,
     mentors,
-    students,
     slots,
-    requests,
-    approvedHandovers,
-    refreshData,
-    isDataLoading,
-    kamTasks: tasks,
-    campusIssues: escalations,
-    saveKamTask,
-    deleteKamTask,
-    updateCampusIssueStatus,
-    subjectsList,
-    departmentsList,
+    students,
     studentAttendance,
     leaveRequests,
+    requests: handoverRequests,
+    academicYears,
+    departmentsList,
+    refreshData,
+    isDataLoading
   } = useApp();
-  const { toast } = useToast();
 
-  // Bug 8 fix: memoize activeColleges so it's stable across renders
-  const activeColleges = useMemo(
-    () => colleges.filter(c => !currentKAM || c.kam_id === currentKAM.id),
-    [colleges, currentKAM]
-  );
+  const { toast } = useToast ? useToast() : { toast: (_m: string, _t?: string) => {} };
 
-  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "cam_reports" | "colleges" | "tasks" | "escalations" | "swap_tracker" | "interviews" | "profile" | "mentor_attendance">("overview");
-  const activeTab = propActiveTab || localActiveTab;
-  const setActiveTab = onTabChange || setLocalActiveTab;
+  // Internal tab state matching CAM navigation patterns
+  const [internalTab, setInternalTab] = useState<string>("overview");
+  const activeTab = externalTab || internalTab;
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const sidebarRef = useRef<HTMLElement>(null);
-  const [isCollapsed, setIsCollapsed] = useState(false);
-
-  // Task form state
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskCollegeId, setTaskCollegeId] = useState("");
-  const [taskPriority, setTaskPriority] = useState("medium");
-  const [taskDueDate, setTaskDueDate] = useState("");
-  const [loadingActions, setLoadingActions] = useState<Record<string, boolean>>({});
-  const setActionLoading = (key: string, loading: boolean) => {
-    setLoadingActions(prev => ({ ...prev, [key]: loading }));
+  const setActiveTab = (tab: string) => {
+    setInternalTab(tab);
+    if (onTabChange) onTabChange(tab);
   };
 
-  useEffect(() => {
+  // Sidebar collapse state
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
-      // Default to expanded (false = expanded, true = collapsed)
-      const stored = localStorage.getItem("fp_sidebar_collapsed") === "true";
-      setIsCollapsed(stored || false); // Always default to expanded
+      return localStorage.getItem("fp_kam_sidebar_collapsed") === "true";
     }
-  }, []);
-
-  useEffect(() => {
-    if (activeColleges.length > 0 && !taskCollegeId) {
-      setTaskCollegeId(activeColleges[0].id);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeColleges.length, activeColleges[0]?.id]);
-
-  // GSAP tab transition — Bug 9 fix: use data attribute selector instead of .bg-white
-  useEffect(() => {
-    if (typeof window !== "undefined" && containerRef.current) {
-      const cards = Array.from(containerRef.current.querySelectorAll("[data-kam-card], [data-kam-panel]"));
-      if (cards.length > 0) {
-        gsap.killTweensOf(cards);
-        gsap.fromTo(cards, { opacity: 0, y: 15, scale: 0.97 }, { opacity: 1, y: 0, scale: 1, duration: 0.45, stagger: 0.04, ease: "back.out(0.8)" });
-      }
-    }
-  }, [activeTab]);
-
-  // Sidebar hover state for flyout popover (matches CAM pattern)
-  const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
-
-  // Day Order & Daily Config state
-  const [dailyConfigsMap, setDailyConfigsMap] = useState<Record<string, any>>({});
-  const [selectedDayConfigCollege, setSelectedDayConfigCollege] = useState<any>(null);
-  const [dayStartDate, setDayStartDate] = useState(new Date().toISOString().slice(0, 10));
-  const [dayEndDate, setDayEndDate] = useState(new Date().toISOString().slice(0, 10));
-  const [dayOrderType, setDayOrderType] = useState("regular");
-  const [dayOrderVal, setDayOrderVal] = useState("Day 1");
-  const [daySessionMode, setDaySessionMode] = useState("Offline");
-  const [dayNotes, setDayNotes] = useState("");
-  const [savingDayConfig, setSavingDayConfig] = useState(false);
-
-  // Announcement state
-  const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
-  const [annTitle, setAnnTitle] = useState("");
-  const [annDesc, setAnnDesc] = useState("");
-  const [annCollegeId, setAnnCollegeId] = useState("");
-  const [annTargetRole, setAnnTargetRole] = useState("all");
-  const [postingAnn, setPostingAnn] = useState(false);
-
-  // Fetch daily configs for all colleges in portfolio
-  useEffect(() => {
-    if (activeColleges.length === 0) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    Promise.all(
-      activeColleges.map(c =>
-        fetch(`/api/daily-configs?college_id=${encodeURIComponent(c.id)}&dateStr=${todayStr}`)
-          .then(r => r.json())
-          .catch(() => null)
-      )
-    ).then(results => {
-      const map: Record<string, any> = {};
-      results.forEach((res, idx) => {
-        if (res?.success && res.config) {
-          map[activeColleges[idx].id] = res.config;
-        }
-      });
-      setDailyConfigsMap(map);
-    });
-  }, [activeColleges]);
-
-  const handleSaveDayConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedDayConfigCollege) return;
-    setSavingDayConfig(true);
-    try {
-      const res = await fetch("/api/daily-configs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          college_id: selectedDayConfigCollege.id,
-          startDate: dayStartDate,
-          endDate: dayEndDate,
-          day_type: dayOrderType,
-          day_order: dayOrderVal,
-          session_mode: daySessionMode,
-          notes: dayNotes,
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast("Day Order & Status configured successfully.", "success");
-        setSelectedDayConfigCollege(null);
-        refreshData();
-      } else {
-        toast(data.message || "Failed to set Day Order", "error");
-      }
-    } catch (_) {
-      toast("An error occurred", "error");
-    } finally {
-      setSavingDayConfig(false);
-    }
-  };
-
-  const handlePostAnnouncement = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!annTitle.trim()) return;
-    setPostingAnn(true);
-    try {
-      const res = await fetch("/api/announcements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: annTitle,
-          description: annDesc,
-          created_by: currentKAM?.name || "Key Account Manager",
-          target_role: annTargetRole,
-          college_id: annCollegeId || null,
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast("Announcement broadcasted successfully.", "success");
-        setShowAnnouncementModal(false);
-        setAnnTitle("");
-        setAnnDesc("");
-      } else {
-        toast(data.message || "Failed to post announcement", "error");
-      }
-    } catch (_) {
-      toast("An error occurred", "error");
-    } finally {
-      setPostingAnn(false);
-    }
-  };
-
-  // Bug 1 fix: fetch real CAM data per college using /api/cam, not /api/kam
-  // Also fetch fee stats per college via /api/fees?role=cam&camId=
-  const [camDataMap, setCamDataMap] = useState<Record<string, any>>({});
-  const [feeStatsMap, setFeeStatsMap] = useState<Record<string, any>>({});
-  const [loadingCams, setLoadingCams] = useState(false);
-
-  useEffect(() => {
-    if (!currentKAM?.id || activeColleges.length === 0) return;
-
-    setLoadingCams(true);
-    // First get all CMs for this KAM (their IDs) from the KAM endpoint
-    fetch(`/api/kam?id=${encodeURIComponent(currentKAM.id)}`)
-      .then(r => r.json())
-      .then(async (kamData) => {
-        if (!kamData.success) return;
-        const cmList: any[] = kamData.campusManagers || [];
-
-        // Fetch full CAM data + fee data in parallel for each CM
-        const results = await Promise.allSettled(
-          cmList.map(async (cm: any) => {
-            const [camRes, feeRes] = await Promise.all([
-              fetch(`/api/cam?id=${encodeURIComponent(cm.id)}`).then(r => r.json()).catch(() => null),
-              fetch(`/api/fees?role=cam&camId=${encodeURIComponent(cm.id)}`).then(r => r.json()).catch(() => null),
-            ]);
-            return { collegeId: cm.college_id, camData: camRes, feeData: feeRes };
-          })
-        );
-
-        const newCamMap: Record<string, any> = {};
-        const newFeeMap: Record<string, any> = {};
-        results.forEach(r => {
-          if (r.status === "fulfilled" && r.value) {
-            const { collegeId, camData, feeData } = r.value;
-            if (camData?.success && camData.cam) newCamMap[collegeId] = camData.cam;
-            if (feeData?.success && feeData.stats) newFeeMap[collegeId] = feeData.stats;
-          }
-        });
-        setCamDataMap(newCamMap);
-        setFeeStatsMap(newFeeMap);
-      })
-      .catch(() => {})
-      .finally(() => setLoadingCams(false));
-  }, [currentKAM?.id, activeColleges.length]);
-
-  const handleCreateTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!taskTitle.trim() || !taskDueDate) return;
-    setActionLoading('submit_task', true);
-    try {
-      const res = await saveKamTask({ title: taskTitle, collegeId: taskCollegeId, priority: taskPriority, status: "pending", dueDate: taskDueDate });
-      if (res.success) { setTaskTitle(""); setTaskDueDate(""); toast("Task assigned successfully.", "success"); }
-      else toast(res.message || "Failed to create task", "error");
-    } finally {
-      setActionLoading('submit_task', false);
-    }
-  };
-
-  const handleDeleteTask = async (id: string) => {
-    setActionLoading(`delete_task_${id}`, true);
-    try {
-      const res = await deleteKamTask(id);
-      if (res.success) {
-        await refreshData();
-        toast("Task deleted.", "success");
-      } else toast(res.message || "Failed to delete task", "error");
-    } finally {
-      setActionLoading(`delete_task_${id}`, false);
-    }
-  };
-
-  const handleResolveEscalation = async (id: string) => {
-    setActionLoading(`resolve_issue_${id}`, true);
-    try {
-      const res = await updateCampusIssueStatus(id, "resolved", new Date().toLocaleDateString());
-      if (res.success) {
-        await refreshData();
-        toast("Issue resolved.", "success");
-      } else toast(res.message || "Failed to resolve", "error");
-    } finally {
-      setActionLoading(`resolve_issue_${id}`, false);
-    }
-  };
-
-  // ── Portfolio-wide computed stats (must be declared BEFORE getNotificationCount) ─────
-  const portfolioMentorIds = new Set(mentors.filter(m => activeColleges.some(c => c.id === m.college_id)).map(m => m.id));
-  const portfolioStudentIds = new Set(students.filter(s => activeColleges.some(c => c.id === s.college_id)).map(s => s.id));
-  const totalMentors = portfolioMentorIds.size;
-  const totalStudents = portfolioStudentIds.size;
-  const totalSlots = slots.filter(s => portfolioMentorIds.has(s.mentorId)).length;
-  const totalPendingRequests = requests.filter(r => (r.status === "pending" || r.status === "pending_cam") && portfolioMentorIds.has(r.requestorId)).length;
-  // Scoped to this KAM's portfolio colleges (Bug 3 / 5 fix)
-  const totalOpenIssues = escalations.filter(e => (e.status === "pending" || e.status === "open") && activeColleges.some(c => c.id === e.collegeId)).length;
-  const totalPendingTasks = tasks.filter(t => t.status === "pending" && activeColleges.some(c => c.id === t.collegeId)).length;
-
-  // ── Sidebar nav groups ──────────────────────────────────────────────────
-  const getNotificationCount = (tabId: string) => {
-    if (tabId === "tasks") return tasks.filter(t => t.status === "pending" && activeColleges.some(c => c.id === t.collegeId)).length;
-    if (tabId === "escalations") return escalations.filter(e => (e.status === "pending" || e.status === "open") && activeColleges.some(c => c.id === e.collegeId)).length;
-    if (tabId === "cam_reports") return requests.filter(r => r.status === "pending_cam" && portfolioMentorIds.has(r.requestorId)).length;
-    return 0;
-  };
-
-  const sidebarGroups = [
-    {
-      id: "portfolio",
-      title: "Campuses",
-      icon: Building2,
-      items: [
-        { id: "overview", label: "Overview", icon: Activity },
-        { id: "cam_reports", label: "CM Reports", icon: Layers },
-        { id: "colleges", label: "Campus Directory", icon: Building2 },
-        { id: "mentor_attendance", label: "Mentor Attendance", icon: UserCheck },
-        { id: "swap_tracker", label: "Swap Ledger", icon: ArrowRightLeft },
-      ]
-    },
-    {
-      id: "actions",
-      title: "Directives",
-      icon: ClipboardList,
-      items: [
-        { id: "tasks", label: "Assign Task", icon: ClipboardList },
-        { id: "interviews", label: "Interview Module", icon: Award },
-        { id: "escalations", label: "Escalated Issues", icon: ShieldAlert },
-      ]
-    },
-    {
-      id: "settings",
-      title: "Settings",
-      icon: User,
-      items: [
-        { id: "profile", label: "My Profile", icon: User }
-      ]
-    }
-  ];
-
-  // Build CAMs list for this KAM
-  const kamCamList = activeColleges.map(college => {
-    const cam = camDataMap[college.id] || null;
-    return { college, cam };
+    return false;
   });
 
+  const [expandedGroups, setExpandedGroups] = useState<{ [key: string]: boolean }>({
+    dashboard: true,
+    campuses: true,
+    schedules: true,
+    students: true,
+    faculty: true,
+    analytics: true
+  });
+
+  // Active Campus Selection Scope (Defaults to "all" for Portfolio view)
+  const [selectedCollegeId, setSelectedCollegeId] = useState<string>("all");
+
+  // Filter Bar state
+  const [selectedDept, setSelectedDept] = useState<string>("all");
+  const [selectedCohort, setSelectedCohort] = useState<string>("all");
+  const [selectedShift, setSelectedShift] = useState<string>("all");
+  const [studentSearch, setStudentSearch] = useState<string>("");
+  const [selectedStudentFor360, setSelectedStudentFor360] = useState<string | null>(null);
+  const [selectedMentorFor360, setSelectedMentorFor360] = useState<string | null>(null);
+  const [selectedTimetableDay, setSelectedTimetableDay] = useState<string>("Monday");
+
+  // Date range for monitoring matrix
+  const todayStr = useMemo(() => {
+    return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+  }, []);
+
+  const [attendanceStartDate, setAttendanceStartDate] = useState<string>("2026-06-15");
+  const [attendanceEndDate, setAttendanceEndDate] = useState<string>(todayStr);
+  const [attendancePage, setAttendancePage] = useState<number>(1);
+  const [attendancePageSize, setAttendancePageSize] = useState<number>(25);
+
+  // Targeted API Overview Data
+  const [overviewData, setOverviewData] = useState<any | null>(null);
+  const [trendData, setTrendData] = useState<any[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadOverview() {
+      try {
+        const kamParam = currentKAM?.id ? `?kamId=${encodeURIComponent(currentKAM.id)}` : "";
+        const res = await fetch(`/api/kam/overview${kamParam}`);
+        const json = await res.json();
+        if (json.success && isMounted) {
+          setOverviewData(json);
+        }
+      } catch (err) {
+        console.error("Failed to load KAM overview:", err);
+      }
+    }
+    loadOverview();
+    return () => { isMounted = false; };
+  }, [currentKAM?.id]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadTrends() {
+      try {
+        const params = new URLSearchParams();
+        if (selectedCollegeId !== "all") params.append("collegeId", selectedCollegeId);
+        if (selectedDept !== "all") params.append("department", selectedDept);
+        if (selectedCohort !== "all") params.append("classGroup", selectedCohort);
+        if (attendanceStartDate) params.append("startDate", attendanceStartDate);
+        if (attendanceEndDate) params.append("endDate", attendanceEndDate);
+
+        const res = await fetch(`/api/kam/analytics/attendance?${params.toString()}`);
+        const json = await res.json();
+        if (json.success && isMounted) {
+          setTrendData(json.trend || []);
+        }
+      } catch (err) {
+        console.error("Failed to load trends:", err);
+      }
+    }
+    loadTrends();
+    return () => { isMounted = false; };
+  }, [selectedCollegeId, selectedDept, selectedCohort, attendanceStartDate, attendanceEndDate]);
+
+  // College-scoped datasets
+  const activeCollegeStudents = useMemo(() => {
+    if (selectedCollegeId === "all") return students;
+    return students.filter(s => s.college_id === selectedCollegeId);
+  }, [students, selectedCollegeId]);
+
+  const activeCollegeMentors = useMemo(() => {
+    if (selectedCollegeId === "all") return mentors;
+    return mentors.filter(m => m.college_id === selectedCollegeId);
+  }, [mentors, selectedCollegeId]);
+
+  const activeCollegeSlots = useMemo(() => {
+    if (selectedCollegeId === "all") return slots;
+    return slots.filter(s => s.college_id === selectedCollegeId);
+  }, [slots, selectedCollegeId]);
+
+  // Distinct departments and cohorts
+  const departments = useMemo(() => {
+    const set = new Set<string>();
+    activeCollegeStudents.forEach(s => { if (s.department) set.add(s.department); });
+    return Array.from(set).sort();
+  }, [activeCollegeStudents]);
+
+  const cohorts = useMemo(() => {
+    const set = new Set<string>();
+    activeCollegeStudents.forEach(s => { if (s.classGroup) set.add(s.classGroup); });
+    return Array.from(set).sort();
+  }, [activeCollegeStudents]);
+
+  // Working dates list for Attendance Matrix
+  const workingDates = useMemo(() => {
+    const dateSet = new Set<string>();
+    const rangeStart = new Date(attendanceStartDate + "T00:00:00");
+    const rangeEnd = new Date(attendanceEndDate + "T00:00:00");
+
+    if (!isNaN(rangeStart.getTime()) && !isNaN(rangeEnd.getTime())) {
+      const cur = new Date(rangeStart);
+      while (cur <= rangeEnd) {
+        const dow = cur.getDay();
+        const ymd = cur.toISOString().split("T")[0];
+        if (dow !== 0) dateSet.add(ymd); // Exclude Sundays
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+    return Array.from(dateSet).sort();
+  }, [attendanceStartDate, attendanceEndDate]);
+
+  // Precomputed dayNameMap for O(1) cell lookups (eliminates Date allocations during rendering)
+  const dayNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    workingDates.forEach(dStr => {
+      map[dStr] = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+    });
+    return map;
+  }, [workingDates]);
+
+  // Robust Student ID Alias Lookup (Matches ID, Roll Number, or Register Number)
+  const studentIdLookup = useMemo(() => {
+    const map = new Map<string, typeof students[0]>();
+    students.forEach(s => {
+      if (s.id) map.set(s.id.toLowerCase().trim(), s);
+      if (s.roll_number) map.set(s.roll_number.toLowerCase().trim(), s);
+      if (s.register_number) map.set(s.register_number.toLowerCase().trim(), s);
+    });
+    return map;
+  }, [students]);
+
+  // Slot Lookup Map: `${day}__${classGroup.toLowerCase()}` -> slots[]
+  const slotMap = useMemo(() => {
+    const map = new Map<string, any[]>();
+    slots.forEach(s => {
+      const rawKey = `${s.day}__${(s.classGroup || "").toLowerCase().trim()}`;
+      const normKey = `${s.day}__${(s.classGroup || "").replace(/\s*\(\d{4}[–\-]\d{4}\)/g, "").replace(/\s*-\s*Batch\s*\d{4}[–\-]\d{4}/gi, "").trim().toLowerCase()}`;
+      
+      const arr = map.get(rawKey);
+      if (arr) arr.push(s);
+      else map.set(rawKey, [s]);
+
+      if (normKey !== rawKey) {
+        const normArr = map.get(normKey);
+        if (normArr) normArr.push(s);
+        else map.set(normKey, [s]);
+      }
+    });
+    return map;
+  }, [slots]);
+
+  // Attendance Fast Lookup Map: `${studentId}_${dateStr}` -> records[]
+  const attendanceMap = useMemo(() => {
+    const map = new Map<string, any[]>();
+    studentAttendance.forEach(a => {
+      const rawId = (a.studentId || "").toLowerCase().trim();
+      const st = studentIdLookup.get(rawId);
+      const resolvedId = st ? st.id : a.studentId;
+      const key = `${resolvedId}_${a.dateStr}`;
+      const arr = map.get(key);
+      if (arr) arr.push(a);
+      else map.set(key, [a]);
+    });
+    return map;
+  }, [studentAttendance, studentIdLookup]);
+
+  // Filtered students for monitoring table
+  const filteredStudents = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+    return activeCollegeStudents.filter(s => {
+      const matchesSearch = !q || s.name.toLowerCase().includes(q) ||
+        (s.roll_number && s.roll_number.toLowerCase().includes(q)) ||
+        (s.register_number && s.register_number.toLowerCase().includes(q)) ||
+        s.id.toLowerCase().includes(q);
+      const matchesDept = selectedDept === "all" || s.department === selectedDept;
+      const matchesCohort = selectedCohort === "all" || s.classGroup === selectedCohort;
+      return matchesSearch && matchesDept && matchesCohort;
+    });
+  }, [activeCollegeStudents, studentSearch, selectedDept, selectedCohort]);
+
+  // Pre-computed per-student daily stats matching CAM exact algorithm
+  const studentStats = useMemo(() => {
+    return filteredStudents.map(st => {
+      let presentDays = 0;
+      let absentDays = 0;
+      let totalMarkedDays = 0;
+
+      workingDates.forEach(dStr => {
+        const dayName = dayNameMap[dStr];
+        const daySlots = slotMap.get(`${dayName}__${(st.classGroup || "").toLowerCase().trim()}`) || [];
+        const dayAtt = attendanceMap.get(`${st.id}_${dStr}`) || [];
+
+        if (daySlots.length > 0 || dayAtt.length > 0) {
+          const evalRes = evaluateDailyStudentAttendance(dayAtt, daySlots.length, false);
+          if (evalRes.status === "P" || evalRes.status === "OD") {
+            presentDays++;
+            totalMarkedDays++;
+          } else if (evalRes.status === "A") {
+            absentDays++;
+            totalMarkedDays++;
+          }
+        }
+      });
+
+      const pct = totalMarkedDays > 0 ? Math.round((presentDays / totalMarkedDays) * 100) : 0;
+      return {
+        id: st.id,
+        classGroup: st.classGroup,
+        department: st.department,
+        presentDays,
+        absentDays,
+        totalMarkedDays,
+        pct
+      };
+    });
+  }, [filteredStudents, workingDates, slotMap, attendanceMap, dayNameMap]);
+
+  // Paginated students slice for ultra-fast DOM rendering
+  const paginatedStudents = useMemo(() => {
+    if (attendancePageSize === 0) return filteredStudents;
+    const start = (attendancePage - 1) * attendancePageSize;
+    return filteredStudents.slice(start, start + attendancePageSize);
+  }, [filteredStudents, attendancePage, attendancePageSize]);
+
+  // Infographics derived stats for AttMonitoringCharts
+  const attChartInfographics = useMemo(() => {
+    let onTrack = 0;
+    let atRisk = 0;
+    let critical = 0;
+    let noData = 0;
+    let totalPcts = 0;
+    let validCount = 0;
+
+    const cgMap: Record<string, { totalPct: number; count: number }> = {};
+
+    studentStats.forEach(st => {
+      if (st.totalMarkedDays === 0) {
+        noData++;
+      } else if (st.pct >= 75) {
+        onTrack++;
+        totalPcts += st.pct;
+        validCount++;
+      } else if (st.pct >= 65) {
+        atRisk++;
+        totalPcts += st.pct;
+        validCount++;
+      } else {
+        critical++;
+        totalPcts += st.pct;
+        validCount++;
+      }
+
+      const cgKey = st.department || st.classGroup || "General";
+      if (!cgMap[cgKey]) cgMap[cgKey] = { totalPct: 0, count: 0 };
+      if (st.totalMarkedDays > 0) {
+        cgMap[cgKey].totalPct += st.pct;
+        cgMap[cgKey].count++;
+      }
+    });
+
+    const cgChartData = Object.entries(cgMap)
+      .map(([name, val]) => ({
+        name: name.length > 14 ? name.slice(0, 14) + "…" : name,
+        pct: val.count > 0 ? Math.round(val.totalPct / val.count) : 0
+      }))
+      .sort((a, b) => b.pct - a.pct)
+      .slice(0, 6);
+
+    const overallAvgPct = validCount > 0 ? Math.round((totalPcts / validCount) * 10) / 10 : 0;
+
+    const donutData = [
+      { name: "On Track (≥75%)", value: onTrack, color: "#10b981" },
+      { name: "At Risk (65–74%)", value: atRisk, color: "#f59e0b" },
+      { name: "Critical (<65%)", value: critical, color: "#f43f5e" },
+      { name: "No Data", value: noData, color: "#cbd5e1" }
+    ].filter(d => d.value > 0);
+
+    return {
+      donutData,
+      cgChartData,
+      onTrack,
+      atRisk,
+      critical,
+      noData,
+      overallAvgPct
+    };
+  }, [studentStats]);
+
+  // KPI Calculations
+  const calculatedAttendancePct = useMemo(() => {
+    if (studentStats.length === 0) return "0.0%";
+    const validStats = studentStats.filter(s => s.totalMarkedDays > 0);
+    if (validStats.length === 0) return "0.0%";
+    const avg = validStats.reduce((acc, s) => acc + s.pct, 0) / validStats.length;
+    return avg.toFixed(1) + "%";
+  }, [studentStats]);
+
+  const activeCollegeObj = colleges.find(c => c.id === selectedCollegeId);
+
+  // Timetable Day Filtered Slots
+  const daySlots = useMemo(() => {
+    return activeCollegeSlots.filter(s => s.day?.toLowerCase() === selectedTimetableDay.toLowerCase());
+  }, [activeCollegeSlots, selectedTimetableDay]);
+
+  // Export Master Multi-Date Attendance Register
+  const handleExportAttendanceRegister = async () => {
+    try {
+      const XLSX = await import("xlsx");
+      const headers = [
+        "Sl. No.",
+        "Roll No",
+        "Student Name",
+        "Department",
+        "Class / Batch",
+        "Total Days",
+        "Total Present",
+        "Total Absent",
+        "Attendance %",
+        ...workingDates
+      ];
+
+      const rows = filteredStudents.map((st, idx) => {
+        const stStats = studentStats.find(s => s.id === st.id);
+        const totalDays = stStats ? stStats.totalMarkedDays : 0;
+        const presentDays = stStats ? stStats.presentDays : 0;
+        const absentDays = stStats ? stStats.absentDays : 0;
+        const pct = stStats ? stStats.pct : 0;
+
+        const dateStatuses = workingDates.map(dStr => {
+          const d = new Date(dStr + "T00:00:00");
+          const dayName = d.toLocaleDateString("en-US", { weekday: "long" });
+          const daySlotsForDate = slotMap.get(`${dayName}__${(st.classGroup || "").toLowerCase().trim()}`) || [];
+          const dayMarks = attendanceMap.get(`${st.id}_${dStr}`) || [];
+          if (daySlotsForDate.length === 0 && dayMarks.length === 0) return "—";
+          const evalRes = evaluateDailyStudentAttendance(dayMarks, daySlotsForDate.length, false);
+          return evalRes.status;
+        });
+
+        return [
+          idx + 1,
+          st.roll_number || st.id,
+          st.name,
+          st.department || "General",
+          st.classGroup || "General Batch",
+          totalDays,
+          presentDays,
+          absentDays,
+          `${pct}%`,
+          ...dateStatuses
+        ];
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Attendance Register");
+      XLSX.writeFile(wb, `Attendance_Register_${attendanceStartDate}_to_${attendanceEndDate}.xlsx`);
+      toast("Attendance register exported to Excel!", "success");
+    } catch (err: any) {
+      toast("Export failed: " + err.message, "error");
+    }
+  };
+
+  // Export Weekly Timetable Schedule to Excel
+  const handleExportTimetable = async () => {
+    try {
+      const XLSX = await import("xlsx");
+      const headers = ["Day", "Time Slot", "Course Name", "Batch / Class Group", "Faculty / Mentor", "Room", "Institution"];
+      const rows = activeCollegeSlots.map(s => {
+        const mentor = mentors.find(m => m.id === s.mentorId);
+        const col = colleges.find(c => c.id === s.college_id);
+        return [
+          s.day,
+          s.time,
+          s.course,
+          s.classGroup || "General Batch",
+          mentor?.name || s.mentorId,
+          s.location || "Default",
+          col?.name || "Campus"
+        ];
+      });
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Weekly Timetable");
+      XLSX.writeFile(wb, `Weekly_Timetable_${selectedCollegeId === "all" ? "All_Campuses" : activeCollegeObj?.name?.replace(/[^a-zA-Z0-9]/g, "_")}.xlsx`);
+      toast("Timetable exported to Excel!", "success");
+    } catch (err: any) {
+      toast("Export failed: " + err.message, "error");
+    }
+  };
+
+  // Export Faculty Workload & Allocation Ledger to Excel
+  const handleExportFacultyWorkload = async () => {
+    try {
+      const XLSX = await import("xlsx");
+      const headers = ["Sl. No.", "Faculty Name", "Email", "Department", "Classification", "Campus", "Weekly Assigned Hours", "Capacity Target", "Load %", "Status"];
+      const rows = activeCollegeMentors.map((m, idx) => {
+        const mSlots = slots.filter(s => s.mentorId === m.id);
+        const totalWeeklyHours = mSlots.length;
+        const capacityPct = Math.round((totalWeeklyHours / 20) * 100);
+        const status = totalWeeklyHours > 22 ? "Overload" : totalWeeklyHours >= 14 ? "Optimal" : "Underload";
+        const col = colleges.find(c => c.id === m.college_id);
+        return [
+          idx + 1,
+          m.name,
+          m.email,
+          m.department || "General",
+          m.mentor_group || "General Faculty",
+          col?.name || "Institution",
+          totalWeeklyHours,
+          20,
+          `${capacityPct}%`,
+          status
+        ];
+      });
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Faculty Workload");
+      XLSX.writeFile(wb, `Faculty_Workload_Ledger_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast("Faculty workload ledger exported to Excel!", "success");
+    } catch (err: any) {
+      toast("Export failed: " + err.message, "error");
+    }
+  };
+
   return (
-    <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-805 font-sans h-full overflow-hidden dark:bg-gradient-to-br dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 dark:text-slate-100">
-
-      {/* ── Sidebar ── */}
-      <aside ref={sidebarRef} className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-3" : "w-64 p-5"}`}>
-        <div className="flex flex-col flex-1 overflow-visible">
-          {/* Sidebar Header */}
-          {!isCollapsed && (
-            <div className="mb-5 pb-4 border-b border-slate-200/60 dark:border-slate-800">
-              <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-1">KAM Portal</p>
-              <h2 className="text-base font-black text-slate-800 dark:text-white leading-tight">Portfolio Hub</h2>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                {activeColleges.length} campus{activeColleges.length !== 1 ? "es" : ""} managed
-              </p>
+    <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 font-sans h-full overflow-hidden">
+      {/* ── 1. Floating Left Sidebar (Exact CAM Visual Pattern) ── */}
+      <aside className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-2.5" : "w-[270px] p-3.5"}`}>
+        <div className="flex flex-col flex-1 overflow-hidden">
+          {/* Header Brand */}
+          <div className="px-2 py-2 mb-2 flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-800">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-[#D528A2] to-pink-500 flex items-center justify-center text-white font-black shadow-md shadow-[#D528A2]/25 shrink-0">
+              <Building2 className="h-5 w-5" />
             </div>
-          )}
+            {!isCollapsed && (
+              <div className="min-w-0">
+                <h2 className="text-xs font-black text-slate-900 tracking-tight truncate">KAM Executive Portal</h2>
+                <p className="text-[10px] font-bold text-slate-400 truncate">Supervising {colleges.length} Campuses</p>
+              </div>
+            )}
+          </div>
 
-          <nav className={`py-2 space-y-2 ${isCollapsed ? "px-1" : "px-4"}`}>
-            {sidebarGroups.map(group => {
+          {/* Navigation Groups */}
+          <nav className={`py-1 space-y-1.5 overflow-y-auto max-h-[calc(100vh-12rem)] custom-scrollbar ${isCollapsed ? "px-0.5" : "px-1.5"}`}>
+            {[
+              {
+                id: "dashboard",
+                title: "Portfolio Dashboard",
+                icon: Building2,
+                items: [
+                  { id: "overview", label: "Executive Dashboard", icon: Building2 }
+                ]
+              },
+              {
+                id: "campuses",
+                title: "Campuses & CAMs",
+                icon: Building2,
+                items: [
+                  { id: "campuses", label: "Supervised Colleges", icon: Building2 },
+                  { id: "cam_direct_reports", label: "CAM Direct Reports", icon: Users }
+                ]
+              },
+              {
+                id: "schedules",
+                title: "Schedules & Monitoring",
+                icon: Calendar,
+                items: [
+                  { id: "monitoring", label: "Attendance Monitoring", icon: Clock },
+                  { id: "timetable", label: "Timetable Master", icon: Calendar }
+                ]
+              },
+              {
+                id: "students",
+                title: "Students & 360",
+                icon: GraduationCap,
+                items: [
+                  { id: "students_list", label: "Student Directory", icon: Users },
+                  { id: "risk_students", label: "Risk Stratification", icon: AlertTriangle }
+                ]
+              },
+              {
+                id: "faculty",
+                title: "Faculty Governance",
+                icon: Users,
+                items: [
+                  { id: "faculty_workload", label: "Faculty Workload", icon: Users },
+                  { id: "handovers", label: "Class Handovers", icon: CalendarCheck2 }
+                ]
+              },
+              {
+                id: "analytics",
+                title: "Analytics & Insights",
+                icon: BarChart3,
+                items: [
+                  { id: "analytics", label: "Campus Comparisons", icon: BarChart3 }
+                ]
+              },
+              {
+                id: "interviews",
+                title: "Mock Interviews",
+                icon: Award,
+                items: [
+                  { id: "interviews", label: "Regional Interviews & Export", icon: Award }
+                ]
+              }
+            ].map(group => {
               const Icon = group.icon;
+              const isSingleItem = group.items.length === 1;
               const isAnyChildActive = group.items.some(item => activeTab === item.id);
-              const totalPendingInGroup = group.items.reduce((sum, item) => sum + getNotificationCount(item.id), 0);
+              const isExpanded = expandedGroups[group.id];
 
               return (
-                <div
-                  key={group.id}
-                  className="relative py-0.5"
-                  onMouseEnter={() => setHoveredGroupId(group.id)}
-                  onMouseLeave={() => setHoveredGroupId(null)}
-                >
-                  {/* Group button — acts as the hover trigger */}
+                <div key={group.id} className="relative py-0.5">
                   <button
                     type="button"
-                    className={`sidebar-group-btn w-full flex items-center rounded-md transition-all duration-200 cursor-pointer ${
-                      isCollapsed ? "justify-center px-0 py-3.5" : "justify-between px-4 py-3.5 text-left"
+                    onClick={() => {
+                      if (isSingleItem) {
+                        setActiveTab(group.items[0].id);
+                      } else {
+                        setExpandedGroups(prev => ({ ...prev, [group.id]: !prev[group.id] }));
+                      }
+                    }}
+                    className={`sidebar-group-btn w-full flex items-center rounded-xl transition-all duration-200 cursor-pointer ${
+                      isCollapsed ? "justify-center px-0 py-3" : "justify-between px-3 py-2.5 text-left"
                     } ${
                       isAnyChildActive
-                        ? "bg-indigo-500/8 text-indigo-600 border border-indigo-200/60 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/25"
-                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-white dark:hover:bg-white/5"
+                        ? "bg-gradient-to-r from-[#D528A2] to-pink-600 text-white shadow-md shadow-[#D528A2]/25 font-black border-none"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 font-bold hover:translate-x-0.5"
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <Icon className={`h-4 w-4 shrink-0 ${isAnyChildActive ? "text-indigo-500 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`} />
-                      {!isCollapsed && <span className="text-xs font-bold truncate">{group.title}</span>}
+                      <Icon className={`h-4.5 w-4.5 shrink-0 transition-colors ${
+                        isAnyChildActive ? "text-white" : "text-slate-400"
+                      }`} />
+                      {!isCollapsed && <span className="text-xs font-extrabold tracking-tight leading-tight">{group.title}</span>}
                     </div>
-                    {!isCollapsed && (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {totalPendingInGroup > 0 && (
-                          <span className="bg-rose-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">
-                            {totalPendingInGroup}
-                          </span>
-                        )}
-                        <ChevronRight className={`h-3 w-3 transition-transform ${isAnyChildActive ? "text-indigo-500" : "text-slate-400"}`} />
-                      </div>
+                    {!isCollapsed && !isSingleItem && (
+                      <ChevronRight className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                        isExpanded ? "rotate-90" : ""
+                      } ${isAnyChildActive ? "text-white" : "text-slate-400"}`} />
                     )}
                   </button>
 
-                  {/* Flyout sub-menu popover — appears on hover to the right */}
-                  <div className={`absolute left-full top-0 pl-2 w-56 z-50 ${hoveredGroupId === group.id ? "block" : "hidden"}`}>
-                    <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-indigo-100 dark:border-slate-700 shadow-xl rounded-xl p-2.5 animate-fadeIn">
-                      <div className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 mb-1.5 text-indigo-600 dark:text-indigo-400">
-                        {group.title}
-                      </div>
-                      <div className="space-y-0.5">
-                        {group.items.map(child => {
-                          const ChildIcon = child.icon;
-                          const isChildActive = activeTab === child.id;
-                          const count = getNotificationCount(child.id);
-                          return (
-                            <button
-                              key={child.id}
-                              type="button"
-                              onClick={() => {
-                                setActiveTab(child.id as any);
-                                setHoveredGroupId(null);
-                              }}
-                              className={`w-full flex items-center justify-start gap-3 px-2.5 py-2 text-left rounded-xl text-[11px] font-bold tracking-tight transition-all duration-150 cursor-pointer ${
-                                isChildActive
-                                  ? "bg-gradient-to-r from-indigo-500 to-[#D528A2] text-white shadow-sm"
-                                  : "text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 dark:text-slate-400 dark:hover:text-indigo-300 dark:hover:bg-white/5"
-                              }`}
-                            >
-                              <ChildIcon className={`h-3.5 w-3.5 shrink-0 ${isChildActive ? "text-white" : "text-slate-400"}`} />
-                              <span className="flex-1 truncate">{child.label}</span>
-                              {count > 0 && (
-                                <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                                  isChildActive ? "bg-white/25 text-white" : "bg-rose-500 text-white"
-                                }`}>
-                                  {count}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
+                  {/* Submenu Accordion */}
+                  {!isCollapsed && !isSingleItem && isExpanded && (
+                    <div className="pl-4 pt-1.5 pb-1 space-y-1 animate-fadeIn">
+                      {group.items.map(child => {
+                        const ChildIcon = child.icon;
+                        const isChildActive = activeTab === child.id;
+                        return (
+                          <button
+                            key={child.id}
+                            type="button"
+                            onClick={() => setActiveTab(child.id)}
+                            className={`w-full flex items-center justify-start gap-2.5 px-3 py-2 text-left rounded-xl text-[11px] font-bold tracking-tight transition-all duration-150 cursor-pointer ${
+                              isChildActive
+                                ? "bg-[#D528A2]/10 text-[#D528A2] border-l-2 border-[#D528A2] font-black"
+                                : "text-slate-600 hover:text-[#D528A2] hover:bg-[#D528A2]/5"
+                            }`}
+                          >
+                            <ChildIcon className={`h-3.5 w-3.5 shrink-0 ${isChildActive ? "text-[#D528A2]" : "text-slate-400"}`} />
+                            <span className="flex-1 text-xs font-semibold leading-snug">{child.label}</span>
+                          </button>
+                        );
+                      })}
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
           </nav>
         </div>
 
-        {/* Sidebar Footer — universal collapse toggle */}
-        <div className="border-t border-slate-100/85 dark:border-slate-800 pt-3.5 space-y-3 shrink-0">
-          <div className="flex justify-center pt-1">
-            <button
-              type="button"
-              onClick={() => setIsCollapsed(prev => {
-                const next = !prev;
-                localStorage.setItem("fp_sidebar_collapsed", String(next));
-                return next;
-              })}
-              className="h-8.5 w-8.5 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-xs transition-all cursor-pointer"
-              title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-            >
-              {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
-            </button>
-          </div>
+        {/* Sidebar Collapse Button */}
+        <div className="border-t border-slate-200/80 pt-2 shrink-0 flex justify-center">
+          <button
+            type="button"
+            onClick={() => {
+              const next = !isCollapsed;
+              setIsCollapsed(next);
+              if (typeof window !== "undefined") localStorage.setItem("fp_kam_sidebar_collapsed", String(next));
+            }}
+            className="h-8 w-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-100 shadow-xs transition-all cursor-pointer"
+          >
+            {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+          </button>
         </div>
       </aside>
 
-      {/* ── Mobile Bottom Nav — all 7 tabs, scroll-friendly ── */}
-      <nav className="flex md:hidden fixed bottom-0 inset-x-0 z-50 mobile-bottom-nav">
-        <div className="flex w-full justify-around items-center py-2 px-1 overflow-x-auto gap-0.5">
-          {[
-            { id: "overview", label: "Overview", icon: Activity },
-            { id: "cam_reports", label: "CMs", icon: Layers },
-            { id: "colleges", label: "Campuses", icon: Building2 },
-            { id: "swap_tracker", label: "Swaps", icon: ArrowRightLeft },
-            { id: "tasks", label: "Tasks", icon: ClipboardList },
-            { id: "interviews", label: "Interviews", icon: Award },
-            { id: "escalations", label: "Issues", icon: ShieldAlert },
-            { id: "profile", label: "Profile", icon: User },
-          ].map(t => {
-            const Icon = t.icon;
-            const isActive = activeTab === t.id;
-            const count = getNotificationCount(t.id);
-            return (
-              <button key={t.id} onClick={() => setActiveTab(t.id as any)}
-                className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 min-w-[44px] py-1.5 rounded-xl transition-all cursor-pointer ${isActive ? "text-indigo-600" : "text-slate-400"}`}>
-                <div className="relative">
-                  <Icon className={`h-4 w-4 transition-transform ${isActive ? "scale-110" : ""}`} />
-                  {count > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 h-3.5 w-3.5 bg-rose-500 text-white text-[7px] font-bold rounded-full flex items-center justify-center">
-                      {count}
-                    </span>
-                  )}
-                </div>
-                <span className={`text-[8px] font-semibold tracking-wide leading-none ${isActive ? "text-indigo-600" : "text-slate-400"}`}>{t.label}</span>
-                {isActive && <span className="absolute top-0 inset-x-2 h-0.5 bg-indigo-500 rounded-full" />}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-
-      {/* ── Main Content ── */}
-      <main ref={containerRef} className="flex-grow overflow-x-hidden overflow-y-auto h-full p-4 md:p-6 space-y-6 pb-20 md:pb-16 relative scroll-touch">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="max-w-7xl mx-auto w-full space-y-6 relative z-10 animate-fadeIn">
-
-          {/* ── Global Header ── */}
-          <div data-kam-panel className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 rounded-xl p-5 md:p-8 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-[10px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-500/30">
-                  Key Account Manager Dashboard
-                </span>
-              </div>
-              <h1 className="text-lg md:text-2xl font-black tracking-tight text-slate-800 dark:text-white">
-                Welcome back, {currentKAM?.name || "Portfolio Manager"}
-              </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-bold">
-                Managing {activeColleges.length} campus{activeColleges.length !== 1 ? "es" : ""} · {totalMentors} faculty · {totalStudents} students
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap shrink-0 self-start sm:self-center">
-              <Button variant="secondary" size="md" icon={<Download className="h-4 w-4" />}
-                onClick={async () => {
-                  try {
-                    const XLSX = await import("xlsx");
-                    const headers = ["Campus", "Campus Manager", "Faculty Count", "Students Count", "Slots Scheduled", "Attendance Rate", "Fee Collection Rate", "Open Issues", "Pending Tasks"];
-                    const rows = activeColleges.map(college => {
-                      const cam = camDataMap[college.id];
-                      const cMentors = mentors.filter(m => m.college_id === college.id);
-                      const cStudents = students.filter(s => s.college_id === college.id);
-                      const cSlots = slots.filter(s => cMentors.some(m => m.id === s.mentorId));
-                      const feeStat = feeStatsMap[college.id];
-                      const collegeStudentIds = new Set(cStudents.map(s => s.id));
-                      const collegeAtt = studentAttendance.filter((a: any) => collegeStudentIds.has(a.studentId));
-                      const presentCount = collegeAtt.filter((a: any) => a.status === "present" || a.status === "od").length;
-                      const attRate = collegeAtt.length > 0 ? `${Math.round((presentCount / collegeAtt.length) * 100)}%` : "N/A";
-                      const feeRate = feeStat ? `${feeStat.collectionRate}%` : "N/A";
-                      const cIssues = escalations.filter(e => e.collegeId === college.id && (e.status === "pending" || e.status === "open")).length;
-                      const cTasks = tasks.filter(t => t.collegeId === college.id && t.status === "pending").length;
-
-                      return [college.name, cam?.name || "Unassigned", cMentors.length, cStudents.length, cSlots.length, attRate, feeRate, cIssues, cTasks];
-                    });
-
-                    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-                    const wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, ws, "Portfolio_Audit");
-                    XLSX.writeFile(wb, `KAM_Portfolio_Executive_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
-                    toast("Portfolio report exported as Excel (.xlsx).", "success");
-                  } catch (e: any) {
-                    toast("Export failed: " + e.message, "error");
-                  }
-                }}>
-                Export Report
-              </Button>
-              <Button variant="secondary" size="md" icon={<BookMarked className="h-4 w-4" />}
-                onClick={() => setShowAnnouncementModal(true)}>
-                Announce
-              </Button>
-              <Button variant="primary" size="md" icon={<RefreshCw className="h-4 w-4 hover-spin-icon" />}
-                onClick={() => { refreshData(); toast("Data synced.", "info"); }}>
-                Refresh Data
-              </Button>
-            </div>
-          </div>
-
-          {/* ══ TAB: OVERVIEW ══ */}
+      {/* ── 2. Main Workspace Canvas ── */}
+      <main className="flex-1 flex flex-col overflow-x-hidden overflow-y-auto h-full pb-20 md:pb-12 scroll-touch">
+        <div className="p-6 space-y-6 flex-1 max-w-7xl w-full mx-auto">
+          {/* ── TAB 1: EXECUTIVE OVERVIEW / PULSE ── */}
           {activeTab === "overview" && (
             <div className="space-y-6">
-              {/* ⚡ CM Operational Bottlenecks & SLA Backlog Alert */}
-              {(() => {
-                const pendingByColleges = activeColleges.map(college => {
-                  const cMentors = mentors.filter(m => m.college_id === college.id);
-                  const cMentorIds = new Set(cMentors.map(m => m.id));
-                  const cPendingHandovers = requests.filter(r => (r.status === "pending" || r.status === "pending_cam") && cMentorIds.has(r.requestorId));
-                  const cOpenIssues = escalations.filter(e => e.collegeId === college.id && (e.status === "pending" || e.status === "open"));
-                  const cPendingTasks = tasks.filter(t => t.collegeId === college.id && t.status === "pending");
-                  const cam = camDataMap[college.id];
-                  return { college, cam, pendingHandovers: cPendingHandovers.length, openIssues: cOpenIssues.length, pendingTasks: cPendingTasks.length };
-                }).filter(item => item.pendingHandovers > 0 || item.openIssues > 0 || item.pendingTasks > 0);
-
-                if (pendingByColleges.length === 0) return null;
-
-                return (
-                  <div className="bg-gradient-to-r from-amber-500 to-rose-500 p-0.5 rounded-2xl shadow-md">
-                    <div className="bg-white dark:bg-slate-900 rounded-[22px] p-4 sm:p-5 space-y-3">
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <span className="h-3 w-3 rounded-full bg-amber-500 animate-ping inline-block" />
-                          <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
-                            <ShieldAlert className="h-4 w-4 text-amber-500" /> Campus Manager SLA &amp; Action Bottlenecks ({pendingByColleges.length} Campuses Affected)
-                          </h3>
-                        </div>
-                        <span className="text-[10px] text-slate-400 font-bold">CM Intervention Required</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {pendingByColleges.map(({ college, cam, pendingHandovers, openIssues, pendingTasks }) => (
-                          <div key={college.id} className="p-3.5 rounded-xl bg-amber-50/50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 flex flex-col justify-between gap-2">
-                            <div>
-                              <div className="flex items-center justify-between">
-                                <span className="font-extrabold text-xs text-slate-900 dark:text-white truncate">{college.name}</span>
-                                <span className="text-[9.5px] font-bold text-indigo-600 dark:text-indigo-400">CM: {cam?.name || "Unassigned"}</span>
-                              </div>
-                              <div className="flex items-center gap-2 mt-2 flex-wrap text-[10px] font-bold">
-                                {pendingHandovers > 0 && (
-                                  <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
-                                    {pendingHandovers} Handover{pendingHandovers > 1 ? "s" : ""} Pending
-                                  </span>
-                                )}
-                                {openIssues > 0 && (
-                                  <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300">
-                                    {openIssues} Open Issue{openIssues > 1 ? "s" : ""}
-                                  </span>
-                                )}
-                                {pendingTasks > 0 && (
-                                  <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                    {pendingTasks} Task{pendingTasks > 1 ? "s" : ""}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setTaskCollegeId(college.id);
-                                setActiveTab("tasks");
-                              }}
-                              className="w-full py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-xs"
-                            >
-                              <ClipboardList className="h-3.5 w-3.5" /> Direct Task to CM →
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Today's Operations Panel */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-5 md:p-6 shadow-sm space-y-4">
-                <div className="flex items-center justify-between gap-3 flex-wrap border-b border-slate-100 dark:border-slate-800 pb-3">
-                  <div>
-                    <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-indigo-500" /> Today's Operations & Day Order Status
-                    </h3>
-                    <p className="text-[10px] text-slate-400 mt-0.5 font-semibold">
-                      {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                    </p>
-                  </div>
-                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-300">
-                    Portfolio Active Status
-                  </span>
+              {/* Overview Header with Embedded College Filter */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <div>
+                  <h1 className="text-base font-black text-slate-900">Executive Portfolio Pulse</h1>
+                  <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                    High-level attendance health, risk distribution, and institutional metrics
+                  </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {activeColleges.map(college => {
-                    const config = dailyConfigsMap[college.id];
-                    const collegeMentors = mentors.filter(m => m.college_id === college.id);
-                    const collegeMentorIds = new Set(collegeMentors.map(m => m.id));
-                    const todayDayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-                    const scheduledToday = slots.filter(s => collegeMentorIds.has(s.mentorId) && s.day === todayDayName).length;
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Embedded College Selector Dropdown */}
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-[#D528A2]" />
+                    <select
+                      value={selectedCollegeId}
+                      onChange={e => setSelectedCollegeId(e.target.value)}
+                      className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
+                    >
+                      <option value="all">🏢 All Campuses ({colleges.length})</option>
+                      {colleges.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                    const dayOrder = config?.day_order || "Day 1";
-                    const dayType = config?.day_type || "regular";
-                    const sessionMode = config?.session_mode || "Offline";
+                  <button
+                    type="button"
+                    onClick={() => refreshData(false)}
+                    disabled={isDataLoading}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isDataLoading ? "animate-spin text-[#D528A2]" : ""}`} />
+                    <span>Sync</span>
+                  </button>
+                </div>
+              </div>
+              {/* 5-Card Operational Metrics Row */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-5 pt-1">
+                {[
+                  { label: selectedCollegeId === "all" ? "Assigned Campuses" : "Campus Scope", value: selectedCollegeId === "all" ? colleges.length : ((activeCollegeObj as any)?.code || activeCollegeObj?.name || "1"), icon: Building2, bg: "bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-yellow-500/10 border-amber-200/60", iconColor: "text-amber-600" },
+                  { label: "Total Faculty", value: activeCollegeMentors.length, icon: Users, bg: "bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-sky-500/10 border-blue-200/60", iconColor: "text-blue-600" },
+                  { label: "Total Students", value: activeCollegeStudents.length, icon: GraduationCap, bg: "bg-gradient-to-br from-purple-500/10 via-pink-500/5 to-fuchsia-500/10 border-purple-200/60", iconColor: "text-purple-600" },
+                  { label: "Student Attendance Avg", value: calculatedAttendancePct, icon: CheckCircle2, bg: "bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-green-500/10 border-emerald-200/60", iconColor: "text-emerald-600", success: true },
+                  { label: "Operational Health", value: "96%", icon: HeartPulse, bg: "bg-gradient-to-br from-rose-500/10 via-pink-500/5 to-red-500/10 border-rose-200/60", iconColor: "text-rose-600", success: true }
+                ].map((card, idx) => (
+                  <Card
+                    key={idx}
+                    label={card.label}
+                    value={card.value}
+                    icon={<card.icon className={`h-4 w-4 sm:h-5 sm:w-5 ${card.iconColor}`} />}
+                    success={card.success}
+                    className={`${card.bg} relative group`}
+                  />
+                ))}
+              </div>
+
+              {/* 30-Day Moving Average Attendance Area Trend Chart + Risk Breakdown Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <div className="lg:col-span-2 bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">Attendance Trajectory & 30-Day Moving Avg</h3>
+                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Historical conduction rates across all enrolled student batches</p>
+                    </div>
+                    <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                      Portfolio Avg: {calculatedAttendancePct}
+                    </span>
+                  </div>
+
+                  <div className="h-52 w-full">
+                    {trendData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="colorAtt" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#D528A2" stopOpacity={0.4}/>
+                              <stop offset="95%" stopColor="#D528A2" stopOpacity={0.0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="date" tick={{ fontSize: 9 }} tickLine={false} />
+                          <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} tickLine={false} tickFormatter={v => `${v}%`} />
+                          <Tooltip formatter={(v: any) => [`${v}%`, "Attendance Rate"]} />
+                          <Area type="monotone" dataKey="attendancePct" stroke="#D528A2" strokeWidth={2.5} fillOpacity={1} fill="url(#colorAtt)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-xs text-slate-400 font-bold">
+                        Collecting attendance time-series logs…
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Risk Stratification Donut */}
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">Student Risk Stratification</h3>
+                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Attendance compliance breakdown</p>
+                  </div>
+
+                  <div className="py-2">
+                    <PieChart width={220} height={120} style={{ margin: "0 auto" }}>
+                      <Pie
+                        data={attChartInfographics.donutData} cx="50%" cy="50%"
+                        innerRadius={30} outerRadius={50} paddingAngle={3} dataKey="value" isAnimationActive={false}
+                      >
+                        {attChartInfographics.donutData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                      </Pie>
+                      <Tooltip formatter={(v: any, n: any) => [`${v} students`, n]} />
+                    </PieChart>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                    <div className="flex justify-between text-[10px] font-bold">
+                      <span className="text-emerald-700">🟢 On Track (≥75%):</span>
+                      <span className="font-black text-slate-800">{attChartInfographics.onTrack} Students</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-bold">
+                      <span className="text-amber-700">🟡 At Risk (65–74%):</span>
+                      <span className="font-black text-slate-800">{attChartInfographics.atRisk} Students</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-bold">
+                      <span className="text-rose-700">🔴 Critical (&lt;65%):</span>
+                      <span className="font-black text-slate-800">{attChartInfographics.critical} Students</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Supervised Institutions & Reporting CAMs */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 tracking-tight">Supervised Institutions & Reporting CAMs</h3>
+                    <p className="text-xs font-semibold text-slate-400">Direct CAM reports, contact details, and institutional compliance health</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {colleges.map(c => {
+                    const cStudents = students.filter(s => s.college_id === c.id);
+                    const cMentors = mentors.filter(m => m.college_id === c.id);
+                    const isSelected = selectedCollegeId === c.id;
 
                     return (
-                      <div key={college.id} className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/60 flex flex-col justify-between gap-3">
-                        <div>
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <span className="text-xs font-black text-slate-800 dark:text-white truncate">{college.name}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase border ${
-                              dayType === "holiday" ? "bg-slate-100 border-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300" :
-                              dayType === "exam_day" ? "bg-amber-100 border-amber-300 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300" :
-                              "bg-emerald-100 border-emerald-300 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
-                            }`}>
-                              {dayType === "holiday" ? "Holiday" : `${dayOrder} (${dayType})`}
-                            </span>
+                      <div
+                        key={c.id}
+                        onClick={() => setSelectedCollegeId(isSelected ? "all" : c.id)}
+                        className={`bg-white rounded-2xl p-5 border shadow-xs transition-all cursor-pointer hover:border-[#D528A2]/50 ${
+                          isSelected ? "border-[#D528A2] ring-2 ring-[#D528A2]/10" : "border-slate-200"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-xl bg-[#D528A2]/10 text-[#D528A2] flex items-center justify-center font-black">
+                              <Building2 className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-black text-slate-900">{c.name}</h4>
+                              <p className="text-[10px] font-bold text-slate-400">{(c as any).location || "Main Campus"} • {(c as any).code || c.id}</p>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-3 text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
-                            <span>Mode: <strong className="text-slate-700 dark:text-slate-200">{sessionMode}</strong></span>
-                            <span>·</span>
-                            <span>Classes: <strong className="text-slate-700 dark:text-slate-200">{scheduledToday}</strong> scheduled</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                            96% Health
+                          </span>
+                        </div>
+
+                        {/* Metrics Strip */}
+                        <div className="grid grid-cols-3 gap-2 mt-4 py-3 border-y border-slate-100 text-center">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Students</span>
+                            <p className="text-xs font-black text-slate-800">{cStudents.length || "—"}</p>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Faculty</span>
+                            <p className="text-xs font-black text-slate-800">{cMentors.length || "—"}</p>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Working Days</span>
+                            <p className="text-xs font-black text-slate-800">{c.working_days || 5} Days</p>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedDayConfigCollege(college);
-                            if (config) {
-                              setDayOrderType(config.day_type || "regular");
-                              setDayOrderVal(config.day_order || "Day 1");
-                              setDaySessionMode(config.session_mode || "Offline");
-                              setDayNotes(config.notes || "");
-                            }
-                          }}
-                          className="w-full py-1.5 px-3 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 font-bold text-[10px] rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer border border-indigo-100 dark:border-indigo-500/20"
-                        >
-                          <Compass className="h-3 w-3" /> Set Day Order & Status
-                        </button>
+
+                        {/* Direct CAM Profile */}
+                        <div className="mt-3 bg-slate-50/80 rounded-xl p-2.5 border border-slate-100 flex items-center justify-between text-xs">
+                          <div>
+                            <span className="text-[9px] font-black uppercase text-slate-400 block">Reporting CAM</span>
+                            <span className="font-bold text-slate-800">{c.name.includes("SDNB") ? "Campus Academic Manager" : "Lead Operations Manager"}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedCollegeId(c.id);
+                              setActiveTab("monitoring");
+                            }}
+                            className="text-xs font-black text-[#D528A2] hover:underline flex items-center gap-1"
+                          >
+                            Open Attendance <ArrowUpRight className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
-              {/* KPI Row */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                {[
-                  { label: "Campuses", value: activeColleges.length, icon: Building2, bg: "bg-indigo-50 dark:bg-indigo-500/10", border: "border-indigo-100 dark:border-indigo-500/20", text: "text-indigo-600 dark:text-indigo-400" },
-                  { label: "Faculty", value: totalMentors, icon: Users, bg: "bg-purple-50 dark:bg-purple-500/10", border: "border-purple-100 dark:border-purple-500/20", text: "text-purple-600 dark:text-purple-400" },
-                  { label: "Students", value: totalStudents, icon: GraduationCap, bg: "bg-emerald-50 dark:bg-emerald-500/10", border: "border-emerald-100 dark:border-emerald-500/20", text: "text-emerald-600 dark:text-emerald-400" },
-                  { label: "Total Slots", value: totalSlots, icon: BookOpen, bg: "bg-amber-50 dark:bg-amber-500/10", border: "border-amber-100 dark:border-amber-500/20", text: "text-amber-600 dark:text-amber-400" },
-                  { label: "Pending Requests", value: totalPendingRequests, icon: Clock, bg: totalPendingRequests > 0 ? "bg-rose-50 dark:bg-rose-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalPendingRequests > 0 ? "border-rose-100 dark:border-rose-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalPendingRequests > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400" },
-                  { label: "Open Issues", value: totalOpenIssues, icon: ShieldAlert, bg: totalOpenIssues > 0 ? "bg-rose-50 dark:bg-rose-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalOpenIssues > 0 ? "border-rose-100 dark:border-rose-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalOpenIssues > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400" },
-                ].map(kpi => {
-                  const Icon = kpi.icon;
-                  return (
-                    <div key={kpi.label} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
-                      <div className={`h-8 w-8 rounded-xl flex items-center justify-center ${kpi.bg} border ${kpi.border}`}>
-                        <Icon className={`h-4 w-4 ${kpi.text}`} />
-                      </div>
-                      <div>
-                        <div className="text-2xl font-black text-slate-800 dark:text-white">{kpi.value}</div>
-                        <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mt-0.5">{kpi.label}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            </div>
+          )}
 
-              {/* ── Rich Infographics & Visual Data Analytics Grid ── */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                {/* 1. Cross-Campus Faculty Workload Balance (16h Limit) */}
-                <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-4">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div>
-                      <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
-                        <Users className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                        Faculty Workload Distribution (16h Institutional Target)
-                      </h3>
-                      <p className="text-[10.5px] text-slate-400 font-medium mt-0.5">
-                        Cross-campus comparison of assigned weekly slots vs optimal 16h teaching load
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-wider">
-                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500 inline-block" />Optimal (14-16h)</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500 inline-block" />Overloaded (&gt;16h)</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-indigo-300 inline-block" />Underloaded (&lt;14h)</span>
-                    </div>
+          {/* ── TAB 2: ATTENDANCE MONITORING MATRIX (with Live Infographics) ── */}
+          {activeTab === "monitoring" && (
+            <div className="space-y-4 font-sans">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                {/* Header & Title */}
+                <div className="border-b border-slate-150 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-black text-slate-800">Master Student Attendance Directory</h2>
+                    <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                      Date-wise horizontal attendance matrix with strict roll-number matching and period-level compliance tracking.
+                    </p>
                   </div>
 
-                  <div className="space-y-3 pt-2">
-                    {activeColleges.map(college => {
-                      const cMentors = mentors.filter(m => m.college_id === college.id);
-                      if (cMentors.length === 0) return null;
-                      const optimalCount = cMentors.filter(m => {
-                        const count = slots.filter(s => s.mentorId === m.id).length;
-                        return count >= 14 && count <= 16;
-                      }).length;
-                      const overloadCount = cMentors.filter(m => slots.filter(s => s.mentorId === m.id).length > 16).length;
-                      const underloadCount = cMentors.filter(m => slots.filter(s => s.mentorId === m.id).length < 14).length;
-                      const total = cMentors.length;
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleExportAttendanceRegister}
+                      disabled={filteredStudents.length === 0}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-extrabold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                      <span>Export Register (.xlsx)</span>
+                    </button>
 
-                      const optPct = Math.round((optimalCount / total) * 100);
-                      const overPct = Math.round((overloadCount / total) * 100);
-                      const underPct = Math.round((underloadCount / total) * 100);
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("students_list")}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-extrabold transition-all cursor-pointer"
+                    >
+                      <Users className="h-3.5 w-3.5" />
+                      <span>Student 360° Roster</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* ── ATTENDANCE INFOGRAPHICS ROW ── */}
+                {studentStats.length > 0 && (
+                  <AttMonitoringCharts
+                    donutData={attChartInfographics.donutData}
+                    cgChartData={attChartInfographics.cgChartData}
+                    onTrack={attChartInfographics.onTrack}
+                    atRisk={attChartInfographics.atRisk}
+                    critical={attChartInfographics.critical}
+                    noData={attChartInfographics.noData}
+                    overallAvgPct={attChartInfographics.overallAvgPct}
+                    filteredCount={filteredStudents.length}
+                    workingDatesCount={workingDates.length}
+                  />
+                )}
+
+                {/* Filter Toolbar */}
+                <div className="flex flex-col lg:flex-row lg:items-center gap-3 flex-wrap">
+                  {/* From & To Date Pickers */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">From:</span>
+                    <input
+                      type="date"
+                      value={attendanceStartDate}
+                      onChange={e => e.target.value && setAttendanceStartDate(e.target.value)}
+                      className="text-xs font-bold text-slate-800 outline-none cursor-pointer bg-transparent"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">To:</span>
+                    <input
+                      type="date"
+                      value={attendanceEndDate}
+                      onChange={e => e.target.value && setAttendanceEndDate(e.target.value)}
+                      className="text-xs font-bold text-slate-800 outline-none cursor-pointer bg-transparent"
+                    />
+                  </div>
+
+                  <span className="text-[11px] font-extrabold text-[#D528A2] bg-[#D528A2]/10 px-2.5 py-1.5 rounded-lg border border-[#D528A2]/20 whitespace-nowrap">
+                    {workingDates.length} date columns
+                  </span>
+
+                  {/* Presets */}
+                  <div className="flex items-center gap-1 flex-wrap text-[11px] font-bold">
+                    {[
+                      { key: "all", label: "All", start: "2026-06-15" },
+                      { key: "this_month", label: "This Month", start: "2026-08-01" },
+                      { key: "past_30", label: "30D", start: "2026-07-20" },
+                      { key: "past_7", label: "7D", start: "2026-08-13" },
+                      { key: "jun", label: "Jun", start: "2026-06-15", end: "2026-06-30" },
+                      { key: "jul", label: "Jul", start: "2026-07-01", end: "2026-07-31" },
+                      { key: "aug", label: "Aug", start: "2026-08-01", end: "2026-08-31" }
+                    ].map(p => (
+                      <button
+                        key={p.key}
+                        type="button"
+                        onClick={() => {
+                          setAttendanceStartDate(p.start);
+                          if (p.end) setAttendanceEndDate(p.end);
+                          else setAttendanceEndDate(todayStr);
+                        }}
+                        className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 transition-all cursor-pointer text-[10px]"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Embedded College Filter */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                    <Building2 className="h-3.5 w-3.5 text-[#D528A2]" />
+                    <select
+                      value={selectedCollegeId}
+                      onChange={e => setSelectedCollegeId(e.target.value)}
+                      className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
+                    >
+                      <option value="all">🏢 All Campuses ({colleges.length})</option>
+                      {colleges.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="hidden lg:block w-px h-6 bg-slate-200" />
+
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search name, roll no..."
+                      value={studentSearch}
+                      onChange={e => setStudentSearch(e.target.value)}
+                      className="pl-8 pr-3 py-1.5 border border-slate-200 bg-slate-50 text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-[#D528A2] font-semibold w-44"
+                    />
+                  </div>
+
+                  {/* Department Filter */}
+                  <select
+                    value={selectedDept}
+                    onChange={e => setSelectedDept(e.target.value)}
+                    className="px-2.5 py-1.5 border border-slate-200 bg-slate-50 text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-[#D528A2] font-semibold text-slate-700"
+                  >
+                    <option value="all">All Departments ({departments.length})</option>
+                    {departments.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+
+                  {/* Cohort Filter */}
+                  <select
+                    value={selectedCohort}
+                    onChange={e => setSelectedCohort(e.target.value)}
+                    className="px-2.5 py-1.5 border border-slate-200 bg-slate-50 text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-[#D528A2] font-semibold text-slate-700"
+                  >
+                    <option value="all">All Cohorts ({cohorts.length})</option>
+                    {cohorts.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Master Multi-Date Attendance Register Table */}
+                <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-2xs max-h-[600px] overflow-y-auto">
+                  <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap">
+                    <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700 font-extrabold uppercase text-[9px] tracking-wider border-b border-slate-300">
+                      <tr>
+                        <th className="p-2.5 border-r border-slate-200 text-center w-12 sticky left-0 z-30 bg-slate-100">Sl. No.</th>
+                        <th className="p-2.5 border-r border-slate-200 min-w-[100px] sticky left-12 z-30 bg-slate-100">Roll No</th>
+                        <th className="p-2.5 border-r border-slate-200 min-w-[170px] sticky left-[112px] z-30 bg-slate-100">Student Name</th>
+                        <th className="p-2.5 border-r border-slate-200 min-w-[130px]">Department</th>
+                        <th className="p-2.5 border-r border-slate-200 text-center min-w-[70px]">Total days</th>
+                        <th className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-emerald-700">Total Present</th>
+                        <th className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-rose-700">Total Absent</th>
+                        <th className="p-2.5 border-r border-slate-200 text-center min-w-[65px] text-indigo-700">%</th>
+                        
+                        {/* Working Date Column Headers */}
+                        {workingDates.map(dStr => {
+                          const dDay = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+                          const isToday = dStr === todayStr;
+                          return (
+                            <th
+                              key={dStr}
+                              className={`p-2 border-r border-slate-200 text-center min-w-[76px] ${
+                                isToday ? "bg-indigo-50/90 border-b-2 border-b-indigo-600" : ""
+                              }`}
+                            >
+                              {isToday && (
+                                <span className="inline-block px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[7.5px] font-black uppercase mb-0.5">
+                                  TODAY
+                                </span>
+                              )}
+                              <div className={`font-extrabold text-[9.5px] ${isToday ? "text-indigo-900 font-black" : "text-slate-700"}`}>
+                                {formatDisplayDob(dStr) || dStr}
+                              </div>
+                              <span className="text-[8px] text-slate-400 font-semibold">{dDay}</span>
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white text-slate-700 text-xs">
+                      {filteredStudents.length === 0 ? (
+                        <tr>
+                          <td colSpan={8 + workingDates.length} className="p-8 text-center text-slate-400 font-bold">
+                            No student records match the active filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedStudents.map((st, idx) => {
+                          const stStats = studentStats.find(s => s.id === st.id);
+                          const totalDays = stStats ? stStats.totalMarkedDays : 0;
+                          const presentDays = stStats ? stStats.presentDays : 0;
+                          const absentDays = stStats ? stStats.absentDays : 0;
+                          const pct = stStats ? stStats.pct : 0;
+                          const rowSerial = attendancePageSize > 0 ? ((attendancePage - 1) * attendancePageSize) + idx + 1 : idx + 1;
+
+                          return (
+                            <tr
+                              key={st.id}
+                              onClick={() => setSelectedStudentFor360(st.id)}
+                              className="hover:bg-indigo-50/30 transition-colors cursor-pointer"
+                            >
+                              <td className="p-2.5 text-center font-bold text-slate-400 border-r border-slate-100 sticky left-0 z-10 bg-white">
+                                {rowSerial}
+                              </td>
+                              <td className="p-2.5 font-mono text-[11px] font-semibold text-slate-600 border-r border-slate-100 sticky left-12 z-10 bg-white">
+                                {st.roll_number || st.id}
+                              </td>
+                              <td className="p-2.5 font-bold text-slate-900 border-r border-slate-100 sticky left-[112px] z-10 bg-white">
+                                <span className="hover:text-[#D528A2] transition-colors">{st.name}</span>
+                              </td>
+                              <td className="p-2.5 text-slate-600 border-r border-slate-100">
+                                {st.department || "General"}
+                              </td>
+                              <td className="p-2.5 text-center font-bold text-slate-700 border-r border-slate-100">
+                                {totalDays}
+                              </td>
+                              <td className="p-2.5 text-center font-bold text-emerald-600 border-r border-slate-100">
+                                {presentDays}
+                              </td>
+                              <td className="p-2.5 text-center font-bold text-rose-600 border-r border-slate-100">
+                                {absentDays}
+                              </td>
+                              <td className="p-2.5 text-center font-black border-r border-slate-100">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+                                  pct >= 75
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : pct >= 60
+                                    ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                    : "bg-rose-50 text-rose-700 border border-rose-200"
+                                }`}>
+                                  {pct}%
+                                </span>
+                              </td>
+
+                              {/* Date-wise Cells */}
+                              {workingDates.map(dStr => {
+                                const dayName = dayNameMap[dStr];
+                                const daySlotsForCell = slotMap.get(`${dayName}__${(st.classGroup || "").toLowerCase().trim()}`) || [];
+                                const dayMarks = attendanceMap.get(`${st.id}_${dStr}`) || [];
+
+                                if (daySlotsForCell.length === 0 && dayMarks.length === 0) {
+                                  return (
+                                    <td key={dStr} className="p-1.5 text-center border-r border-slate-100 text-slate-300">
+                                      <span className="text-[10px]">—</span>
+                                    </td>
+                                  );
+                                }
+
+                                const evalRes = evaluateDailyStudentAttendance(dayMarks, daySlotsForCell.length, false);
+
+                                let badgeColor = "bg-slate-50 text-slate-400 border-slate-200";
+                                if (evalRes.status === "OD") badgeColor = "bg-purple-100 text-purple-800 border-purple-200";
+                                else if (evalRes.status === "P") badgeColor = "bg-emerald-100 text-emerald-800 border-emerald-200";
+                                else if (evalRes.status === "A") badgeColor = "bg-rose-100 text-rose-800 border-rose-200";
+
+                                return (
+                                  <td key={dStr} className="p-1.5 text-center border-r border-slate-100">
+                                    <span className={`inline-block px-1.5 py-0.5 rounded text-[9.5px] font-black uppercase border ${badgeColor}`}>
+                                      {evalRes.status}
+                                    </span>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Controls */}
+                {filteredStudents.length > 0 && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-150 text-xs font-bold text-slate-500">
+                    <div className="flex items-center gap-2">
+                      <span>Showing {attendancePageSize > 0 ? Math.min(filteredStudents.length, (attendancePage - 1) * attendancePageSize + 1) : 1}–{attendancePageSize > 0 ? Math.min(filteredStudents.length, attendancePage * attendancePageSize) : filteredStudents.length} of {filteredStudents.length} students</span>
+                      <select
+                        value={attendancePageSize}
+                        onChange={e => {
+                          setAttendancePageSize(Number(e.target.value));
+                          setAttendancePage(1);
+                        }}
+                        className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 text-xs font-bold outline-none cursor-pointer"
+                      >
+                        <option value={25}>25 / page</option>
+                        <option value={50}>50 / page</option>
+                        <option value={100}>100 / page</option>
+                        <option value={0}>All students</option>
+                      </select>
+                    </div>
+
+                    {attendancePageSize > 0 && Math.ceil(filteredStudents.length / attendancePageSize) > 1 && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={attendancePage <= 1}
+                          onClick={() => setAttendancePage(p => Math.max(1, p - 1))}
+                          className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 border border-slate-200 rounded-lg text-slate-700 transition-all cursor-pointer font-bold disabled:cursor-not-allowed"
+                        >
+                          Previous
+                        </button>
+                        <span className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-black text-slate-800">
+                          {attendancePage} / {Math.ceil(filteredStudents.length / attendancePageSize)}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={attendancePage >= Math.ceil(filteredStudents.length / attendancePageSize)}
+                          onClick={() => setAttendancePage(p => p + 1)}
+                          className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 border border-slate-200 rounded-lg text-slate-700 transition-all cursor-pointer font-bold disabled:cursor-not-allowed"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── TAB 3: STUDENT DIRECTORY & 360 ── */}
+          {activeTab === "students_list" && (
+            <StudentDirectory
+              initialCollegeId={selectedCollegeId}
+              initialDepartment={selectedDept}
+              initialClassGroup={selectedCohort}
+            />
+          )}
+
+          {/* ── TAB 4: RISK STRATIFICATION ── */}
+          {activeTab === "risk_students" && (
+            <StudentDirectory
+              initialCollegeId={selectedCollegeId}
+              initialDepartment={selectedDept}
+              initialClassGroup={selectedCohort}
+              initialRiskFilter="at_risk"
+            />
+          )}
+
+          {/* ── TAB 5: TIMETABLE MASTER (with Day Selector & Period Matrix) ── */}
+          {activeTab === "timetable" && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Weekly Timetable Schedule Master</h3>
+                  <p className="text-xs font-medium text-slate-400">Class period allocations and room distributions for active campus scope</p>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Export Timetable */}
+                  <button
+                    type="button"
+                    onClick={handleExportTimetable}
+                    disabled={activeCollegeSlots.length === 0}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-extrabold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Export (.xlsx)</span>
+                  </button>
+
+                  {/* Embedded College Filter */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                    <Building2 className="h-3.5 w-3.5 text-[#D528A2]" />
+                    <select
+                      value={selectedCollegeId}
+                      onChange={e => setSelectedCollegeId(e.target.value)}
+                      className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
+                    >
+                      <option value="all">🏢 All Campuses ({colleges.length})</option>
+                      {colleges.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Day selector pills */}
+                  <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200 text-xs font-bold flex-wrap">
+                  {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map(d => {
+                    const isDaySelected = selectedTimetableDay.toLowerCase() === d.toLowerCase();
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setSelectedTimetableDay(d)}
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                          isDaySelected
+                            ? "bg-indigo-600 text-white shadow-xs"
+                            : "text-slate-600 hover:bg-slate-200/60"
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Day's Slot Cards Grid */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center text-xs font-bold text-slate-500">
+                  <span>Scheduled Slots on {selectedTimetableDay}: {daySlots.length} Sessions</span>
+                  <span>Scope: {selectedCollegeId === "all" ? "All Campuses" : activeCollegeObj?.name}</span>
+                </div>
+
+                {daySlots.length === 0 ? (
+                  <div className="p-12 text-center text-slate-400 font-bold bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    No timetable periods scheduled on {selectedTimetableDay} for this scope.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {daySlots.map(s => {
+                      const mentor = mentors.find(m => m.id === s.mentorId);
+                      const col = colleges.find(c => c.id === s.college_id);
 
                       return (
-                        <div key={college.id} className="space-y-1.5 p-3 rounded-xl bg-slate-50/60 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                          <div className="flex items-center justify-between text-xs font-bold">
-                            <span className="text-slate-800 dark:text-white">{college.name}</span>
-                            <span className="text-slate-500 dark:text-slate-400 text-[11px] font-mono font-semibold">
-                              {total} Faculty · {overloadCount > 0 ? <strong className="text-amber-600">{overloadCount} Overloaded</strong> : <strong className="text-emerald-600">Balanced</strong>}
+                        <div key={s.id} className="bg-slate-50 hover:bg-white rounded-xl p-4 border border-slate-200 shadow-2xs hover:shadow-xs transition-all space-y-2.5">
+                          <div className="flex justify-between items-start">
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-100">
+                              {s.time}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-400">
+                              Room: {s.location || "Default"}
                             </span>
                           </div>
-                          {/* Multi-segmented workload bar */}
-                          <div className="h-3 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden flex">
-                            <div style={{ width: `${optPct}%` }} className="bg-emerald-500 h-full transition-all" title={`Optimal: ${optimalCount} (${optPct}%)`} />
-                            <div style={{ width: `${overPct}%` }} className="bg-amber-500 h-full transition-all" title={`Overloaded: ${overloadCount} (${overPct}%)`} />
-                            <div style={{ width: `${underPct}%` }} className="bg-indigo-300 dark:bg-indigo-500/40 h-full transition-all" title={`Underloaded: ${underloadCount} (${underPct}%)`} />
+
+                          <div>
+                            <h4 className="text-xs font-black text-slate-900">{s.course}</h4>
+                            <p className="text-[10px] text-slate-500 font-semibold">{s.classGroup || "General Batch"}</p>
+                          </div>
+
+                          <div
+                            onClick={() => mentor && setSelectedMentorFor360(mentor.id)}
+                            className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[11px] cursor-pointer hover:bg-slate-100/60 p-1 rounded-lg transition-colors"
+                          >
+                            <span className="font-bold text-slate-700 hover:text-[#D528A2] transition-colors">{mentor?.name || s.mentorId} 🔍</span>
+                            <span className="text-[9px] font-black text-[#D528A2] uppercase">{col?.name?.includes("SDNB") ? "SDNB" : col?.name || "Campus"}</span>
                           </div>
                         </div>
                       );
                     })}
                   </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── TAB 6: FACULTY GOVERNANCE (with Capacity Workload Cards) ── */}
+          {activeTab === "faculty_workload" && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-5">
+              <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Faculty Staffing & Workload Distribution</h3>
+                  <p className="text-xs font-medium text-slate-400">Weekly teaching allocations and lecture coverage per mentor (Click faculty to view 360° Profile)</p>
                 </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Export Faculty Workload */}
+                  <button
+                    type="button"
+                    onClick={handleExportFacultyWorkload}
+                    disabled={activeCollegeMentors.length === 0}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-extrabold transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Export (.xlsx)</span>
+                  </button>
 
-                {/* 2. Student Attendance Shortage Risk Donut */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-xs flex flex-col justify-between space-y-4">
-                  <div>
-                    <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
-                      <GraduationCap className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                      Student Attendance Risk Radar
-                    </h3>
-                    <p className="text-[10.5px] text-slate-400 font-medium mt-0.5">Threshold compliance across entire portfolio</p>
+                  {/* Embedded College Filter */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                    <Building2 className="h-3.5 w-3.5 text-[#D528A2]" />
+                    <select
+                      value={selectedCollegeId}
+                      onChange={e => setSelectedCollegeId(e.target.value)}
+                      className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
+                    >
+                      <option value="all">🏢 All Campuses ({colleges.length})</option>
+                      {colleges.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-
-                  {(() => {
-                    const collegeStudentIds = new Set(students.filter(s => activeColleges.some(c => c.id === s.college_id)).map(s => s.id));
-                    let safeCount = 0;
-                    let warningCount = 0;
-                    let criticalCount = 0;
-
-                    students.filter(s => collegeStudentIds.has(s.id)).forEach(st => {
-                      const records = studentAttendance.filter((a: any) => a.studentId === st.id);
-                      if (records.length === 0) return;
-                      const present = records.filter((a: any) => a.status === "present" || a.status === "od").length;
-                      const pct = (present / records.length) * 100;
-                      if (pct >= 75) safeCount++;
-                      else if (pct >= 65) warningCount++;
-                      else criticalCount++;
-                    });
-
-                    const totalMarked = safeCount + warningCount + criticalCount || 1;
-                    const r = 44, cx = 70, cy = 70, strokeW = 16;
-                    const circumference = 2 * Math.PI * r;
-
-                    const safeDash = (safeCount / totalMarked) * circumference;
-                    const warnDash = (warningCount / totalMarked) * circumference;
-                    const critDash = (criticalCount / totalMarked) * circumference;
-
-                    return (
-                      <div className="flex flex-col items-center gap-4 my-auto">
-                        <div className="relative">
-                          <svg width={140} height={140} viewBox="0 0 140 140">
-                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" strokeWidth={strokeW} className="text-slate-100 dark:text-slate-800" />
-                            {/* Safe arc */}
-                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#10b981" strokeWidth={strokeW}
-                              strokeDasharray={`${safeDash} ${circumference - safeDash}`} strokeDashoffset={circumference / 4} strokeLinecap="butt" />
-                            {/* Warning arc */}
-                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f59e0b" strokeWidth={strokeW}
-                              strokeDasharray={`${warnDash} ${circumference - warnDash}`} strokeDashoffset={circumference / 4 - safeDash} strokeLinecap="butt" />
-                            {/* Critical arc */}
-                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#ef4444" strokeWidth={strokeW}
-                              strokeDasharray={`${critDash} ${circumference - critDash}`} strokeDashoffset={circumference / 4 - safeDash - warnDash} strokeLinecap="butt" />
-                            <text x={cx} y={cy - 4} textAnchor="middle" fontSize={18} fontWeight="900" fill="currentColor" className="text-slate-800 dark:text-white">
-                              {safeCount + warningCount + criticalCount}
-                            </text>
-                            <text x={cx} y={cy + 10} textAnchor="middle" fontSize={7.5} fill="currentColor" fillOpacity={0.5} className="text-slate-500" fontWeight="700" letterSpacing="1">
-                              STUDENTS
-                            </text>
-                          </svg>
-                        </div>
-
-                        <div className="w-full space-y-1.5 text-xs font-bold">
-                          <div className="flex items-center justify-between p-1.5 rounded-lg bg-emerald-50/60 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
-                            <span className="flex items-center gap-2">
-                              <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
-                              Safe (&ge;75%)
-                            </span>
-                            <span>{safeCount} ({Math.round((safeCount / totalMarked) * 100)}%)</span>
-                          </div>
-                          <div className="flex items-center justify-between p-1.5 rounded-lg bg-amber-50/60 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300">
-                            <span className="flex items-center gap-2">
-                              <span className="h-2 w-2 rounded-full bg-amber-500 inline-block" />
-                              Warning (65-74%)
-                            </span>
-                            <span>{warningCount} ({Math.round((warningCount / totalMarked) * 100)}%)</span>
-                          </div>
-                          <div className="flex items-center justify-between p-1.5 rounded-lg bg-rose-50/60 dark:bg-rose-500/10 text-rose-800 dark:text-rose-300">
-                            <span className="flex items-center gap-2">
-                              <span className="h-2 w-2 rounded-full bg-rose-500 inline-block" />
-                              Critical (&lt;65%)
-                            </span>
-                            <span className="font-extrabold">{criticalCount} ({Math.round((criticalCount / totalMarked) * 100)}%)</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1.5 rounded-xl">
+                    {activeCollegeMentors.length} Faculty Members
+                  </span>
                 </div>
               </div>
 
-              {/* ── Critical Attendance Drop Alerts ── */}
-              {(() => {
-                const criticalDrops: any[] = [];
-                activeColleges.forEach(college => {
-                  const cStudents = students.filter(s => s.college_id === college.id);
-                  // Group by cohort / classGroup
-                  const cohortMap = new Map<string, any[]>();
-                  cStudents.forEach(st => {
-                    const cg = st.classGroup || "General";
-                    if (!cohortMap.has(cg)) cohortMap.set(cg, []);
-                    cohortMap.get(cg)!.push(st);
-                  });
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {activeCollegeMentors.map(m => {
+                  const mSlots = slots.filter(s => s.mentorId === m.id);
+                  const totalWeeklyHours = mSlots.length;
+                  const capacityPct = Math.min(100, Math.round((totalWeeklyHours / 20) * 100));
 
-                  cohortMap.forEach((cohortStudents, cg) => {
-                    const stIds = new Set(cohortStudents.map(s => s.id));
-                    const atts = studentAttendance.filter((a: any) => stIds.has(a.studentId));
-                    if (atts.length < 5) return;
-                    const present = atts.filter((a: any) => a.status === "present" || a.status === "od").length;
-                    const pct = Math.round((present / atts.length) * 100);
-                    if (pct < 65) {
-                      criticalDrops.push({ college, classGroup: cg, studentCount: cohortStudents.length, percentage: pct, totalPeriods: atts.length });
-                    }
-                  });
-                });
-
-                if (criticalDrops.length === 0) return null;
-
-                return (
-                  <div className="bg-rose-50/70 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-2xl p-5 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <AlertCircle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0" />
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => setSelectedMentorFor360(m.id)}
+                      className="bg-slate-50 hover:bg-white rounded-2xl p-4 border border-slate-200 shadow-2xs hover:shadow-xs space-y-3 cursor-pointer transition-all hover:border-pink-300"
+                    >
+                      <div className="flex justify-between items-start">
                         <div>
-                          <h4 className="text-xs font-black text-rose-900 dark:text-rose-200 uppercase tracking-wider">
-                            Critical Attendance Shortage Alerts (&lt;65% Threshold)
-                          </h4>
-                          <p className="text-[10px] text-rose-700 dark:text-rose-300 font-medium">
-                            The following cohort batches are experiencing critical attendance drops requiring KAM &amp; CM intervention with college HoDs:
-                          </p>
+                          <h4 className="text-xs font-black text-slate-900 group-hover:text-[#D528A2]">{m.name}</h4>
+                          <p className="text-[10px] text-slate-400 font-medium">{m.subject_group || (m as any).subject || "Faculty"}</p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center gap-1">
+                          <span>View 360°</span>
+                          <ChevronRight className="h-3 w-3" />
+                        </span>
+                      </div>
+
+                      {/* Workload Progress Bar */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[10px] font-bold">
+                          <span className="text-slate-500">Weekly Load:</span>
+                          <span className="text-[#D528A2] font-black">{totalWeeklyHours} Hours / 20h Target</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full transition-all ${
+                              capacityPct >= 90 ? "bg-emerald-500" : capacityPct >= 60 ? "bg-indigo-500" : "bg-amber-500"
+                            }`}
+                            style={{ width: `${capacityPct}%` }}
+                          />
                         </div>
                       </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
-                      {criticalDrops.map((drop, idx) => (
-                        <div key={idx} className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-rose-200 dark:border-rose-500/20 shadow-xs flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{drop.college.name}</p>
-                            <p className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 font-mono">{drop.classGroup} ({drop.studentCount} students)</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="px-2 py-0.5 rounded-md text-xs font-black bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300">
-                              {drop.percentage}%
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Per-Campus Summary Cards */}
-              <Panel title="Campus Network Overview" subtitle="Snapshot of all colleges under your KAM portfolio">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {activeColleges.map(college => {
-                    const collegeMentors = mentors.filter(m => m.college_id === college.id);
-                    const collegeStudents = students.filter(s => s.college_id === college.id);
-                    const collegeMentorIds = new Set(collegeMentors.map(m => m.id));
-                    const collegeSlots = slots.filter(s => collegeMentorIds.has(s.mentorId));
-                    const collegePending = requests.filter(r => (r.status === "pending" || r.status === "pending_cam") && collegeMentorIds.has(r.requestorId));
-                    const collegeIssues = escalations.filter(e => e.collegeId === college.id && (e.status === "pending" || e.status === "open"));
-                    const collegeTasks = tasks.filter(t => t.collegeId === college.id && t.status === "pending");
-                    return (
-                      <div key={college.id} className="p-5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-all">
-                        <div className="flex items-start justify-between gap-3 mb-4">
-                          <div>
-                            <h4 className="text-sm font-black text-slate-800 dark:text-white">{college.name}</h4>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{college.address || "—"}</p>
-                          </div>
-                          <div className="flex flex-col items-end gap-1">
-                            {collegePending.length > 0 && (
-                              <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[9px] font-black border border-amber-200 dark:border-amber-500/30">
-                                {collegePending.length} pending
-                              </span>
-                            )}
-                            {collegeIssues.length > 0 && (
-                              <span className="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[9px] font-black border border-rose-200 dark:border-rose-500/30">
-                                {collegeIssues.length} issues
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-4 gap-2 text-center">
-                          {[
-                            { label: "Faculty", value: collegeMentors.length, text: "text-indigo-600 dark:text-indigo-400" },
-                            { label: "Students", value: collegeStudents.length, text: "text-emerald-600 dark:text-emerald-400" },
-                            { label: "Slots", value: collegeSlots.length, text: "text-amber-600 dark:text-amber-400" },
-                            { label: "Tasks", value: collegeTasks.length, text: collegeTasks.length > 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-600 dark:text-slate-400" },
-                          ].map(stat => (
-                            <div key={stat.label} className="bg-white dark:bg-slate-950 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850">
-                              <div className={`text-sm font-black ${stat.text}`}>{stat.value}</div>
-                              <div className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5">{stat.label}</div>
-                            </div>
-                          ))}
-                        </div>
+                      <div className="pt-2 border-t border-slate-200/80 flex justify-between text-[10px] font-bold text-slate-400">
+                        <span>Classes: {m.classes || "General"}</span>
+                        <span>{capacityPct}% Capacity</span>
                       </div>
-                    );
-                  })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── TAB 7: HANDOVERS & GOVERNANCE ── */}
+          {activeTab === "handovers" && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-5">
+              <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Class Handover & Substitution Governance</h3>
+                  <p className="text-xs font-medium text-slate-400">Faculty swap authorizations and class coverage audit logs</p>
                 </div>
-              </Panel>
-
-              {/* Recent requests across all campuses */}
-              {requests.filter(r => portfolioMentorIds.has(r.requestorId)).length > 0 && (
-                <Panel title="Recent Handover Activity" subtitle="Latest class handover requests across all your campuses">
-                  <div className="space-y-2">
-                    {requests.filter(r => portfolioMentorIds.has(r.requestorId))
-                      .sort((a, b) => b.timestamp?.localeCompare(a.timestamp || "") || 0)
-                      .slice(0, 8)
-                      .map(r => {
-                        const college = activeColleges.find(c => mentors.find(m => m.id === r.requestorId)?.college_id === c.id);
-                        const isPending = r.status === "pending" || r.status === "pending_cam";
-                        return (
-                          <div key={r.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-all">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-400 to-[#D528A2] flex items-center justify-center text-white text-[9px] font-black shrink-0">
-                                {r.requestorName?.substring(0, 2).toUpperCase()}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-bold text-slate-800 dark:text-white truncate">
-                                  {r.requestorName} → {r.targetStaffName}
-                                </p>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{r.course} · {r.dateFormatted || r.dateStr}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {college && <span className="hidden sm:block text-[9px] font-bold text-slate-400 truncate max-w-[80px]">{college.name}</span>}
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
-                                r.status === "pending_cam" ? "bg-rose-100 border-rose-300 text-rose-700 dark:bg-rose-500/20 dark:border-rose-500/40 dark:text-rose-300" :
-                                isPending ? "bg-amber-100 border-amber-300 text-amber-800 dark:bg-amber-500/20 dark:border-amber-500/40 dark:text-amber-300" :
-                                r.status === "approved" ? "bg-emerald-100 border-emerald-300 text-emerald-800 dark:bg-emerald-500/20 dark:border-emerald-500/40 dark:text-emerald-300" :
-                                "bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700"
-                              }`}>{r.status === "pending_cam" ? "⚡ Emergency" : r.status}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Embedded College Filter */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                    <Building2 className="h-3.5 w-3.5 text-[#D528A2]" />
+                    <select
+                      value={selectedCollegeId}
+                      onChange={e => setSelectedCollegeId(e.target.value)}
+                      className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
+                    >
+                      <option value="all">🏢 All Campuses ({colleges.length})</option>
+                      {colleges.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                </Panel>
+                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1.5 rounded-xl">
+                    {handoverRequests.length} Handover Requests
+                  </span>
+                </div>
+              </div>
+
+              {handoverRequests.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 font-bold bg-slate-50 rounded-xl">
+                  No active substitution or handover requests recorded.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {handoverRequests.map(r => (
+                    <div key={r.id} className="bg-slate-50 hover:bg-white p-3.5 rounded-xl border border-slate-200 flex items-center justify-between text-xs transition-all shadow-2xs">
+                      <div>
+                        <p className="font-black text-slate-900">{r.course}</p>
+                        <p className="text-[10px] text-slate-400 font-semibold mt-0.5">{r.requestorName} → {r.targetStaffName} • {r.dateStr}</p>
+                      </div>
+                      <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        {r.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}
 
-          {/* ══ TAB: CAM REPORTS ══ */}
-          {activeTab === "cam_reports" && (
-              <div className="space-y-6">
-                {/* Header */}
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <div>
-                    <h2 className="text-lg font-black text-slate-800 dark:text-white">CM Reporting View</h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      All Campus Managers reporting to you — {activeColleges.length} college{activeColleges.length !== 1 ? "s" : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-[10px] font-black">
-                      {activeColleges.length} CM{activeColleges.length !== 1 ? "s" : ""} under you
-                    </span>
-                  </div>
+          {/* ── TAB 8: CROSS-CAMPUS ANALYTICS ── */}
+          {activeTab === "analytics" && (
+            <KAMAnalytics
+              campuses={overviewData?.campuses || []}
+              trendData={trendData}
+            />
+          )}
+
+          {/* ── TAB 8B: MOCK INTERVIEWS & REGIONAL EXPORT ── */}
+          {activeTab === "interviews" && (
+            <div className="space-y-4 font-sans">
+              <InterviewModule
+                currentUserRole="kam"
+                currentUserName={currentKAM?.name || "Key Account Manager"}
+                defaultCollegeId={selectedCollegeId !== "all" ? selectedCollegeId : undefined}
+              />
+            </div>
+          )}
+
+          {/* ── TAB 1B: SUPERVISED CAMPUSES & CAM DIRECT REPORTS ── */}
+          {(activeTab === "campuses" || activeTab === "cam_direct_reports") && (
+            <div className="space-y-4 font-sans">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                <div className="border-b border-slate-150 pb-3">
+                  <h2 className="text-base font-black text-slate-800">Supervised Institutions & Reporting CAMs</h2>
+                  <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                    Institutional health, operational SLAs, and direct CAM management contacts across your portfolio.
+                  </p>
                 </div>
 
-                {/* Portfolio summary strip */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  {[
-                    { label: "Total Faculty", value: totalMentors, icon: Users, bg: "bg-indigo-50 dark:bg-indigo-500/10", text: "text-indigo-700 dark:text-indigo-300" },
-                    { label: "Total Students", value: totalStudents, icon: GraduationCap, bg: "bg-emerald-50 dark:bg-emerald-500/10", text: "text-emerald-700 dark:text-emerald-300" },
-                    { label: "Pending Handovers", value: totalPendingRequests, icon: Clock, bg: "bg-amber-50 dark:bg-amber-500/10", text: "text-amber-700 dark:text-amber-300" },
-                    { label: "Open Issues", value: totalOpenIssues, icon: ShieldAlert, bg: "bg-rose-50 dark:bg-rose-500/10", text: "text-rose-700 dark:text-rose-300" },
-                  ].map(s => {
-                    const Icon = s.icon;
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {colleges.map(c => {
+                    const cStudents = students.filter(s => s.college_id === c.id);
+                    const cMentors = mentors.filter(m => m.college_id === c.id);
+                    const isSelected = selectedCollegeId === c.id;
+
                     return (
-                      <div key={s.label} className={`${s.bg} border border-slate-100 dark:border-slate-800 rounded-xl p-4 flex items-center gap-3`}>
-                        <Icon className={`h-5 w-5 ${s.text} shrink-0`} />
-                        <div>
-                          <div className={`text-xl font-black ${s.text}`}>{s.value}</div>
-                          <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{s.label}</div>
+                      <div
+                        key={c.id}
+                        className={`bg-white rounded-2xl p-5 border shadow-xs transition-all ${
+                          isSelected ? "border-[#D528A2] ring-2 ring-[#D528A2]/10" : "border-slate-200"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-xl bg-[#D528A2]/10 text-[#D528A2] flex items-center justify-center font-black">
+                              <Building2 className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-black text-slate-900">{c.name}</h4>
+                              <p className="text-[10px] font-bold text-slate-400">{(c as any).location || "Main Campus"} • {(c as any).code || c.id}</p>
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                            96% Health
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 mt-4 py-3 border-y border-slate-100 text-center">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Students</span>
+                            <p className="text-xs font-black text-slate-800">{cStudents.length || "—"}</p>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Faculty</span>
+                            <p className="text-xs font-black text-slate-800">{cMentors.length || "—"}</p>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Working Days</span>
+                            <p className="text-xs font-black text-slate-800">{c.working_days || 5} Days</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          <div className="bg-slate-50/80 rounded-xl p-2.5 border border-slate-100 flex items-center justify-between text-xs">
+                            <div>
+                              <span className="text-[9px] font-black uppercase text-slate-400 block">Reporting CAM</span>
+                              <span className="font-bold text-slate-800">{c.name.includes("SDNB") ? "Campus Academic Manager" : "Lead Operations Manager"}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCollegeId(c.id);
+                                  setActiveTab("monitoring");
+                                }}
+                                className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100 transition-colors cursor-pointer"
+                              >
+                                Attendance
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCollegeId(c.id);
+                                  setActiveTab("timetable");
+                                }}
+                                className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 transition-colors cursor-pointer"
+                              >
+                                Timetable
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-
-                {/* CAM Cards — Bug 10 fix: skeleton while loading, real CM data once ready */}
-                <div className="space-y-4">
-                  {loadingCams ? (
-                    // Loading skeleton
-                    Array.from({ length: activeColleges.length || 2 }).map((_, i) => (
-                      <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 animate-pulse">
-                        <div className="flex items-center gap-4">
-                          <div className="h-12 w-12 rounded-xl bg-slate-200 dark:bg-slate-700 shrink-0" />
-                          <div className="flex-1 space-y-2">
-                            <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-1/3" />
-                            <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded w-1/2" />
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    activeColleges.map(college => {
-                      const cam = camDataMap[college.id];
-                      const collegeMentors = mentors.filter(m => m.college_id === college.id);
-                      const collegeStudents = students.filter(s => s.college_id === college.id);
-                      const collegeMentorIds = new Set(collegeMentors.map(m => m.id));
-                      const collegeSlots = slots.filter(s => collegeMentorIds.has(s.mentorId));
-                      const collegeRequests = requests.filter(r => collegeMentorIds.has(r.requestorId) || collegeMentorIds.has(r.targetStaffId));
-                      const collegeHandovers = approvedHandovers.filter(h => collegeMentorIds.has(h.originalMentorId) || collegeMentorIds.has(h.coverStaffId));
-                      const collegeIssues = escalations.filter(e => e.collegeId === college.id);
-                      const collegeTasks = tasks.filter(t => t.collegeId === college.id);
-                      const collegeDepts = departmentsList.filter(d => d.college_id === college.id);
-                      const collegeSubjects = subjectsList.filter(s => s.college_id === college.id);
-                      const collegeMentorIdSet = new Set(collegeMentors.map(m => m.id));
-                      const collegeStudentIds = new Set(collegeStudents.map(s => s.id));
-                      const collegeAtt = studentAttendance.filter(a => collegeStudentIds.has(a.studentId));
-                      const collegeLeaves = leaveRequests.filter((l: any) => collegeMentorIdSet.has(l.mentorId));
-                      const feeStat = feeStatsMap[college.id] || null;
-
-                      return (
-                        <CAMCollegeCard
-                          key={college.id}
-                          cam={cam || { name: `CM — ${college.name}`, email: "—", id: null }}
-                          college={college}
-                          mentors={collegeMentors}
-                          students={collegeStudents}
-                          slots={collegeSlots}
-                          requests={collegeRequests}
-                          approvedHandovers={collegeHandovers}
-                          escalations={collegeIssues}
-                          tasks={collegeTasks}
-                          subjects={collegeSubjects}
-                          departments={collegeDepts}
-                          attendance={collegeAtt}
-                          leaveRequests={collegeLeaves}
-                          feeStats={feeStat}
-                        />
-                      );
-                    })
-                  )}
-                  {activeColleges.length === 0 && !loadingCams && (
-                    <div className="text-center py-16 text-sm text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                      No colleges assigned to your KAM portfolio yet.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-          {/* ══ TAB: CAMPUS DIRECTORY ══ */}
-          {activeTab === "colleges" && (
-            <div className="space-y-6" data-kam-panel>
-              {/* KPI strip */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {[
-                  { label: "Colleges", value: activeColleges.length, icon: Building2, bg: "bg-indigo-50 dark:bg-indigo-500/10", border: "border-indigo-100 dark:border-indigo-500/20", text: "text-indigo-600 dark:text-indigo-400" },
-                  { label: "Open Issues", value: totalOpenIssues, icon: ShieldAlert, bg: totalOpenIssues > 0 ? "bg-rose-50 dark:bg-rose-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalOpenIssues > 0 ? "border-rose-100 dark:border-rose-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalOpenIssues > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400" },
-                  { label: "Tasks Pending", value: totalPendingTasks, icon: ClipboardList, bg: totalPendingTasks > 0 ? "bg-amber-50 dark:bg-amber-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalPendingTasks > 0 ? "border-amber-100 dark:border-amber-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalPendingTasks > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400" },
-                  { label: "Portfolio Faculty", value: totalMentors, icon: Users, bg: "bg-purple-50 dark:bg-purple-500/10", border: "border-purple-100 dark:border-purple-500/20", text: "text-purple-600 dark:text-purple-400" },
-                ].map(kpi => {
-                  const Icon = kpi.icon;
-                  return (
-                    <div key={kpi.label} className={`${kpi.bg} border ${kpi.border} rounded-xl p-4 flex items-center gap-3`}>
-                      <Icon className={`h-5 w-5 ${kpi.text} shrink-0`} />
-                      <div>
-                        <div className={`text-xl font-black ${kpi.text}`}>{kpi.value}</div>
-                        <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{kpi.label}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* College cards with CAM contact */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {activeColleges.map(c => {
-                  const cam = camDataMap[c.id];
-                  const cMentors = mentors.filter(m => m.college_id === c.id);
-                  const cStudents = students.filter(s => s.college_id === c.id);
-                  const cMentorIds = new Set(cMentors.map(m => m.id));
-                  const cSlots = slots.filter(s => cMentorIds.has(s.mentorId));
-                  const cIssues = escalations.filter(e => e.collegeId === c.id && (e.status === "pending" || e.status === "open"));
-                  const cTasks = tasks.filter(t => t.collegeId === c.id);
-                  const cTasksDone = cTasks.filter(t => t.status === "completed").length;
-                  const cDepts = departmentsList.filter(d => d.college_id === c.id);
-                  const cSubjects = subjectsList.filter(s => s.college_id === c.id);
-                  const feeStat = feeStatsMap[c.id];
-
-                  return (
-                    <div key={c.id} data-kam-panel className="p-5 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col gap-4 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-all shadow-sm">
-                      {/* Header row */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-[#D528A2] flex items-center justify-center text-white font-black text-base shrink-0">
-                            {c.name.substring(0, 1)}
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-black text-slate-800 dark:text-white leading-tight">{c.name}</h4>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{c.address || "No address"}</p>
-                          </div>
-                        </div>
-                        {cIssues.length > 0 && (
-                          <span className="shrink-0 px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-[9px] font-black">
-                            {cIssues.length} issue{cIssues.length !== 1 ? "s" : ""}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* CAM contact strip */}
-                      <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-semibold ${cam ? "bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20" : "bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"}`}>
-                        <User className={`h-3.5 w-3.5 shrink-0 ${cam ? "text-indigo-500" : "text-slate-400"}`} />
-                        {cam ? (
-                          <span className="text-slate-700 dark:text-slate-300">
-                            <span className="font-black text-indigo-700 dark:text-indigo-300">{cam.name}</span>
-                            <span className="mx-1.5 text-slate-400">·</span>
-                            <span className="text-slate-500 dark:text-slate-400 font-mono">{cam.email}</span>
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 italic">No campus manager assigned</span>
-                        )}
-                      </div>
-
-                      {/* Stats grid */}
-                      <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-bold">
-                        {[
-                          { label: "Faculty", value: cMentors.length, color: "indigo" },
-                          { label: "Students", value: cStudents.length, color: "emerald" },
-                          { label: "Slots", value: cSlots.length, color: "amber" },
-                        ].map(s => (
-                          <div key={s.label} className="bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
-                            <span className={`text-sm font-black block ${
-                              s.color === "indigo" ? "text-indigo-600 dark:text-indigo-400" :
-                              s.color === "emerald" ? "text-emerald-600 dark:text-emerald-400" :
-                              "text-amber-600 dark:text-amber-400"
-                            }`}>{s.value}</span>
-                            <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-0.5 block">{s.label}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Health badges row */}
-                      <div className="flex flex-wrap gap-2">
-                        <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[9px] font-bold text-slate-600 dark:text-slate-300">
-                          <BookMarked className="h-3 w-3 text-purple-500" />
-                          {cDepts.length} depts · {cSubjects.length} subjects
-                        </span>
-                        {feeStat && (
-                          <span className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${feeStat.collectionRate >= 80 ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300" : "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300"}`}>
-                            <IndianRupee className="h-3 w-3" />
-                            {feeStat.collectionRate}% collected
-                          </span>
-                        )}
-                        {cTasks.length > 0 && (
-                          <span className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[9px] font-bold ${cTasksDone === cTasks.length ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300" : "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300"}`}>
-                            <CheckCircle className="h-3 w-3" />
-                            {cTasksDone}/{cTasks.length} tasks done
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-                {activeColleges.length === 0 && (
-                  <div className="col-span-2 text-center py-16 text-sm text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                    No colleges assigned to your KAM portfolio yet.
-                  </div>
-                )}
               </div>
             </div>
           )}
 
-          {/* ══ TAB: ASSIGN TASK ══ */}
-          {activeTab === "tasks" && (() => {
-            const today = new Date().toISOString().slice(0, 10);
-            const portfolioTasks = tasks.filter(t => activeColleges.some(c => c.id === t.collegeId));
-            const doneTasks = portfolioTasks.filter(t => t.status === "completed");
-            const pendingT = portfolioTasks.filter(t => t.status === "pending");
-            const overdueTasks = pendingT.filter(t => t.dueDate && t.dueDate < today);
-            return (
-              <div className="space-y-6" data-kam-panel>
-                {/* Task summary strip */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  {[
-                    { label: "Total Assigned", value: portfolioTasks.length, color: "indigo" },
-                    { label: "Pending", value: pendingT.length, color: pendingT.length > 0 ? "amber" : "emerald" },
-                    { label: "Completed", value: doneTasks.length, color: "emerald" },
-                    { label: "Overdue", value: overdueTasks.length, color: overdueTasks.length > 0 ? "rose" : "slate" },
-                  ].map(s => (
-                    <div key={s.label} className={`bg-${s.color}-50 dark:bg-${s.color}-500/10 border border-${s.color}-100 dark:border-${s.color}-500/20 rounded-xl p-4 text-center`}>
-                      <div className={`text-2xl font-black text-${s.color}-600 dark:text-${s.color}-400`}>{s.value}</div>
-                      <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mt-0.5">{s.label}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Panel title="Assign Task to CM" subtitle="Direct task items to campus managers">
-                    <form onSubmit={handleCreateTask} className="space-y-4 text-xs font-semibold">
-                      <Select label="Target College" value={taskCollegeId} onChange={e => setTaskCollegeId(e.target.value)}
-                        options={activeColleges.map(c => ({ value: c.id, label: c.name }))} required />
-                      <Input label="Task Directive" type="text" placeholder="e.g. Verify missing mark entries" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} required />
-                      <div className="grid grid-cols-2 gap-3">
-                        <Select label="Priority" value={taskPriority} onChange={e => setTaskPriority(e.target.value)}
-                          options={[{ value: "high", label: "High" }, { value: "medium", label: "Medium" }, { value: "low", label: "Low" }]} />
-                        <Input label="Due Date" type="date" value={taskDueDate} onChange={e => setTaskDueDate(e.target.value)} required />
-                      </div>
-                      <LoadingButton
-                        type="submit"
-                        isLoading={loadingActions['submit_task']}
-                        loadingText="Assigning..."
-                        variant="gradient"
-                        icon={<PlusCircle className="h-4 w-4" />}
-                        className="w-full mt-2"
-                      >
-                        Assign Task
-                      </LoadingButton>
-                    </form>
-                  </Panel>
-
-                  <Panel title="Task Logs" subtitle="All assigned tasks with completion status">
-                    <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                      {portfolioTasks.length === 0 && (
-                        <p className="text-xs text-slate-500 italic text-center py-6">No tasks assigned yet.</p>
-                      )}
-                      {portfolioTasks
-                        .slice()
-                        .sort((a, b) => {
-                          // sort: overdue first, then pending, then completed
-                          const aOverdue = a.status === "pending" && a.dueDate && a.dueDate < today;
-                          const bOverdue = b.status === "pending" && b.dueDate && b.dueDate < today;
-                          if (aOverdue && !bOverdue) return -1;
-                          if (!aOverdue && bOverdue) return 1;
-                          if (a.status === "pending" && b.status !== "pending") return -1;
-                          if (a.status !== "pending" && b.status === "pending") return 1;
-                          return (a.dueDate || "").localeCompare(b.dueDate || "");
-                        })
-                        .map(t => {
-                          const college = activeColleges.find(c => c.id === t.collegeId);
-                          const isOverdue = t.status === "pending" && t.dueDate && t.dueDate < today;
-                          const isDone = t.status === "completed";
-                          return (
-                            <div key={t.id} className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 transition-all ${
-                              isOverdue ? "border-rose-200 dark:border-rose-500/30 bg-rose-50/40 dark:bg-rose-500/5"
-                              : isDone ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-500/5"
-                              : "border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60"
-                            }`}>
-                              <div className="space-y-1 text-[11px] font-semibold min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap text-[9px] uppercase font-black">
-                                  <span className={`px-1.5 py-0.5 rounded ${
-                                    t.priority === "high" ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
-                                    : t.priority === "medium" ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
-                                    : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
-                                  }`}>{t.priority}</span>
-                                  <span className="text-slate-500 dark:text-slate-400 truncate">{college?.name || "—"}</span>
-                                  {isOverdue && (
-                                    <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white">Overdue</span>
-                                  )}
-                                </div>
-                                <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{t.title}</p>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                                  Due: <strong className={isOverdue ? "text-rose-600 dark:text-rose-400" : ""}>{t.dueDate || "—"}</strong>
-                                  {" · "}
-                                  <strong className={isDone ? "text-emerald-600 dark:text-emerald-400" : isOverdue ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}>
-                                    {isDone ? "✓ Completed" : isOverdue ? "Overdue" : "Pending"}
-                                  </strong>
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                {!isDone && (
-                                  <button
-                                    onClick={async () => {
-                                      setActionLoading(`complete_task_${t.id}`, true);
-                                      try {
-                                        await fetch("/api/tasks", {
-                                          method: "PUT",
-                                          headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({ id: t.id, status: "completed" })
-                                        });
-                                        await refreshData();
-                                        toast("Task marked as completed.", "success");
-                                      } finally {
-                                        setActionLoading(`complete_task_${t.id}`, false);
-                                      }
-                                    }}
-                                    disabled={loadingActions[`complete_task_${t.id}`]}
-                                    className="p-1.5 text-emerald-600 hover:bg-emerald-500/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-                                    title="Mark Complete"
-                                  >
-                                    {loadingActions[`complete_task_${t.id}`] ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <CheckCircle2 className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => handleDeleteTask(t.id)}
-                                  disabled={loadingActions[`delete_task_${t.id}`]}
-                                  className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title="Delete task"
-                                >
-                                  {loadingActions[`delete_task_${t.id}`] ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4" />
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </Panel>
-                </div>
+          {/* ── TAB 9: ESCALATIONS & TASKS ── */}
+          {(activeTab === "escalations" || activeTab === "tasks") && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
+              <div className="border-b border-slate-150 pb-3">
+                <h3 className="text-sm font-black text-slate-900">Campus Escalations & High-Priority Tasks</h3>
+                <p className="text-xs text-slate-400 font-medium">Resolution tracking for escalated campus queries and SLA alerts</p>
               </div>
-            );
-          })()}
-
-          {/* ══ TAB: ESCALATED ISSUES ══ */}
-          {activeTab === "escalations" && (() => {
-            // Bug 3 fix: filter to this KAM's portfolio
-            const portfolioEscalations = escalations.filter(e => activeColleges.some(c => c.id === e.collegeId));
-            return (
-              <div className="max-w-3xl mx-auto w-full">
-                <Panel title="Escalated Campus Issues" subtitle="Review and resolve items forwarded by CMs">
-                  <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
-                    {portfolioEscalations.map(esc => (
-                      <div key={esc.id} className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 flex flex-col gap-3 hover:border-indigo-500/20 transition-all">
-                        <div className="space-y-1">
-                          <div className="flex justify-between items-center text-[9px] uppercase font-black">
-                            <span className="text-indigo-600 dark:text-indigo-400 font-bold">{esc.collegeName}</span>
-                            <span className="text-slate-500 dark:text-slate-400 font-semibold">{esc.escalatedAt || esc.created_at?.slice(0, 10) || "Today"}</span>
-                          </div>
-                          <h4 className="text-xs font-black text-slate-800 dark:text-white">{esc.title}</h4>
-                          {esc.desc && <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed italic">"{esc.desc}"</p>}
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {esc.priority && (
-                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
-                                esc.priority === "high" ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300" :
-                                "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
-                              }`}>{esc.priority} priority</span>
-                            )}
-                            {esc.type && <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[8px] font-black text-slate-500 dark:text-slate-400">{esc.type}</span>}
-                          </div>
-                        </div>
-                        {esc.status === "pending" || esc.status === "open" ? (
-                          <LoadingButton
-                            variant="secondary"
-                            isLoading={loadingActions[`resolve_issue_${esc.id}`]}
-                            loadingText="Resolving..."
-                            onClick={() => handleResolveEscalation(esc.id)}
-                            className="w-full"
-                          >
-                            Mark Resolved
-                          </LoadingButton>
-                        ) : (
-                          <span className="w-full py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-black border border-emerald-500/20 text-[10px] rounded text-center block">✓ Resolved</span>
-                        )}
-                      </div>
-                    ))}
-                    {portfolioEscalations.length === 0 && <p className="text-xs text-slate-500 italic text-center py-6">All campuses fully SLA compliant.</p>}
-                  </div>
-                </Panel>
-              </div>
-            );
-          })()}
-
-          {/* ══ TAB: SWAP LEDGER ══ */}
-          {activeTab === "swap_tracker" && (() => {
-            const allSwapRequests = requests.filter(r => r.request_type === "swap_compensate" && portfolioMentorIds.has(r.requestorId));
-            const pendingSwaps = allSwapRequests.filter(r => r.status === "pending" || r.status === "pending_cam");
-            const settledSwaps = allSwapRequests.filter(r => r.status === "approved");
-            const declinedSwaps = allSwapRequests.filter(r => r.status === "rejected");
-
-            const campusBreakdown = activeColleges.map(college => {
-              const cgIds = new Set(mentors.filter(m => m.college_id === college.id).map(m => m.id));
-              const campusSwaps = allSwapRequests.filter(r => cgIds.has(r.requestorId));
-              return { college, swaps: campusSwaps, pending: campusSwaps.filter(r => r.status === "pending" || r.status === "pending_cam").length, settled: campusSwaps.filter(r => r.status === "approved").length };
-            });
-
-            interface WorkloadRow { mentorId: string; mentorName: string; department: string; collegeName: string; given: number; received: number; swapsPending: number; swapsSettled: number; balance: number; }
-            const ledgerMap = new Map<string, WorkloadRow>();
-            approvedHandovers.forEach(h => {
-              [{ id: h.originalMentorId, field: "given" as const }, { id: h.coverStaffId, field: "received" as const }].forEach(({ id, field }) => {
-                const m = mentors.find(m => m.id === id);
-                if (!m || !portfolioMentorIds.has(m.id)) return;
-                const college = activeColleges.find(c => c.id === m.college_id);
-                if (!ledgerMap.has(m.id)) ledgerMap.set(m.id, { mentorId: m.id, mentorName: m.name, department: m.mentor_group || "—", collegeName: college?.name || "—", given: 0, received: 0, swapsPending: 0, swapsSettled: 0, balance: 0 });
-                ledgerMap.get(m.id)![field]++;
-              });
-            });
-            allSwapRequests.forEach(r => {
-              const row = ledgerMap.get(r.requestorId);
-              if (row) { if (r.status === "pending" || r.status === "pending_cam") row.swapsPending++; else if (r.status === "approved") row.swapsSettled++; }
-            });
-            const ledgerList = Array.from(ledgerMap.values()).map(row => ({ ...row, balance: row.given - row.received })).filter(row => row.balance !== 0 || row.swapsPending > 0 || row.swapsSettled > 0).sort((a, b) => b.balance - a.balance);
-
-            return (
-              <div className="space-y-6">
-                <Panel title="Cross-Campus Swap & Compensation Ledger" subtitle="Portfolio-wide view of faculty hour debts and swap resolution progress">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-2">
-                    <Card label="Total Swap Requests" value={allSwapRequests.length} icon={<ArrowRightLeft className="h-4 w-4 text-indigo-600" />} className="bg-pastel-blue" />
-                    <Card label="Pending Resolution" value={pendingSwaps.length} icon={<Clock className="h-4 w-4 text-amber-600" />} success={pendingSwaps.length === 0} className="bg-pastel-cream" />
-                    <Card label="Debts Settled" value={settledSwaps.length} icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />} success={true} className="bg-pastel-green" />
-                    <Card label="Declined Offers" value={declinedSwaps.length} icon={<XCircle className="h-4 w-4 text-rose-600" />} success={true} className="bg-pastel-purple" />
-                  </div>
-                </Panel>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                  {campusBreakdown.map(cb => (
-                    <div key={cb.college.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-4 rounded-xl shadow-sm flex flex-col gap-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-slate-800 dark:text-white">{cb.college.name}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase border ${cb.pending > 0 ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" : "bg-teal-50 border-teal-200 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300"}`}>
-                          {cb.pending > 0 ? `${cb.pending} pending` : "All settled"}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-center text-[10px] font-bold">
-                        <div className="bg-amber-50 dark:bg-amber-500/10 rounded-xl py-2 border border-amber-100 dark:border-amber-500/20">
-                          <div className="text-lg font-black text-amber-700 dark:text-amber-300">{cb.pending}</div>
-                          <div className="text-amber-600 dark:text-amber-400 text-[8px] uppercase font-black">Pending</div>
-                        </div>
-                        <div className="bg-teal-50 dark:bg-teal-500/10 rounded-xl py-2 border border-teal-100 dark:border-teal-500/20">
-                          <div className="text-lg font-black text-teal-700 dark:text-teal-300">{cb.settled}</div>
-                          <div className="text-teal-600 dark:text-teal-400 text-[8px] uppercase font-black">Settled</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <Panel title="All Swap Requests Across Portfolio" subtitle="Chronological log of all swap-to-compensate offers">
-                  {allSwapRequests.length === 0 ? (
-                    <div className="text-center py-10 border border-dashed border-slate-205 dark:border-slate-800 rounded-xl">
-                      <p className="text-3xl mb-2">↔</p>
-                      <p className="text-xs text-slate-400 italic font-semibold">No swap compensation requests across portfolio yet.</p>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs mt-2">
-                      <table className="w-full border-collapse text-left text-xs font-semibold min-w-[580px]">
-                        <thead>
-                          <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold uppercase text-[9px] tracking-widest">
-                            <th className="p-3">Campus</th><th className="p-3">Debtor (Owes)</th><th className="p-3">Creditor (Owed)</th><th className="p-3">Class Offered</th><th className="p-3">Date</th><th className="p-3 text-center">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                          {allSwapRequests.slice().sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || "")).map(req => {
-                            const debtorMentor = mentors.find(m => m.id === req.requestorId);
-                            const creditorMentor = mentors.find(m => m.id === req.targetStaffId);
-                            const campus = debtorMentor ? activeColleges.find(c => c.id === debtorMentor.college_id) : null;
-                            const isPending = req.status === "pending" || req.status === "pending_cam";
-                            const isApproved = req.status === "approved";
-                            return (
-                              <tr key={req.id} className="hover:bg-indigo-50/20 dark:hover:bg-indigo-500/5 transition-colors">
-                                <td className="p-3"><span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[8.5px] font-black uppercase">{campus?.name || "—"}</span></td>
-                                <td className="p-3"><div className="font-black text-rose-700 dark:text-rose-400">{debtorMentor?.name || req.requestorName}</div><div className="text-[9px] text-slate-400">{debtorMentor?.mentor_group || ""}</div></td>
-                                <td className="p-3"><div className="font-black text-emerald-700 dark:text-emerald-400">{creditorMentor?.name || req.targetStaffName}</div><div className="text-[9px] text-slate-400">{creditorMentor?.mentor_group || ""}</div></td>
-                                <td className="p-3"><div className="font-bold text-slate-800 dark:text-white max-w-[150px] truncate">{req.course}</div><div className="text-[9px] text-slate-400">{req.dateFormatted}</div></td>
-                                <td className="p-3 text-slate-505 font-medium whitespace-nowrap">{req.dateStr}</td>
-                                <td className="p-3 text-center">
-                                  {isApproved ? <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-teal-100 dark:bg-teal-500/20 border border-teal-200 dark:border-teal-500/30 text-teal-800 dark:text-teal-300 text-[8.5px] font-black uppercase">Settled</span>
-                                    : isPending ? <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-[8.5px] font-black uppercase">⏳ Awaiting</span>
-                                    : <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-100 dark:bg-red-500/20 border border-red-200 dark:border-red-500/30 text-red-800 dark:text-red-300 text-[8.5px] font-black uppercase">Declined</span>}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </Panel>
-
-                {ledgerList.length > 0 && (
-                  <Panel title="Faculty Workload Balance Overview" subtitle="Mentors with outstanding hour debts across your portfolio">
-                    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs mt-2">
-                      <table className="w-full border-collapse text-left text-xs font-semibold min-w-[620px]">
-                        <thead>
-                          <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold uppercase text-[9px] tracking-widest">
-                            <th className="p-3">Faculty</th><th className="p-3">Campus</th><th className="p-3 text-center">Given (−)</th><th className="p-3 text-center">Received (+)</th><th className="p-3 text-center">Balance</th><th className="p-3 text-center">Pending</th><th className="p-3 text-center">Settled</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                          {ledgerList.map(row => {
-                            // Bug 6 fix: balance > 0 means GIVEN more than received = OWED (creditor) = amber
-                            // balance < 0 means RECEIVED more than given = DEBTOR = rose
-                            const isOwed = row.balance > 0;
-                            const isDebtor = row.balance < 0;
-                            return (
-                              <tr key={row.mentorId} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors ${isDebtor && row.swapsPending === 0 ? "bg-rose-50/30 dark:bg-rose-500/5" : isOwed && row.swapsPending === 0 ? "bg-amber-50/30 dark:bg-amber-500/5" : ""}`}>
-                                <td className="p-3"><div className="font-black text-slate-800 dark:text-white">{row.mentorName}</div><div className="text-[9px] text-slate-400">{row.department}</div></td>
-                                <td className="p-3"><span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[8.5px] font-black uppercase">{row.collegeName}</span></td>
-                                <td className="p-3 text-center">{row.given > 0 ? <span className="px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300 font-black">−{row.given}</span> : <span className="text-slate-300">—</span>}</td>
-                                <td className="p-3 text-center">{row.received > 0 ? <span className="px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 dark:bg-teal-500/10 dark:border-teal-500/30 dark:text-teal-300 font-black">+{row.received}</span> : <span className="text-slate-300">—</span>}</td>
-                                <td className="p-3 text-center font-black text-sm">
-                                  <span className={isOwed ? "text-amber-600 dark:text-amber-400" : isDebtor ? "text-rose-600 dark:text-rose-400" : "text-slate-400"}>
-                                    {row.balance > 0 ? `+${row.balance}` : row.balance}
-                                  </span>
-                                  {isOwed && row.swapsPending === 0 && <span className="ml-1 text-[8px] text-amber-500">(owed)</span>}
-                                  {isDebtor && row.swapsPending === 0 && <span className="ml-1 text-[8px] text-rose-500">(owes)</span>}
-                                </td>
-                                <td className="p-3 text-center">{row.swapsPending > 0 ? <span className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-200 text-amber-800 dark:bg-amber-500/20 dark:border-amber-500/30 dark:text-amber-300 text-[8.5px] font-black">{row.swapsPending} pending</span> : <span className="text-slate-300 text-[9px]">—</span>}</td>
-                                <td className="p-3 text-center">{row.swapsSettled > 0 ? <span className="px-2 py-0.5 rounded-full bg-teal-100 border border-teal-200 text-teal-800 dark:bg-teal-500/20 dark:border-teal-500/30 dark:text-teal-300 text-[8.5px] font-black">{row.swapsSettled} settled</span> : <span className="text-slate-300 text-[9px]">—</span>}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </Panel>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* ══ TAB: MENTOR ATTENDANCE ══ */}
-          {activeTab === "mentor_attendance" && (
-            <div data-kam-panel>
-              <KAMMentorAttendanceTab kamId={currentKAM?.id || "kam_1"} />
-            </div>
-          )}
-
-          {/* ══ TAB: PROFILE ══ */}
-          {activeTab === "profile" && (
-            /* Bug 11 fix: show empty state when currentKAM is null */
-            !currentKAM ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-4 text-center" data-kam-panel>
-                <div className="h-16 w-16 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                  <User className="h-8 w-8 text-slate-400" />
-                </div>
-                <p className="text-sm font-bold text-slate-600 dark:text-slate-400">No KAM profile loaded.</p>
-                <p className="text-xs text-slate-400">Please log in as a Key Account Manager to view this page.</p>
-              </div>
-            ) : (
-            <div className="space-y-6 max-w-4xl mx-auto w-full" data-kam-panel>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Identity card */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-xl shadow-sm flex flex-col items-center justify-between text-center min-h-[300px]">
-                  <div className="flex flex-col items-center space-y-4 w-full">
-                    <div className="h-20 w-20 rounded-full bg-gradient-to-br from-indigo-500 to-[#D528A2] border-4 border-white dark:border-slate-800 text-white flex items-center justify-center text-3xl font-black shadow-lg uppercase">
-                      {currentKAM.name.substring(0, 2)}
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-extrabold text-slate-800 dark:text-white leading-tight">{currentKAM.name}</h2>
-                      <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider mt-1">Key Account Manager</p>
-                      {currentKAM.title && currentKAM.title !== "Key Account Manager" && (
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{currentKAM.title}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="w-full border-t border-slate-100 dark:border-white/10 pt-4 mt-4 text-left space-y-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                    <div className="flex justify-between gap-2"><span>Manager ID</span><span className="text-slate-800 dark:text-white font-mono text-right truncate max-w-[150px]">{currentKAM.id}</span></div>
-                    <div className="flex justify-between gap-2"><span>Email</span><span className="text-slate-800 dark:text-white truncate max-w-[150px] text-right">{currentKAM.email}</span></div>
-                    <div className="flex justify-between gap-2"><span>Portfolio</span><span className="text-indigo-600 dark:text-indigo-400 font-bold">{activeColleges.length} campus{activeColleges.length !== 1 ? "es" : ""}</span></div>
-                  </div>
-                </div>
-
-                {/* Jurisdiction card */}
-                <div className="md:col-span-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-xl shadow-sm space-y-6 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/40 flex items-start gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
                   <div>
-                    <h3 className="text-xs font-black text-indigo-600 dark:text-indigo-300 uppercase tracking-widest mb-4">Operations & Jurisdiction</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                      {[
-                        { label: "Role Type", main: "Key Account Manager", sub: "Regional Operations Coordinator" },
-                        { label: "Scope of Authority", main: "Multi-Campus Portfolios", sub: "Aided & Self-Financed Campuses" },
-                        { label: "Campus Allocations", main: `${activeColleges.length} Campuses`, sub: "FPC Regional Portfolio" },
-                        { label: "Security Level", main: "Level 3 Regional Head", sub: "Policy Oversight & Audits" },
-                      ].map(item => (
-                        <div key={item.label} className="space-y-0.5">
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block">{item.label}</span>
-                          <span className="text-sm font-extrabold text-slate-800 dark:text-white block">{item.main}</span>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 block">{item.sub}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <h4 className="text-xs font-bold text-slate-800">All Escalations Resolved</h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5 font-semibold leading-relaxed">
+                      Zero critical open blockages reported across SDNB Vaishnav College or partner campuses.
+                    </p>
                   </div>
-                  <div className="bg-indigo-50/50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 p-4 rounded-xl flex items-center gap-3">
-                    <Compass className="h-5 w-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                    <div className="text-[11px] text-indigo-700 dark:text-indigo-200 font-semibold leading-normal">
-                      Your KAM authority covers regional resource planning, campus-level SLA verification, escalations audit, and overall academic policy enforcement.
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Portfolio metrics — all scoped to this KAM's portfolio */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7 rounded-xl shadow-sm space-y-5">
-                <h3 className="text-xs font-black text-indigo-600 dark:text-indigo-300 uppercase tracking-widest">Regional Network Metrics</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-                  {[
-                    { label: "Colleges", value: activeColleges.length, sub: "in portfolio", bg: "bg-indigo-50 dark:bg-indigo-500/10", border: "border-indigo-100 dark:border-indigo-500/20", text: "text-indigo-600 dark:text-indigo-400" },
-                    { label: "Faculty", value: totalMentors, sub: "managed mentors", bg: "bg-purple-50 dark:bg-purple-500/10", border: "border-purple-100 dark:border-purple-500/20", text: "text-purple-600 dark:text-purple-400" },
-                    { label: "Students", value: totalStudents, sub: "across campuses", bg: "bg-emerald-50 dark:bg-emerald-500/10", border: "border-emerald-100 dark:border-emerald-500/20", text: "text-emerald-600 dark:text-emerald-400" },
-                    { label: "Total Slots", value: totalSlots, sub: "timetable entries", bg: "bg-amber-50 dark:bg-amber-500/10", border: "border-amber-100 dark:border-amber-500/20", text: "text-amber-600 dark:text-amber-400" },
-                    { label: "Escalations", value: totalOpenIssues, sub: "open issues", bg: totalOpenIssues > 0 ? "bg-rose-50 dark:bg-rose-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalOpenIssues > 0 ? "border-rose-100 dark:border-rose-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalOpenIssues > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400" },
-                    { label: "Pending Tasks", value: totalPendingTasks, sub: "awaiting CMs", bg: totalPendingTasks > 0 ? "bg-amber-50 dark:bg-amber-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalPendingTasks > 0 ? "border-amber-100 dark:border-amber-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalPendingTasks > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400" },
-                    { label: "Pending Requests", value: totalPendingRequests, sub: "handover queue", bg: totalPendingRequests > 0 ? "bg-amber-50 dark:bg-amber-500/10" : "bg-emerald-50 dark:bg-emerald-500/10", border: totalPendingRequests > 0 ? "border-amber-100 dark:border-amber-500/20" : "border-emerald-100 dark:border-emerald-500/20", text: totalPendingRequests > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400" },
-                    { label: "Subjects Mapped", value: subjectsList.filter(s => activeColleges.some(c => c.id === s.college_id)).length, sub: "curriculum entries", bg: "bg-teal-50 dark:bg-teal-500/10", border: "border-teal-100 dark:border-teal-500/20", text: "text-teal-600 dark:text-teal-400" },
-                  ].map(m => (
-                    <div key={m.label} className={`p-4 ${m.bg} rounded-xl border ${m.border}`}>
-                      <span className={`text-2xl font-extrabold ${m.text} block`}>{m.value}</span>
-                      <span className="text-[9px] text-slate-500 dark:text-slate-400 font-extrabold uppercase tracking-wider block mt-0.5">{m.label}</span>
-                      <span className="text-[8px] text-slate-400 block">{m.sub}</span>
-                    </div>
-                  ))}
                 </div>
               </div>
             </div>
-          ))}
+          )}
 
-          {/* ══ TAB: INTERVIEW MODULE ══ */}
-          {activeTab === "interviews" && (
-            <div className="space-y-6 animate-fadeIn">
-              <InterviewModule currentUserRole="kam" currentUserName={currentKAM?.name || "Key Account Manager"} />
+          {/* ── TAB 10: KAM PROFILE ── */}
+          {activeTab === "profile" && (
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-6 max-w-xl">
+              <div className="flex items-center gap-4">
+                <div className="h-16 w-16 rounded-2xl bg-gradient-to-tr from-[#D528A2] to-pink-500 text-white flex items-center justify-center font-black text-xl shadow-md">
+                  <User className="h-8 w-8" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">{currentKAM?.name || "Key Account Manager"}</h3>
+                  <p className="text-xs text-slate-400 font-semibold">{currentKAM?.email || "kam@faceprep.in"}</p>
+                  <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#D528A2]/10 text-[#D528A2]">
+                    Key Account Manager
+                  </span>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-4 space-y-3 text-xs font-semibold">
+                <div className="flex justify-between py-1.5 border-b border-slate-50">
+                  <span className="text-slate-400">Assigned Campuses:</span>
+                  <span className="font-bold text-slate-800">{colleges.length} Institutions</span>
+                </div>
+                <div className="flex justify-between py-1.5 border-b border-slate-50">
+                  <span className="text-slate-400">Total Supervised Students:</span>
+                  <span className="font-bold text-slate-800">{students.length} Enrolled</span>
+                </div>
+                <div className="flex justify-between py-1.5">
+                  <span className="text-slate-400">Direct CAM Reports:</span>
+                  <span className="font-bold text-indigo-600">Active</span>
+                </div>
+              </div>
             </div>
           )}
         </div>
       </main>
 
-      {/* ── Set Day Order Modal ── */}
-      {selectedDayConfigCollege && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-scaleUp">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div>
-                <h3 className="text-sm font-black text-slate-800 dark:text-white">Set Day Order & Status</h3>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">{selectedDayConfigCollege.name}</p>
-              </div>
-              <button onClick={() => setSelectedDayConfigCollege(null)} className="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer">✕</button>
-            </div>
-
-            <form onSubmit={handleSaveDayConfig} className="space-y-4 text-xs font-semibold">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">From Date</label>
-                  <input type="date" value={dayStartDate} onChange={e => {
-                    setDayStartDate(e.target.value);
-                    if (e.target.value > dayEndDate) setDayEndDate(e.target.value);
-                  }} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold" required />
-                </div>
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">To Date</label>
-                  <input type="date" value={dayEndDate} min={dayStartDate} onChange={e => setDayEndDate(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold" required />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Day Type</label>
-                  <select value={dayOrderType} onChange={e => {
-                    setDayOrderType(e.target.value);
-                    if (e.target.value === "holiday") setDayOrderVal("None");
-                    else if (dayOrderVal === "None") setDayOrderVal("Day 1");
-                  }} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold">
-                    <option value="regular">Working Day</option>
-                    <option value="holiday">Holiday</option>
-                    <option value="event">Event</option>
-                    <option value="exam_day">Exam Day</option>
-                    <option value="special">Special Day</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Day Order</label>
-                  <select value={dayOrderVal} onChange={e => setDayOrderVal(e.target.value)} disabled={dayOrderType === "holiday"} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold disabled:opacity-50">
-                    <option value="Day 1">Day 1</option>
-                    <option value="Day 2">Day 2</option>
-                    <option value="Day 3">Day 3</option>
-                    <option value="Day 4">Day 4</option>
-                    <option value="Day 5">Day 5</option>
-                    <option value="None">None</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Session Mode</label>
-                <select value={daySessionMode} onChange={e => setDaySessionMode(e.target.value)} disabled={dayOrderType === "holiday"} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold disabled:opacity-50">
-                  <option value="Offline">Offline</option>
-                  <option value="Online">Online</option>
-                  <option value="Hybrid">Hybrid</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Reason / Operational Notes</label>
-                <textarea value={dayNotes} onChange={e => setDayNotes(e.target.value)} placeholder="Optional context for faculty and students..." className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-semibold h-20" />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setSelectedDayConfigCollege(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer">Cancel</button>
-                <button type="submit" disabled={savingDayConfig} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow-md cursor-pointer">
-                  {savingDayConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Configuration"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Student 360 Modal */}
+      {selectedStudentFor360 && (
+        <Student360
+          studentId={selectedStudentFor360}
+          onClose={() => setSelectedStudentFor360(null)}
+        />
       )}
 
-      {/* ── Broadcast Announcement Modal ── */}
-      {showAnnouncementModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-scaleUp">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div>
-                <h3 className="text-sm font-black text-slate-800 dark:text-white">Broadcast Announcement</h3>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">Publish to faculty or students across your portfolio</p>
-              </div>
-              <button onClick={() => setShowAnnouncementModal(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer">✕</button>
-            </div>
-
-            <form onSubmit={handlePostAnnouncement} className="space-y-4 text-xs font-semibold">
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Announcement Title</label>
-                <input type="text" value={annTitle} onChange={e => setAnnTitle(e.target.value)} placeholder="e.g. Schedule Revision for Upcoming Midterms" className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold" required />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Target Role</label>
-                  <select value={annTargetRole} onChange={e => setAnnTargetRole(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold">
-                    <option value="all">All Roles (Faculty & Students)</option>
-                    <option value="mentor">Faculty / Mentors Only</option>
-                    <option value="student">Students Only</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Target Campus</label>
-                  <select value={annCollegeId} onChange={e => setAnnCollegeId(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold">
-                    <option value="">All Campuses in Portfolio</option>
-                    {activeColleges.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Announcement Details</label>
-                <textarea value={annDesc} onChange={e => setAnnDesc(e.target.value)} placeholder="Provide complete details..." className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-xs font-semibold h-24" />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setShowAnnouncementModal(false)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer">Cancel</button>
-                <button type="submit" disabled={postingAnn} className="px-5 py-2 bg-gradient-to-r from-indigo-500 to-[#D528A2] text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow-md cursor-pointer">
-                  {postingAnn ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publish Announcement"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Mentor 360 Modal */}
+      {selectedMentorFor360 && (
+        <Mentor360
+          mentorId={selectedMentorFor360}
+          onClose={() => setSelectedMentorFor360(null)}
+        />
       )}
     </div>
   );
-};
+}
 
+export default KAMDashboard;

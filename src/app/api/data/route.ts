@@ -129,7 +129,8 @@ export async function GET(request: Request) {
       interviewEvaluations,
       approvals,
       leaveBalances,
-      departmentsData
+      departmentsData,
+      academicTracker
     ] = await Promise.all([
       db.all(mentorSql, ...mentorParams),
       db.all(slotSql, ...slotParams),
@@ -179,7 +180,10 @@ export async function GET(request: Request) {
       !isStudent ? db.all("SELECT * FROM interview_evaluations ORDER BY created_at DESC LIMIT 50").catch(() => []) : Promise.resolve([]),
       isAdminOrKAM ? db.all("SELECT * FROM approvals ORDER BY created_at DESC LIMIT 50").catch(() => []) : Promise.resolve([]),
       !isStudent ? db.all("SELECT * FROM leave_balances LIMIT 50").catch(() => []) : Promise.resolve([]),
-      db.all(departmentSql, ...departmentParams).catch(() => [])
+      db.all(departmentSql, ...departmentParams).catch(() => []),
+      collegeId
+        ? db.all("SELECT * FROM academic_tracker WHERE college_id = ? OR mentor_id IN (SELECT id FROM mentors WHERE college_id = ?) ORDER BY date DESC, period_slot ASC LIMIT 300", collegeId, collegeId).catch(() => [])
+        : db.all("SELECT * FROM academic_tracker ORDER BY date DESC, period_slot ASC LIMIT 300").catch(() => [])
     ]);
 
     let filteredColleges = colleges;
@@ -264,7 +268,8 @@ export async function GET(request: Request) {
       interviews: studentInterviews || [],
       interviewEvaluations: interviewEvaluations || [],
       approvals: approvals || [],
-      leaveBalances: leaveBalances || []
+      leaveBalances: leaveBalances || [],
+      academicTracker: academicTracker || []
     }, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate"
@@ -296,6 +301,7 @@ export async function GET(request: Request) {
       users: [],
       weeklyTasks: [],
       studentTracker: [],
+      academicTracker: [],
       smes: [],
       demoSessions: [],
       subjectGroups: [],
