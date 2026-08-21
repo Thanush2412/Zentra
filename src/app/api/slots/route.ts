@@ -128,6 +128,7 @@ export async function DELETE(request: Request) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     const classGroup = searchParams.get("classGroup");
+    const collegeId = searchParams.get("college_id") || searchParams.get("collegeId");
     const actorName = searchParams.get("actorName") || "System";
     const actorRole = searchParams.get("actorRole") || "User";
 
@@ -141,7 +142,10 @@ export async function DELETE(request: Request) {
       const baseCG = cleanCG.replace(/\s*\([^)]*\)/g, "").trim();
       const normBaseCG = baseCG.replace(/[^a-z0-9]/g, "");
 
-      const allSlots = await db.all("SELECT id, classGroup, course FROM slots");
+      const allSlots = collegeId
+        ? await db.all("SELECT id, classGroup, course, college_id FROM slots WHERE college_id = ?", collegeId)
+        : await db.all("SELECT id, classGroup, course, college_id FROM slots");
+
       const matchedSlotIds = allSlots.filter(s => {
         if (!s.classGroup) return false;
         const sCG = s.classGroup.toLowerCase().trim();
@@ -149,13 +153,12 @@ export async function DELETE(request: Request) {
         const sBase = sCG.replace(/\s*\([^)]*\)/g, "").trim();
         const sNormBase = sBase.replace(/[^a-z0-9]/g, "");
 
+        // Strict exact match or base-name match (stripping year brackets), NEVER loose partial substring match
         return (
           sCG === cleanCG ||
           sNorm === normCG ||
           sBase === baseCG ||
-          sNormBase === normBaseCG ||
-          (normBaseCG.length > 3 && sNorm.includes(normBaseCG)) ||
-          (sNormBase.length > 3 && normCG.includes(sNormBase))
+          sNormBase === normBaseCG
         );
       }).map(s => s.id);
 

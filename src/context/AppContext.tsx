@@ -2236,9 +2236,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const actorName = currentCAM?.name || currentKAM?.name || "System";
       const actorRole = currentRole === "cam" ? "Campus Manager" : "Key Account Manager";
+      const targetCollegeId = currentCAM?.college_id || activeCollegeId || "";
 
-      // Delete existing slots for this classGroup first
-      await fetch(`/api/slots?classGroup=${encodeURIComponent(classGroup)}&actorName=${encodeURIComponent(actorName)}&actorRole=${encodeURIComponent(actorRole)}`, {
+      // Delete existing slots for this classGroup first (strictly scoped to this college)
+      await fetch(`/api/slots?classGroup=${encodeURIComponent(classGroup)}&college_id=${encodeURIComponent(targetCollegeId)}&actorName=${encodeURIComponent(actorName)}&actorRole=${encodeURIComponent(actorRole)}`, {
         method: "DELETE"
       });
 
@@ -2263,8 +2264,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const actorName = currentCAM?.name || currentKAM?.name || "System";
       const actorRole = currentRole === "cam" ? "Campus Manager" : "Key Account Manager";
+      const targetCollegeId = currentCAM?.college_id || activeCollegeId || "";
 
-      const res = await fetch(`/api/slots?classGroup=${encodeURIComponent(classGroup)}&actorName=${encodeURIComponent(actorName)}&actorRole=${encodeURIComponent(actorRole)}`, {
+      const res = await fetch(`/api/slots?classGroup=${encodeURIComponent(classGroup)}&college_id=${encodeURIComponent(targetCollegeId)}&actorName=${encodeURIComponent(actorName)}&actorRole=${encodeURIComponent(actorRole)}`, {
         method: "DELETE"
       });
       const data = await res.json();
