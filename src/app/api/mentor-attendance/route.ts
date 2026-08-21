@@ -1,6 +1,8 @@
 // Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
 export const preferredRegion = "bom1";
 export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
@@ -29,19 +31,100 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, records, dateStr });
     }
 
-    // 2. Fetch attendance for a specific college on a date
+    // 2. Fetch attendance for a specific college (single date or date range)
     if (collegeId) {
+      const startDate = searchParams.get("startDate");
+      const endDate = searchParams.get("endDate");
+      const isRange = Boolean(startDate && endDate);
+
       const mentors = await db.all(
         `SELECT m.id, m.name, m.email, m.department, m.college_id, m.subject_group, m.mentor_group
          FROM mentors m
-         WHERE m.college_id = ?
+         WHERE LOWER(m.college_id) = LOWER(?)
          ORDER BY m.name ASC`,
         [collegeId]
       );
 
+      if (isRange) {
+        const attendanceRecords = await db.all(
+          `SELECT * FROM mentor_attendance 
+           WHERE (LOWER(college_id) = LOWER(?) OR mentor_id IN (SELECT id FROM mentors WHERE LOWER(college_id) = LOWER(?)))
+             AND date_str >= ? AND date_str <= ?
+           ORDER BY date_str ASC`,
+          [collegeId, collegeId, startDate, endDate]
+        );
+
+        // Group attendance by mentor_id
+        const mentorAttMap = new Map<string, any[]>();
+        const distinctDates = Array.from(new Set(attendanceRecords.map(r => r.date_str))).sort();
+
+        attendanceRecords.forEach(r => {
+          if (!mentorAttMap.has(r.mentor_id)) mentorAttMap.set(r.mentor_id, []);
+          mentorAttMap.get(r.mentor_id)!.push(r);
+        });
+
+        const combined = mentors.map(m => {
+          const mRecords = mentorAttMap.get(m.id) || [];
+          const recordMap = new Map(mRecords.map(r => [r.date_str, r]));
+          
+          const present = mRecords.filter(r => r.status === "Present").length;
+          const od = mRecords.filter(r => r.status === "OD").length;
+          const leave = mRecords.filter(r => r.status === "Leave").length;
+          const absent = mRecords.filter(r => r.status === "Absent").length;
+          const halfDay = mRecords.filter(r => r.status === "Half-Day").length;
+          const recordedDays = mRecords.length;
+          const totalDays = distinctDates.length || 1;
+          const pct = totalDays > 0 ? (((present + od + (halfDay * 0.5)) / totalDays) * 100).toFixed(1) : "0.0";
+
+          return {
+            mentorId: m.id,
+            name: m.name,
+            email: m.email,
+            department: m.department || "General",
+            collegeId: m.college_id,
+            presentDays: present,
+            odDays: od,
+            leaveDays: leave,
+            absentDays: absent,
+            halfDays: halfDay,
+            recordedDays,
+            totalDays,
+            attendancePct: pct,
+            status: mRecords.length > 0 ? mRecords[mRecords.length - 1].status : "Not Punched",
+            punchInTime: mRecords.length > 0 ? mRecords[mRecords.length - 1].punch_in_time : null,
+            punchOutTime: mRecords.length > 0 ? mRecords[mRecords.length - 1].punch_out_time : null,
+            dailyMap: Object.fromEntries(mRecords.map(r => [r.date_str, { status: r.status, punchIn: r.punch_in_time, reason: r.reason }])),
+            history: mRecords
+          };
+        });
+
+        return NextResponse.json({
+          success: true,
+          isRange: true,
+          startDate,
+          endDate,
+          distinctDates,
+          records: combined,
+          summary: {
+            totalMentors: mentors.length,
+            totalDays: distinctDates.length,
+            totalPresentSlots: attendanceRecords.filter(r => r.status === "Present").length,
+            totalODSlots: attendanceRecords.filter(r => r.status === "OD").length,
+            totalLeaveSlots: attendanceRecords.filter(r => r.status === "Leave").length,
+            totalAbsentSlots: attendanceRecords.filter(r => r.status === "Absent").length,
+            avgAttendancePct: combined.length > 0
+              ? (combined.reduce((acc, c) => acc + parseFloat(c.attendancePct), 0) / combined.length).toFixed(1)
+              : "0.0"
+          }
+        });
+      }
+
+      // Single Date logic
       const attendanceRecords = await db.all(
-        `SELECT * FROM mentor_attendance WHERE college_id = ? AND date_str = ?`,
-        [collegeId, dateStr]
+        `SELECT * FROM mentor_attendance 
+         WHERE (LOWER(college_id) = LOWER(?) OR mentor_id IN (SELECT id FROM mentors WHERE LOWER(college_id) = LOWER(?))) 
+           AND date_str = ?`,
+        [collegeId, collegeId, dateStr]
       );
 
       const attendanceMap = new Map(attendanceRecords.map(r => [r.mentor_id, r]));
@@ -66,6 +149,7 @@ export async function GET(request: Request) {
 
       return NextResponse.json({
         success: true,
+        isRange: false,
         dateStr,
         records: combined,
         summary: {
@@ -166,7 +250,12 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { action } = body;
 
-    const currentTime = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" });
+    const currentTime = new Date().toLocaleTimeString("en-US", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true
+    });
 
     // 1. Bulk mark all unpunched mentors in a college as Present
     if (action === "bulk_present") {

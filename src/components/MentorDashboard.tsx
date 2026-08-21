@@ -54,6 +54,22 @@ import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetai
 import { MentorProfileModal } from "./MentorProfileModal";
 import { Pagination } from "@/components/ui/Pagination";
 
+const formatPunchTime = (timeStr?: string | null) => {
+  if (!timeStr) return "—";
+  if (timeStr.includes("AM") || timeStr.includes("PM")) return timeStr;
+  const parts = timeStr.split(":");
+  if (parts.length >= 2) {
+    let hours = parseInt(parts[0], 10);
+    const mins = parts[1].slice(0, 2);
+    if (!isNaN(hours)) {
+      const ampm = hours >= 12 ? "PM" : "AM";
+      const displayHours = hours % 12 || 12;
+      return `${String(displayHours).padStart(2, "0")}:${mins} ${ampm}`;
+    }
+  }
+  return timeStr;
+};
+
 /* ─── Mentor Daily Attendance Punch Widget ─── */
 const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   const { toast } = useToast();
@@ -75,7 +91,17 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
 
   // College start time & 30-minute deadline calculation
   const collegeObj = colleges.find(c => c.id === mentor.college_id);
-  const collegeStartTimeStr = collegeObj?.start_time || "08:30 AM";
+  const collegeStartTimeStr = useMemo(() => {
+    if ((collegeObj as any)?.start_time) return (collegeObj as any).start_time;
+    if (collegeObj?.shift_configs) {
+      try {
+        const parsed = typeof collegeObj.shift_configs === "string" ? JSON.parse(collegeObj.shift_configs) : collegeObj.shift_configs;
+        const customStart = parsed?.custom_shift_params?.general?.startTime || parsed?.general?.[0]?.split("-")[0]?.trim();
+        if (customStart) return customStart;
+      } catch (_) {}
+    }
+    return "08:30 AM";
+  }, [collegeObj]);
 
   const { isDeadlinePassed, collegeStartTimeFormatted, deadlineTimeFormatted } = useMemo(() => {
     const match = collegeStartTimeStr.match(/(\d{1,2})[.:]\s*(\d{2})\s*(A\.?M\.?|P\.?M\.?)/i);
@@ -167,7 +193,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
       if (json.success) {
         toast(`Daily attendance marked as ${status}!`, "success");
         setPunchStatus(status);
-        setPunchTime(new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" }));
+        setPunchTime(new Date().toLocaleTimeString("en-US", { hour12: true, hour: "2-digit", minute: "2-digit" }));
         setPunchReason(reasonText || null);
         setShowReasonInput(false);
       } else {
@@ -835,7 +861,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
                         {log.status === "Leave" && <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black uppercase">On Leave</span>}
                         {log.status === "Absent" && <span className="px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase">Absent</span>}
                       </td>
-                      <td className="p-3 font-mono text-[11px] text-slate-700">{log.punch_in_time || "—"}</td>
+                      <td className="p-3 font-mono text-[11px] text-slate-700">{formatPunchTime(log.punch_in_time)}</td>
                       <td className="p-3 text-[11px] text-slate-600 font-semibold capitalize">{log.marked_by || "Self"}</td>
                       <td className="p-3 text-[11px] italic text-slate-600 max-w-[280px] truncate" title={log.reason || ""}>
                         {log.reason || "—"}

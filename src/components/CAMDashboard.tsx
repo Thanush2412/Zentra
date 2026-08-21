@@ -1373,20 +1373,58 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
   const [selectedDept, setSelectedDept] = useState("all");
   const [markingMentorId, setMarkingMentorId] = useState<string | null>(null);
 
+  // Date Range state for Mentor Attendance
+  const [dateMode, setDateMode] = useState<"single" | "range">("single");
+  const [startDate, setStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().split("T")[0];
+  });
+  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
+  const [distinctDates, setDistinctDates] = useState<string[]>([]);
+
   // OD / Leave Reason Modal State
   const [showReasonModal, setShowReasonModal] = useState(false);
   const [activeReasonMentor, setActiveReasonMentor] = useState<any>(null);
   const [pendingStatus, setPendingStatus] = useState<"OD" | "Leave" | "Absent" | "Present">("OD");
   const [reasonText, setReasonText] = useState("");
 
+  const formatPunchTime = (timeStr?: string | null) => {
+    if (!timeStr) return "—";
+    if (timeStr.includes("AM") || timeStr.includes("PM")) return timeStr;
+    const parts = timeStr.split(":");
+    if (parts.length >= 2) {
+      let hours = parseInt(parts[0], 10);
+      const mins = parts[1].slice(0, 2);
+      if (!isNaN(hours)) {
+        // If hour was saved as UTC hour (0-11 during Indian day):
+        // Note: 03:50 UTC corresponds to 09:20 IST (+5:30)
+        const ampm = hours >= 12 ? "PM" : "AM";
+        const displayHours = hours % 12 || 12;
+        return `${String(displayHours).padStart(2, "0")}:${mins} ${ampm}`;
+      }
+    }
+    return timeStr;
+  };
+
   const fetchAttendance = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/mentor-attendance?collegeId=${encodeURIComponent(collegeId)}&dateStr=${encodeURIComponent(dateStr)}`);
+      let url = `/api/mentor-attendance?collegeId=${encodeURIComponent(collegeId)}`;
+      if (dateMode === "range") {
+        url += `&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
+      } else {
+        url += `&dateStr=${encodeURIComponent(dateStr)}`;
+      }
+
+      const res = await fetch(url);
       const json = await res.json();
       if (json.success) {
         setRecords(json.records || []);
         setSummary(json.summary || { total: 0, present: 0, od: 0, leave: 0, absent: 0, unpunched: 0 });
+        if (json.distinctDates) {
+          setDistinctDates(json.distinctDates);
+        }
       }
     } catch (e) {
       console.error(e);
@@ -1398,7 +1436,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
 
   useEffect(() => {
     fetchAttendance();
-  }, [collegeId, dateStr]);
+  }, [collegeId, dateStr, dateMode, startDate, endDate]);
 
   const handlePunchStatus = async (mentorId: string, status: "Present" | "OD" | "Leave" | "Absent", reasonStr?: string) => {
     setMarkingMentorId(mentorId);
@@ -1461,29 +1499,96 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
   const handleExportMentorAttendance = async () => {
     try {
       const XLSX = await import("xlsx");
-      const headers = ["S.No", "Faculty Name", "Email", "Department", "Date", "Status", "Punch Time", "Remarks"];
-      const rows = records.map((r: any, idx: number) => [
-        idx + 1,
-        r.name || "—",
-        r.email || "—",
-        r.department || "General",
-        dateStr,
-        r.status || "Not Punched",
-        r.punchInTime || "—",
-        r.reason || "—"
-      ]);
-      const summaryRows = [
-        [],
-        ["Summary", "", "", "", "", "", "", ""],
-        ["Total", summary.total, "Present", summary.present, "OD", summary.od, "Leave", summary.leave],
-        ["Absent", summary.absent, "Unpunched", summary.unpunched, "", "", "", ""]
-      ];
-      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows, ...summaryRows]);
-      ws["!cols"] = [{ wch: 6 }, { wch: 26 }, { wch: 28 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Mentor Attendance");
-      XLSX.writeFile(wb, `Mentor_Attendance_${dateStr}.xlsx`);
-      toast(`Exported mentor attendance for ${dateStr}`, "success");
+
+      if (dateMode === "range") {
+        // ── 1. Range Summary Sheet ──
+        const summaryHeaders = [
+          "S.No", "Faculty Name", "Email", "Department", "From Date", "To Date",
+          "Total Working Days", "Present Days", "OD Days", "Leave Days", "Absent Days", "Attendance Rate (%)"
+        ];
+        const summaryData = records.map((r: any, idx: number) => [
+          idx + 1,
+          r.name || "—",
+          r.email || "—",
+          r.department || "General",
+          startDate,
+          endDate,
+          r.totalDays || distinctDates.length,
+          r.presentDays || 0,
+          r.odDays || 0,
+          r.leaveDays || 0,
+          r.absentDays || 0,
+          `${r.attendancePct || "0.0"}%`
+        ]);
+
+        const wsSummary = XLSX.utils.aoa_to_sheet([
+          [`FACULTY ATTENDANCE SUMMARY REPORT (${startDate} to ${endDate})`],
+          [],
+          summaryHeaders,
+          ...summaryData,
+          [],
+          ["TEAM AGGREGATE SUMMARY"],
+          ["Total Faculty", summary.totalMentors || records.length],
+          ["Total Days in Period", summary.totalDays || distinctDates.length],
+          ["Team Average Attendance", `${summary.avgAttendancePct || "0.0"}%`],
+          ["Total Present Days Recorded", summary.totalPresentSlots || 0],
+          ["Total OD Days Recorded", summary.totalODSlots || 0],
+          ["Total Leave Days Recorded", summary.totalLeaveSlots || 0],
+          ["Total Absent Days Recorded", summary.totalAbsentSlots || 0]
+        ]);
+        wsSummary["!cols"] = [{ wch: 6 }, { wch: 26 }, { wch: 28 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 18 }];
+        XLSX.utils.book_append_sheet(wb, wsSummary, "Team Summary");
+
+        // ── 2. Daily Attendance Matrix Sheet ──
+        if (distinctDates.length > 0) {
+          const matrixHeaders = ["S.No", "Faculty Name", "Department", ...distinctDates];
+          const matrixData = records.map((r: any, idx: number) => {
+            const row = [idx + 1, r.name, r.department || "General"];
+            distinctDates.forEach(d => {
+              const dayRec = r.dailyMap?.[d];
+              row.push(dayRec ? (dayRec.status === "Present" ? "P" : dayRec.status === "OD" ? "OD" : dayRec.status === "Leave" ? "L" : dayRec.status === "Absent" ? "AB" : dayRec.status) : "—");
+            });
+            return row;
+          });
+
+          const wsMatrix = XLSX.utils.aoa_to_sheet([
+            [`FACULTY DAILY ATTENDANCE MATRIX (${startDate} to ${endDate})`],
+            [],
+            matrixHeaders,
+            ...matrixData
+          ]);
+          wsMatrix["!cols"] = [{ wch: 6 }, { wch: 26 }, { wch: 18 }, ...distinctDates.map(() => ({ wch: 12 }))];
+          XLSX.utils.book_append_sheet(wb, wsMatrix, "Daily Matrix");
+        }
+
+        XLSX.writeFile(wb, `Faculty_Attendance_${startDate}_to_${endDate}.xlsx`);
+        toast(`Exported team attendance from ${startDate} to ${endDate}`, "success");
+      } else {
+        // ── Single Day Export ──
+        const headers = ["S.No", "Faculty Name", "Email", "Department", "Date", "Status", "Punch Time", "Remarks"];
+        const rows = records.map((r: any, idx: number) => [
+          idx + 1,
+          r.name || "—",
+          r.email || "—",
+          r.department || "General",
+          dateStr,
+          r.status || "Not Punched",
+          r.punchInTime || "—",
+          r.reason || "—"
+        ]);
+        const summaryRows = [
+          [],
+          ["Summary", "", "", "", "", "", "", ""],
+          ["Total", summary.total, "Present", summary.present, "OD", summary.od, "Leave", summary.leave],
+          ["Absent", summary.absent, "Unpunched", summary.unpunched, "", "", "", ""]
+        ];
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows, ...summaryRows]);
+        ws["!cols"] = [{ wch: 6 }, { wch: 26 }, { wch: 28 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
+        XLSX.utils.book_append_sheet(wb, ws, "Mentor Attendance");
+        XLSX.writeFile(wb, `Mentor_Attendance_${dateStr}.xlsx`);
+        toast(`Exported mentor attendance for ${dateStr}`, "success");
+      }
     } catch (err: any) {
       toast("Export failed: " + err.message, "error");
     }
@@ -1577,84 +1682,179 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
 
   return (
     <div className="space-y-6">
-      {/* Header & Date Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
-            <CalendarCheck2 className="h-5 w-5" />
+      {/* Header & SubView Selector */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="h-11 w-11 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 shadow-xs">
+              <CalendarCheck2 className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-base font-extrabold text-slate-800 leading-tight">Faculty &amp; Mentor Attendance Punching</h2>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Record daily presence, OD (On Duty) logs, or track cumulative team attendance across date ranges.
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base font-extrabold text-slate-800 leading-tight">Faculty &amp; Mentor Attendance Punching</h2>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Record daily presence, OD (On Duty) logs, or leave statuses for campus mentors.
-            </p>
+
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {/* SubView Selector */}
+            <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setSubView("roster")}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  subView === "roster"
+                    ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                Roster Punching
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubView("leave_approvals")}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  subView === "leave_approvals"
+                    ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                Leave Approvals
+                {facultyLeaveReqs.filter(r => r.status === "pending").length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white">
+                    {facultyLeaveReqs.filter(r => r.status === "pending").length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {subView === "roster" && (
+              <button
+                type="button"
+                onClick={handleExportMentorAttendance}
+                className="px-4 py-2 rounded-xl text-xs font-extrabold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Download className="h-4 w-4" />
+                {dateMode === "range" ? "Export Range Report (Excel)" : "Export Day Excel"}
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
-          {/* SubView Selector */}
-          <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-            <button
-              type="button"
-              onClick={() => setSubView("roster")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                subView === "roster"
-                  ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
-                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
-            >
-              Roster Punching
-            </button>
-            <button
-              type="button"
-              onClick={() => setSubView("leave_approvals")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                subView === "leave_approvals"
-                  ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
-                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
-            >
-              Leave Approvals
-              {facultyLeaveReqs.filter(r => r.status === "pending").length > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white">
-                  {facultyLeaveReqs.filter(r => r.status === "pending").length}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {subView === "roster" && (
-            <>
-              <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
-                <span className="text-xs font-bold text-slate-500 pl-2">Date:</span>
-                <input
-                  type="date"
-                  value={dateStr}
-                  onChange={(e) => setDateStr(e.target.value)}
-                  className="bg-white dark:bg-slate-900 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
-                />
+        {/* Second Row: Date & Range Controls Toolbar (when in roster mode) */}
+        {subView === "roster" && (
+          <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Date Mode Toggle */}
+              <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setDateMode("single")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    dateMode === "single"
+                      ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
+                      : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                  }`}
+                >
+                  Single Date
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDateMode("range")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    dateMode === "range"
+                      ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-700"
+                      : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                  }`}
+                >
+                  Date Range
+                </button>
               </div>
 
+              {dateMode === "single" ? (
+                <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <span className="text-xs font-bold text-slate-500 pl-2">Select Date:</span>
+                  <input
+                    type="date"
+                    value={dateStr}
+                    onChange={(e) => setDateStr(e.target.value)}
+                    className="bg-white dark:bg-slate-900 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <span className="text-xs font-bold text-slate-500 pl-2">From:</span>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="bg-white dark:bg-slate-900 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+                    />
+                    <span className="text-xs font-bold text-slate-500">To:</span>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="bg-white dark:bg-slate-900 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Range Presets */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const now = new Date();
+                        const mon = new Date(now);
+                        mon.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+                        setStartDate(mon.toISOString().split("T")[0]);
+                        setEndDate(now.toISOString().split("T")[0]);
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer transition-colors"
+                    >
+                      This Week
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const now = new Date();
+                        const first = new Date(now.getFullYear(), now.getMonth(), 1);
+                        setStartDate(first.toISOString().split("T")[0]);
+                        setEndDate(now.toISOString().split("T")[0]);
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer transition-colors"
+                    >
+                      This Month
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStartDate("2026-06-15");
+                        setEndDate(new Date().toISOString().split("T")[0]);
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 cursor-pointer transition-colors"
+                    >
+                      Semester (June - Aug)
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {dateMode === "single" && (
               <button
                 type="button"
                 onClick={handleBulkPresent}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
               >
                 <CheckCircle2 className="h-4 w-4" />
                 Mark All Present
               </button>
-
-              <button
-                type="button"
-                onClick={handleExportMentorAttendance}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-              >
-                <Download className="h-4 w-4" />
-                Export Excel
-              </button>
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {subView === "leave_approvals" ? (
@@ -1753,47 +1953,85 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
           {/* Summary KPI Cards + Bar Chart */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* KPI Cards */}
-            <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-xs">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Faculty</p>
-          <p className="text-xl font-black text-slate-900 mt-0.5">{summary.total}</p>
-        </div>
-        <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200/80 shadow-xs">
-          <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Present</p>
-          <p className="text-xl font-black text-emerald-700 mt-0.5">{summary.present}</p>
-        </div>
-        <div className="p-4 rounded-xl bg-indigo-50/60 border border-indigo-200/80 shadow-xs">
-          <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">On Duty (OD)</p>
-          <p className="text-xl font-black text-indigo-700 mt-0.5">{summary.od}</p>
-        </div>
-        <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200/80 shadow-xs">
-          <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">On Leave</p>
-          <p className="text-xl font-black text-amber-700 mt-0.5">{summary.leave}</p>
-        </div>
-        <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-200/80 shadow-xs">
-          <p className="text-[10px] font-bold text-rose-600 uppercase tracking-wider">Absent</p>
-          <p className="text-xl font-black text-rose-700 mt-0.5">{summary.absent}</p>
-        </div>
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Unpunched</p>
-          <p className="text-xl font-black text-slate-600 mt-0.5">{summary.unpunched}</p>
-        </div>
-            </div>
+            {dateMode === "range" ? (
+              <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Faculty</p>
+                  <p className="text-xl font-black text-slate-900 mt-0.5">{summary.totalMentors || records.length}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-indigo-50/60 border border-indigo-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Working Days</p>
+                  <p className="text-xl font-black text-indigo-700 mt-0.5">{summary.totalDays || distinctDates.length}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Team Avg Rate</p>
+                  <p className="text-xl font-black text-emerald-700 mt-0.5">{summary.avgAttendancePct || "0.0"}%</p>
+                </div>
+                <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Total Present Days</p>
+                  <p className="text-xl font-black text-emerald-700 mt-0.5">{summary.totalPresentSlots || 0}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-indigo-50/60 border border-indigo-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Total OD Days</p>
+                  <p className="text-xl font-black text-indigo-700 mt-0.5">{summary.totalODSlots || 0}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-rose-600 uppercase tracking-wider">Total Absent Days</p>
+                  <p className="text-xl font-black text-rose-700 mt-0.5">{summary.totalAbsentSlots || 0}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Faculty</p>
+                  <p className="text-xl font-black text-slate-900 mt-0.5">{summary.total}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Present</p>
+                  <p className="text-xl font-black text-emerald-700 mt-0.5">{summary.present}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-indigo-50/60 border border-indigo-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">On Duty (OD)</p>
+                  <p className="text-xl font-black text-indigo-700 mt-0.5">{summary.od}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">On Leave</p>
+                  <p className="text-xl font-black text-amber-700 mt-0.5">{summary.leave}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-rose-600 uppercase tracking-wider">Absent</p>
+                  <p className="text-xl font-black text-rose-700 mt-0.5">{summary.absent}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Unpunched</p>
+                  <p className="text-xl font-black text-slate-600 mt-0.5">{summary.unpunched}</p>
+                </div>
+              </div>
+            )}
 
             {/* Punch Distribution Bar Chart */}
             <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-xs flex flex-col">
-              <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-3">Today's Punch Distribution</p>
-              {summary.total > 0 ? (
-                <BarChart width={220} height={140} data={[
+              <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider mb-3">
+                {dateMode === "range" ? "Period Summary Distribution" : "Today's Punch Distribution"}
+              </p>
+              {records.length > 0 ? (
+                <BarChart width={220} height={140} data={
+                  dateMode === "range" ? [
+                    { name: "Present", value: summary.totalPresentSlots || 0 },
+                    { name: "OD", value: summary.totalODSlots || 0 },
+                    { name: "Leave", value: summary.totalLeaveSlots || 0 },
+                    { name: "Absent", value: summary.totalAbsentSlots || 0 },
+                  ] : [
                     { name: "Present", value: summary.present },
                     { name: "OD", value: summary.od },
                     { name: "Leave", value: summary.leave },
                     { name: "Absent", value: summary.absent },
                     { name: "—", value: summary.unpunched },
-                  ]} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                  ]
+                } margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
                     <XAxis dataKey="name" tick={{ fontSize: 9, fontWeight: 700 }} />
                     <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
-                    <Tooltip formatter={(val: any, name: any) => [`${val} faculty`, name]} />
+                    <Tooltip formatter={(val: any, name: any) => [`${val} records`, name]} />
                     <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                       {[
                         { fill: "#10b981" },
@@ -1846,30 +2084,85 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
         <div className="overflow-x-auto border border-slate-200 rounded-xl">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
-                <th className="p-3">Faculty / Mentor</th>
-                <th className="p-3">Department</th>
-                <th className="p-3">Punch Time</th>
-                <th className="p-3">Current Status</th>
-                <th className="p-3">OD / Remarks</th>
-                <th className="p-3 text-right">Quick Punch Actions</th>
-              </tr>
+              {dateMode === "range" ? (
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
+                  <th className="p-3">Faculty / Mentor</th>
+                  <th className="p-3">Department</th>
+                  <th className="p-3 text-center">Working Days</th>
+                  <th className="p-3 text-center">Present Days</th>
+                  <th className="p-3 text-center">OD Days</th>
+                  <th className="p-3 text-center">Leave Days</th>
+                  <th className="p-3 text-center">Absent Days</th>
+                  <th className="p-3 text-right">Attendance Rate</th>
+                </tr>
+              ) : (
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
+                  <th className="p-3">Faculty / Mentor</th>
+                  <th className="p-3">Department</th>
+                  <th className="p-3">Punch Time</th>
+                  <th className="p-3">Current Status</th>
+                  <th className="p-3">OD / Remarks</th>
+                  <th className="p-3 text-right">Quick Punch Actions</th>
+                </tr>
+              )}
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white font-medium text-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                  <td colSpan={dateMode === "range" ? 8 : 6} className="p-8 text-center text-slate-400 font-medium">
                     Loading mentor attendance records...
                   </td>
                 </tr>
               ) : filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                  <td colSpan={dateMode === "range" ? 8 : 6} className="p-8 text-center text-slate-400 font-medium">
                     No faculty found matching the selected filters.
                   </td>
                 </tr>
               ) : (
                 paginatedRecords.map((m) => {
+                  if (dateMode === "range") {
+                    const pct = parseFloat(m.attendancePct || "0");
+                    return (
+                      <tr key={m.mentorId} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3">
+                          <div className="font-extrabold text-slate-900">{m.name}</div>
+                          <div className="text-[10px] font-mono text-slate-400">{m.email}</div>
+                        </td>
+                        <td className="p-3">
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
+                            {m.department || "General"}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center font-bold text-slate-700">
+                          {m.totalDays || distinctDates.length}
+                        </td>
+                        <td className="p-3 text-center font-bold text-emerald-700">
+                          {m.presentDays || 0}
+                        </td>
+                        <td className="p-3 text-center font-bold text-indigo-700">
+                          {m.odDays || 0}
+                        </td>
+                        <td className="p-3 text-center font-bold text-amber-700">
+                          {m.leaveDays || 0}
+                        </td>
+                        <td className="p-3 text-center font-bold text-rose-700">
+                          {m.absentDays || 0}
+                        </td>
+                        <td className="p-3 text-right">
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black ${
+                            pct >= 85 ? "bg-emerald-100 text-emerald-800" :
+                            pct >= 75 ? "bg-indigo-100 text-indigo-800" :
+                            pct >= 60 ? "bg-amber-100 text-amber-800" :
+                            "bg-rose-100 text-rose-800"
+                          }`}>
+                            {m.attendancePct || "0.0"}%
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  }
+
                   const isMarking = markingMentorId === m.mentorId;
                   return (
                     <tr key={m.mentorId} className="hover:bg-slate-50/80 transition-colors">
@@ -1883,7 +2176,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
                         </span>
                       </td>
                       <td className="p-3 font-mono text-[11px] text-slate-600">
-                        {m.punchInTime || <span className="text-slate-350 italic">—</span>}
+                        {formatPunchTime(m.punchInTime)}
                       </td>
                       <td className="p-3">
                         {m.status === "Present" && (
@@ -1906,20 +2199,14 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
                             <XCircle className="h-3 w-3 text-rose-600" /> Absent
                           </span>
                         )}
-                        {m.status === "Not Punched" && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold">
-                            Pending Punch
+                        {(!m.status || m.status === "Not Punched") && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold text-slate-400 bg-slate-100">
+                            Unpunched
                           </span>
                         )}
                       </td>
-                      <td className="p-3 text-[11px] text-slate-600 max-w-[200px] truncate">
-                        {m.reason ? (
-                          <span className="italic text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100" title={m.reason}>
-                            {m.reason}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300 italic">—</span>
-                        )}
+                      <td className="p-3 text-[11px] italic text-slate-500 max-w-[150px] truncate" title={m.reason || ""}>
+                        {m.reason || <span className="text-slate-300">—</span>}
                       </td>
                       <td className="p-3 text-right">
                         <div className="flex items-center gap-1.5 justify-end">
