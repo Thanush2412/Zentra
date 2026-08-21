@@ -539,8 +539,11 @@ export function getDeptFromClassGroup(classGroup?: string): string {
   if (lower.includes("cc") || lower.includes("cloud")) {
     return "B.Sc. Computer Science with Cloud Computing";
   }
-  if (lower.includes("dm") || lower.includes("digital marketing")) {
-    return "BBA Digital Marketing and Business Analytics";
+  if (lower.includes("bca") || lower.includes("computer application")) {
+    return "BCA";
+  }
+  if (lower.includes("dm") || lower.includes("digital marketing") || (lower.includes("bba") && lower.includes("dm"))) {
+    return "BBA DM";
   }
   if (lower.includes("com") && lower.includes("banking")) {
     return "B.Com. Banking and FinTech";

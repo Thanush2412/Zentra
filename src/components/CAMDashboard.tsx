@@ -10069,18 +10069,19 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 <span>Export Excel</span>
                               </button>
 
-                              {/* Clear All Attendance */}
-                              <button
-                                type="button"
-                                onClick={handleClearAllAttendance}
-                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer active:scale-95"
-                                title="Wipe all recorded attendance for fresh import or testing"
-                              >
-                                <Trash2 className="h-3.5 w-3.5 text-rose-600" />
-                                <span>Clear</span>
-                              </button>
+                                {/* Clear All Attendance (Hidden / Disabled)
+                                <button
+                                  type="button"
+                                  onClick={handleClearAllAttendance}
+                                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer active:scale-95"
+                                  title="Wipe all recorded attendance for fresh import or testing"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                                  <span>Clear</span>
+                                </button>
+                                */}
+                              </div>
                             </div>
-                          </div>
 
                           {/* ── ATTENDANCE INFOGRAPHICS ROW (memoized component — only re-renders when chart data changes) ── */}
                           {attMonitoringStudentStats.length > 0 && (

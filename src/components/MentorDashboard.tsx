@@ -6417,22 +6417,24 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         })()}
 
         {(activeTab === "tracker") && (() => {
-          const mentorClassDepts = Array.from(new Set([
+          const rawDepts = [
             ...mentorClasses.map(c => getDeptFromClassGroup(c) || c),
             ...mySlots.map(s => s.department || getDeptFromClassGroup(s.classGroup) || "").filter(Boolean),
-            ...(currentMentor?.mentor_group ? [currentMentor.mentor_group] : [])
-          ])).filter(Boolean);
+            ...(currentMentor?.mentor_group ? [getDeptFromClassGroup(currentMentor.mentor_group)] : []),
+            ...(currentMentor?.department ? [getDeptFromClassGroup(currentMentor.department)] : [])
+          ];
+          const mentorClassDepts = Array.from(new Set(rawDepts.map(d => getDeptFromClassGroup(d)).filter(Boolean)));
 
           const campusDepts = Array.from(new Set(
             coursesList
               .filter(c => !c.college_id || c.college_id === currentMentor?.college_id)
-              .map(c => c.name.trim())
+              .map(c => getDeptFromClassGroup(c.name) || c.name.trim())
               .filter(Boolean)
           )).sort();
 
           const deptOptions = mentorClassDepts.length > 0
             ? mentorClassDepts
-            : (campusDepts.length > 0 ? campusDepts : (currentMentor?.mentor_group ? [currentMentor.mentor_group] : ["General Department"]));
+            : (campusDepts.length > 0 ? campusDepts : [getDeptFromClassGroup(currentMentor?.department) || "General Department"]);
 
           const activeDept = trackerDept && deptOptions.includes(trackerDept)
             ? trackerDept

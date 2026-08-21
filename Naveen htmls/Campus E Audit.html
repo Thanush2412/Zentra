@@ -1,0 +1,2799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CampusAudit — Reports & Audit Logs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --green: #1E7A3C;
+    --green-deep: #14522A;
+    --green-tint: #EAF6EC;
+    --green-tint-border: #CFE8D4;
+    --bg: #F1F2F4;
+    --card: #FFFFFF;
+    --border: #E6E7EB;
+    --ink: #16181D;
+    --ink-soft: #565B66;
+    --ink-faint: #9195A0;
+    --red-bg: #FCEAEA; --red-ink: #C4302B;
+    --amber-bg: #FDF3DC; --amber-ink: #A9760C;
+    --green-bg: #E7F5EA; --green-ink2: #1E7A3C;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 1px 2px rgba(16,24,40,0.04), 0 1px 3px rgba(16,24,40,0.06);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:var(--bg); color:var(--ink); font-family:'Inter',sans-serif; }
+  button{ font-family:inherit; }
+  input, select, textarea{ font-family:inherit; }
+  .hidden{ display:none !important; }
+
+  .app{
+    display:flex;
+    min-height:100vh;
+    padding: 22px;
+    gap: 18px;
+    align-items:flex-start;
+  }
+
+  /* ================= SIDEBAR ================= */
+  .sidebar{
+    width: 232px; flex-shrink:0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display:flex; flex-direction:column;
+    padding: 18px 14px;
+    gap: 22px;
+    position: sticky; top: 22px;
+    min-height: calc(100vh - 44px);
+  }
+  .sidebar-brand{
+    display:flex; align-items:center; gap:10px; padding: 4px 8px 2px;
+  }
+  .sidebar-brand-mark{
+    width:32px; height:32px; border-radius:9px; background:var(--green);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .sidebar-brand-mark svg{ width:17px; height:17px; color:#fff; }
+  .sidebar-brand-text{ display:flex; flex-direction:column; line-height:1.2; min-width:0; }
+  .sidebar-brand-name{ font-size:14.5px; font-weight:800; color:var(--ink); letter-spacing:-0.01em; }
+  .sidebar-brand-sub{ font-size:10.5px; font-weight:600; color:var(--ink-faint); letter-spacing:.03em; text-transform:uppercase; }
+
+  .sidebar-section-label{
+    font-size:10.5px; font-weight:700; color:var(--ink-faint); text-transform:uppercase;
+    letter-spacing:.05em; padding: 0 10px; margin-bottom:-8px;
+  }
+  .sidebar-nav{ display:flex; flex-direction:column; gap:3px; }
+  .sidebar-nav-btn{
+    display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+    background:none; border:none; border-radius:8px; cursor:pointer;
+    padding: 10px 11px; font-size:13px; font-weight:600; color:var(--ink-soft);
+    transition: background .12s ease, color .12s ease;
+  }
+  .sidebar-nav-btn svg{ width:17px; height:17px; flex-shrink:0; color:var(--ink-faint); transition: color .12s ease; }
+  .sidebar-nav-btn:hover{ background:#FAFAFB; color:var(--ink); }
+  .sidebar-nav-btn:hover svg{ color:var(--ink-soft); }
+  .sidebar-nav-btn:focus-visible{ outline:2px solid var(--green); outline-offset:1px; }
+  .sidebar-nav-btn.current{ background:var(--green-tint); color:var(--green-deep); }
+  .sidebar-nav-btn.current svg{ color:var(--green); }
+
+  .sidebar-footer{ margin-top:auto; padding: 10px 10px 2px; border-top:1px solid var(--border); }
+  .sidebar-footer-hint{ font-size:11px; color:var(--ink-faint); line-height:1.5; padding-top:12px; }
+
+  /* ================= MAIN ================= */
+  .main{
+    flex:1; min-width:0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display:flex; flex-direction:column;
+  }
+
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 18px 26px; border-bottom: 1px solid var(--border);
+  }
+  .topbar h1{ font-size:20px; font-weight:700; margin:0; letter-spacing:-0.01em; }
+  .topbar-right{ display:flex; align-items:center; gap:12px; }
+  .icon-circle{
+    width:36px; height:36px; border-radius:50%; border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center; color:var(--ink-soft);
+    background:transparent; cursor:pointer; position:relative;
+  }
+  .icon-circle svg{ width:17px; height:17px; }
+  .icon-circle .dot{
+    position:absolute; top:7px; right:8px; width:7px; height:7px; border-radius:50%;
+    background: var(--red-ink); border:1.5px solid #fff;
+  }
+  .topbar-avatar{
+    display:flex; align-items:center; justify-content:center;
+  }
+  .topbar-avatar img{ height:30px; width:auto; display:block; }
+  .mark-task-btn{
+    display:flex; align-items:center; gap:7px;
+    background: var(--green); color:#fff; border:none; border-radius:8px;
+    padding: 9px 16px; font-size:13px; font-weight:700; cursor:pointer;
+  }
+  .mark-task-btn:hover{ background: var(--green-deep); }
+  .mark-task-btn svg{ width:15px; height:15px; }
+
+  /* ================= TOP NAV (Dashboard / Reports — kept separate) ================= */
+  .topnav-strip{
+    display:flex; align-items:center; gap:0;
+    padding: 16px 26px; border-bottom: 1px solid var(--border);
+    overflow-x:auto;
+  }
+  .topnav-step{ display:flex; align-items:center; flex:1; min-width:0; }
+  .topnav-step:last-child{ flex:0 0 auto; }
+  .topnav-btn{
+    display:flex; align-items:center; gap:8px; background:none; border:none; cursor:pointer;
+    padding:2px; flex-shrink:0; white-space:nowrap;
+  }
+  .topnav-btn:focus-visible{ outline:2px solid var(--green); outline-offset:2px; border-radius:6px; }
+  .topnav-node{
+    width:26px; height:26px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11.5px; font-weight:700; border:1.5px solid var(--border); color:var(--ink-faint); background:var(--card);
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+  }
+  .topnav-btn:hover .topnav-node{ border-color:var(--green); color:var(--green); }
+  .topnav-step.current .topnav-node{ background:var(--green-tint); border-color:var(--green); color:var(--green-deep); }
+  .topnav-label{ font-size:12.5px; font-weight:600; color:var(--ink-faint); }
+  .topnav-btn:hover .topnav-label{ color:var(--ink); }
+  .topnav-step.current .topnav-label{ color:var(--green-deep); }
+  .topnav-line{ flex:1; height:2px; background:var(--border); margin:0 10px; min-width:16px; }
+
+  .tabs{
+    display:flex; gap:26px; padding: 0 26px; border-bottom: 1px solid var(--border);
+    overflow-x:auto;
+  }
+  .tab-btn{
+    background:none; border:none; cursor:pointer; padding: 14px 2px 12px;
+    font-size:13.5px; font-weight:500; color:var(--ink-faint);
+    border-bottom: 2px solid transparent; white-space:nowrap;
+  }
+  .tab-btn:hover{ color: var(--ink); }
+  .tab-btn.active{ color: var(--green); font-weight:600; border-bottom-color: var(--green); }
+  .tab-btn:focus-visible{ outline:2px solid var(--green); outline-offset:2px; }
+
+  .toolbar{
+    display:flex; align-items:center; justify-content:space-between; gap:14px;
+    padding: 16px 26px; flex-wrap:wrap;
+  }
+  .toolbar-left{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .search-box{
+    display:flex; align-items:center; gap:8px;
+    border:1px solid var(--border); border-radius:8px; padding: 8px 12px;
+    min-width: 240px; color: var(--ink-faint);
+  }
+  .search-box svg{ width:15px; height:15px; flex-shrink:0; }
+  .search-box input{
+    border:none; outline:none; background:transparent; font-size:13px; color:var(--ink); width:100%;
+  }
+  .select-wrap{
+    position:relative;
+  }
+  .select-wrap select{
+    appearance:none; -webkit-appearance:none;
+    border:1px solid var(--border); border-radius:8px; padding: 8px 30px 8px 12px;
+    font-size:13px; color:var(--ink-soft); background:transparent; cursor:pointer;
+  }
+  .select-wrap svg{
+    position:absolute; right:9px; top:50%; transform:translateY(-50%);
+    width:14px; height:14px; color:var(--ink-faint); pointer-events:none;
+  }
+  .toolbar-right{ display:flex; align-items:center; gap:10px; }
+  .export-label{ font-size:12.5px; color:var(--ink-faint); margin-right:2px; }
+  .export-btn{
+    border:1px solid var(--border); background:transparent; border-radius:8px;
+    padding: 8px 14px; font-size:12.5px; font-weight:600; color:var(--ink-soft); cursor:pointer;
+  }
+  .export-btn:hover{ border-color:var(--green); color:var(--green); background:var(--green-tint); }
+  .export-btn:focus-visible{ outline:2px solid var(--green); outline-offset:1px; }
+
+  /* ================= TABLE ================= */
+  .table-wrap{ padding: 0 26px; overflow-x:auto; flex:1; }
+  table{ width:100%; border-collapse:collapse; min-width: 980px; }
+  thead th{
+    text-align:left; font-size:11.5px; text-transform:none; font-weight:600;
+    color: var(--ink-faint); background: #FAFAFB;
+    padding: 11px 14px; border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+    white-space:nowrap;
+  }
+  thead th:first-child{ border-top-left-radius:8px; }
+  thead th:last-child{ border-top-right-radius:8px; }
+  tbody td{
+    padding: 13px 14px; border-bottom:1px solid var(--border);
+    font-size:13px; color:var(--ink); white-space:nowrap;
+  }
+  tbody tr:hover{ background: #FAFAFB; }
+  .cell-check{ width:34px; }
+  .cell-check input{ width:15px; height:15px; accent-color:var(--green); cursor:pointer; }
+  .cell-person{ display:flex; align-items:center; gap:9px; }
+  .cell-avatar{
+    width:26px; height:26px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; color:#fff; font-size:10px; font-weight:700;
+  }
+  .cell-sub{ color:var(--ink-faint); font-size:11.5px; }
+  .pill{
+    display:inline-block; font-size:11.5px; font-weight:600; padding: 4px 10px; border-radius:20px;
+  }
+  .pill.ok{ background:var(--green-bg); color:var(--green-ink2); }
+  .pill.warn{ background:var(--amber-bg); color:var(--amber-ink); }
+  .pill.bad{ background:var(--red-bg); color:var(--red-ink); }
+  .bar-cell{ display:flex; align-items:center; gap:8px; }
+  .bar-track{ width:56px; height:6px; border-radius:3px; background:var(--border); overflow:hidden; }
+  .bar-fill{ height:100%; border-radius:3px; }
+  .empty-row td{ text-align:center; color:var(--ink-faint); padding: 40px 14px; font-size:13px; }
+
+  .subject-input{
+    width: 168px; border:1px solid var(--border); border-radius:7px;
+    padding: 7px 10px; font-size:12.5px; color:var(--ink); background:transparent;
+  }
+  .subject-input:focus-visible{ outline:2px solid var(--green); outline-offset:1px; }
+  .subject-input::placeholder{ color: var(--ink-faint); }
+
+  .remarks-cell{
+    display:inline-block; max-width:220px; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; vertical-align:middle; color:var(--ink-soft); font-size:12.5px;
+  }
+
+  .crit-btn{
+    width:28px; height:28px; border-radius:7px; border:1.5px solid var(--border);
+    background:transparent; cursor:pointer; font-size:12px; font-weight:700;
+    display:inline-flex; align-items:center; justify-content:center; color:var(--ink-faint);
+    transition: transform .1s ease;
+  }
+  .crit-btn:hover{ transform: scale(1.06); }
+  .crit-btn.on{ background:var(--green-bg); border-color:var(--green); color:var(--green-ink2); }
+  .crit-btn.off{ background:var(--red-bg); border-color:var(--red-ink); color:var(--red-ink); }
+  .crit-btn:focus-visible{ outline:2px solid var(--green); outline-offset:1px; }
+
+  /* audit status inline select (used in table cells) */
+  .audit-select{
+    appearance:none; -webkit-appearance:none;
+    border:1.5px solid var(--border); border-radius:7px;
+    padding: 6px 26px 6px 10px; font-size:12px; font-weight:600; cursor:pointer;
+    background-repeat:no-repeat; background-position: right 8px center; background-size:11px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239195A0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  }
+  .audit-select.st-Completed{ background-color:var(--green-bg); border-color:var(--green); color:var(--green-ink2); }
+  .audit-select.st-InProgress{ background-color:var(--amber-bg); border-color:var(--amber-ink); color:var(--amber-ink); }
+  .audit-select.st-NotCompleted{ background-color:var(--red-bg); border-color:var(--red-ink); color:var(--red-ink); }
+  .audit-select:focus-visible{ outline:2px solid var(--green); outline-offset:1px; }
+
+  /* ================= FOOTER / PAGINATION ================= */
+  .table-footer{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 16px 26px 22px; flex-wrap:wrap; gap:10px;
+  }
+  .page-info{ font-size:12.5px; color:var(--ink-faint); }
+  .pager{ display:flex; align-items:center; gap:6px; }
+  .pg-btn{
+    min-width:32px; height:32px; padding:0 8px; border-radius:7px; border:1px solid var(--border);
+    background:transparent; color:var(--ink-soft); font-size:12.5px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:5px;
+  }
+  .pg-btn:hover{ border-color: var(--green); color:var(--green); }
+  .pg-btn[disabled]{ opacity:.4; cursor:not-allowed; }
+  .pg-btn[disabled]:hover{ border-color:var(--border); color:var(--ink-soft); }
+  .pg-btn.active{ background:var(--green); border-color:var(--green); color:#fff; font-weight:600; }
+  .pg-btn svg{ width:14px; height:14px; }
+  .pg-ellipsis{ color:var(--ink-faint); font-size:12.5px; padding:0 2px; }
+
+  .toast{
+    position: fixed; bottom: 22px; left:50%; transform: translateX(-50%) translateY(12px);
+    background: var(--ink); color: #fff; font-size:12.5px;
+    padding: 10px 18px; border-radius: 8px; opacity:0; pointer-events:none;
+    transition: opacity .25s ease, transform .25s ease; z-index: 50;
+  }
+  .toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
+
+  /* ================= ENTRY FORMS ================= */
+  .entry-wrap{ padding: 22px 26px 30px; }
+  .entry-card{
+    border:1px solid var(--border); border-radius: var(--radius); padding: 22px 24px;
+    max-width: 780px;
+  }
+  .entry-card h2{ margin:0 0 4px; font-size:15.5px; font-weight:700; }
+  .entry-card .entry-sub{ margin:0 0 20px; font-size:12.5px; color:var(--ink-faint); line-height:1.5; }
+  .form-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-field{ display:flex; flex-direction:column; gap:6px; }
+  .form-field.full{ grid-column: 1 / -1; }
+  .form-field label{ font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .form-field input[type=text], .form-field input[type=number], .form-field input[type=date], .form-field select, .form-field textarea{
+    border:1px solid var(--border); border-radius:8px; padding: 9px 11px;
+    font-size:13px; color:var(--ink); background:transparent; width:100%;
+  }
+  .form-field input[readonly]{
+  background: #FAFAFB;
+  color: var(--ink-faint);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.form-field label .lock-note{
+  font-weight:500; color:var(--ink-faint); font-size:11px; margin-left:4px;
+}
+  .form-field textarea{ resize:vertical; }
+  .form-field input:focus-visible, .form-field select:focus-visible, .form-field textarea:focus-visible{ outline:2px solid var(--green); outline-offset:1px; }
+
+  .section-label{
+    font-size:12.5px; font-weight:700; color:var(--ink-soft); margin: 20px 0 10px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .section-label svg{ width:15px; height:15px; color:var(--green); }
+
+  .criteria-grid{ display:grid; grid-template-columns: 1fr; gap:10px; margin-top:4px; }
+  .criteria-row{
+    display:flex; align-items:center; justify-content:space-between; gap:14px;
+    border:1px solid var(--border); border-radius:8px; padding: 11px 14px;
+  }
+  .criteria-row span{ font-size:12.5px; color:var(--ink); line-height:1.4; }
+.yn-group{ display:flex; gap:6px; flex-shrink:0; }
+.yn-btn{
+  padding:6px 16px; border-radius:7px; border:1.5px solid var(--border);
+  background:transparent; font-size:12px; font-weight:600; cursor:pointer; color:var(--ink-faint);
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.yn-btn:hover{ border-color:var(--ink-faint); color:var(--ink); }
+.yn-btn.yes.active{ background:var(--green-bg); border-color:var(--green); color:var(--green-ink2); }
+.yn-btn.no.active{ background:var(--red-bg); border-color:var(--red-ink); color:var(--red-ink); }
+.yn-btn:focus-visible{ outline:2px solid var(--green); outline-offset:1px; }
+  .criteria-proof{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    margin: -4px 0 4px; padding: 10px 14px;
+    border:1px solid var(--green-tint-border); background:var(--green-tint); border-radius:8px;
+    font-size:12px;
+  }
+  .criteria-proof.hidden{ display:none; }
+  .criteria-proof .proof-label{ font-weight:700; color:var(--green-deep); flex-shrink:0; }
+  .criteria-proof .proof-link-input{
+    flex:1; min-width:160px; border:1px solid var(--green-tint-border); border-radius:6px;
+    padding:6px 10px; font-size:12px; color:var(--ink); background:#fff;
+  }
+  .criteria-proof .proof-link-input:focus-visible{ outline:2px solid var(--green); outline-offset:1px; }
+  .criteria-proof .proof-or{ color:var(--ink-faint); flex-shrink:0; }
+  .criteria-proof .proof-file-input{ font-size:11px; max-width:160px; flex-shrink:0; }
+  .criteria-proof .proof-file-name{ color:var(--green-ink2); font-weight:600; }
+  .score-band{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    border:1px dashed var(--border-color, var(--border)); border-radius:8px; padding:12px 14px; margin-top:18px;
+    background: #FAFAFB;
+  }
+  .score-band .score-label{ font-size:12.5px; color:var(--ink-soft); font-weight:600; }
+  .score-band .score-value{ font-size:18px; font-weight:800; }
+  .status-band{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-top:10px;
+  }
+  .status-band .status-label{ font-size:12.5px; color:var(--ink-soft); font-weight:600; }
+  .status-band select.audit-select{ width:190px; padding:8px 30px 8px 12px; font-size:12.5px; }
+  .entry-actions{ display:flex; align-items:center; gap:10px; margin-top:20px; }
+  .btn-primary{
+    background: var(--green); color:#fff; border:none; border-radius:8px;
+    padding: 10px 18px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .btn-primary:hover{ background: var(--green-deep); }
+  .btn-primary[disabled]{ opacity:.5; cursor:not-allowed; }
+  .btn-primary[disabled]:hover{ background:var(--green); }
+  .btn-secondary{
+    background:transparent; color:var(--ink-soft); border:1px solid var(--border); border-radius:8px;
+    padding: 10px 18px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .btn-secondary:hover{ border-color:var(--ink-faint); color:var(--ink); }
+  .recent-entries{ max-width:780px; margin-top:26px; }
+  .recent-entries h3{ font-size:13px; font-weight:700; margin:0 0 10px; color:var(--ink-soft); }
+  .recent-list{ display:flex; flex-direction:column; gap:8px; }
+  .recent-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:12.5px;
+  }
+  .recent-row .rr-left{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .recent-row .rr-name{ font-weight:600; }
+  .recent-row .rr-sub{ color:var(--ink-faint); }
+  .recent-empty{ font-size:12.5px; color:var(--ink-faint); }
+
+  /* ================= FLOW STRIP (sequential gating — opened by "Record Audit") ================= */
+  .flow-strip{
+    display:flex; align-items:center; gap:0; margin-top:14px; margin-bottom:2px;
+  }
+  .flow-strip.is-empty{ opacity:.55; }
+  .flow-step{ display:flex; align-items:center; flex:1; min-width:0; }
+  .flow-step:last-child{ flex:0 0 auto; }
+  .flow-step-btn{
+    display:flex; align-items:center; background:none; border:none; cursor:pointer; padding:2px; flex-shrink:0;
+  }
+  .flow-step-btn:focus-visible{ outline:2px solid var(--green); outline-offset:2px; border-radius:6px; }
+  .flow-node{
+    width:24px; height:24px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700; border:1.5px solid var(--border); color:var(--ink-faint); background:var(--card);
+  }
+  .flow-node svg{ width:12px; height:12px; }
+  .flow-step.done .flow-node{ background:var(--green); border-color:var(--green); color:#fff; }
+  .flow-step.current .flow-node{ background:var(--green-tint); border-color:var(--green); color:var(--green-deep); }
+  .flow-step.locked .flow-node{ background:#FAFAFB; border-color:var(--border); color:var(--ink-faint); }
+  .flow-label{ font-size:10.5px; font-weight:600; color:var(--ink-faint); margin-left:6px; white-space:nowrap; }
+  .flow-step.done .flow-label{ color:var(--green-ink2); }
+  .flow-step.current .flow-label{ color:var(--green-deep); }
+  .flow-line{ flex:1; height:2px; background:var(--border); margin:0 6px; min-width:10px; }
+  .flow-step.done .flow-line{ background:var(--green); }
+  .flow-hint{
+    font-size:11.5px; color:var(--ink-faint); margin-top:6px; margin-bottom:4px; line-height:1.5;
+  }
+  .flow-hint.blocked{ color:var(--red-ink); font-weight:600; }
+  .flow-hint.ready{ color:var(--green-ink2); font-weight:600; }
+
+  /* ================= MODAL (mentor loop / audit queue prompts) ================= */
+  .modal-overlay{
+    position: fixed; inset:0; background: rgba(20,22,26,0.45);
+    display:flex; align-items:center; justify-content:center;
+    z-index: 100; padding: 20px;
+  }
+  .modal-box{
+    background: var(--card); border-radius: var(--radius); max-width: 420px; width:100%;
+    padding: 24px 24px 20px; box-shadow: 0 12px 32px rgba(16,24,40,0.18);
+  }
+  .modal-box h3{ margin:0 0 8px; font-size:15.5px; font-weight:700; color:var(--ink); }
+  .modal-box p{ margin:0 0 18px; font-size:13px; color:var(--ink-soft); line-height:1.55; }
+  .modal-actions{ display:flex; align-items:center; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+
+  /* ================= DASHBOARD ================= */
+  .dash-wrap{ padding: 22px 26px 34px; display:flex; flex-direction:column; gap:26px; }
+
+  .dash-hero-grid{ display:grid; grid-template-columns: repeat(4, 1fr); gap:14px; }
+  .dash-hero-card{
+    border:1px solid var(--border); border-radius: var(--radius); padding:16px 18px;
+    display:flex; flex-direction:column; gap:5px; background:#FAFAFB;
+  }
+  .dash-hero-label{ font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .dash-hero-value{ font-size:26px; font-weight:800; color:var(--ink); line-height:1.15; }
+  .dash-hero-value-sub{ font-size:14px; font-weight:600; color:var(--ink-faint); }
+  .dash-hero-caption{ font-size:11.5px; color:var(--ink-faint); }
+
+  .dash-section-title{ font-size:13.5px; font-weight:700; color:var(--ink); margin-bottom:12px; }
+
+  .dash-domain-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap:12px; }
+  .dash-domain-card{
+    text-align:left; border:1px solid var(--border); border-radius: var(--radius); padding:14px 16px;
+    background:var(--card); cursor:pointer; display:flex; flex-direction:column; gap:9px;
+    transition: border-color .15s ease, transform .1s ease; font-family:inherit;
+  }
+  .dash-domain-card:hover{ border-color: var(--green); transform: translateY(-1px); }
+  .dash-domain-card:focus-visible{ outline:2px solid var(--green); outline-offset:1px; }
+  .dash-domain-top{ display:flex; align-items:center; justify-content:space-between; }
+  .dash-domain-icon{
+    width:30px; height:30px; border-radius:8px; background:var(--green-tint); color:var(--green-deep);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .dash-domain-icon svg{ width:16px; height:16px; }
+  .dash-domain-count{ font-size:20px; font-weight:800; color:var(--ink); }
+  .dash-domain-label{ font-size:12.5px; font-weight:600; color:var(--ink); }
+  .dash-domain-avg{ font-size:11.5px; color:var(--ink-faint); }
+  .dash-domain-bar{ display:flex; height:6px; border-radius:3px; overflow:hidden; background:var(--border); }
+  .dash-domain-bar-fill{ height:100%; }
+
+  .dash-two-col{ display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start; }
+  .dash-panel{
+    border:1px solid var(--border); border-radius: var(--radius); padding:14px 16px;
+    display:flex; flex-direction:column; gap:8px;
+  }
+
+  .dash-lb-row{ display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px solid var(--border); }
+  .dash-lb-row:last-child{ border-bottom:none; }
+  .dash-lb-rank{ width:16px; font-size:12px; font-weight:700; color:var(--ink-faint); text-align:center; flex-shrink:0; }
+  .dash-lb-name{ font-size:12.5px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dash-lb-count{ font-size:11px; color:var(--ink-faint); flex-shrink:0; white-space:nowrap; }
+  .dash-lb-score{ font-size:12.5px; font-weight:700; width:26px; text-align:right; flex-shrink:0; }
+
+  @media (max-width: 900px){
+    .app{ padding:0; flex-direction:column; }
+    .sidebar{
+      width:auto; flex-direction:row; align-items:center; position:static; min-height:0;
+      border-radius:0; border-left:none; border-right:none; border-top:none;
+      padding: 10px 12px; gap:10px; overflow-x:auto;
+    }
+    .sidebar-brand{ flex-shrink:0; }
+    .sidebar-section-label, .sidebar-footer{ display:none; }
+    .sidebar-nav{ flex-direction:row; }
+    .sidebar-nav-btn{ padding:8px 10px; white-space:nowrap; }
+    .main{ border-radius:0; }
+    .form-grid{ grid-template-columns: 1fr; }
+    .dash-hero-grid{ grid-template-columns: repeat(2,1fr); }
+    .dash-two-col{ grid-template-columns: 1fr; }
+    .topnav-label{ display:none; }
+    .mark-task-btn span.mtb-label{ display:none; }
+  }
+
+  @media print{
+    body{ background:#fff; }
+    .sidebar, .topnav-strip, .topbar-right, .tabs, .toolbar, .table-footer, .toast{ display:none !important; }
+    .app{ padding:0; }
+    .main{ border:none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M12 3c-2.5 2-4.5 2-7 1v7c0 5 3 8.5 7 10 4-1.5 7-5 7-10V4c-2.5 1-4.5 1-7-1Z"/></svg>
+      </div>
+      <div class="sidebar-brand-text">
+        <span class="sidebar-brand-name">CampusAudit</span>
+      </div>
+    </div>
+
+    <div>
+
+            <div class="sidebar-nav" id="sidebarNav"></div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-footer-hint">Use <strong>Record Audit</strong> above the page title to run a mentor through the Skill Development → Coursework Verification → Attendance review flow.</div>
+    </div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <main class="main">
+    <div class="topbar">
+      <h1 id="topbarTitle">Dashboard</h1>
+      <div class="topbar-right">
+        <button class="mark-task-btn" id="markTaskBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span class="mtb-label">Record Audit</span>
+        </button>
+        
+        
+      </div>
+    </div>
+
+    <div id="page-reports" class="hidden">
+      <div class="tabs" id="tabs">
+        <button class="tab-btn active" data-tab="skill">Skill Development</button>
+        <button class="tab-btn" data-tab="academic">Coursework Verification</button>
+        <button class="tab-btn" data-tab="attendance">Attendance</button>
+        <button class="tab-btn" data-tab="audit">Internal Audit</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="searchInput" placeholder="Search mentors">
+          </div>
+          <div class="select-wrap">
+            <select id="mentorFilter"><option value="">Mentor</option></select>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="select-wrap">
+            <select id="statusFilter"><option value="">Status</option></select>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+        <div class="toolbar-right">
+          <span class="export-label">Export as:</span>
+          <button class="export-btn" id="exportCsv">CSV</button>
+          <button class="export-btn" id="exportPdf">PDF</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr id="theadRow"></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="table-footer">
+        <div class="page-info" id="pageInfo">Page 1 of 1</div>
+        <div class="pager" id="pager"></div>
+      </div>
+    </div>
+
+    <!-- ================= SKILL DEVELOPMENT ENTRY ================= -->
+    <div id="page-skill-entry" class="hidden">
+      <div class="entry-wrap">
+        <div class="entry-card">
+          <h2>Skill Development Entry</h2>
+          <p class="entry-sub">Answer the genuineness questions below for this skill development log. Each answer is marked, a score is calculated automatically, and your remarks are saved at the end. The entry appears immediately under Reports &amp; Audit Logs → Skill Development. This is step 1 of the review flow — complete it before moving on to Coursework Verification and Attendance for this mentor.</p>
+
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="skEntryCampus">Campus</label>
+              <select id="skEntryCampus">
+                <option value="">Select Campus</option>
+                <option value="Kamaraj College">Kamaraj College</option>
+                <option value="Kamaraj Women's College">Kamaraj Women's College</option>
+                <option value="SDNB Vaishnav College for Women">SDNB Vaishnav College for Women</option>
+                <option value="Patrician College of Arts & Science">Patrician College of Arts & Science</option>
+                <option value="TERF's College of Arts and Science">TERF's College of Arts and Science</option>
+                <option value="Sree Saraswathi Thyagaraja College">Sree Saraswathi Thyagaraja College</option>
+                <option value="TJS College of Arts and Science">TJS College of Arts and Science</option>
+                <option value="Bharathidasan College of Arts & Science">Bharathidasan College of Arts & Science</option>
+                <option value="Nagarathinam Angalammal Arts & Science College">Nagarathinam Angalammal Arts & Science College</option>
+                <option value="Vinayaga Mission’s Research Foundation School of Arts & Science">Vinayaga Mission’s Research Foundation School of Arts & Science</option>
+                <option value="Sri Amaraavathi College of Arts & Science">Sri Amaraavathi College of Arts & Science</option>
+                <option value="Takshashila University">Takshashila University</option>
+                <option value="Study World Group of Institution">Study World Group of Institution</option>
+                <option value="Rathinam College of Arts & Science">Rathinam College of Arts & Science</option>
+                <option value="Noorul Islam Centre for Higher Education (NICHE)">Noorul Islam Centre for Higher Education (NICHE)</option>
+                <option value="AMET University">AMET University</option>
+                <option value="Joy University">Joy University</option>
+                <option value="Sasurie College of Arts and Science">Sasurie College of Arts and Science</option>
+                <option value="Alliance University">Alliance University</option>
+                <option value="Kristu Jayathi University">Kristu Jayathi University</option>
+                <option value="S-VYASA University">S-VYASA University</option>
+                <option value="Asian School of Business">Asian School of Business</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="skEntryDeptName">Department</label>
+              <input type="text" id="skEntryDeptName" placeholder="Enter department name">
+            </div>
+            <div class="form-field">
+              <label for="skEntryDepartment">Domain</label>
+              <select id="skEntryDepartment">
+                <option value="">Select Domain</option>
+                <option value="Tamil">Tamil</option>
+                <option value="Communication">Communication</option>
+                <option value="Computer Science">Computer Science</option>
+                <option value="Data Science">Data Science</option>
+                <option value="Management">Management</option>
+                <option value="Commerce">Commerce</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="skEntryMentor">Mentor Name</label>
+              <input type="text" id="skEntryMentor" placeholder="Enter mentor name">
+            </div>
+            <div class="form-field">
+              <label for="skEntryDate">Date of Marking</label>
+<input type="date" id="skEntryDate" readonly tabindex="-1">
+            </div>
+            <div class="form-field full">
+              <label for="skEntrySubject">Skill Development Subject</label>
+              <input type="text" id="skEntrySubject" placeholder="e.g. React Fundamentals">
+            </div>
+          </div>
+
+          <div id="skFlowStrip"></div>
+
+          <div class="section-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+            Genuineness Check
+          </div>
+          <div class="criteria-grid" id="skEntryCriteria"></div>
+
+          <div class="section-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg>
+            Task Completion Details
+          </div>
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="skEntryTasksAssigned">Total number of tasks assigned for the course</label>
+              <input type="number" id="skEntryTasksAssigned" min="0" placeholder="e.g. 25">
+            </div>
+            <div class="form-field">
+              <label for="skEntryTasksCompleted">Total number of tasks completed so far</label>
+              <input type="number" id="skEntryTasksCompleted" min="0" placeholder="e.g. 18">
+            </div>
+            <div class="form-field">
+              <label for="skEntryAvgStudentsCompleted">Number of students who completed all the tasks</label>
+              <input type="number" id="skEntryAvgStudentsCompleted" min="0" placeholder="e.g. 20">
+            </div>
+            <div class="form-field">
+              <label for="skEntryTotalStudents">Total number of students in the class</label>
+              <input type="number" id="skEntryTotalStudents" min="0" placeholder="e.g. 30">
+            </div>
+            <div class="form-field full">
+              <label for="skEntryAvgCompletionPct">Average completion % <span class="lock-note">(auto-calculated)</span></label>
+              <input type="text" id="skEntryAvgCompletionPct" readonly tabindex="-1" value="0%">
+            </div>
+          </div>
+
+          <div class="score-band">
+            <span class="score-label">Score (auto-calculated from your answers)</span>
+            <span class="score-value" id="skEntryScoreValue">0/100</span>
+          </div>
+
+          <div class="status-band">
+            <span class="status-label">Status</span>
+            <select id="skEntryStatus" class="audit-select st-InProgress">
+              <option value="Completed">Completed</option>
+              <option value="In Progress" selected>In Progress</option>
+              <option value="Not Completed">Not Completed</option>
+            </select>
+          </div>
+
+          <div class="form-field full" style="margin-top:16px;">
+            <label for="skEntryRemarks">Remarks</label>
+            <textarea id="skEntryRemarks" rows="3" placeholder="Final remarks on this skill development log..."></textarea>
+          </div>
+
+          <div class="entry-actions">
+            <button class="btn-primary" id="skEntrySubmit">Continue</button>
+            <button class="btn-secondary" id="skEntryReset">Reset</button>
+          </div>
+        </div>
+
+        <div class="recent-entries">
+          <h3>Recently added (this session)</h3>
+          <div class="recent-list" id="skEntryRecent"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= COURSEWORK VERIFICATION ENTRY ================= -->
+    <div id="page-academic-entry" class="hidden">
+      <div class="entry-wrap">
+        <div class="entry-card">
+          <h2>Coursework Verification Entry</h2>
+          <p class="entry-sub">Answer the genuineness questions below to verify an academic task submission. Each answer is marked, a score is calculated automatically, and your remarks are saved at the end. The entry appears immediately under Reports &amp; Audit Logs → Coursework Verification. This mentor's Skill Development must be completed first — step 2 of the review flow.</p>
+
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="acEntryCampus">Campus</label>
+              <select id="acEntryCampus">
+                <option value="">Select Campus</option>
+                <option value="Kamaraj College">Kamaraj College</option>
+                <option value="Kamaraj Women's College">Kamaraj Women's College</option>
+                <option value="SDNB Vaishnav College for Women">SDNB Vaishnav College for Women</option>
+                <option value="Patrician College of Arts & Science">Patrician College of Arts & Science</option>
+                <option value="TERF's College of Arts and Science">TERF's College of Arts and Science</option>
+                <option value="Sree Saraswathi Thyagaraja College">Sree Saraswathi Thyagaraja College</option>
+                <option value="TJS College of Arts and Science">TJS College of Arts and Science</option>
+                <option value="Bharathidasan College of Arts & Science">Bharathidasan College of Arts & Science</option>
+                <option value="Nagarathinam Angalammal Arts & Science College">Nagarathinam Angalammal Arts & Science College</option>
+                <option value="Vinayaga Mission’s Research Foundation School of Arts & Science">Vinayaga Mission’s Research Foundation School of Arts & Science</option>
+                <option value="Sri Amaraavathi College of Arts & Science">Sri Amaraavathi College of Arts & Science</option>
+                <option value="Takshashila University">Takshashila University</option>
+                <option value="Study World Group of Institution">Study World Group of Institution</option>
+                <option value="Rathinam College of Arts & Science">Rathinam College of Arts & Science</option>
+                <option value="Noorul Islam Centre for Higher Education (NICHE)">Noorul Islam Centre for Higher Education (NICHE)</option>
+                <option value="AMET University">AMET University</option>
+                <option value="Joy University">Joy University</option>
+                <option value="Sasurie College of Arts and Science">Sasurie College of Arts and Science</option>
+                <option value="Alliance University">Alliance University</option>
+                <option value="Kristu Jayathi University">Kristu Jayathi University</option>
+                <option value="S-VYASA University">S-VYASA University</option>
+                <option value="Asian School of Business">Asian School of Business</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="acEntryDeptName">Department</label>
+              <input type="text" id="acEntryDeptName" placeholder="Enter department name">
+            </div>
+            <div class="form-field">
+              <label for="acEntryDepartment">Domain</label>
+              <select id="acEntryDepartment">
+                <option value="">Select Domain</option>
+                <option value="Tamil">Tamil</option>
+                <option value="Communication">Communication</option>
+                <option value="Computer Science">Computer Science</option>
+                <option value="Data Science">Data Science</option>
+                <option value="Management">Management</option>
+                <option value="Commerce">Commerce</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="acEntryMentor">Mentor Name</label>
+              <input type="text" id="acEntryMentor" placeholder="Enter mentor name">
+            </div>
+            <div class="form-field">
+              <label for="acEntryDate">Date of Marking</label>
+<input type="date" id="acEntryDate" readonly tabindex="-1">
+            </div>
+            <div class="form-field full">
+              <label for="acEntrySubject">Academic Subject</label>
+              <input type="text" id="acEntrySubject" placeholder="e.g. Data Structures">
+            </div>
+          </div>
+
+          <div id="acFlowStrip"></div>
+
+          <div class="section-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+            Genuineness Check
+          </div>
+          <div class="criteria-grid" id="acEntryCriteria"></div>
+
+          <div class="score-band">
+            <span class="score-label">Score (auto-calculated from your answers)</span>
+            <span class="score-value" id="acEntryScoreValue">0/100</span>
+          </div>
+
+          <div class="status-band">
+            <span class="status-label">Status</span>
+            <select id="acEntryStatus" class="audit-select st-InProgress">
+              <option value="Completed">Completed</option>
+              <option value="In Progress" selected>In Progress</option>
+              <option value="Not Completed">Not Completed</option>
+            </select>
+          </div>
+
+          <div class="form-field full" style="margin-top:16px;">
+            <label for="acEntryRemarks">Remarks</label>
+            <textarea id="acEntryRemarks" rows="3" placeholder="Final remarks on this academic task..."></textarea>
+          </div>
+
+          <div class="entry-actions">
+            <button class="btn-primary" id="acEntrySubmit">Continue</button>
+            <button class="btn-secondary" id="acEntryReset">Reset</button>
+          </div>
+        </div>
+
+        <div class="recent-entries">
+          <h3>Recently added (this session)</h3>
+          <div class="recent-list" id="acEntryRecent"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= ATTENDANCE ENTRY ================= -->
+    <div id="page-attendance-entry" class="hidden">
+      <div class="entry-wrap">
+        <div class="entry-card">
+          <h2>Attendance Entry</h2>
+          <p class="entry-sub">Answer the genuineness questions below to verify an attendance record. Each answer is marked, a verification score is calculated automatically, and your remarks are saved at the end. The entry appears immediately under Reports &amp; Audit Logs → Attendance. This mentor's Skill Development and Coursework Verification must be completed first — step 3 of the review flow.</p>
+
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="atEntryCampus">Campus</label>
+              <select id="atEntryCampus">
+                <option value="">Select Campus</option>
+                <option value="Kamaraj College">Kamaraj College</option>
+                <option value="Kamaraj Women's College">Kamaraj Women's College</option>
+                <option value="SDNB Vaishnav College for Women">SDNB Vaishnav College for Women</option>
+                <option value="Patrician College of Arts & Science">Patrician College of Arts & Science</option>
+                <option value="TERF's College of Arts and Science">TERF's College of Arts and Science</option>
+                <option value="Sree Saraswathi Thyagaraja College">Sree Saraswathi Thyagaraja College</option>
+                <option value="TJS College of Arts and Science">TJS College of Arts and Science</option>
+                <option value="Bharathidasan College of Arts & Science">Bharathidasan College of Arts & Science</option>
+                <option value="Nagarathinam Angalammal Arts & Science College">Nagarathinam Angalammal Arts & Science College</option>
+                <option value="Vinayaga Mission’s Research Foundation School of Arts & Science">Vinayaga Mission’s Research Foundation School of Arts & Science</option>
+                <option value="Sri Amaraavathi College of Arts & Science">Sri Amaraavathi College of Arts & Science</option>
+                <option value="Takshashila University">Takshashila University</option>
+                <option value="Study World Group of Institution">Study World Group of Institution</option>
+                <option value="Rathinam College of Arts & Science">Rathinam College of Arts & Science</option>
+                <option value="Noorul Islam Centre for Higher Education (NICHE)">Noorul Islam Centre for Higher Education (NICHE)</option>
+                <option value="AMET University">AMET University</option>
+                <option value="Joy University">Joy University</option>
+                <option value="Sasurie College of Arts and Science">Sasurie College of Arts and Science</option>
+                <option value="Alliance University">Alliance University</option>
+                <option value="Kristu Jayathi University">Kristu Jayathi University</option>
+                <option value="S-VYASA University">S-VYASA University</option>
+                <option value="Asian School of Business">Asian School of Business</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="atEntryDeptName">Department</label>
+              <input type="text" id="atEntryDeptName" placeholder="Enter department name">
+            </div>
+            <div class="form-field">
+              <label for="atEntryDepartment">Domain</label>
+              <select id="atEntryDepartment">
+                <option value="">Select Domain</option>
+                <option value="Tamil">Tamil</option>
+                <option value="Communication">Communication</option>
+                <option value="Computer Science">Computer Science</option>
+                <option value="Data Science">Data Science</option>
+                <option value="Management">Management</option>
+                <option value="Commerce">Commerce</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="atEntryMentor">Mentor Name</label>
+              <input type="text" id="atEntryMentor" placeholder="Enter mentor name">
+            </div>
+            <div class="form-field">
+              <label for="atEntryDate">Date of Marking</label>
+<input type="date" id="atEntryDate" readonly tabindex="-1">
+            </div>
+            <div class="form-field">
+              <label for="atEntryBelow75">Students Below 75% Attendance</label>
+              <input type="number" id="atEntryBelow75" min="0" placeholder="Enter count">
+            </div>
+          </div>
+
+          <div id="atFlowStrip"></div>
+
+          <div class="section-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+            Genuineness Check
+          </div>
+          <div class="criteria-grid" id="atEntryCriteria"></div>
+
+          <div class="score-band">
+            <span class="score-label">Verification Score (auto-calculated from your answers)</span>
+            <span class="score-value" id="atEntryScoreValue">0/100</span>
+          </div>
+
+          <div class="status-band">
+            <span class="status-label">Status</span>
+            <select id="atEntryStatus" class="audit-select st-InProgress">
+              <option value="Completed">Completed</option>
+              <option value="In Progress" selected>In Progress</option>
+              <option value="Not Completed">Not Completed</option>
+            </select>
+          </div>
+
+          <div class="form-field full" style="margin-top:16px;">
+            <label for="atEntryRemarks">Remarks</label>
+            <textarea id="atEntryRemarks" rows="3" placeholder="Final remarks on this attendance record..."></textarea>
+          </div>
+
+          <div class="entry-actions">
+            <button class="btn-primary" id="atEntrySubmit">Continue</button>
+            <button class="btn-secondary" id="atEntryReset">Reset</button>
+          </div>
+        </div>
+
+        <div class="recent-entries">
+          <h3>Recently added (this session)</h3>
+          <div class="recent-list" id="atEntryRecent"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= INTERNAL AUDIT ENTRY ================= -->
+    <div id="page-audit-entry" class="hidden">
+      <div class="entry-wrap">
+        <div class="entry-card">
+          <h2>Internal Audit Entry</h2>
+          <p class="entry-sub">Use this when you and another campus manager sit down to review a campus manager's work. This is the final step of the review flow — it unlocks only once Skill Development, Coursework Verification, and Attendance have all been completed for this campus manager. Confirm whether each was genuinely completed, add your audit notes (required), then submit — the record appears immediately under Reports &amp; Audit Logs → Internal Audit so it can be checked again on the next daily review.</p>
+
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="adEntryCampus">Campus</label>
+              <select id="adEntryCampus">
+                <option value="">Select Campus</option>
+                <option value="Kamaraj College">Kamaraj College</option>
+                <option value="Kamaraj Women's College">Kamaraj Women's College</option>
+                <option value="SDNB Vaishnav College for Women">SDNB Vaishnav College for Women</option>
+                <option value="Patrician College of Arts & Science">Patrician College of Arts & Science</option>
+                <option value="TERF's College of Arts and Science">TERF's College of Arts and Science</option>
+                <option value="Sree Saraswathi Thyagaraja College">Sree Saraswathi Thyagaraja College</option>
+                <option value="TJS College of Arts and Science">TJS College of Arts and Science</option>
+                <option value="Bharathidasan College of Arts & Science">Bharathidasan College of Arts & Science</option>
+                <option value="Nagarathinam Angalammal Arts & Science College">Nagarathinam Angalammal Arts & Science College</option>
+                <option value="Vinayaga Mission’s Research Foundation School of Arts & Science">Vinayaga Mission’s Research Foundation School of Arts & Science</option>
+                <option value="Sri Amaraavathi College of Arts & Science">Sri Amaraavathi College of Arts & Science</option>
+                <option value="Takshashila University">Takshashila University</option>
+                <option value="Study World Group of Institution">Study World Group of Institution</option>
+                <option value="Rathinam College of Arts & Science">Rathinam College of Arts & Science</option>
+                <option value="Noorul Islam Centre for Higher Education (NICHE)">Noorul Islam Centre for Higher Education (NICHE)</option>
+                <option value="AMET University">AMET University</option>
+                <option value="Joy University">Joy University</option>
+                <option value="Sasurie College of Arts and Science">Sasurie College of Arts and Science</option>
+                <option value="Alliance University">Alliance University</option>
+                <option value="Kristu Jayathi University">Kristu Jayathi University</option>
+                <option value="S-VYASA University">S-VYASA University</option>
+                <option value="Asian School of Business">Asian School of Business</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="adEntryDeptName">Department</label>
+              <input type="text" id="adEntryDeptName" placeholder="Enter department name">
+            </div>
+            <div class="form-field">
+              <label for="adEntryDepartment">Domain</label>
+              <select id="adEntryDepartment">
+                <option value="">Select Domain</option>
+                <option value="Tamil">Tamil</option>
+                <option value="Communication">Communication</option>
+                <option value="Computer Science">Computer Science</option>
+                <option value="Data Science">Data Science</option>
+                <option value="Management">Management</option>
+                <option value="Commerce">Commerce</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="adEntryMentor">Campus Manager Being Audited</label>
+              <input type="text" id="adEntryMentor" placeholder="Enter campus manager name">
+            </div>
+            <div class="form-field">
+              <label for="adEntryDate">Date of Audit</label>
+<input type="date" id="adEntryDate" readonly tabindex="-1">
+            </div>
+            <div class="form-field full">
+              <label for="adEntryAuditor">Auditor (Reviewing Campus Manager)</label>
+              <input type="text" id="adEntryAuditor" placeholder="Enter auditor name">
+            </div>
+          </div>
+
+          <div id="adFlowStrip"></div>
+
+          <div class="criteria-grid" id="adEntryCriteria"></div>
+
+          <div class="form-field full" style="margin-top:14px;">
+            <label for="adEntryNotes">Audit Notes</label>
+            <textarea id="adEntryNotes" rows="3" placeholder="Remarks from the audit discussion, e.g. why something was marked Not Completed..."></textarea>
+          </div>
+
+          <div class="score-band">
+            <span class="score-label">Overall Audit Status</span>
+            <span class="score-value" id="adEntryOverallValue">In Progress</span>
+          </div>
+
+          <div class="entry-actions">
+            <button class="btn-primary" id="adEntrySubmit">Submit</button>
+            <button class="btn-secondary" id="adEntryReset">Reset</button>
+          </div>
+        </div>
+
+        <div class="recent-entries">
+          <h3>Recently audited (this session)</h3>
+          <div class="recent-list" id="adEntryRecent"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= MARK TASK — FLOW OVERVIEW ================= -->
+    <div id="page-mark-flow" class="hidden">
+      <div class="entry-wrap">
+        <div class="entry-card">
+          <h2>Record Audit</h2>
+          <p class="entry-sub" id="mfEntrySub">Choose the campus, department, type, course and the mentor's name to start or continue their review. The flow runs in order — Skill Development, Coursework Verification, then Attendance — each step unlocking once the one before it is logged for this mentor. Internal Audit becomes available once all three are complete.</p>
+
+          <div class="form-grid">
+            <div class="form-field full">
+              <label for="mfEntryCampus">Campus</label>
+              <select id="mfEntryCampus">
+                <option value="">Select Campus</option>
+                <option value="Kamaraj College">Kamaraj College</option>
+                <option value="Kamaraj Women's College">Kamaraj Women's College</option>
+                <option value="SDNB Vaishnav College for Women">SDNB Vaishnav College for Women</option>
+                <option value="Patrician College of Arts & Science">Patrician College of Arts & Science</option>
+                <option value="TERF's College of Arts and Science">TERF's College of Arts and Science</option>
+                <option value="Sree Saraswathi Thyagaraja College">Sree Saraswathi Thyagaraja College</option>
+                <option value="TJS College of Arts and Science">TJS College of Arts and Science</option>
+                <option value="Bharathidasan College of Arts & Science">Bharathidasan College of Arts & Science</option>
+                <option value="Nagarathinam Angalammal Arts & Science College">Nagarathinam Angalammal Arts & Science College</option>
+                <option value="Vinayaga Mission’s Research Foundation School of Arts & Science">Vinayaga Mission’s Research Foundation School of Arts & Science</option>
+                <option value="Sri Amaraavathi College of Arts & Science">Sri Amaraavathi College of Arts & Science</option>
+                <option value="Takshashila University">Takshashila University</option>
+                <option value="Study World Group of Institution">Study World Group of Institution</option>
+                <option value="Rathinam College of Arts & Science">Rathinam College of Arts & Science</option>
+                <option value="Noorul Islam Centre for Higher Education (NICHE)">Noorul Islam Centre for Higher Education (NICHE)</option>
+                <option value="AMET University">AMET University</option>
+                <option value="Joy University">Joy University</option>
+                <option value="Sasurie College of Arts and Science">Sasurie College of Arts and Science</option>
+                <option value="Alliance University">Alliance University</option>
+                <option value="Kristu Jayathi University">Kristu Jayathi University</option>
+                <option value="S-VYASA University">S-VYASA University</option>
+                <option value="Asian School of Business">Asian School of Business</option>
+              </select>
+            </div>
+            <div class="form-field full">
+              <label for="mfEntryDeptName">Department</label>
+              <input type="text" id="mfEntryDeptName" placeholder="Enter department name">
+            </div>
+            <div class="form-field full">
+              <label for="mfEntryDepartment">Domain</label>
+              <select id="mfEntryDepartment">
+                <option value="">Select Domain</option>
+                <option value="Tamil">Tamil</option>
+                <option value="Communication">Communication</option>
+                <option value="Computer Science">Computer Science</option>
+                <option value="Data Science">Data Science</option>
+                <option value="Management">Management</option>
+                <option value="Commerce">Commerce</option>
+              </select>
+            </div>
+            <div class="form-field full">
+              <label for="mfEntryType">Skill / Coursework</label>
+              <select id="mfEntryType">
+                <option value="Skill Development">Skill Development</option>
+                <option value="Coursework Verification">Coursework Verification</option>
+              </select>
+            </div>
+            <div class="form-field full">
+              <label for="mfEntryCourse">Course Name</label>
+              <input type="text" id="mfEntryCourse" placeholder="Enter course name">
+            </div>
+            <div class="form-field full">
+              <label for="mfEntryMentor">Mentor Name</label>
+              <input type="text" id="mfEntryMentor" placeholder="Enter mentor name to start or continue their review flow">
+            </div>
+          </div>
+
+          <div class="criteria-row" style="margin-top:16px;">
+            <span>Has the weekly plan been submitted by the mentor?</span>
+            <div class="yn-group" role="group" aria-label="Has the weekly plan been submitted by the mentor?" id="mfWeeklyPlanGroup">
+              <button type="button" class="yn-btn yes" data-val="yes">Yes</button>
+              <button type="button" class="yn-btn no" data-val="no">No</button>
+            </div>
+          </div>
+
+          <div class="entry-actions">
+            <button class="btn-primary" id="mfEntryContinue">Continue</button>
+          </div>
+
+          <div id="mfFlowStrip"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-dashboard" class="hidden"></div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay hidden" id="modalOverlay">
+  <div class="modal-box">
+    <h3 id="modalTitle"></h3>
+    <p id="modalMessage"></p>
+    <div class="modal-actions" id="modalActions"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  function todayIso(){
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  }
+  function isoToDMY(iso){
+    const parts = iso.split("-");
+    if(parts.length !== 3) return todayIso().split("-").reverse().join("/");
+    const [y,m,d] = parts;
+    return d + "/" + m + "/" + y;
+  }
+  function initials(name){ return name.split(" ").filter(Boolean).map(w=>w[0]).slice(0,2).join("").toUpperCase(); }
+  const AVATAR_COLORS = ["#1E7A3C","#B9526B","#8C5FC4","#C9822B","#2E7BB0","#4C8B6B","#B0533C","#6B6FCB"];
+  function avatarColor(name){
+    let h=0; for(let i=0;i<name.length;i++) h = (h*31 + name.charCodeAt(i)) >>> 0;
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  }
+
+  // ---------------- generic modal ----------------
+  function showModal(title, message, buttons){
+    document.getElementById("modalTitle").textContent = title;
+    document.getElementById("modalMessage").textContent = message;
+    const actions = document.getElementById("modalActions");
+    actions.innerHTML = "";
+    buttons.forEach(b => {
+      const btn = document.createElement("button");
+      btn.className = b.primary ? "btn-primary" : "btn-secondary";
+      btn.textContent = b.label;
+      btn.type = "button";
+      btn.addEventListener("click", () => { closeModal(); if(b.onClick) b.onClick(); });
+      actions.appendChild(btn);
+    });
+    document.getElementById("modalOverlay").classList.remove("hidden");
+  }
+  function closeModal(){
+    document.getElementById("modalOverlay").classList.add("hidden");
+  }
+
+  // ---------------- genuineness question sets ----------------
+  const CRITERIA_KEYS = ["genuine","weeklyPlan","tracker","assignment","assessment"];
+  const CRITERIA_SHORT = {
+    genuine: "Genuine Marking", weeklyPlan: "Consistency", tracker: "Daily Tracker",
+    assignment: "Assignment", assessment: "Assessment"
+  };
+  const CRITERIA_QUESTIONS = {
+    genuine: "Was this log genuinely marked, not backdated or copied?",
+    weeklyPlan: "Was progress on this skill logged consistently rather than all at once?",
+    tracker: "Was the daily tracker updated consistently?",
+    assignment: "Was the related assignment completed?",
+    assessment: "Was the related assessment completed?"
+  };
+
+  const ACADEMIC_KEYS = ["assignmentGenuine","assessmentGenuine","beforeDeadline","studyMaterial"];
+  const ACADEMIC_SHORT = {
+    assignmentGenuine: "Assignment Genuine", assessmentGenuine: "Assessment Genuine",
+    beforeDeadline: "Before Deadline", studyMaterial: "Study Material"
+  };
+  const ACADEMIC_QUESTIONS = {
+    assignmentGenuine: "Was the assignment genuinely completed by the learner, not copied?",
+    assessmentGenuine: "Was the assessment genuinely completed by the learner, not copied?",
+    beforeDeadline: "Was the task completed before the deadline?",
+    studyMaterial: "Was study material shared with the learner for this task?"
+  };
+
+  const ATTENDANCE_KEYS = ["markedDaily","crossVerified","noProxy","matchesTracker"];
+  const ATTENDANCE_SHORT = {
+    markedDaily: "Daily Marking", crossVerified: "Cross-Verified", noProxy: "No Proxy", matchesTracker: "Matches Tracker"
+  };
+  const ATTENDANCE_QUESTIONS = {
+    markedDaily: "Was attendance marked daily by the mentor, not bulk-updated later?",
+    crossVerified: "Was it cross-verified with the class recording or log?",
+    noProxy: "Is there any  proxy attendance?",
+    matchesTracker: "Does the attendance percentage match the daily tracker?"
+  };
+
+  const CRITERIA_CONFIG = {
+    skill: { keys: CRITERIA_KEYS, short: CRITERIA_SHORT, questions: CRITERIA_QUESTIONS },
+    academic: { keys: ACADEMIC_KEYS, short: ACADEMIC_SHORT, questions: ACADEMIC_QUESTIONS },
+    attendance: { keys: ATTENDANCE_KEYS, short: ATTENDANCE_SHORT, questions: ATTENDANCE_QUESTIONS }
+  };
+
+  // Skill Development questions that require proof (a link or an uploaded file)
+  // when the mentor answers "Yes".
+  const SKILL_PROOF_KEYS = ["assignment","assessment"];
+
+  function scoreFromAnswers(answers, keys){
+    const met = keys.filter(k => answers[k]).length;
+    return Math.round((met / keys.length) * 100);
+  }
+  function recomputeRow(domain, row){
+    const cfg = CRITERIA_CONFIG[domain];
+    row.score = scoreFromAnswers(row.criteria, cfg.keys);
+  }
+  function blankAnswers(domain){
+    const c = {};
+    CRITERIA_CONFIG[domain].keys.forEach(k => c[k] = false);
+    return c;
+  }
+  function blankProof(){
+    const p = {};
+    SKILL_PROOF_KEYS.forEach(k => p[k] = { link: "", fileName: "" });
+    return p;
+  }
+  function stKey(s){ return s.replace(/\s+/g,""); }
+
+  // ---------------- internal audit ----------------
+  const AUDIT_KEYS = ["weeklyPlan","skillDev","academic"];
+  const AUDIT_LABELS = {
+    weeklyPlan: "Consistent Logging Verified",
+    skillDev: "Skill Development Completed",
+    academic: "Coursework Verification Completed"
+  };
+  const AUDIT_STATUSES = ["Completed","In Progress","Not Completed"];
+
+  function overallAuditStatus(row){
+    const vals = AUDIT_KEYS.map(k => row[k]);
+    if(vals.every(v => v === "Completed")) return "Completed";
+    if(vals.some(v => v === "Not Completed")) return "Not Completed";
+    return "In Progress";
+  }
+  let auditSeq = 0;
+
+  // ---------------- data store ----------------
+  let skillSeq = 0, academicSeq = 0, attendanceSeq = 0;
+
+  const DATA = {
+    skill: [],
+    academic: [],
+    attendance: [],
+    audit: []
+  };
+
+  const activityLog = [];
+  function logActivity(domain, uid){
+    activityLog.push({ domain, uid, ts: Date.now() + activityLog.length });
+  }
+
+  const STATUS_MAP = {
+    "Completed":"ok","Achieved":"ok",
+    "Partial":"warn","In Progress":"warn",
+    "Not Completed":"bad","Not Achieved":"bad"
+  };
+
+  function escapeAttr(s){ return String(s).replace(/"/g,"&quot;"); }
+  function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+  // ---------------- sequential flow gating helpers ----------------
+  const FLOW_ORDER = ["skill","academic","attendance"];
+  const FLOW_LABELS = { skill: "Skill Dev.", academic: "Coursework Verification", attendance: "Attendance", audit: "Internal Audit" };
+  const FLOW_PAGE_MAP = { skill: "skill-entry", academic: "academic-entry", attendance: "attendance-entry", audit: "audit-entry" };
+  const FLOW_MENTOR_FIELD = { skill: "skEntryMentor", academic: "acEntryMentor", attendance: "atEntryMentor", audit: "adEntryMentor" };
+  const FLOW_CAMPUS_FIELD = { skill: "skEntryCampus", academic: "acEntryCampus", attendance: "atEntryCampus", audit: "adEntryCampus" };
+  const FLOW_DEPARTMENT_FIELD = { skill: "skEntryDepartment", academic: "acEntryDepartment", attendance: "atEntryDepartment", audit: "adEntryDepartment" };
+  const FLOW_DEPTNAME_FIELD = { skill: "skEntryDeptName", academic: "acEntryDeptName", attendance: "atEntryDeptName", audit: "adEntryDeptName" };
+  const FLOW_SUBJECT_FIELD = { skill: "skEntrySubject", academic: "acEntrySubject", attendance: null, audit: null };
+  const FLOW_STRIP_ID = { skill: "skFlowStrip", academic: "acFlowStrip", attendance: "atFlowStrip", audit: "adFlowStrip" };
+  function normMentor(s){ return (s || "").trim().toLowerCase(); }
+  function stageDone(domain, mentorName){
+    const n = normMentor(mentorName);
+    if(!n) return false;
+    return DATA[domain].some(r => normMentor(r.mentor) === n);
+  }
+  function mentorFlowStatus(mentorName){
+    const out = {};
+    FLOW_ORDER.forEach(d => out[d] = stageDone(d, mentorName));
+    return out;
+  }
+  // returns the first prerequisite domain not yet done, or null if all prior stages are satisfied,
+  // checking only domains that appear before `uptoExclusive` in FLOW_ORDER (uptoExclusive not checked)
+  function firstMissingPrereq(mentorName, uptoExclusive){
+    const idx = FLOW_ORDER.indexOf(uptoExclusive);
+    const checkList = idx === -1 ? FLOW_ORDER : FLOW_ORDER.slice(0, idx);
+    for(const d of checkList){
+      if(!stageDone(d, mentorName)) return d;
+    }
+    return null;
+  }
+  // returns the first stage in FLOW_ORDER not yet completed for this mentor, or "audit" if all three are done
+  function firstIncompleteStage(mentorName){
+    for(const d of FLOW_ORDER){
+      if(!stageDone(d, mentorName)) return d;
+    }
+    return "audit";
+  }
+  // reads the mentor/campus/department fields for a given entry-page prefix ("sk","ac","at","ad","mf")
+  function readFlowCtx(prefix){
+    const m = document.getElementById(prefix + "EntryMentor");
+    const c = document.getElementById(prefix + "EntryCampus");
+    const d = document.getElementById(prefix + "EntryDepartment");
+    const dn = document.getElementById(prefix + "EntryDeptName");
+    return {
+      mentor: m ? m.value : "",
+      campus: c ? c.value : "",
+      department: d ? d.value : "",
+      deptName: dn ? dn.value : ""
+    };
+  }
+  // renders the 3/4-step strip. currentDomain is one of FLOW_ORDER or "audit".
+  // Every step is clickable — clicking jumps straight to that stage's entry page,
+  // carrying the mentor/campus/department across so the flow feels continuous end-to-end.
+  function renderFlowStrip(containerId, ctx, currentDomain){
+    const mentorName = (ctx && ctx.mentor) || "";
+    const campusName = (ctx && ctx.campus) || "";
+    const departmentName = (ctx && ctx.department) || "";
+    const deptNameValue = (ctx && ctx.deptName) || "";
+    const el = document.getElementById(containerId);
+    if(!el) return;
+    const steps = currentDomain === "audit" ? FLOW_ORDER.concat(["audit"]) : FLOW_ORDER;
+    const status = mentorFlowStatus(mentorName);
+    const hasMentor = !!normMentor(mentorName);
+
+    const stepsHtml = steps.map((d,i) => {
+      const isAuditStep = d === "audit";
+      const done = isAuditStep ? false : status[d];
+      const isCurrent = d === currentDomain;
+      let cls = "locked";
+      if(done) cls = "done";
+      else if(isCurrent) cls = "current";
+      const node = done
+        ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+        : String(i+1);
+      const isLast = i === steps.length - 1;
+      return `<div class="flow-step ${cls}">
+          <button type="button" class="flow-step-btn" data-domain="${d}">
+            <div class="flow-node">${node}</div>
+            <span class="flow-label">${FLOW_LABELS[d]}</span>
+          </button>
+          ${isLast ? "" : `<div class="flow-line"></div>`}
+        </div>`;
+    }).join("");
+
+    el.innerHTML = `<div class="flow-strip ${hasMentor ? "" : "is-empty"}">${stepsHtml}</div>`;
+
+    el.querySelectorAll(".flow-step-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const d = btn.dataset.domain;
+        if(hasMentor){
+          const mField = document.getElementById(FLOW_MENTOR_FIELD[d]);
+          if(mField) mField.value = mentorName;
+          const cField = document.getElementById(FLOW_CAMPUS_FIELD[d]);
+          if(cField && campusName) cField.value = campusName;
+          const deptField = document.getElementById(FLOW_DEPARTMENT_FIELD[d]);
+          if(deptField && departmentName) deptField.value = departmentName;
+          const deptNameField = document.getElementById(FLOW_DEPTNAME_FIELD[d]);
+          if(deptNameField && deptNameValue) deptNameField.value = deptNameValue;
+        }
+        navigateTo(FLOW_PAGE_MAP[d]);
+      });
+    });
+
+    // hint line
+    let hintEl = el.nextElementSibling;
+    if(!hintEl || !hintEl.classList || !hintEl.classList.contains("flow-hint-slot")){
+      hintEl = document.createElement("div");
+      hintEl.className = "flow-hint-slot";
+      el.parentNode.insertBefore(hintEl, el.nextSibling);
+    }
+    if(!hasMentor){
+      hintEl.innerHTML = `<div class="flow-hint">Enter the mentor name to check this mentor's progress through the review flow.</div>`;
+      return;
+    }
+    const missing = firstMissingPrereq(mentorName, currentDomain);
+    if(missing){
+      hintEl.innerHTML = `<div class="flow-hint blocked">Complete ${FLOW_LABELS[missing]} for this mentor first — it hasn't been logged yet.</div>`;
+    } else {
+      hintEl.innerHTML = `<div class="flow-hint ready">Prerequisites complete — you can save this entry.</div>`;
+    }
+  }
+
+  function mentorCell(name){
+    return `<div class="cell-person"><div class="cell-avatar" style="background:${avatarColor(name)}">${initials(name)}</div>${escapeHtml(name)}</div>`;
+  }
+  function pillCell(status){
+    const cls = STATUS_MAP[status] || "warn";
+    return `<span class="pill ${cls}">${status}</span>`;
+  }
+  function barCell(pct){
+    const color = pct >= 80 ? "var(--green-ink2)" : pct >= 50 ? "var(--amber-ink)" : "var(--red-ink)";
+    return `<div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div><span style="font-size:12px;color:${color};font-weight:600">${pct}%</span></div>`;
+  }
+  function remarksCell(r){
+    const text = r.remarks && r.remarks.trim() ? r.remarks.trim() : "—";
+    return `<span class="remarks-cell" title="${escapeAttr(text)}">${escapeHtml(text)}</span>`;
+  }
+  function subjectCell(r){
+    return `<input type="text" class="subject-input" data-domain="skill" data-uid="${r.uid}" value="${escapeAttr(r.subject)}" placeholder="Enter subject" aria-label="Skill development subject">`;
+  }
+  function criteriaToggle(domain, r, key){
+    const on = !!r.criteria[key];
+    const question = CRITERIA_CONFIG[domain].questions[key];
+    return `<button type="button" class="crit-btn ${on ? "on" : "off"}" data-domain="${domain}" data-uid="${r.uid}" data-key="${key}" title="${escapeAttr(question)}" aria-pressed="${on}">${on ? "✓" : "✕"}</button>`;
+  }
+  function proofCell(proof){
+    if(!proof) return "—";
+    if(proof.link && proof.link.trim()) return `<a href="${escapeAttr(proof.link.trim())}" target="_blank" rel="noopener noreferrer" style="color:var(--green-ink2);text-decoration:underline;">Open link</a>`;
+    if(proof.fileName) return escapeHtml(proof.fileName);
+    return "—";
+  }
+  function auditSelectCell(r, key){
+    const val = r[key];
+    const opts = AUDIT_STATUSES.map(s => `<option value="${s}" ${s===val?"selected":""}>${s}</option>`).join("");
+    return `<select class="audit-select st-${stKey(val)}" data-uid="${r.uid}" data-key="${key}" aria-label="${AUDIT_LABELS[key]}">${opts}</select>`;
+  }
+
+  const TAB_CONFIG = {
+    skill: {
+      label: "Skill Development",
+      minWidth: 2380,
+      cols: ["Log ID","Mentor Name","Campus","Department","Domain","Skill Subject",
+        CRITERIA_SHORT.genuine, CRITERIA_SHORT.weeklyPlan, CRITERIA_SHORT.tracker, CRITERIA_SHORT.assignment, CRITERIA_SHORT.assessment,
+        "Assignment Proof","Assessment Proof",
+        "Score","Tasks Assigned","Tasks Completed","Avg Completion %","Remarks","Date of Marking","Status"],
+      row(r){ return [
+        r.id,
+        mentorCell(r.mentor),
+        escapeHtml(r.campus || "—"),
+        escapeHtml(r.deptName || "—"),
+        escapeHtml(r.department || "—"),
+        subjectCell(r),
+        criteriaToggle("skill",r,"genuine"), criteriaToggle("skill",r,"weeklyPlan"), criteriaToggle("skill",r,"tracker"),
+        criteriaToggle("skill",r,"assignment"), criteriaToggle("skill",r,"assessment"),
+        proofCell(r.proof && r.proof.assignment), proofCell(r.proof && r.proof.assessment),
+        barCell(r.score),
+        (r.tasksAssigned == null ? "—" : r.tasksAssigned),
+        (r.tasksCompleted == null ? "—" : r.tasksCompleted),
+        (r.avgCompletionPct == null ? "—" : r.avgCompletionPct + "%"),
+        remarksCell(r),
+        r.date, pillCell(r.status)
+      ]; },
+      exportRow(r){ return [
+        r.id, r.mentor, r.campus || "", r.deptName || "", r.department || "", r.subject,
+        r.criteria.genuine ? "Yes" : "No", r.criteria.weeklyPlan ? "Yes" : "No",
+        r.criteria.tracker ? "Yes" : "No", r.criteria.assignment ? "Yes" : "No",
+        r.criteria.assessment ? "Yes" : "No",
+        (r.proof && r.proof.assignment ? (r.proof.assignment.link || r.proof.assignment.fileName || "") : ""),
+        (r.proof && r.proof.assessment ? (r.proof.assessment.link || r.proof.assessment.fileName || "") : ""),
+        r.score + "/100",
+        (r.tasksAssigned == null ? "" : r.tasksAssigned),
+        (r.tasksCompleted == null ? "" : r.tasksCompleted),
+        (r.avgCompletionPct == null ? "" : r.avgCompletionPct + "%"),
+        r.remarks || "", r.date, r.status
+      ]; }
+    },
+    academic: {
+      label: "Coursework Verification",
+      minWidth: 1740,
+      cols: ["Task ID","Mentor Name","Campus","Department","Domain","Academic Subject",
+        ACADEMIC_SHORT.assignmentGenuine, ACADEMIC_SHORT.assessmentGenuine, ACADEMIC_SHORT.beforeDeadline, ACADEMIC_SHORT.studyMaterial,
+        "Score","Remarks","Date of Marking","Status"],
+      row(r){ return [
+        r.id,
+        mentorCell(r.mentor),
+        escapeHtml(r.campus || "—"),
+        escapeHtml(r.deptName || "—"),
+        escapeHtml(r.department || "—"),
+        escapeHtml(r.subject || "—"),
+        criteriaToggle("academic",r,"assignmentGenuine"), criteriaToggle("academic",r,"assessmentGenuine"),
+        criteriaToggle("academic",r,"beforeDeadline"), criteriaToggle("academic",r,"studyMaterial"),
+        barCell(r.score), remarksCell(r),
+        r.date, pillCell(r.status)
+      ]; },
+      exportRow(r){ return [
+        r.id, r.mentor, r.campus || "", r.deptName || "", r.department || "", r.subject || "",
+        r.criteria.assignmentGenuine ? "Yes" : "No", r.criteria.assessmentGenuine ? "Yes" : "No",
+        r.criteria.beforeDeadline ? "Yes" : "No", r.criteria.studyMaterial ? "Yes" : "No",
+        r.score + "/100", r.remarks || "", r.date, r.status
+      ]; }
+    },
+    attendance: {
+      label: "Attendance",
+      minWidth: 1760,
+      cols: ["Record ID","Mentor Name","Campus","Department","Domain","Students Below 75%",
+        ATTENDANCE_SHORT.markedDaily, ATTENDANCE_SHORT.crossVerified, ATTENDANCE_SHORT.noProxy, ATTENDANCE_SHORT.matchesTracker,
+        "Verification Score","Remarks","Date of Marking","Status"],
+      row(r){ return [
+        r.id,
+        mentorCell(r.mentor),
+        escapeHtml(r.campus || "—"),
+        escapeHtml(r.deptName || "—"),
+        escapeHtml(r.department || "—"),
+        r.below75,
+        criteriaToggle("attendance",r,"markedDaily"), criteriaToggle("attendance",r,"crossVerified"),
+        criteriaToggle("attendance",r,"noProxy"), criteriaToggle("attendance",r,"matchesTracker"),
+        barCell(r.score), remarksCell(r),
+        r.date, pillCell(r.status)
+      ]; },
+      exportRow(r){ return [
+        r.id, r.mentor, r.campus || "", r.deptName || "", r.department || "", r.below75,
+        r.criteria.markedDaily ? "Yes" : "No", r.criteria.crossVerified ? "Yes" : "No",
+        r.criteria.noProxy ? "Yes" : "No", r.criteria.matchesTracker ? "Yes" : "No",
+        r.score + "/100", r.remarks || "", r.date, r.status
+      ]; }
+    },
+    audit: {
+      label: "Internal Audit",
+      minWidth: 1580,
+      cols: ["Audit ID","Mentor Audited","Campus","Department","Domain","Skill Development","Coursework Verification","Consistent Logging","Overall Status","Auditor","Audited On"],
+      row(r){ return [
+        r.id,
+        mentorCell(r.mentor),
+        escapeHtml(r.campus || "—"),
+        escapeHtml(r.deptName || "—"),
+        escapeHtml(r.department || "—"),
+        auditSelectCell(r,"skillDev"), auditSelectCell(r,"academic"), auditSelectCell(r,"weeklyPlan"),
+        pillCell(r.overall),
+        mentorCell(r.auditor),
+        r.date
+      ]; },
+      exportRow(r){ return [
+        r.id, r.mentor, r.campus || "", r.deptName || "", r.department || "",
+        r.skillDev, r.academic, r.weeklyPlan, r.overall, r.auditor, r.date
+      ]; }
+    }
+  };
+
+  // ---------------- state ----------------
+  let state = { tab: "skill", search: "", mentor: "", status: "", page: 1, pageSize: 10 };
+
+  function filteredRows(){
+    const raw = DATA[state.tab];
+    return raw.filter(r => {
+      if(state.search){
+        const q = state.search.toLowerCase();
+        const hay = ((r.mentor||"") + " " + (r.auditor||"")).toLowerCase();
+        if(!hay.includes(q)) return false;
+      }
+      if(state.mentor && r.mentor !== state.mentor) return false;
+      if(state.status){
+        const s = state.tab === "audit" ? r.overall : r.status;
+        if(s !== state.status) return false;
+      }
+      return true;
+    });
+  }
+
+  function uniqueStatuses(){
+    if(state.tab === "audit") return [...new Set(DATA.audit.map(r => r.overall))];
+    return [...new Set(DATA[state.tab].map(r => r.status))];
+  }
+
+  function populateFilters(){
+    const mentorSel = document.getElementById("mentorFilter");
+    const statusSel = document.getElementById("statusFilter");
+    const curMentor = state.mentor, curStatus = state.status;
+
+    const mentors = [...new Set(DATA[state.tab].map(r => r.mentor))].sort((a,b) => a.localeCompare(b));
+    mentorSel.innerHTML = '<option value="">Mentor</option>' +
+      mentors.map(m => `<option value="${escapeAttr(m)}" ${m===curMentor?"selected":""}>${escapeHtml(m)}</option>`).join("");
+
+    statusSel.innerHTML = '<option value="">Status</option>' +
+      uniqueStatuses().map(s => `<option value="${s}" ${s===curStatus?"selected":""}>${s}</option>`).join("");
+  }
+
+  function render(){
+    populateFilters();
+
+    const cfg = TAB_CONFIG[state.tab];
+    document.title = "CampusAudit — " + cfg.label;
+
+    document.querySelector(".table-wrap table").style.minWidth = (cfg.minWidth || 980) + "px";
+
+    const thead = document.getElementById("theadRow");
+    thead.innerHTML = `<th class="cell-check"><input type="checkbox" aria-label="Select all"></th>` +
+      cfg.cols.map(c => `<th>${c}</th>`).join("");
+
+    const all = filteredRows();
+    const totalPages = Math.max(1, Math.ceil(all.length / state.pageSize));
+    if(state.page > totalPages) state.page = totalPages;
+    const start = (state.page - 1) * state.pageSize;
+    const pageRows = all.slice(start, start + state.pageSize);
+
+    const tbody = document.getElementById("tbody");
+    if(pageRows.length === 0){
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="${cfg.cols.length+1}">No records yet. Add one from the entry form to see it here.</td></tr>`;
+    } else {
+      tbody.innerHTML = pageRows.map(r => {
+        const cells = cfg.row(r);
+        return `<tr><td class="cell-check"><input type="checkbox" aria-label="Select row"></td>` +
+          cells.map(c => `<td>${c}</td>`).join("") + `</tr>`;
+      }).join("");
+    }
+
+    document.getElementById("pageInfo").textContent = `Page ${state.page} of ${totalPages} · ${all.length} records`;
+    renderPager(totalPages);
+  }
+
+  function renderPager(totalPages){
+    const pager = document.getElementById("pager");
+    pager.innerHTML = "";
+
+    const prev = document.createElement("button");
+    prev.className = "pg-btn"; prev.disabled = state.page <= 1;
+    prev.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Previous`;
+    prev.addEventListener("click", () => { if(state.page>1){ state.page--; render(); } });
+    pager.appendChild(prev);
+
+    const pages = pageList(state.page, totalPages);
+    pages.forEach(p => {
+      if(p === "..."){
+        const span = document.createElement("span");
+        span.className = "pg-ellipsis"; span.textContent = "…";
+        pager.appendChild(span);
+      } else {
+        const b = document.createElement("button");
+        b.className = "pg-btn" + (p === state.page ? " active" : "");
+        b.textContent = p;
+        b.addEventListener("click", () => { state.page = p; render(); });
+        pager.appendChild(b);
+      }
+    });
+
+    const next = document.createElement("button");
+    next.className = "pg-btn"; next.disabled = state.page >= totalPages;
+    next.innerHTML = `Next <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+    next.addEventListener("click", () => { if(state.page<totalPages){ state.page++; render(); } });
+    pager.appendChild(next);
+  }
+
+  function pageList(cur, total){
+    if(total <= 7) return Array.from({length: total}, (_,i)=>i+1);
+    const out = [1];
+    if(cur > 3) out.push("...");
+    for(let p = Math.max(2, cur-1); p <= Math.min(total-1, cur+1); p++) out.push(p);
+    if(cur < total-2) out.push("...");
+    out.push(total);
+    return out;
+  }
+
+  // ---------------- reports events ----------------
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      selectReportsTab(btn.dataset.tab);
+    });
+  });
+
+  function selectReportsTab(tab){
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    const target = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+    if(target) target.classList.add("active");
+    state.tab = tab;
+    state.search = ""; document.getElementById("searchInput").value = "";
+    state.mentor = ""; state.status = ""; state.page = 1;
+    render();
+  }
+
+  document.getElementById("searchInput").addEventListener("input", e => {
+    state.search = e.target.value; state.page = 1; render();
+  });
+  document.getElementById("mentorFilter").addEventListener("change", e => {
+    state.mentor = e.target.value; state.page = 1; render();
+  });
+  document.getElementById("statusFilter").addEventListener("change", e => {
+    state.status = e.target.value; state.page = 1; render();
+  });
+
+  document.getElementById("tbody").addEventListener("input", e => {
+    if(e.target.matches(".subject-input")){
+      const row = DATA.skill.find(r => r.uid === e.target.dataset.uid);
+      if(row) row.subject = e.target.value;
+    }
+  });
+  document.getElementById("tbody").addEventListener("click", e => {
+    const btn = e.target.closest(".crit-btn");
+    if(!btn) return;
+    const domain = btn.dataset.domain;
+    const row = DATA[domain].find(r => r.uid === btn.dataset.uid);
+    if(!row) return;
+    row.criteria[btn.dataset.key] = !row.criteria[btn.dataset.key];
+    recomputeRow(domain, row);
+    render();
+    toast(CRITERIA_CONFIG[domain].short[btn.dataset.key] + ": " + (row.criteria[btn.dataset.key] ? "Yes" : "No"));
+  });
+  document.getElementById("tbody").addEventListener("change", e => {
+    const sel = e.target.closest(".audit-select");
+    if(!sel) return;
+    const row = DATA.audit.find(r => r.uid === sel.dataset.uid);
+    if(!row) return;
+    row[sel.dataset.key] = sel.value;
+    row.overall = overallAuditStatus(row);
+    render();
+    toast(AUDIT_LABELS[sel.dataset.key] + " for " + row.mentor + ": " + row[sel.dataset.key]);
+  });
+
+  let toastTimer;
+  function toast(msg){
+    const el = document.getElementById("toast");
+    el.textContent = msg; el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=> el.classList.remove("show"), 2200);
+  }
+
+  document.getElementById("exportCsv").addEventListener("click", () => {
+    const cfg = TAB_CONFIG[state.tab];
+    const rows = filteredRows();
+    const header = cfg.cols.join(",");
+    const lines = rows.map(r => {
+      return cfg.exportRow(r).map(v => `"${String(v).replace(/"/g,'""')}"`).join(",");
+    });
+    const csv = header + "\n" + lines.join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = cfg.label.replace(/[^a-z0-9]+/gi,"_") + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast("Exported " + rows.length + " rows as CSV");
+  });
+
+  document.getElementById("exportPdf").addEventListener("click", () => {
+    toast("Preparing PDF — use the print dialog to save");
+    setTimeout(() => window.print(), 300);
+  });
+
+// ---------------- generic question-grid helper ----------------
+  function buildQuestionGrid(containerId, domain, answers, onChange){
+    const cfg = CRITERIA_CONFIG[domain];
+    const grid = document.getElementById(containerId);
+    grid.innerHTML = cfg.keys.map(k => `
+      <div class="criteria-row">
+        <span>${cfg.questions[k]}</span>
+        <div class="yn-group" role="group" aria-label="${escapeAttr(cfg.questions[k])}">
+          <button type="button" class="yn-btn yes ${answers[k] ? "active" : ""}" data-key="${k}" data-val="yes" aria-pressed="${answers[k] ? "true" : "false"}">Yes</button>
+          <button type="button" class="yn-btn no ${!answers[k] ? "active" : ""}" data-key="${k}" data-val="no" aria-pressed="${!answers[k] ? "true" : "false"}">No</button>
+        </div>
+      </div>
+    `).join("");
+    grid.onclick = e => {
+      const btn = e.target.closest(".yn-btn");
+      if(!btn) return;
+      const key = btn.dataset.key;
+      const val = btn.dataset.val === "yes";
+      answers[key] = val;
+      grid.querySelectorAll(`.yn-btn[data-key="${key}"]`).forEach(b => {
+        const isActive = (b.dataset.val === "yes") === val;
+        b.classList.toggle("active", isActive);
+        b.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+      onChange();
+    };
+  }
+
+  // ---------------- skill development question grid (with proof capture) ----------------
+  // Same Yes/No behaviour as buildQuestionGrid, but for the "assignment" and
+  // "assessment" questions, answering "Yes" reveals a proof box asking for a
+  // link or an uploaded file. The Yes answer isn't considered valid at submit
+  // time unless a link or file has been provided.
+  function buildSkillCriteriaGrid(answers, proof, onChange){
+    const cfg = CRITERIA_CONFIG.skill;
+    const grid = document.getElementById("skEntryCriteria");
+
+    grid.innerHTML = cfg.keys.map(k => {
+      const isProofKey = SKILL_PROOF_KEYS.includes(k);
+      const answer = !!answers[k];
+      const rowHtml = `
+        <div class="criteria-row">
+          <span>${cfg.questions[k]}</span>
+          <div class="yn-group" role="group" aria-label="${escapeAttr(cfg.questions[k])}">
+            <button type="button" class="yn-btn yes ${answer ? "active" : ""}" data-key="${k}" data-val="yes" aria-pressed="${answer ? "true" : "false"}">Yes</button>
+            <button type="button" class="yn-btn no ${!answer ? "active" : ""}" data-key="${k}" data-val="no" aria-pressed="${!answer ? "true" : "false"}">No</button>
+          </div>
+        </div>`;
+      if(!isProofKey) return rowHtml;
+
+      const p = proof[k];
+      const proofHtml = `
+        <div class="criteria-proof ${answer ? "" : "hidden"}" data-proof-key="${k}">
+          <span class="proof-label">Attach a link or file:</span>
+          <input type="text" class="proof-link-input" data-key="${k}" placeholder="Paste a link (Drive, GitHub, etc.)" value="${escapeAttr(p.link)}">
+          <span class="proof-or">or</span>
+          <input type="file" class="proof-file-input" data-key="${k}" aria-label="Upload a file for ${escapeAttr(cfg.short[k])}">
+          ${p.fileName ? `<span class="proof-file-name">${escapeHtml(p.fileName)}</span>` : ""}
+        </div>`;
+      return rowHtml + proofHtml;
+    }).join("");
+
+    grid.onclick = e => {
+      const btn = e.target.closest(".yn-btn");
+      if(!btn) return;
+      const key = btn.dataset.key;
+      const val = btn.dataset.val === "yes";
+      answers[key] = val;
+      grid.querySelectorAll(`.yn-btn[data-key="${key}"]`).forEach(b => {
+        const isActive = (b.dataset.val === "yes") === val;
+        b.classList.toggle("active", isActive);
+        b.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+      if(SKILL_PROOF_KEYS.includes(key)){
+        const proofEl = grid.querySelector(`.criteria-proof[data-proof-key="${key}"]`);
+        if(proofEl) proofEl.classList.toggle("hidden", !val);
+      }
+      onChange();
+    };
+
+    grid.oninput = e => {
+      if(e.target.matches(".proof-link-input")){
+        proof[e.target.dataset.key].link = e.target.value;
+      }
+    };
+
+    grid.onchange = e => {
+      if(e.target.matches(".proof-file-input")){
+        const key = e.target.dataset.key;
+        const file = e.target.files && e.target.files[0];
+        proof[key].fileName = file ? file.name : "";
+        const proofEl = grid.querySelector(`.criteria-proof[data-proof-key="${key}"]`);
+        if(proofEl){
+          let nameSpan = proofEl.querySelector(".proof-file-name");
+          if(!nameSpan){
+            nameSpan = document.createElement("span");
+            nameSpan.className = "proof-file-name";
+            proofEl.appendChild(nameSpan);
+          }
+          nameSpan.textContent = proof[key].fileName;
+        }
+      }
+    };
+  }
+
+  // ---------------- shared: status-band select wiring ----------------
+  function wireStatusSelect(selectId){
+    const sel = document.getElementById(selectId);
+    if(!sel) return;
+    sel.addEventListener("change", () => {
+      sel.className = "audit-select st-" + stKey(sel.value);
+    });
+  }
+  function resetStatusSelect(selectId){
+    const sel = document.getElementById(selectId);
+    if(!sel) return;
+    sel.value = "In Progress";
+    sel.className = "audit-select st-" + stKey(sel.value);
+  }
+
+  // ---------------- skill development entry page ----------------
+  let skEntryAnswers = blankAnswers("skill");
+  let skEntryProof = blankProof();
+  wireStatusSelect("skEntryStatus");
+
+  function updateSkillScore(){
+    const score = scoreFromAnswers(skEntryAnswers, CRITERIA_KEYS);
+    const el = document.getElementById("skEntryScoreValue");
+    el.textContent = score + "/100";
+    el.style.color = score >= 80 ? "var(--green-ink2)" : score >= 50 ? "var(--amber-ink)" : "var(--red-ink)";
+  }
+
+  // Task Completion Details: Average Completion % is derived from the
+  // "average number of students who completed all tasks" over the
+  // "total number of students in the class".
+  function updateSkillCompletionPct(){
+    const studentsEl = document.getElementById("skEntryAvgStudentsCompleted");
+    const totalEl = document.getElementById("skEntryTotalStudents");
+    const pctEl = document.getElementById("skEntryAvgCompletionPct");
+    const students = parseFloat(studentsEl.value);
+    const total = parseFloat(totalEl.value);
+    if(!isNaN(students) && !isNaN(total) && total > 0){
+      const pct = Math.round((students / total) * 100);
+      pctEl.value = pct + "%";
+      pctEl.dataset.value = pct;
+    } else {
+      pctEl.value = "0%";
+      pctEl.dataset.value = "0";
+    }
+  }
+  ["skEntryAvgStudentsCompleted","skEntryTotalStudents"].forEach(id => {
+    document.getElementById(id).addEventListener("input", updateSkillCompletionPct);
+  });
+
+  function populateSkillEntryStatics(){
+    document.getElementById("skEntryDate").value = todayIso();
+    buildSkillCriteriaGrid(skEntryAnswers, skEntryProof, updateSkillScore);
+    renderFlowStrip("skFlowStrip", readFlowCtx("sk"), "skill");
+  }
+  function resetSkillEntryForm(){
+    document.getElementById("skEntryCampus").value = "";
+    document.getElementById("skEntryDeptName").value = "";
+    document.getElementById("skEntryDepartment").value = "";
+    document.getElementById("skEntryMentor").value = "";
+    document.getElementById("skEntryDate").value = todayIso();
+    document.getElementById("skEntrySubject").value = "";
+    document.getElementById("skEntryTasksAssigned").value = "";
+    document.getElementById("skEntryTasksCompleted").value = "";
+    document.getElementById("skEntryAvgStudentsCompleted").value = "";
+    document.getElementById("skEntryTotalStudents").value = "";
+    updateSkillCompletionPct();
+    document.getElementById("skEntryRemarks").value = "";
+    resetStatusSelect("skEntryStatus");
+    skEntryAnswers = blankAnswers("skill");
+    skEntryProof = blankProof();
+    buildSkillCriteriaGrid(skEntryAnswers, skEntryProof, updateSkillScore);
+    updateSkillScore();
+    renderFlowStrip("skFlowStrip", readFlowCtx("sk"), "skill");
+  }
+  ["skEntryMentor","skEntryCampus","skEntryDepartment","skEntryDeptName"].forEach(id => {
+    document.getElementById(id).addEventListener("input", () => {
+      renderFlowStrip("skFlowStrip", readFlowCtx("sk"), "skill");
+    });
+    document.getElementById(id).addEventListener("change", () => {
+      renderFlowStrip("skFlowStrip", readFlowCtx("sk"), "skill");
+    });
+  });
+
+  const recentSkillUids = [];
+  function renderRecentSkill(){
+    const wrap = document.getElementById("skEntryRecent");
+    if(recentSkillUids.length === 0){
+      wrap.innerHTML = `<div class="recent-empty">No entries added yet this session.</div>`;
+      return;
+    }
+    wrap.innerHTML = recentSkillUids.slice().reverse().map(uid => {
+      const r = DATA.skill.find(x => x.uid === uid);
+      if(!r) return "";
+      return `<div class="recent-row">
+        <div class="rr-left">
+          <div class="cell-avatar" style="background:${avatarColor(r.mentor)};width:24px;height:24px;font-size:9.5px;">${initials(r.mentor)}</div>
+          <span class="rr-name">${escapeHtml(r.mentor)}</span>
+          <span class="rr-sub">${escapeHtml(r.campus || "—")} · ${escapeHtml(r.subject || "—")} · ${r.date}</span>
+        </div>
+        <span class="pill ${STATUS_MAP[r.status] || 'warn'}">${r.status} · ${r.score}/100</span>
+      </div>`;
+    }).join("");
+  }
+
+  document.getElementById("skEntrySubmit").addEventListener("click", () => {
+    const campus = document.getElementById("skEntryCampus").value;
+    const deptName = document.getElementById("skEntryDeptName").value.trim();
+    const department = document.getElementById("skEntryDepartment").value.trim();
+    const mentor = document.getElementById("skEntryMentor").value.trim();
+    const dateIso = document.getElementById("skEntryDate").value;
+    const subject = document.getElementById("skEntrySubject").value.trim();
+    const status = document.getElementById("skEntryStatus").value;
+    const remarks = document.getElementById("skEntryRemarks").value.trim();
+    const tasksAssignedRaw = document.getElementById("skEntryTasksAssigned").value;
+    const tasksCompletedRaw = document.getElementById("skEntryTasksCompleted").value;
+    const avgStudentsRaw = document.getElementById("skEntryAvgStudentsCompleted").value;
+    const totalStudentsRaw = document.getElementById("skEntryTotalStudents").value;
+
+    if(!campus){ toast("Choose a campus before saving"); document.getElementById("skEntryCampus").focus(); return; }
+    if(!deptName){ toast("Enter a department name before saving"); document.getElementById("skEntryDeptName").focus(); return; }
+    if(!department){ toast("Select a domain before saving"); document.getElementById("skEntryDepartment").focus(); return; }
+    if(!mentor){ toast("Enter a mentor name before saving"); document.getElementById("skEntryMentor").focus(); return; }
+    if(!dateIso){ toast("Choose the date of marking before saving"); document.getElementById("skEntryDate").focus(); return; }
+    if(!subject){ toast("Enter a skill development subject before saving"); document.getElementById("skEntrySubject").focus(); return; }
+
+    // Assignment / Assessment marked "Yes" require a proof link or uploaded file.
+    for(const key of SKILL_PROOF_KEYS){
+      if(skEntryAnswers[key]){
+        const p = skEntryProof[key];
+        const hasLink = p.link && p.link.trim();
+        const hasFile = !!p.fileName;
+        if(!hasLink && !hasFile){
+          toast("Attach a link or file for the " + CRITERIA_SHORT[key].toLowerCase());
+          const proofEl = document.querySelector(`#skEntryCriteria .criteria-proof[data-proof-key="${key}"] .proof-link-input`);
+          if(proofEl) proofEl.focus();
+          return;
+        }
+      }
+    }
+
+    if(!remarks){ toast("Enter remarks before saving"); document.getElementById("skEntryRemarks").focus(); return; }
+
+    skillSeq++;
+    const criteria = { ...skEntryAnswers };
+    const proof = {
+      assignment: { ...skEntryProof.assignment },
+      assessment: { ...skEntryProof.assessment }
+    };
+    const row = {
+      uid: "skl-" + skillSeq,
+      id: "#SKL-" + Math.floor(10000 + Math.random()*89999),
+      mentor, campus, deptName, department, subject,
+      criteria, proof, remarks,
+      tasksAssigned: tasksAssignedRaw === "" ? null : Math.max(0, parseInt(tasksAssignedRaw,10) || 0),
+      tasksCompleted: tasksCompletedRaw === "" ? null : Math.max(0, parseInt(tasksCompletedRaw,10) || 0),
+      avgStudentsCompleted: avgStudentsRaw === "" ? null : Math.max(0, parseInt(avgStudentsRaw,10) || 0),
+      totalStudents: totalStudentsRaw === "" ? null : Math.max(0, parseInt(totalStudentsRaw,10) || 0),
+      avgCompletionPct: parseInt(document.getElementById("skEntryAvgCompletionPct").dataset.value || "0", 10),
+      date: isoToDMY(dateIso)
+    };
+    recomputeRow("skill", row);
+    row.status = status;
+    DATA.skill.unshift(row);
+    recentSkillUids.push(row.uid);
+    logActivity("skill", row.uid);
+    renderRecentSkill();
+
+    toast("Entry saved for " + mentor + " — moving on to Coursework Verification.");
+    resetSkillEntryForm();
+    navigateTo("academic-entry");
+    document.getElementById("acEntryMentor").value = mentor;
+    document.getElementById("acEntryCampus").value = campus;
+    document.getElementById("acEntryDeptName").value = deptName;
+    document.getElementById("acEntryDepartment").value = department;
+    renderFlowStrip("acFlowStrip", { mentor, campus, department, deptName }, "academic");
+  });
+  document.getElementById("skEntryReset").addEventListener("click", resetSkillEntryForm);
+
+  // ---------------- coursework verification entry page ----------------
+  let acEntryAnswers = blankAnswers("academic");
+  wireStatusSelect("acEntryStatus");
+
+  function updateAcademicScore(){
+    const score = scoreFromAnswers(acEntryAnswers, ACADEMIC_KEYS);
+    const el = document.getElementById("acEntryScoreValue");
+    el.textContent = score + "/100";
+    el.style.color = score >= 80 ? "var(--green-ink2)" : score >= 50 ? "var(--amber-ink)" : "var(--red-ink)";
+  }
+  function populateAcademicEntryStatics(){
+    document.getElementById("acEntryDate").value = todayIso();
+    buildQuestionGrid("acEntryCriteria", "academic", acEntryAnswers, updateAcademicScore);
+    renderFlowStrip("acFlowStrip", readFlowCtx("ac"), "academic");
+  }
+  function resetAcademicEntryForm(){
+    document.getElementById("acEntryCampus").value = "";
+    document.getElementById("acEntryDeptName").value = "";
+    document.getElementById("acEntryDepartment").value = "";
+    document.getElementById("acEntryMentor").value = "";
+    document.getElementById("acEntryDate").value = todayIso();
+    document.getElementById("acEntrySubject").value = "";
+    document.getElementById("acEntryRemarks").value = "";
+    resetStatusSelect("acEntryStatus");
+    acEntryAnswers = blankAnswers("academic");
+    buildQuestionGrid("acEntryCriteria", "academic", acEntryAnswers, updateAcademicScore);
+    updateAcademicScore();
+    renderFlowStrip("acFlowStrip", readFlowCtx("ac"), "academic");
+  }
+  ["acEntryMentor","acEntryCampus","acEntryDepartment","acEntryDeptName"].forEach(id => {
+    document.getElementById(id).addEventListener("input", () => {
+      renderFlowStrip("acFlowStrip", readFlowCtx("ac"), "academic");
+    });
+    document.getElementById(id).addEventListener("change", () => {
+      renderFlowStrip("acFlowStrip", readFlowCtx("ac"), "academic");
+    });
+  });
+
+  const recentAcademicUids = [];
+  function renderRecentAcademic(){
+    const wrap = document.getElementById("acEntryRecent");
+    if(recentAcademicUids.length === 0){
+      wrap.innerHTML = `<div class="recent-empty">No entries added yet this session.</div>`;
+      return;
+    }
+    wrap.innerHTML = recentAcademicUids.slice().reverse().map(uid => {
+      const r = DATA.academic.find(x => x.uid === uid);
+      if(!r) return "";
+      return `<div class="recent-row">
+        <div class="rr-left">
+          <div class="cell-avatar" style="background:${avatarColor(r.mentor)};width:24px;height:24px;font-size:9.5px;">${initials(r.mentor)}</div>
+          <span class="rr-name">${escapeHtml(r.mentor)}</span>
+          <span class="rr-sub">${escapeHtml(r.campus || "—")} · ${escapeHtml(r.subject || "—")} · ${r.date}</span>
+        </div>
+        <span class="pill ${STATUS_MAP[r.status] || 'warn'}">${r.status} · ${r.score}/100</span>
+      </div>`;
+    }).join("");
+  }
+
+  document.getElementById("acEntrySubmit").addEventListener("click", () => {
+    const campus = document.getElementById("acEntryCampus").value;
+    const deptName = document.getElementById("acEntryDeptName").value.trim();
+    const department = document.getElementById("acEntryDepartment").value.trim();
+    const mentor = document.getElementById("acEntryMentor").value.trim();
+    const dateIso = document.getElementById("acEntryDate").value;
+    const subject = document.getElementById("acEntrySubject").value.trim();
+    const status = document.getElementById("acEntryStatus").value;
+    const remarks = document.getElementById("acEntryRemarks").value.trim();
+
+    if(!campus){ toast("Choose a campus before saving"); document.getElementById("acEntryCampus").focus(); return; }
+    if(!deptName){ toast("Enter a department name before saving"); document.getElementById("acEntryDeptName").focus(); return; }
+    if(!department){ toast("Select a domain before saving"); document.getElementById("acEntryDepartment").focus(); return; }
+    if(!mentor){ toast("Enter a mentor name before saving"); document.getElementById("acEntryMentor").focus(); return; }
+    if(!stageDone("skill", mentor)){ toast("Complete this mentor's Skill Development entry first"); document.getElementById("acEntryMentor").focus(); return; }
+    if(!dateIso){ toast("Choose the date of marking before saving"); document.getElementById("acEntryDate").focus(); return; }
+    if(!subject){ toast("Enter the academic subject before saving"); document.getElementById("acEntrySubject").focus(); return; }
+    if(!remarks){ toast("Enter remarks before saving"); document.getElementById("acEntryRemarks").focus(); return; }
+
+    academicSeq++;
+    const criteria = { ...acEntryAnswers };
+    const row = {
+      uid: "acd-" + academicSeq,
+      id: "#ACD-" + Math.floor(10000 + Math.random()*89999),
+      mentor, campus, deptName, department, subject,
+      criteria, remarks,
+      date: isoToDMY(dateIso)
+    };
+    recomputeRow("academic", row);
+    row.status = status;
+    DATA.academic.unshift(row);
+    recentAcademicUids.push(row.uid);
+    logActivity("academic", row.uid);
+    renderRecentAcademic();
+
+    toast("Entry saved for " + mentor + " — moving on to Attendance.");
+    resetAcademicEntryForm();
+    navigateTo("attendance-entry");
+    document.getElementById("atEntryMentor").value = mentor;
+    document.getElementById("atEntryCampus").value = campus;
+    document.getElementById("atEntryDeptName").value = deptName;
+    document.getElementById("atEntryDepartment").value = department;
+    renderFlowStrip("atFlowStrip", { mentor, campus, department, deptName }, "attendance");
+  });
+  document.getElementById("acEntryReset").addEventListener("click", resetAcademicEntryForm);
+
+  // ---------------- attendance entry page ----------------
+  let atEntryAnswers = blankAnswers("attendance");
+  wireStatusSelect("atEntryStatus");
+
+  function updateAttendanceScore(){
+    const score = scoreFromAnswers(atEntryAnswers, ATTENDANCE_KEYS);
+    const el = document.getElementById("atEntryScoreValue");
+    el.textContent = score + "/100";
+    el.style.color = score >= 80 ? "var(--green-ink2)" : score >= 50 ? "var(--amber-ink)" : "var(--red-ink)";
+  }
+  function populateAttendanceEntryStatics(){
+    document.getElementById("atEntryDate").value = todayIso();
+    buildQuestionGrid("atEntryCriteria", "attendance", atEntryAnswers, updateAttendanceScore);
+    renderFlowStrip("atFlowStrip", readFlowCtx("at"), "attendance");
+  }
+  function resetAttendanceEntryForm(){
+    document.getElementById("atEntryCampus").value = "";
+    document.getElementById("atEntryDepartment").value = "";
+    document.getElementById("atEntryMentor").value = "";
+    document.getElementById("atEntryDate").value = todayIso();
+    document.getElementById("atEntryBelow75").value = "";
+    document.getElementById("atEntryRemarks").value = "";
+    resetStatusSelect("atEntryStatus");
+    atEntryAnswers = blankAnswers("attendance");
+    buildQuestionGrid("atEntryCriteria", "attendance", atEntryAnswers, updateAttendanceScore);
+    updateAttendanceScore();
+    renderFlowStrip("atFlowStrip", readFlowCtx("at"), "attendance");
+  }
+  ["atEntryMentor","atEntryCampus","atEntryDepartment"].forEach(id => {
+    document.getElementById(id).addEventListener("input", () => {
+      renderFlowStrip("atFlowStrip", readFlowCtx("at"), "attendance");
+    });
+    document.getElementById(id).addEventListener("change", () => {
+      renderFlowStrip("atFlowStrip", readFlowCtx("at"), "attendance");
+    });
+  });
+
+  const recentAttendanceUids = [];
+  function renderRecentAttendance(){
+    const wrap = document.getElementById("atEntryRecent");
+    if(recentAttendanceUids.length === 0){
+      wrap.innerHTML = `<div class="recent-empty">No entries added yet this session.</div>`;
+      return;
+    }
+    wrap.innerHTML = recentAttendanceUids.slice().reverse().map(uid => {
+      const r = DATA.attendance.find(x => x.uid === uid);
+      if(!r) return "";
+      return `<div class="recent-row">
+        <div class="rr-left">
+          <div class="cell-avatar" style="background:${avatarColor(r.mentor)};width:24px;height:24px;font-size:9.5px;">${initials(r.mentor)}</div>
+          <span class="rr-name">${escapeHtml(r.mentor)}</span>
+          <span class="rr-sub">${escapeHtml(r.campus || "—")} · ${r.below75} below 75% · ${r.date}</span>
+        </div>
+        <span class="pill ${STATUS_MAP[r.status] || 'warn'}">${r.status} · ${r.score}/100</span>
+      </div>`;
+    }).join("");
+  }
+
+  // Queue of mentors who finished Skill->Coursework->Attendance and are waiting to be audited
+  let pendingAuditQueue = [];
+  function enqueueForAudit(mentor){
+    const n = normMentor(mentor);
+    if(!pendingAuditQueue.some(m => normMentor(m) === n)) pendingAuditQueue.push(mentor);
+  }
+  function dequeueAuditedMentor(mentor){
+    const n = normMentor(mentor);
+    pendingAuditQueue = pendingAuditQueue.filter(m => normMentor(m) !== n);
+  }
+  function startAuditQueue(campus, department){
+    if(pendingAuditQueue.length === 0){
+      toast("No mentors pending Internal Audit right now.");
+      navigateTo("dashboard");
+      return;
+    }
+    const next = pendingAuditQueue[0];
+    navigateTo("audit-entry");
+    document.getElementById("adEntryMentor").value = next;
+    if(campus) document.getElementById("adEntryCampus").value = campus;
+    if(department) document.getElementById("adEntryDepartment").value = department;
+    renderFlowStrip("adFlowStrip", { mentor: next, campus: campus || "", department: department || "" }, "audit");
+  }
+
+  document.getElementById("atEntrySubmit").addEventListener("click", () => {
+    const campus = document.getElementById("atEntryCampus").value;
+    const department = document.getElementById("atEntryDepartment").value.trim();
+    const mentor = document.getElementById("atEntryMentor").value.trim();
+    const dateIso = document.getElementById("atEntryDate").value;
+    const below75Raw = document.getElementById("atEntryBelow75").value;
+    const status = document.getElementById("atEntryStatus").value;
+    const remarks = document.getElementById("atEntryRemarks").value.trim();
+
+    if(!campus){ toast("Choose a campus before saving"); document.getElementById("atEntryCampus").focus(); return; }
+    if(!department){ toast("Select a subject before saving"); document.getElementById("atEntryDepartment").focus(); return; }
+    if(!mentor){ toast("Enter a mentor name before saving"); document.getElementById("atEntryMentor").focus(); return; }
+    if(!stageDone("skill", mentor)){ toast("Complete this mentor's Skill Development entry first"); document.getElementById("atEntryMentor").focus(); return; }
+    if(!stageDone("academic", mentor)){ toast("Complete this mentor's Coursework Verification entry first"); document.getElementById("atEntryMentor").focus(); return; }
+    if(!dateIso){ toast("Choose the date of marking before saving"); document.getElementById("atEntryDate").focus(); return; }
+    if(below75Raw === ""){ toast("Enter the number of students below 75% attendance"); document.getElementById("atEntryBelow75").focus(); return; }
+    const below75 = Math.max(0, parseInt(below75Raw,10) || 0);
+    if(!remarks){ toast("Enter remarks before saving"); document.getElementById("atEntryRemarks").focus(); return; }
+
+    attendanceSeq++;
+    const criteria = { ...atEntryAnswers };
+    const row = {
+      uid: "atd-" + attendanceSeq,
+      id: "#ATD-" + Math.floor(10000 + Math.random()*89999),
+      mentor, campus, department, below75,
+      criteria, remarks,
+      date: isoToDMY(dateIso)
+    };
+    recomputeRow("attendance", row);
+    row.status = status;
+    DATA.attendance.unshift(row);
+    recentAttendanceUids.push(row.uid);
+    logActivity("attendance", row.uid);
+    renderRecentAttendance();
+    enqueueForAudit(mentor);
+
+    resetAttendanceEntryForm();
+
+    // Instead of auto-jumping to audit, ask whether there's another mentor to review first.
+    showModal(
+      "Attendance completed for " + mentor,
+      "Skill Development, Coursework Verification and Attendance are all done for " + mentor + ". Is there another mentor to review today, or should we move on to Internal Audit?",
+      [
+        { label: "Add Another Mentor", onClick: () => {
+            resetMarkFlowForm();
+            navigateTo("mark-flow");
+          } },
+        { label: "Proceed to Internal Audit", primary: true, onClick: () => {
+            startAuditQueue(campus, department);
+          } }
+      ]
+    );
+  });
+  document.getElementById("atEntryReset").addEventListener("click", resetAttendanceEntryForm);
+
+  // ---------------- internal audit entry page ----------------
+  let entryAudit = { weeklyPlan:"In Progress", skillDev:"In Progress", academic:"In Progress" };
+
+  function populateAuditEntryStatics(){
+    document.getElementById("adEntryDate").value = todayIso();
+
+    const grid = document.getElementById("adEntryCriteria");
+    grid.innerHTML = AUDIT_KEYS.map(k => `
+      <div class="criteria-row">
+        <span>${AUDIT_LABELS[k]}</span>
+        <select class="audit-select" style="width:150px;" data-key="${k}" aria-label="${AUDIT_LABELS[k]}">
+          ${AUDIT_STATUSES.map(s => `<option value="${s}" ${s===entryAudit[k]?"selected":""}>${s}</option>`).join("")}
+        </select>
+      </div>
+    `).join("");
+    grid.querySelectorAll("select").forEach(sel => {
+      sel.className = "audit-select st-" + stKey(sel.value);
+    });
+    renderFlowStrip("adFlowStrip", readFlowCtx("ad"), "audit");
+  }
+  ["adEntryMentor","adEntryCampus","adEntryDepartment"].forEach(id => {
+    document.getElementById(id).addEventListener("input", () => {
+      renderFlowStrip("adFlowStrip", readFlowCtx("ad"), "audit");
+    });
+    document.getElementById(id).addEventListener("change", () => {
+      renderFlowStrip("adFlowStrip", readFlowCtx("ad"), "audit");
+    });
+  });
+
+  function updateAuditEntryOverall(){
+    const overall = overallAuditStatus(entryAudit);
+    const el = document.getElementById("adEntryOverallValue");
+    el.textContent = overall;
+    el.style.color = overall === "Completed" ? "var(--green-ink2)" : overall === "In Progress" ? "var(--amber-ink)" : "var(--red-ink)";
+  }
+
+  document.getElementById("adEntryCriteria").addEventListener("change", e => {
+    const sel = e.target.closest(".audit-select");
+    if(!sel) return;
+    const key = sel.dataset.key;
+    entryAudit[key] = sel.value;
+    sel.className = "audit-select st-" + stKey(sel.value);
+    updateAuditEntryOverall();
+  });
+
+  function resetAuditEntryForm(){
+    document.getElementById("adEntryCampus").value = "";
+    document.getElementById("adEntryDepartment").value = "";
+    document.getElementById("adEntryMentor").value = "";
+    document.getElementById("adEntryDate").value = todayIso();
+    document.getElementById("adEntryAuditor").value = "";
+    document.getElementById("adEntryNotes").value = "";
+    entryAudit = { weeklyPlan:"In Progress", skillDev:"In Progress", academic:"In Progress" };
+    populateAuditEntryStatics();
+    updateAuditEntryOverall();
+  }
+
+  const recentAuditUids = [];
+  function renderRecentAudits(){
+    const wrap = document.getElementById("adEntryRecent");
+    if(recentAuditUids.length === 0){
+      wrap.innerHTML = `<div class="recent-empty">No audits recorded yet this session.</div>`;
+      return;
+    }
+    wrap.innerHTML = recentAuditUids.slice().reverse().map(uid => {
+      const r = DATA.audit.find(x => x.uid === uid);
+      if(!r) return "";
+      return `<div class="recent-row">
+        <div class="rr-left">
+          <div class="cell-avatar" style="background:${avatarColor(r.mentor)};width:24px;height:24px;font-size:9.5px;">${initials(r.mentor)}</div>
+          <span class="rr-name">${escapeHtml(r.mentor)}</span>
+          <span class="rr-sub">${escapeHtml(r.campus || "—")} · ${r.date} · audited by ${escapeHtml(r.auditor)}</span>
+        </div>
+        <span class="pill ${STATUS_MAP[r.overall] || 'warn'}">${r.overall}</span>
+      </div>`;
+    }).join("");
+  }
+
+  document.getElementById("adEntrySubmit").addEventListener("click", () => {
+    const campus = document.getElementById("adEntryCampus").value;
+    const department = document.getElementById("adEntryDepartment").value.trim();
+    const mentor = document.getElementById("adEntryMentor").value.trim();
+    const dateIso = document.getElementById("adEntryDate").value;
+    const auditor = document.getElementById("adEntryAuditor").value.trim();
+    const notes = document.getElementById("adEntryNotes").value.trim();
+
+    if(!campus){ toast("Choose a campus before saving"); document.getElementById("adEntryCampus").focus(); return; }
+    if(!department){ toast("Select a subject before saving"); document.getElementById("adEntryDepartment").focus(); return; }
+    if(!mentor){ toast("Enter the campus manager being audited"); document.getElementById("adEntryMentor").focus(); return; }
+    if(!stageDone("skill", mentor)){ toast("This campus manager's Skill Development hasn't been completed yet"); document.getElementById("adEntryMentor").focus(); return; }
+    if(!stageDone("academic", mentor)){ toast("This campus manager's Coursework Verification hasn't been completed yet"); document.getElementById("adEntryMentor").focus(); return; }
+    if(!stageDone("attendance", mentor)){ toast("This campus manager's Attendance hasn't been completed yet"); document.getElementById("adEntryMentor").focus(); return; }
+    if(!dateIso){ toast("Choose the date the audit was conducted"); document.getElementById("adEntryDate").focus(); return; }
+    if(!auditor){ toast("Enter the auditor (reviewing campus manager)"); document.getElementById("adEntryAuditor").focus(); return; }
+    if(!notes){ toast("Enter audit notes before saving"); document.getElementById("adEntryNotes").focus(); return; }
+
+    auditSeq++;
+    const row = {
+      uid: "aud-" + auditSeq,
+      id: "#AUD-" + Math.floor(10000 + Math.random()*89999),
+      mentor, campus, department, auditor,
+      weeklyPlan: entryAudit.weeklyPlan,
+      skillDev: entryAudit.skillDev,
+      academic: entryAudit.academic,
+      notes,
+      date: isoToDMY(dateIso)
+    };
+    row.overall = overallAuditStatus(row);
+    DATA.audit.unshift(row);
+    recentAuditUids.push(row.uid);
+    logActivity("audit", row.uid);
+    renderRecentAudits();
+    dequeueAuditedMentor(mentor);
+
+    resetAuditEntryForm();
+
+    if(pendingAuditQueue.length > 0){
+      const nextMentor = pendingAuditQueue[0];
+      showModal(
+        "Audit saved for " + mentor,
+        "Up next: " + nextMentor + ". Continue straight into their Internal Audit?",
+        [
+          { label: "Go to Reports", onClick: () => { navigateTo("reports", "audit"); } },
+          { label: "Continue to " + nextMentor, primary: true, onClick: () => { startAuditQueue(campus, department); } }
+        ]
+      );
+    } else {
+      showModal(
+        "Review complete",
+        "Internal Audit submitted for " + mentor + ". Every mentor in today's review has now been through Skill Development, Coursework Verification, Attendance and Internal Audit.",
+        [
+          { label: "Return to Dashboard", primary: true, onClick: () => { navigateTo("dashboard"); } }
+        ]
+      );
+    }
+  });
+  document.getElementById("adEntryReset").addEventListener("click", resetAuditEntryForm);
+
+  // ---------------- page routing ----------------
+  const PAGE_TITLES = {
+    "reports": "Report & Audit Logs",
+    "mark-flow": "Record Audit",
+    "skill-entry": "Skill Development Entry",
+    "academic-entry": "Coursework Verification Entry",
+    "attendance-entry": "Attendance Entry",
+    "audit-entry": "Internal Audit Entry",
+    "dashboard": "Dashboard"
+  };
+  const PAGE_IDS = ["reports","mark-flow","skill-entry","academic-entry","attendance-entry","audit-entry","dashboard"];
+
+  // Sidebar navigation holds the two standalone destinations, Dashboard and
+  // Reports & Logs. The mentor review flow (Skill Dev -> Coursework Verification ->
+  // Attendance -> Internal Audit) is a separate track: it only
+  // opens when "Record Audit" is clicked, landing on a flow overview that asks
+  // for Campus, Department, Type, Course Name, Mentor Name and whether the
+  // weekly plan was submitted, shows all three stages (plus Internal Audit
+  // once they're done) and lets you jump into any of them, or via the flow
+  // strip inside an entry page once that flow has been started.
+  const SIDEBAR_NAV = [
+    { page: "dashboard", label: "Dashboard",
+      icon: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>' },
+    { page: "reports",   label: "Reports & Logs", tab: "skill",
+      icon: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/>' }
+  ];
+  const ENTRY_PAGES = ["skill-entry","academic-entry","attendance-entry","audit-entry"];
+  let currentPage = "dashboard";
+
+  function renderSidebarNav(){
+    const el = document.getElementById("sidebarNav");
+    if(!el) return;
+    el.innerHTML = SIDEBAR_NAV.map(item => {
+      const isCurrent = item.page === currentPage;
+      return `<button type="button" class="sidebar-nav-btn ${isCurrent ? "current" : ""}" data-page="${item.page}" ${item.tab ? `data-tab="${item.tab}"` : ""}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${item.icon}</svg>
+          <span>${item.label}</span>
+        </button>`;
+    }).join("");
+    el.querySelectorAll(".sidebar-nav-btn").forEach(btn => {
+      btn.addEventListener("click", () => navigateTo(btn.dataset.page, btn.dataset.tab));
+    });
+  }
+
+  function showPage(page){
+    PAGE_IDS.forEach(p => {
+      const el = document.getElementById("page-" + p);
+      if(el) el.classList.toggle("hidden", p !== page);
+    });
+    document.getElementById("topbarTitle").textContent = PAGE_TITLES[page] || "CampusAudit";
+    currentPage = page;
+    renderSidebarNav();
+  }
+
+  function navigateTo(page, tab){
+    if(page === "reports"){
+      showPage("reports");
+      if(tab) selectReportsTab(tab);
+      return;
+    }
+    if(page === "dashboard"){
+      showPage("dashboard");
+      renderDashboard();
+      return;
+    }
+    if(page === "mark-flow"){
+      showPage("mark-flow");
+      renderFlowStrip("mfFlowStrip", readFlowCtx("mf"), "audit");
+      return;
+    }
+    if(ENTRY_PAGES.includes(page)){
+      showPage(page);
+      // refresh flow strip for whichever entry page is opened, using its current field values
+      if(page === "skill-entry") renderFlowStrip("skFlowStrip", readFlowCtx("sk"), "skill");
+      if(page === "academic-entry") renderFlowStrip("acFlowStrip", readFlowCtx("ac"), "academic");
+      if(page === "attendance-entry") renderFlowStrip("atFlowStrip", readFlowCtx("at"), "attendance");
+      if(page === "audit-entry") renderFlowStrip("adFlowStrip", readFlowCtx("ad"), "audit");
+      return;
+    }
+  }
+
+  // "Record Audit" is the single entry point into the review flow. Clicking it
+  // opens a flow overview asking for Campus, Department, Skill/Coursework type,
+  // Course Name, Mentor Name and whether the weekly plan was submitted;
+  // clicking Continue jumps straight to whichever stage that mentor still
+  // needs — Skill Development first for a brand-new mentor, or further along
+  // if they're resuming.
+  let mfWeeklyPlanAnswer = null; // true = Yes, false = No, null = unanswered
+
+  function resetMarkFlowForm(){
+    document.getElementById("mfEntryCampus").value = "";
+    document.getElementById("mfEntryDepartment").value = "";
+    document.getElementById("mfEntryType").value = "Skill Development";
+    document.getElementById("mfEntryCourse").value = "";
+    document.getElementById("mfEntryMentor").value = "";
+    mfWeeklyPlanAnswer = null;
+    document.querySelectorAll("#mfWeeklyPlanGroup .yn-btn").forEach(b => b.classList.remove("active"));
+    renderFlowStrip("mfFlowStrip", { mentor: "", campus: "", department: "" }, "audit");
+  }
+  document.getElementById("mfWeeklyPlanGroup").addEventListener("click", e => {
+    const btn = e.target.closest(".yn-btn");
+    if(!btn) return;
+    mfWeeklyPlanAnswer = btn.dataset.val === "yes";
+    document.querySelectorAll("#mfWeeklyPlanGroup .yn-btn").forEach(b => {
+      b.classList.toggle("active", b === btn);
+    });
+  });
+  ["mfEntryMentor","mfEntryCampus","mfEntryDepartment","mfEntryType","mfEntryCourse"].forEach(id => {
+    document.getElementById(id).addEventListener("input", () => {
+      renderFlowStrip("mfFlowStrip", readFlowCtx("mf"), "audit");
+    });
+    document.getElementById(id).addEventListener("change", () => {
+      renderFlowStrip("mfFlowStrip", readFlowCtx("mf"), "audit");
+    });
+  });
+  document.getElementById("markTaskBtn").addEventListener("click", () => {
+    resetMarkFlowForm();
+    navigateTo("mark-flow");
+  });
+  document.getElementById("mfEntryContinue").addEventListener("click", () => {
+    const campus = document.getElementById("mfEntryCampus").value;
+    const department = document.getElementById("mfEntryDepartment").value.trim();
+    const type = document.getElementById("mfEntryType").value;
+    const course = document.getElementById("mfEntryCourse").value.trim();
+    const mentor = document.getElementById("mfEntryMentor").value.trim();
+    if(!campus){ toast("Choose a campus to continue"); document.getElementById("mfEntryCampus").focus(); return; }
+    if(!department){ toast("Select a department to continue"); document.getElementById("mfEntryDepartment").focus(); return; }
+    if(!course){ toast("Enter the course name to continue"); document.getElementById("mfEntryCourse").focus(); return; }
+    if(!mentor){ toast("Enter a mentor name to continue"); document.getElementById("mfEntryMentor").focus(); return; }
+    if(mfWeeklyPlanAnswer === null){ toast("Answer whether the weekly plan was submitted"); return; }
+
+    // Prefer the explicitly chosen Skill/Coursework type when that stage's
+    // prerequisites are already satisfied for this mentor; otherwise fall
+    // back to whichever stage is actually next in the sequential flow.
+    let stage = firstIncompleteStage(mentor);
+    if(type === "Coursework Verification" && stage === "skill" && stageDone("skill", mentor)){
+      stage = "academic";
+    }
+    const page = FLOW_PAGE_MAP[stage];
+    navigateTo(page);
+    const field = document.getElementById(FLOW_MENTOR_FIELD[stage]);
+    if(field) field.value = mentor;
+    const cField = document.getElementById(FLOW_CAMPUS_FIELD[stage]);
+    if(cField) cField.value = campus;
+    const dField = document.getElementById(FLOW_DEPARTMENT_FIELD[stage]);
+    if(dField) dField.value = department;
+    const subjField = FLOW_SUBJECT_FIELD[stage] ? document.getElementById(FLOW_SUBJECT_FIELD[stage]) : null;
+    if(subjField) subjField.value = course;
+    renderFlowStrip(FLOW_STRIP_ID[stage], { mentor, campus, department }, stage);
+
+    // Carry the "weekly plan submitted" answer from the gate straight into
+    // the Skill Development genuineness check when that's where we land.
+    if(stage === "skill"){
+      skEntryAnswers.weeklyPlan = mfWeeklyPlanAnswer;
+      buildSkillCriteriaGrid(skEntryAnswers, skEntryProof, updateSkillScore);
+      updateSkillScore();
+    }
+    if(stage === "audit") enqueueForAudit(mentor);
+  });
+
+  // ---------------- dashboard ----------------
+  function goToReportsTab(tab){
+    navigateTo("reports", tab);
+  }
+
+  const DOMAIN_META = {
+    skill: { label: "Skill Development", tab: "skill",
+      icon: '<circle cx="12" cy="8" r="7"/><path d="M8.21 13.89 7 23l5-3 5 3-1.21-9.12"/>' },
+    academic: { label: "Coursework Verification", tab: "academic",
+      icon: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/>' },
+    attendance: { label: "Attendance", tab: "attendance",
+      icon: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>' }
+  };
+  const SCORED_DOMAINS = ["skill","academic","attendance"];
+
+  function domainSummary(domain){
+    const rows = DATA[domain];
+    const total = rows.length;
+    const achieved = rows.filter(r => r.status === "Completed").length;
+    const inProgress = rows.filter(r => r.status === "In Progress").length;
+    const notAchieved = rows.filter(r => r.status === "Not Completed").length;
+    const avgScore = total ? Math.round(rows.reduce((s,r) => s + r.score, 0) / total) : 0;
+    return { total, achieved, inProgress, notAchieved, avgScore };
+  }
+  function auditSummary(){
+    const rows = DATA.audit;
+    const total = rows.length;
+    const completed = rows.filter(r => r.overall === "Completed").length;
+    const inProgress = rows.filter(r => r.overall === "In Progress").length;
+    const notCompleted = rows.filter(r => r.overall === "Not Completed").length;
+    return { total, completed, inProgress, notCompleted };
+  }
+
+  function mentorLeaderboard(){
+    const byMentor = {};
+    SCORED_DOMAINS.forEach(domain => {
+      DATA[domain].forEach(r => {
+        if(!byMentor[r.mentor]) byMentor[r.mentor] = { mentor: r.mentor, sum: 0, count: 0 };
+        byMentor[r.mentor].sum += r.score;
+        byMentor[r.mentor].count += 1;
+      });
+    });
+    return Object.values(byMentor)
+      .map(m => ({ mentor: m.mentor, count: m.count, avg: Math.round(m.sum / m.count) }))
+      .sort((a,b) => b.avg - a.avg || b.count - a.count);
+  }
+
+  function needsAttentionRows(limit){
+    const out = [];
+    SCORED_DOMAINS.forEach(domain => {
+      DATA[domain].filter(r => r.status === "Not Completed").forEach(r => {
+        out.push({ domain, label: DOMAIN_META[domain].label, mentor: r.mentor, date: r.date, detail: (r.score) + "/100", remarks: r.remarks || "" });
+      });
+    });
+    DATA.audit.filter(r => r.overall === "Not Completed").forEach(r => {
+      out.push({ domain: "audit", label: "Internal Audit", mentor: r.mentor, date: r.date, detail: "Flagged by " + r.auditor, remarks: r.notes || "" });
+    });
+    return out.slice(0, limit);
+  }
+
+  function recentActivityRows(limit){
+    return activityLog.slice(-limit).reverse().map(a => {
+      const row = DATA[a.domain] && DATA[a.domain].find(r => r.uid === a.uid);
+      if(!row) return null;
+      return { domain: a.domain, row };
+    }).filter(Boolean);
+  }
+
+  function renderDashboard(){
+    const wrap = document.getElementById("page-dashboard");
+
+    const totalRecords = SCORED_DOMAINS.reduce((s,d) => s + DATA[d].length, 0) + DATA.audit.length;
+    const scoredTotal = SCORED_DOMAINS.reduce((s,d) => s + DATA[d].length, 0);
+    const scoredSum = SCORED_DOMAINS.reduce((s,d) => s + DATA[d].reduce((ss,r) => ss + r.score, 0), 0);
+    const overallAvg = scoredTotal ? Math.round(scoredSum / scoredTotal) : 0;
+    const mentorsWithActivity = new Set();
+    SCORED_DOMAINS.forEach(d => DATA[d].forEach(r => mentorsWithActivity.add(r.mentor)));
+    DATA.audit.forEach(r => mentorsWithActivity.add(r.mentor));
+    const flaggedCount = SCORED_DOMAINS.reduce((s,d) => s + DATA[d].filter(r => r.status === "Not Completed").length, 0)
+      + DATA.audit.filter(r => r.overall === "Not Completed").length;
+
+    const auditStats = auditSummary();
+    const leaderboard = mentorLeaderboard();
+    const attention = needsAttentionRows(6);
+    const activity = recentActivityRows(8);
+
+    const heroHtml = `
+      <div class="dash-hero-grid">
+        <div class="dash-hero-card">
+          <span class="dash-hero-label">Mentors Tracked</span>
+          <span class="dash-hero-value">${mentorsWithActivity.size}</span>
+          <span class="dash-hero-caption">distinct mentor names with at least one logged record</span>
+        </div>
+        <div class="dash-hero-card">
+          <span class="dash-hero-label">Records Logged</span>
+          <span class="dash-hero-value">${totalRecords}</span>
+          <span class="dash-hero-caption">across all report types</span>
+        </div>
+        <div class="dash-hero-card">
+          <span class="dash-hero-label">Avg. Genuineness Score</span>
+          <span class="dash-hero-value" style="color:${overallAvg >= 80 ? 'var(--green-ink2)' : overallAvg >= 50 ? 'var(--amber-ink)' : 'var(--red-ink)'}">${overallAvg}<span class="dash-hero-value-sub">/100</span></span>
+          <span class="dash-hero-caption">skill, academic &amp; attendance</span>
+        </div>
+        <div class="dash-hero-card">
+          <span class="dash-hero-label">Flagged For Review</span>
+          <span class="dash-hero-value" style="color:${flaggedCount > 0 ? 'var(--red-ink)' : 'var(--green-ink2)'}">${flaggedCount}</span>
+          <span class="dash-hero-caption">not achieved or not completed</span>
+        </div>
+      </div>`;
+
+    const domainCardsHtml = `
+      <div class="dash-section">
+        <div class="dash-section-title">Report Breakdown</div>
+        <div class="dash-domain-grid">
+          ${SCORED_DOMAINS.map(d => {
+            const s = domainSummary(d);
+            const meta = DOMAIN_META[d];
+            return `<button type="button" class="dash-domain-card" data-goto-tab="${meta.tab}">
+              <div class="dash-domain-top">
+                <div class="dash-domain-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${meta.icon}</svg></div>
+                <span class="dash-domain-count">${s.total}</span>
+              </div>
+              <div class="dash-domain-label">${meta.label}</div>
+              <div class="dash-domain-avg">Avg score: <strong style="color:${s.avgScore >= 80 ? 'var(--green-ink2)' : s.avgScore >= 50 ? 'var(--amber-ink)' : 'var(--red-ink)'}">${s.total ? s.avgScore : '—'}</strong></div>
+              <div class="dash-domain-bar">
+                ${s.total ? `<div class="dash-domain-bar-fill" style="width:${(s.achieved/s.total)*100}%;background:var(--green)"></div><div class="dash-domain-bar-fill" style="width:${(s.inProgress/s.total)*100}%;background:var(--amber-ink)"></div><div class="dash-domain-bar-fill" style="width:${(s.notAchieved/s.total)*100}%;background:var(--red-ink)"></div>` : `<div class="dash-domain-bar-fill" style="width:100%;background:var(--border)"></div>`}
+              </div>
+            </button>`;
+          }).join("")}
+          <button type="button" class="dash-domain-card" data-goto-tab="audit">
+            <div class="dash-domain-top">
+              <div class="dash-domain-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M12 3c-2.5 2-4.5 2-7 1v7c0 5 3 8.5 7 10 4-1.5 7-5 7-10V4c-2.5 1-4.5 1-7-1Z"/></svg></div>
+              <span class="dash-domain-count">${auditStats.total}</span>
+            </div>
+            <div class="dash-domain-label">Internal Audit</div>
+            <div class="dash-domain-avg">Completed: <strong style="color:var(--green-ink2)">${auditStats.completed}</strong> · Flagged: <strong style="color:var(--red-ink)">${auditStats.notCompleted}</strong></div>
+            <div class="dash-domain-bar">
+              ${auditStats.total ? `<div class="dash-domain-bar-fill" style="width:${(auditStats.completed/auditStats.total)*100}%;background:var(--green)"></div><div class="dash-domain-bar-fill" style="width:${(auditStats.inProgress/auditStats.total)*100}%;background:var(--amber-ink)"></div><div class="dash-domain-bar-fill" style="width:${(auditStats.notCompleted/auditStats.total)*100}%;background:var(--red-ink)"></div>` : `<div class="dash-domain-bar-fill" style="width:100%;background:var(--border)"></div>`}
+            </div>
+          </button>
+        </div>
+      </div>`;
+
+    const leaderboardHtml = `
+      <div class="dash-section">
+        <div class="dash-section-title">Mentor Leaderboard</div>
+        <div class="dash-panel">
+          ${leaderboard.length === 0 ? `<div class="recent-empty">No genuineness-scored entries yet. Add entries from Skill Development, Coursework Verification, or Attendance to see mentors ranked here.</div>` :
+            leaderboard.slice(0,8).map((m,i) => `
+              <div class="dash-lb-row">
+                <span class="dash-lb-rank">${i+1}</span>
+                <div class="cell-avatar" style="background:${avatarColor(m.mentor)};width:26px;height:26px;font-size:10px;">${initials(m.mentor)}</div>
+                <span class="dash-lb-name">${escapeHtml(m.mentor)}</span>
+                <span class="dash-lb-count">${m.count} record${m.count===1?'':'s'}</span>
+                <div class="bar-track" style="width:90px;"><div class="bar-fill" style="width:${m.avg}%;background:${m.avg >= 80 ? 'var(--green-ink2)' : m.avg >= 50 ? 'var(--amber-ink)' : 'var(--red-ink)'}"></div></div>
+                <span class="dash-lb-score" style="color:${m.avg >= 80 ? 'var(--green-ink2)' : m.avg >= 50 ? 'var(--amber-ink)' : 'var(--red-ink)'}">${m.avg}</span>
+              </div>`).join("")}
+        </div>
+      </div>`;
+
+    const attentionHtml = `
+      <div class="dash-section">
+        <div class="dash-section-title">Needs Attention</div>
+        <div class="dash-panel">
+          ${attention.length === 0 ? `<div class="recent-empty">Nothing flagged right now — every scored record is In Progress or Completed, and no audits are marked Not Completed.</div>` :
+            attention.map(a => `
+              <div class="recent-row">
+                <div class="rr-left">
+                  <div class="cell-avatar" style="background:${avatarColor(a.mentor)};width:24px;height:24px;font-size:9.5px;">${initials(a.mentor)}</div>
+                  <span class="rr-name">${escapeHtml(a.mentor)}</span>
+                  <span class="rr-sub">${escapeHtml(a.label)} · ${a.date}${a.remarks ? ' · ' + escapeHtml(a.remarks.slice(0,60)) : ''}</span>
+                </div>
+                <span class="pill bad">${escapeHtml(a.detail)}</span>
+              </div>`).join("")}
+        </div>
+      </div>`;
+
+    const activityHtml = `
+      <div class="dash-section">
+        <div class="dash-section-title">Recent Activity</div>
+        <div class="dash-panel">
+          ${activity.length === 0 ? `<div class="recent-empty">No activity logged yet this session. Entries you add anywhere in CampusAudit will show up here.</div>` :
+            activity.map(a => {
+              const r = a.row;
+              const meta = DOMAIN_META[a.domain];
+              const label = meta ? meta.label : "Internal Audit";
+              const statusText = a.domain === "audit" ? r.overall : (r.status + " · " + r.score + "/100");
+              const statusVal = a.domain === "audit" ? r.overall : r.status;
+              return `<div class="recent-row">
+                <div class="rr-left">
+                  <div class="cell-avatar" style="background:${avatarColor(r.mentor)};width:24px;height:24px;font-size:9.5px;">${initials(r.mentor)}</div>
+                  <span class="rr-name">${escapeHtml(r.mentor)}</span>
+                  <span class="rr-sub">${escapeHtml(label)} · ${r.date}</span>
+                </div>
+                <span class="pill ${STATUS_MAP[statusVal] || 'warn'}">${escapeHtml(statusText)}</span>
+              </div>`;
+            }).join("")}
+        </div>
+      </div>`;
+
+    wrap.innerHTML = `<div class="dash-wrap">${heroHtml}${domainCardsHtml}
+      <div class="dash-two-col">${leaderboardHtml}${attentionHtml}</div>
+      ${activityHtml}
+    </div>`;
+
+    wrap.querySelectorAll("[data-goto-tab]").forEach(el => {
+      el.addEventListener("click", () => goToReportsTab(el.dataset.gotoTab));
+    });
+  }
+
+  populateSkillEntryStatics(); updateSkillScore(); updateSkillCompletionPct(); renderRecentSkill();
+  populateAcademicEntryStatics(); updateAcademicScore(); renderRecentAcademic();
+  populateAttendanceEntryStatics(); updateAttendanceScore(); renderRecentAttendance();
+  populateAuditEntryStatics(); updateAuditEntryOverall(); renderRecentAudits();
+  resetMarkFlowForm();
+  renderSidebarNav();
+  navigateTo("dashboard");
+})();
+</script>
+</body>
+</html>
