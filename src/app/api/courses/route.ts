@@ -11,6 +11,26 @@ function getSlug(text: string, collegeId?: string): string {
   return collegeId ? `dept_${collegeId.replace(/[^a-z0-9]/gi, "_")}_${clean}` : `dept_${clean}`;
 }
 
+export async function GET(request: Request) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    const collegeId = searchParams.get("college_id");
+
+    let courses;
+    if (collegeId && collegeId !== "all") {
+      courses = await db.all("SELECT * FROM courses WHERE college_id = ? OR college_id IS NULL ORDER BY name", collegeId);
+    } else {
+      courses = await db.all("SELECT * FROM courses ORDER BY name");
+    }
+
+    return NextResponse.json({ success: true, courses });
+  } catch (error: any) {
+    console.error("API GET Courses error:", error);
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const db = await getDb();
