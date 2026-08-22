@@ -17,9 +17,18 @@ import {
   PieChart, Pie, Cell, Legend,
   AreaChart, Area, CartesianGrid
 } from "recharts";
+import dynamic from "next/dynamic";
 import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, mapDayOrderToDayName } from "../lib/utils";
-import { InterviewModule } from "./InterviewModule";
-import { ExamScheduleManager } from "./ExamScheduleManager";
+
+const InterviewModule = dynamic(() => import("./InterviewModule").then(mod => mod.InterviewModule), {
+  ssr: false,
+  loading: () => <div className="p-8 text-center text-xs text-slate-400 font-bold">Loading Interview Allocations...</div>
+});
+
+const ExamScheduleManager = dynamic(() => import("./ExamScheduleManager").then(mod => mod.ExamScheduleManager), {
+  ssr: false,
+  loading: () => <div className="p-8 text-center text-xs text-slate-400 font-bold">Loading Exam Timetable Studio...</div>
+});
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,

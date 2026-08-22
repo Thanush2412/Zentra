@@ -49,10 +49,13 @@ import {
   Layers,
   ArrowUpRight
 } from "lucide-react";
-import { InterviewModule } from "./InterviewModule";
+import dynamic from "next/dynamic";
+
+const InterviewModule = dynamic(() => import("./InterviewModule").then(m => m.InterviewModule), { ssr: false });
+const MentorProfileModal = dynamic(() => import("./MentorProfileModal").then(m => m.MentorProfileModal), { ssr: false });
+const MentorExamMarksStudio = dynamic(() => import("./MentorExamMarksStudio").then(m => m.MentorExamMarksStudio), { ssr: false });
+
 import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate } from "@/lib/utils";
-import { MentorProfileModal } from "./MentorProfileModal";
-import { MentorExamMarksStudio } from "./MentorExamMarksStudio";
 import { Pagination } from "@/components/ui/Pagination";
 
 const formatPunchTime = (timeStr?: string | null) => {

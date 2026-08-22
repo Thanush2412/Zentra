@@ -47,12 +47,15 @@ import {
   PieChart, Pie, Cell, Legend,
   AreaChart, Area, CartesianGrid
 } from "recharts";
-import { Student360 } from "./kam/students/Student360";
-import { Mentor360 } from "./kam/mentors/Mentor360";
-import { StudentDirectory } from "./kam/students/StudentDirectory";
-import { KAMAnalytics } from "./kam/analytics/KAMAnalytics";
-import { InterviewModule } from "./InterviewModule";
-import { ExamScheduleManager } from "./ExamScheduleManager";
+import dynamic from "next/dynamic";
+
+const Student360 = dynamic(() => import("./kam/students/Student360").then(m => m.Student360), { ssr: false });
+const Mentor360 = dynamic(() => import("./kam/mentors/Mentor360").then(m => m.Mentor360), { ssr: false });
+const StudentDirectory = dynamic(() => import("./kam/students/StudentDirectory").then(m => m.StudentDirectory), { ssr: false });
+const KAMAnalytics = dynamic(() => import("./kam/analytics/KAMAnalytics").then(m => m.KAMAnalytics), { ssr: false });
+const InterviewModule = dynamic(() => import("./InterviewModule").then(m => m.InterviewModule), { ssr: false });
+const ExamScheduleManager = dynamic(() => import("./ExamScheduleManager").then(m => m.ExamScheduleManager), { ssr: false });
+
 import { Card } from "./Card";
 import { Panel } from "./Panel";
 import { Button } from "./Button";
