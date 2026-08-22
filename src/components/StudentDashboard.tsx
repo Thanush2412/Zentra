@@ -1409,64 +1409,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             {/* Left Columns (Col Span 2) */}
             <div className="lg:col-span-2 space-y-6">
                 
-                {/* 4 Real-Time Metrics Cards Row */}
+                {/* Real-Time Overview Cards Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  
-                  {/* 1. Attendance GPA Card */}
-                  <div className="bg-pastel-cream p-5 rounded-2xl border border-amber-100/60 relative flex flex-col justify-between shadow-xs min-h-[140px] group hover:shadow-md transition-all duration-300">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest block mb-1">Attendance GPA</span>
-                        <span className="text-3xl font-extrabold text-slate-900">{(overallPercentage / 20).toFixed(1)}</span>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab("schedule")}
-                          className="p-2 bg-white/90 border border-slate-100 text-slate-800 rounded-full shrink-0 shadow-xs hover:bg-white cursor-pointer"
-                          title="Open Schedule"
-                        >
-                          <ArrowUpRight className="h-3.5 w-3.5 text-slate-900 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-                        </button>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${
-                          overallPercentage >= 75 ? "bg-emerald-100 text-emerald-800 border border-emerald-200/50" : "bg-rose-100 text-rose-800 border border-rose-200/50"
-                        }`}>
-                          {overallPercentage >= 75 ? "High" : "Low"}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-[10.5px] text-slate-500 font-semibold leading-relaxed mt-3">
-                      {overallPercentage >= 75 ? "Excellent academic standing & test eligibility." : "Attend upcoming classes to reach 75% target."}
-                    </p>
-                  </div>
-
-                  {/* 2. On-time / Predictor Card */}
-                  <div className="bg-pastel-blue p-5 rounded-2xl border border-indigo-100/60 relative flex flex-col justify-between shadow-xs min-h-[140px] group hover:shadow-md transition-all duration-300">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest block mb-1">On-Time Rate</span>
-                        <span className="text-3xl font-extrabold text-slate-900">{overallPercentage.toFixed(0)}%</span>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab("schedule")}
-                          className="p-2 bg-white/90 border border-slate-100 text-slate-800 rounded-full shrink-0 shadow-xs hover:bg-white cursor-pointer"
-                          title="Open Schedule"
-                        >
-                          <ArrowUpRight className="h-3.5 w-3.5 text-slate-900 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-                        </button>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${
-                          bunkStats.status === "safe" ? "bg-emerald-100 text-emerald-800 border border-emerald-200/50" : "bg-amber-100 text-amber-800 border border-amber-200/50"
-                        }`}>
-                          {bunkStats.status === "safe" ? "High" : "Alert"}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-[10.5px] text-slate-500 font-semibold leading-relaxed mt-3">
-                      {bunkStats.status === "safe" ? `Safe to miss ${bunkStats.value} classes without dropping below ${bunkTarget}%.` : `Must attend next ${bunkStats.value} classes to recover.`}
-                    </p>
-                  </div>
 
                   {/* 3. Academic Mock Interviews Summary Tile */}
                   {(() => {
