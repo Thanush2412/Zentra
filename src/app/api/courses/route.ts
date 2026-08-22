@@ -223,30 +223,58 @@ export async function PUT(request: Request) {
     // Run cascade updates for course rename
     // 1. Rename course in master list
     await db.run(
-      "UPDATE courses SET name = ?, college_id = ?, code = ?, description = ?, hod_name = ?, established_year = ?, status = ?, years = ?, start_date = ?, end_date = ?, start_year = ?, end_year = ?, default_room = ?, default_shift = ?, shift_based = ?, sections = ? WHERE id = ?",
+      `UPDATE courses SET 
+        name = ?, 
+        college_id = ?, 
+        code = ?, 
+        description = ?, 
+        hod_name = ?, 
+        established_year = ?, 
+        status = ?, 
+        years = ?, 
+        start_date = ?, 
+        end_date = ?, 
+        start_year = ?, 
+        end_year = ?, 
+        default_room = ?, 
+        default_shift = ?, 
+        shift_based = ?, 
+        sections = ? 
+      WHERE id = ?`,
       cleanName,
       targetCollegeId || "college_1",
-      code || "",
-      description || "",
+      code !== undefined ? code : (currentCourse.code || ""),
+      description !== undefined ? description : (currentCourse.description || ""),
       "",
-      established_year || "",
-      status || "Active",
-      years !== undefined ? Number(years) : 4,
-      start_date || "",
-      end_date || "",
-      start_year || "",
-      end_year || "",
-      default_room || null,
-      default_shift || null,
-      shift_based === undefined ? (currentCourse.shift_based || 0) : Number(shift_based),
+      established_year !== undefined ? established_year : (currentCourse.established_year || ""),
+      status || currentCourse.status || "Active",
+      years !== undefined ? Number(years) : (currentCourse.years || 4),
+      start_date !== undefined ? start_date : (currentCourse.start_date || ""),
+      end_date !== undefined ? end_date : (currentCourse.end_date || ""),
+      start_year !== undefined ? start_year : (currentCourse.start_year || ""),
+      end_year !== undefined ? end_year : (currentCourse.end_year || ""),
+      default_room !== undefined ? default_room : (currentCourse.default_room || null),
+      default_shift !== undefined ? default_shift : (currentCourse.default_shift || null),
+      shift_based !== undefined ? Number(shift_based) : (currentCourse.shift_based || 0),
       sections !== undefined ? sections : (currentCourse.sections || null),
       currentCourse.id
     );
 
     try {
       await db.run(
-        "INSERT OR REPLACE INTO departments (id, name, college_id, code, description) VALUES (?, ?, ?, ?, ?)",
-        currentCourse.id, cleanName, targetCollegeId || "college_1", code || "", description || ""
+        `INSERT OR REPLACE INTO departments 
+          (id, name, college_id, code, description, status, years, start_year, end_year, shift_based) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        currentCourse.id,
+        cleanName,
+        targetCollegeId || "college_1",
+        code !== undefined ? code : (currentCourse.code || ""),
+        description !== undefined ? description : (currentCourse.description || ""),
+        status || currentCourse.status || "Active",
+        years !== undefined ? Number(years) : (currentCourse.years || 4),
+        start_year !== undefined ? start_year : (currentCourse.start_year || ""),
+        end_year !== undefined ? end_year : (currentCourse.end_year || ""),
+        shift_based !== undefined ? Number(shift_based) : (currentCourse.shift_based || 0)
       );
     } catch (_) {}
 
@@ -275,17 +303,17 @@ export async function PUT(request: Request) {
         id: currentCourse.id,
         name: cleanName,
         college_id: targetCollegeId || "college_1",
-        code: code || "",
-        description: description || "",
-        status: status || "Active",
-        years: years !== undefined ? Number(years) : 4,
-        start_date: start_date || "",
-        end_date: end_date || "",
-        start_year: start_year || "",
-        end_year: end_year || "",
-        default_room: default_room || null,
-        default_shift: default_shift || null,
-        shift_based: shift_based === undefined ? (currentCourse.shift_based || 0) : Number(shift_based),
+        code: code !== undefined ? code : (currentCourse.code || ""),
+        description: description !== undefined ? description : (currentCourse.description || ""),
+        status: status || currentCourse.status || "Active",
+        years: years !== undefined ? Number(years) : (currentCourse.years || 4),
+        start_date: start_date !== undefined ? start_date : (currentCourse.start_date || ""),
+        end_date: end_date !== undefined ? end_date : (currentCourse.end_date || ""),
+        start_year: start_year !== undefined ? start_year : (currentCourse.start_year || ""),
+        end_year: end_year !== undefined ? end_year : (currentCourse.end_year || ""),
+        default_room: default_room !== undefined ? default_room : (currentCourse.default_room || null),
+        default_shift: default_shift !== undefined ? default_shift : (currentCourse.default_shift || null),
+        shift_based: shift_based !== undefined ? Number(shift_based) : (currentCourse.shift_based || 0),
         sections: sections !== undefined ? sections : (currentCourse.sections || null)
       }
     });

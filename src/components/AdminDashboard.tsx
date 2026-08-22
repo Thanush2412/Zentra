@@ -2281,7 +2281,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       let res;
       const isShiftSplit = deptForm.default_shift === "both" || deptForm.default_shift === "all";
-      const autoCode = generateCodeFromName(deptForm.name.trim());
+      const autoCode = deptForm.code?.trim() || generateCodeFromName(deptForm.name.trim());
       if (editingDept) {
         res = await updateCourse({
           ...deptForm,

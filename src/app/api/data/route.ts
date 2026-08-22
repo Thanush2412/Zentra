@@ -254,7 +254,7 @@ export async function GET(request: Request) {
       approvedHandovers: filteredApprovedHandovers,
       auditLogs,
       subjects: filteredSubjects,
-      departments: (departmentsData && departmentsData.length > 0) ? departmentsData : filteredCourses,
+      departments: (filteredCourses && filteredCourses.length > 0) ? filteredCourses : ((departmentsData && departmentsData.length > 0) ? departmentsData : []),
       courses: filteredCourses,
       students: filteredStudents,
       studentAttendance: filteredStudentAttendance,

@@ -2488,6 +2488,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
+        if (data.course) {
+          setDepartmentsList(prev => {
+            const exists = prev.some(d => d.id === data.course.id || d.name.toLowerCase() === data.course.name.toLowerCase());
+            if (exists) {
+              return prev.map(d => (d.id === data.course.id || d.name.toLowerCase() === data.course.name.toLowerCase()) ? { ...d, ...data.course } : d);
+            }
+            return [...prev, data.course];
+          });
+        }
         await refreshData();
       }
       return data;
@@ -2508,6 +2517,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
+        const updatedCourse = data.course || course;
+        setDepartmentsList(prev => prev.map(d => (d.id === course.id || d.name.toLowerCase() === course.name.toLowerCase()) ? { ...d, ...updatedCourse } : d));
         await refreshData();
       }
       return data;
@@ -2585,6 +2596,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
+        setDepartmentsList(prev => prev.filter(d => d.id !== id && d.name !== id));
         await refreshData();
       }
       return data;
