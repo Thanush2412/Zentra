@@ -977,7 +977,26 @@ export function getDb(): Promise<TursoDbAdapter> {
       );
     `);
 
-      const versionRow = await dbInstance.get("SELECT version FROM schema_migrations LIMIT 1");
+    // Safe column additions for courses (unconditional)
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN sections TEXT;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN shift_based INTEGER DEFAULT 0;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN default_shift TEXT;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN default_room TEXT;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN start_date TEXT;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN end_date TEXT;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN start_year TEXT;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN end_year TEXT;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN years INTEGER DEFAULT 4;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN status TEXT DEFAULT 'Active';`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN established_year TEXT;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN hod_name TEXT;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN code TEXT;`); } catch (_) { }
+    try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN description TEXT;`); } catch (_) { }
+
+    // Safe column additions for departments (unconditional)
+    try { await dbInstance.exec(`ALTER TABLE departments ADD COLUMN shift_based INTEGER DEFAULT 0;`); } catch (_) { }
+
+    const versionRow = await dbInstance.get("SELECT version FROM schema_migrations LIMIT 1");
       const currentVersion = versionRow ? versionRow.version : 0;
 
       if (currentVersion < 5) {

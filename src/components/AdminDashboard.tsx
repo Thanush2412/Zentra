@@ -1595,7 +1595,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
         await clearCampusDraftFromDb();
         await refreshData();
-        await fetchAdminDetails();
         if (!editingCampus) {
           setCampusSuccessCreatedId(updatedForm.id);
         } else {
@@ -2304,7 +2303,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
       if (res.success) {
         setShowDeptModal(false);
-        await fetchAdminDetails();
+        toast("Course & Batch saved successfully.", "success");
+        await refreshData();
       } else {
         setModalError(res.message || "Failed to save course.");
       }
@@ -2320,7 +2320,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       try {
         const res = await deleteCourse(id);
         if (res.success) {
-          await fetchAdminDetails();
+          await refreshData();
           const counts = res.deletedCounts;
           if (counts && (counts.slots > 0 || counts.students > 0 || counts.mentors > 0)) {
             toast(`Course "${name}" deleted. Cascade removed: ${counts.slots} slot(s), ${counts.students} student(s), ${counts.mentors} mentor(s), ${counts.subjects} subject(s).`, "info");
