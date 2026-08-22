@@ -938,25 +938,6 @@ export function getDb(): Promise<TursoDbAdapter> {
     );
     INSERT OR IGNORE INTO system_settings (key, value) VALUES ('mailing_enabled', 'true');
 
-    // Safe column migrations for courses
-    try { await db.run("ALTER TABLE courses ADD COLUMN sections TEXT"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN shift_based INTEGER DEFAULT 0"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN default_shift TEXT"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN default_room TEXT"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN start_date TEXT"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN end_date TEXT"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN start_year TEXT"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN end_year TEXT"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN years INTEGER DEFAULT 4"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN status TEXT DEFAULT 'Active'"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN established_year TEXT"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN hod_name TEXT"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN code TEXT"); } catch (_) {}
-    try { await db.run("ALTER TABLE courses ADD COLUMN description TEXT"); } catch (_) {}
-
-    // Safe column migrations for departments
-    try { await db.run("ALTER TABLE departments ADD COLUMN shift_based INTEGER DEFAULT 0"); } catch (_) {}
-
     CREATE INDEX IF NOT EXISTS idx_slots_mentorId ON slots(mentorId);
       CREATE INDEX IF NOT EXISTS idx_slots_collegeId ON slots(college_id);
       CREATE INDEX IF NOT EXISTS idx_slots_day_time_shift ON slots(day, time, shift);
@@ -1039,6 +1020,25 @@ export function getDb(): Promise<TursoDbAdapter> {
         try { await dbInstance.exec(`ALTER TABLE sme_users ADD COLUMN head_subject_group TEXT;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE subject_groups ADD COLUMN lead_sme_id TEXT;`); } catch (_) { }
         try { await dbInstance.exec(`ALTER TABLE subject_groups ADD COLUMN lead_sme_name TEXT;`); } catch (_) { }
+
+        // Safe column additions for courses
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN sections TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN shift_based INTEGER DEFAULT 0;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN default_shift TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN default_room TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN start_date TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN end_date TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN start_year TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN end_year TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN years INTEGER DEFAULT 4;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN status TEXT DEFAULT 'Active';`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN established_year TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN hod_name TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN code TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE courses ADD COLUMN description TEXT;`); } catch (_) { }
+
+        // Safe column additions for departments
+        try { await dbInstance.exec(`ALTER TABLE departments ADD COLUMN shift_based INTEGER DEFAULT 0;`); } catch (_) { }
 
         // Populate mentor_groups table from subject_groups if empty
         try {
