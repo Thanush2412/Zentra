@@ -52,6 +52,7 @@ import {
 import { InterviewModule } from "./InterviewModule";
 import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
+import { MentorExamMarksStudio } from "./MentorExamMarksStudio";
 import { Pagination } from "@/components/ui/Pagination";
 
 const formatPunchTime = (timeStr?: string | null) => {
@@ -1293,8 +1294,8 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
 };
 
 export interface MentorDashboardProps {
-  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews";
-  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews") => void;
+  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews";
+  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews") => void;
 }
 
 export const MentorDashboard: React.FC<MentorDashboardProps> = ({
@@ -1699,7 +1700,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
 
   // Active Dashboard Tab State
-  const [localActiveTab, setLocalActiveTab] = useState<"home" | "timetable" | "handovers" | "attendance" | "profile" | "tracker" | "demo_evaluations" | "more_menu" | "interviews">("home");
+  const [localActiveTab, setLocalActiveTab] = useState<"home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews">("home");
   const activeTab = propActiveTab || localActiveTab;
 
   // useTransition: marks tab switches as non-urgent so the current UI stays
@@ -1740,8 +1741,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           setHighlightedDate(null);
         }, 6000);
       } else if (tabParam) {
-        const normalized = tabParam === "schedule" ? "timetable" : tabParam === "leaves" ? "handovers" : tabParam;
-        if (["home", "timetable", "handovers", "attendance", "profile", "tracker", "demo_evaluations", "more_menu", "interviews"].includes(normalized)) {
+        const normalized = tabParam === "schedule" ? "timetable" : tabParam === "leaves" ? "handovers" : tabParam === "marks" ? "exams" : tabParam;
+        if (["home", "timetable", "handovers", "attendance", "exams", "profile", "tracker", "academic_tracker", "demo_evaluations", "more_menu", "leave_requests", "interviews"].includes(normalized)) {
           setActiveTab(normalized as any);
         }
       }
@@ -3491,6 +3492,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   { id: "interviews", label: "Interview Module", icon: Award },
                   { id: "demo_evaluations", label: "My Demo", icon: Sparkles },
                   { id: "attendance", label: "Student Attendance", icon: ClipboardList },
+                  { id: "exams", label: "Exam Marks Entry", icon: FileText },
                   { id: "academic_tracker", label: "Academic Tracker", icon: BookOpen },
                   { id: "tracker", label: "Skill Development Tracker", icon: GraduationCap },
                   { id: "leave_requests", label: "Leave & Permissions", icon: CalendarCheck2 },
@@ -9589,6 +9591,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         {activeTab === "leave_requests" && currentMentor && (
           <div className="space-y-6 font-sans">
             <MentorFacultyLeavePanel mentor={currentMentor} slots={slots} />
+          </div>
+        )}
+
+        {/* Tab: Exam Marks Entry & Grading Studio */}
+        {activeTab === "exams" && (
+          <div className="space-y-6 font-sans">
+            <MentorExamMarksStudio />
           </div>
         )}
 

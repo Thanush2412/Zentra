@@ -20,7 +20,8 @@ import {
   Layers,
   Sparkles,
   Printer,
-  CalendarRange
+  CalendarRange,
+  RefreshCw
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
@@ -38,6 +39,8 @@ interface ExamSchedule {
   start_time: string;
   end_time: string;
   hall_room: string;
+  max_marks?: number;
+  passing_marks?: number;
   created_by?: string;
   status: "Scheduled" | "Ongoing" | "Completed" | "Cancelled";
   created_at?: string;
@@ -75,6 +78,15 @@ export const ExamScheduleManager: React.FC = () => {
   const [selectedDeptFilter, setSelectedDeptFilter] = useState("all");
   const [selectedSemFilter, setSelectedSemFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Sub-Tab Switcher: Timetable Schedule vs Performance & Marks Registry
+  const [activeMainTab, setActiveMainTab] = useState<"schedules" | "marks_registry">("schedules");
+  const [campusMarksList, setCampusMarksList] = useState<any[]>([]);
+  const [loadingCampusMarks, setLoadingCampusMarks] = useState<boolean>(false);
+  const [marksExamTypeFilter, setMarksExamTypeFilter] = useState<string>("all");
+  const [marksDeptFilter, setMarksDeptFilter] = useState<string>("all");
+  const [marksStatusFilter, setMarksStatusFilter] = useState<"all" | "passed" | "arrears" | "absent">("all");
+  const [marksSearchQuery, setMarksSearchQuery] = useState<string>("");
 
   // Accordion open/close state for dashboard groups
   const [openAccordions, setOpenAccordions] = useState<Record<string, boolean>>({});
@@ -136,9 +148,32 @@ export const ExamScheduleManager: React.FC = () => {
     }
   };
 
+  const fetchCampusMarks = async () => {
+    setLoadingCampusMarks(true);
+    try {
+      const res = await fetch(`/api/exams/marks?college_id=${encodeURIComponent(collegeId)}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.marks)) {
+        setCampusMarksList(data.marks);
+      } else {
+        setCampusMarksList([]);
+      }
+    } catch (e: any) {
+      console.error("Error fetching campus marks:", e);
+    } finally {
+      setLoadingCampusMarks(false);
+    }
+  };
+
   useEffect(() => {
     fetchExams();
   }, [collegeId]);
+
+  useEffect(() => {
+    if (activeMainTab === "marks_registry") {
+      fetchCampusMarks();
+    }
+  }, [activeMainTab, collegeId]);
 
   // Dynamic subjects matching chosen Department & Semester (deduplicated by name)
   const deptSubjects = useMemo(() => {
@@ -427,6 +462,66 @@ export const ExamScheduleManager: React.FC = () => {
     setOpenAccordions((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  // Filtered Campus Marks for Performance Registry
+  const filteredCampusMarks = useMemo(() => {
+    return campusMarksList.filter(m => {
+      if (marksExamTypeFilter !== "all" && m.exam_type !== marksExamTypeFilter) return false;
+      if (marksDeptFilter !== "all") {
+        const d = (m.exam_department || m.student_department || "").toLowerCase();
+        if (!d.includes(marksDeptFilter.toLowerCase())) return false;
+      }
+      const isAbs = Boolean(m.is_absent);
+      const mNum = m.marks_obtained !== null && m.marks_obtained !== undefined ? parseFloat(m.marks_obtained) : null;
+      const maxM = parseFloat(m.max_marks || 50);
+      const passM = parseFloat(m.passing_marks || (maxM * 0.4) || 20);
+      const isPass = mNum !== null && mNum >= passM;
+
+      if (marksStatusFilter === "passed" && (!isPass || isAbs)) return false;
+      if (marksStatusFilter === "arrears" && (isPass || isAbs || mNum === null)) return false;
+      if (marksStatusFilter === "absent" && !isAbs) return false;
+
+      if (marksSearchQuery.trim()) {
+        const q = marksSearchQuery.toLowerCase().trim();
+        const matches = (m.student_name || "").toLowerCase().includes(q) ||
+          (m.roll_number || "").toLowerCase().includes(q) ||
+          (m.subject_name || "").toLowerCase().includes(q) ||
+          (m.classGroup || "").toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [campusMarksList, marksExamTypeFilter, marksDeptFilter, marksStatusFilter, marksSearchQuery]);
+
+  // Overall Campus Exam KPIs
+  const campusMarksStats = useMemo(() => {
+    let total = campusMarksList.length;
+    let evaluated = 0;
+    let passed = 0;
+    let arrears = 0;
+    let absent = 0;
+    let totalPct = 0;
+
+    campusMarksList.forEach(m => {
+      if (m.is_absent) {
+        absent++;
+        arrears++;
+      } else if (m.marks_obtained !== null && m.marks_obtained !== undefined) {
+        evaluated++;
+        const val = parseFloat(m.marks_obtained);
+        const maxM = parseFloat(m.max_marks || 50);
+        const passM = parseFloat(m.passing_marks || (maxM * 0.4) || 20);
+        totalPct += (val / maxM) * 100;
+        if (val >= passM) passed++;
+        else arrears++;
+      }
+    });
+
+    const passRate = (passed + (arrears - absent)) > 0 ? Math.round((passed / (passed + (arrears - absent))) * 100) : 0;
+    const avgScore = evaluated > 0 ? (totalPct / evaluated).toFixed(1) : "—";
+
+    return { total, evaluated, passed, arrears, absent, passRate, avgScore };
+  }, [campusMarksList]);
+
   // Export CSV of Scheduled Exams
   const handleExportCSV = () => {
     const headers = ["Department", "Semester", "Exam_Name", "Subject_Name", "Exam_Date", "Session_Time", "Hall_Room"];
@@ -450,6 +545,30 @@ export const ExamScheduleManager: React.FC = () => {
     toast("Exam schedules exported to CSV", "success");
   };
 
+  // Export CSV of Campus Exam Marksheets
+  const handleExportMarksCSV = () => {
+    if (filteredCampusMarks.length === 0) return;
+    let csv = "Roll Number,Student Name,Department,Cohort,Exam Type,Subject Name,Subject Code,Exam Date,Marks Obtained,Max Marks,Percentage,Grade,Status,Evaluator Mentor,Remarks\n";
+    filteredCampusMarks.forEach(m => {
+      const isAbs = Boolean(m.is_absent);
+      const mNum = m.marks_obtained !== null && m.marks_obtained !== undefined ? parseFloat(m.marks_obtained) : null;
+      const maxM = parseFloat(m.max_marks || 50);
+      const pct = mNum !== null ? ((mNum / maxM) * 100).toFixed(1) + "%" : "—";
+      const passM = parseFloat(m.passing_marks || (maxM * 0.4) || 20);
+      const isPass = mNum !== null && mNum >= passM;
+      const status = isAbs ? "ABSENT" : isPass ? "PASSED" : "ARREAR / RE-APPEAR";
+      csv += `"${m.roll_number || ""}","${m.student_name || ""}","${m.exam_department || m.student_department || ""}","${m.classGroup || ""}","${m.exam_type || ""}","${m.subject_name || ""}","${m.subject_code || ""}","${m.exam_date || ""}","${isAbs ? "AB" : mNum ?? "—"}","${maxM}","${pct}","${m.grade || ""}","${status}","${m.evaluated_by || ""}","${m.remarks || ""}"\n`;
+    });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Campus_Exam_Marks_Registry_${collegeId}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast("Campus marksheet registry exported to CSV", "success");
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn pb-16 font-sans">
       {/* Header Banner */}
@@ -460,251 +579,517 @@ export const ExamScheduleManager: React.FC = () => {
           </div>
           <div>
             <h1 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-              Exam Timetable & Schedules Studio
+              Exam Timetable & Performance Studio
               <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase tracking-wider">
                 Internal Assessments & Semester
               </span>
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Publish complete department assessment timetables, configure dates per subject, and sync with student calendars.
+              Publish complete department assessment timetables, track faculty marks evaluation, and monitor campus pass rates.
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-2xs transition-all cursor-pointer"
-          >
-            <Download className="h-4 w-4 text-emerald-600" />
-            <span>Export CSV</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setIsPopupOpen(true);
-            }}
-            className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 btn-gradient text-white rounded-xl text-xs font-extrabold shadow-sm hover:shadow-md transition-all cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Schedule Exam Timetable</span>
-          </button>
-        </div>
-      </div>
-
-      {/* KPI Stats Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Timetable Batches</p>
-          <p className="text-xl font-extrabold text-slate-900 mt-1">{groupedExamBatches.length}</p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Exam Slots</p>
-          <p className="text-xl font-extrabold text-indigo-600 mt-1">{exams.length}</p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Departments Active</p>
-          <p className="text-xl font-extrabold text-slate-900 mt-1">
-            {Array.from(new Set(exams.map((e) => e.department))).length}
-          </p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Assessment Types</p>
-          <p className="text-xl font-extrabold text-purple-600 mt-1">
-            {Array.from(new Set(exams.map((e) => e.exam_type))).length}
-          </p>
-        </div>
-      </div>
-
-      {/* Filters & Search */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-          {/* Department Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
-            <span className="text-slate-400 text-[10px] uppercase">Dept:</span>
-            <select
-              value={selectedDeptFilter}
-              onChange={(e) => setSelectedDeptFilter(e.target.value)}
-              className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
+          {/* Main Sub-Tab Pill Switcher */}
+          <div className="flex items-center p-1 bg-slate-100 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setActiveMainTab("schedules")}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                activeMainTab === "schedules"
+                  ? "bg-white text-indigo-700 shadow-xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
             >
-              <option value="all">All Departments</option>
-              {availableDepartments.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Semester Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
-            <span className="text-slate-400 text-[10px] uppercase">Sem:</span>
-            <select
-              value={selectedSemFilter}
-              onChange={(e) => setSelectedSemFilter(e.target.value)}
-              className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
+              Timetables ({exams.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveMainTab("marks_registry")}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                activeMainTab === "marks_registry"
+                  ? "bg-white text-indigo-700 shadow-xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
             >
-              <option value="all">All Semesters</option>
-              {["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"].map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+              Marks Registry ({campusMarksList.length})
+            </button>
           </div>
-        </div>
 
-        {/* Search */}
-        <div className="relative w-full md:w-72">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search exam, subject, hall..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
+          {activeMainTab === "schedules" ? (
+            <>
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-2xs transition-all cursor-pointer"
+              >
+                <Download className="h-4 w-4 text-emerald-600" />
+                <span>Export CSV</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsPopupOpen(true)}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 btn-gradient text-white rounded-xl text-xs font-extrabold shadow-sm hover:shadow-md transition-all cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Schedule Timetable</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={fetchCampusMarks}
+                disabled={loadingCampusMarks}
+                className="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 transition-all cursor-pointer"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${loadingCampusMarks ? "animate-spin text-indigo-600" : ""}`} />
+                <span>Refresh</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportMarksCSV}
+                className="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+              >
+                <Download className="h-4 w-4 text-emerald-600" />
+                <span>Export Marksheet CSV</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Main Accordion View: Grouped by Exam Batches */}
-      <div className="space-y-4">
-        {loading ? (
-          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400 font-bold shadow-sm">
-            Loading exam timetables...
-          </div>
-        ) : groupedExamBatches.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400 shadow-sm">
-            <div className="flex flex-col items-center justify-center gap-2">
-              <Award className="h-9 w-9 text-slate-300" />
-              <p className="font-extrabold text-slate-700 text-sm">No Exam Timetables Published</p>
-              <p className="text-xs text-slate-450 max-w-md">
-                Click <strong>"Schedule Exam Timetable"</strong> above to select a department and schedule assessment dates for all subjects.
+      {activeMainTab === "schedules" ? (
+        <>
+          {/* KPI Stats Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Timetable Batches</p>
+              <p className="text-xl font-extrabold text-slate-900 mt-1">{groupedExamBatches.length}</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Exam Slots</p>
+              <p className="text-xl font-extrabold text-indigo-600 mt-1">{exams.length}</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Departments Active</p>
+              <p className="text-xl font-extrabold text-slate-900 mt-1">
+                {Array.from(new Set(exams.map((e) => e.department))).length}
+              </p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Assessment Types</p>
+              <p className="text-xl font-extrabold text-purple-600 mt-1">
+                {Array.from(new Set(exams.map((e) => e.exam_type))).length}
               </p>
             </div>
           </div>
-        ) : (
-          groupedExamBatches.map((batch) => {
-            const isOpen = Boolean(openAccordions[batch.key]);
-            const batchTitle = `${batch.exam_type} — ${batch.department} (${batch.semester})`;
-            const allIds = batch.slots.map((s) => s.id);
 
-            return (
-              <div
-                key={batch.key}
-                className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden transition-all duration-200"
-              >
-                {/* Accordion Header */}
-                <div
-                  onClick={() => toggleAccordion(batch.key)}
-                  className="p-4.5 sm:p-5 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none bg-slate-50/50 hover:bg-slate-50 transition-colors border-b border-slate-150"
+          {/* Filters & Search */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+              {/* Department Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
+                <span className="text-slate-400 text-[10px] uppercase">Dept:</span>
+                <select
+                  value={selectedDeptFilter}
+                  onChange={(e) => setSelectedDeptFilter(e.target.value)}
+                  className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-extrabold text-xs">
-                      {batch.exam_type.substring(0, 3)}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-sm font-extrabold text-slate-900">{batchTitle}</h3>
-                        <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase">
-                          {batch.slots.length} {batch.slots.length === 1 ? "Subject" : "Subjects"}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1">
-                        <span className="flex items-center gap-1 font-semibold text-slate-650">
-                          <Calendar className="h-3 w-3 text-indigo-500 shrink-0" />
-                          {batch.minDate} {batch.minDate !== batch.maxDate ? `to ${batch.maxDate}` : ""}
-                        </span>
-                        <span className="text-slate-300">•</span>
-                        <span>{batch.department}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteBatch(batch.key, batchTitle, allIds)}
-                      className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition-all cursor-pointer"
-                      title="Delete Full Timetable Batch"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleAccordion(batch.key)}
-                      className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all cursor-pointer"
-                    >
-                      {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Accordion Content: Full Subject Timetable Table */}
-                {isOpen && (
-                  <div className="p-0 overflow-x-auto animate-fadeIn">
-                    <table className="w-full border-collapse text-left text-xs min-w-[650px]">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] tracking-wider whitespace-nowrap">
-                          <th className="p-3.5">Subject Name</th>
-                          <th className="p-3.5">Exam Date</th>
-                          <th className="p-3.5">Session & Timings</th>
-                          <th className="p-3.5">Hall / Room</th>
-                          <th className="p-3.5 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-150 font-medium">
-                        {batch.slots.map((slot, sIdx) => {
-                          return (
-                            <tr key={slot.id || `slot_${slot.subject_name}_${sIdx}`} className="hover:bg-slate-50/60 transition-colors">
-                              <td className="p-3.5 font-extrabold text-slate-900">
-                                <div className="flex items-center gap-2">
-                                  <BookOpen className="h-4 w-4 text-indigo-500 shrink-0" />
-                                  <span>{slot.subject_name}</span>
-                                </div>
-                              </td>
-                              <td className="p-3.5 text-slate-700 font-bold">
-                                <div className="flex items-center gap-1.5">
-                                  <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                                  <span>{slot.exam_date}</span>
-                                </div>
-                              </td>
-                              <td className="p-3.5 text-slate-650">
-                                <div className="flex items-center gap-1.5 text-[10.5px]">
-                                  <Clock className="h-3 w-3 text-slate-400 shrink-0" />
-                                  <span>{slot.session_time || `${slot.start_time} - ${slot.end_time}`}</span>
-                                </div>
-                              </td>
-                              <td className="p-3.5">
-                                <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px] text-slate-700 font-bold">
-                                  <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
-                                  {slot.hall_room || "Exam Hall"}
-                                </span>
-                              </td>
-                              <td className="p-3.5 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteSingleExam(slot.id, slot.subject_name)}
-                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-all"
-                                  title="Delete Single Slot"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                  <option value="all">All Departments</option>
+                  {availableDepartments.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
               </div>
-            );
-          })
-        )}
-      </div>
+
+              {/* Semester Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
+                <span className="text-slate-400 text-[10px] uppercase">Sem:</span>
+                <select
+                  value={selectedSemFilter}
+                  onChange={(e) => setSelectedSemFilter(e.target.value)}
+                  className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
+                >
+                  <option value="all">All Semesters</option>
+                  {["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"].map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Search */}
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search exam, subject, hall..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          {/* Main Accordion View: Grouped by Exam Batches */}
+          <div className="space-y-4">
+            {loading ? (
+              <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400 font-bold shadow-sm">
+                Loading exam timetables...
+              </div>
+            ) : groupedExamBatches.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400 shadow-sm">
+                <div className="flex flex-col items-center justify-center gap-2">
+                  <Award className="h-9 w-9 text-slate-300" />
+                  <p className="font-extrabold text-slate-700 text-sm">No Exam Timetables Published</p>
+                  <p className="text-xs text-slate-450 max-w-md">
+                    Click <strong>"Schedule Exam Timetable"</strong> above to select a department and schedule assessment dates for all subjects.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              groupedExamBatches.map((batch) => {
+                const isOpen = Boolean(openAccordions[batch.key]);
+                const batchTitle = `${batch.exam_type} — ${batch.department} (${batch.semester})`;
+                const allIds = batch.slots.map((s) => s.id);
+
+                return (
+                  <div
+                    key={batch.key}
+                    className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden transition-all duration-200"
+                  >
+                    {/* Accordion Header */}
+                    <div
+                      onClick={() => toggleAccordion(batch.key)}
+                      className="p-4.5 sm:p-5 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none bg-slate-50/50 hover:bg-slate-50 transition-colors border-b border-slate-150"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-extrabold text-xs">
+                          {batch.exam_type.substring(0, 3)}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm font-extrabold text-slate-900">{batchTitle}</h3>
+                            <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase">
+                              {batch.slots.length} {batch.slots.length === 1 ? "Subject" : "Subjects"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1">
+                            <span className="flex items-center gap-1 font-semibold text-slate-650">
+                              <Calendar className="h-3 w-3 text-indigo-500 shrink-0" />
+                              {batch.minDate} {batch.minDate !== batch.maxDate ? `to ${batch.maxDate}` : ""}
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span>{batch.department}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBatch(batch.key, batchTitle, allIds)}
+                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition-all cursor-pointer"
+                          title="Delete Full Timetable Batch"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleAccordion(batch.key)}
+                          className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all cursor-pointer"
+                        >
+                          {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Accordion Body: Table of Subjects */}
+                    {isOpen && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse min-w-[650px]">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase text-[9px]">
+                              <th className="p-3.5 w-12 text-center">#</th>
+                              <th className="p-3.5">Subject & Code</th>
+                              <th className="p-3.5">Exam Date</th>
+                              <th className="p-3.5">Timing & Session</th>
+                              <th className="p-3.5">Hall / Room</th>
+                              <th className="p-3.5">Max Marks</th>
+                              <th className="p-3.5 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                            {batch.slots.map((slot, sIdx) => {
+                              return (
+                                <tr key={slot.id} className="hover:bg-slate-50/70 transition-colors">
+                                  <td className="p-3.5 text-center font-mono text-[11px] text-slate-400">
+                                    {sIdx + 1}
+                                  </td>
+                                  <td className="p-3.5">
+                                    <span className="font-extrabold text-slate-900 block">{slot.subject_name}</span>
+                                    {slot.subject_code && (
+                                      <span className="text-[10px] text-slate-400 font-mono">{slot.subject_code}</span>
+                                    )}
+                                  </td>
+                                  <td className="p-3.5 font-bold text-slate-800">
+                                    <div className="flex items-center gap-1.5">
+                                      <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                                      <span>{slot.exam_date}</span>
+                                    </div>
+                                  </td>
+                                  <td className="p-3.5 text-slate-600">
+                                    <div className="flex items-center gap-1.5">
+                                      <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                      <span>{slot.session_time || `${slot.start_time} - ${slot.end_time}`}</span>
+                                    </div>
+                                  </td>
+                                  <td className="p-3.5">
+                                    <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px] text-slate-700 font-bold">
+                                      <MapPin className="h-3 w-3 text-slate-400" />
+                                      {slot.hall_room}
+                                    </span>
+                                  </td>
+                                  <td className="p-3.5 font-bold text-slate-800">
+                                    {slot.max_marks || 50} pts
+                                  </td>
+                                  <td className="p-3.5 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteSingleExam(slot.id, slot.subject_name)}
+                                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-all"
+                                      title="Delete Single Slot"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </>
+      ) : (
+        /* MARKS REGISTRY & PERFORMANCE VIEW */
+        <div className="space-y-5">
+          {/* Performance Summary KPI Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Records</p>
+              <p className="text-xl font-extrabold text-slate-900 mt-1">{campusMarksStats.total}</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">Passed Records</p>
+              <p className="text-xl font-extrabold text-emerald-700 mt-1">{campusMarksStats.passed}</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-rose-600">Arrears / Failures</p>
+              <p className="text-xl font-extrabold text-rose-700 mt-1">{campusMarksStats.arrears}</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Absentees</p>
+              <p className="text-xl font-extrabold text-amber-700 mt-1">{campusMarksStats.absent}</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Campus Pass Rate</p>
+              <p className="text-xl font-extrabold text-indigo-700 mt-1">{campusMarksStats.passRate}%</p>
+            </div>
+          </div>
+
+          {/* Marks Filter & Search Bar */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+              {/* Exam Type Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
+                <span className="text-slate-400 text-[10px] uppercase">Exam:</span>
+                <select
+                  value={marksExamTypeFilter}
+                  onChange={(e) => setMarksExamTypeFilter(e.target.value)}
+                  className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
+                >
+                  <option value="all">All Assessments</option>
+                  {PRESET_EXAM_SUGGESTIONS.map((ex) => (
+                    <option key={ex} value={ex}>{ex}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Department Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
+                <span className="text-slate-400 text-[10px] uppercase">Dept:</span>
+                <select
+                  value={marksDeptFilter}
+                  onChange={(e) => setMarksDeptFilter(e.target.value)}
+                  className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
+                >
+                  <option value="all">All Departments</option>
+                  {availableDepartments.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status Tabs */}
+              <div className="flex items-center p-1 bg-slate-100 rounded-xl">
+                {(["all", "passed", "arrears", "absent"] as const).map(tab => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setMarksStatusFilter(tab)}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      marksStatusFilter === tab
+                        ? "bg-white text-slate-900 shadow-2xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {tab === "all" ? "All Status" : tab === "passed" ? "Passed" : tab === "arrears" ? "Arrears" : "Absent"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search student, roll no, subject..."
+                value={marksSearchQuery}
+                onChange={(e) => setMarksSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          {/* Student Exam Marks Registry Table */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto max-h-[600px] scroll-touch">
+              <table className="w-full text-left text-xs border-collapse min-w-[850px]">
+                <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
+                  <tr>
+                    <th className="p-3.5 text-center w-12">#</th>
+                    <th className="p-3.5">Student Details</th>
+                    <th className="p-3.5">Department / Cohort</th>
+                    <th className="p-3.5">Exam & Subject</th>
+                    <th className="p-3.5 text-center">Score (Out of)</th>
+                    <th className="p-3.5 text-center">Score %</th>
+                    <th className="p-3.5 text-center">Grade</th>
+                    <th className="p-3.5 text-center">Status</th>
+                    <th className="p-3.5">Evaluator Mentor</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                  {loadingCampusMarks ? (
+                    <tr>
+                      <td colSpan={9} className="p-12 text-center text-slate-400 font-bold">
+                        <RefreshCw className="h-6 w-6 animate-spin mx-auto text-indigo-600 mb-2" />
+                        Loading campus marks registry...
+                      </td>
+                    </tr>
+                  ) : filteredCampusMarks.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="p-12 text-center text-slate-400 italic">
+                        No evaluated exam marks found matching the criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCampusMarks.map((m, idx) => {
+                      const isAbs = Boolean(m.is_absent);
+                      const mNum = m.marks_obtained !== null && m.marks_obtained !== undefined ? parseFloat(m.marks_obtained) : null;
+                      const maxM = parseFloat(m.max_marks || 50);
+                      const pct = mNum !== null ? Math.round((mNum / maxM) * 100) : 0;
+                      const passM = parseFloat(m.passing_marks || (maxM * 0.4) || 20);
+                      const isPass = mNum !== null && mNum >= passM;
+
+                      return (
+                        <tr key={m.id || idx} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="p-3.5 text-center font-mono text-[11px] text-slate-400">
+                            {idx + 1}
+                          </td>
+                          <td className="p-3.5">
+                            <div className="font-extrabold text-slate-900">{m.student_name}</div>
+                            <div className="font-mono text-[10px] text-slate-400">{m.roll_number}</div>
+                          </td>
+                          <td className="p-3.5">
+                            <div className="font-semibold text-slate-800">{m.exam_department || m.student_department}</div>
+                            <div className="text-[10px] text-slate-400">{m.classGroup || m.semester}</div>
+                          </td>
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-black uppercase">
+                                {m.exam_type}
+                              </span>
+                              <span className="font-extrabold text-slate-900">{m.subject_name}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">Date: {m.exam_date}</div>
+                          </td>
+                          <td className="p-3.5 text-center font-mono font-bold text-slate-900">
+                            {isAbs ? (
+                              <span className="text-rose-600">ABSENT</span>
+                            ) : mNum !== null ? (
+                              <span>{mNum} / {maxM}</span>
+                            ) : (
+                              <span className="text-amber-600 italic">Pending</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-center font-bold">
+                            {isAbs || mNum === null ? "—" : `${pct}%`}
+                          </td>
+                          <td className="p-3.5 text-center">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              isAbs
+                                ? "bg-slate-100 text-slate-600"
+                                : m.grade === "O" || m.grade === "A+" || m.grade === "A"
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : m.grade === "B+" || m.grade === "B"
+                                ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                : isPass
+                                ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                : "bg-rose-50 text-rose-700 border border-rose-200"
+                            }`}>
+                              {isAbs ? "AB" : m.grade || (isPass ? "PASS" : "RA")}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${
+                              isAbs
+                                ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                : isPass
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : "bg-rose-50 text-rose-700 border border-rose-200"
+                            }`}>
+                              {isAbs ? "Absent" : isPass ? "Pass" : "Arrear"}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-slate-600 text-[11px]">
+                            <div className="font-semibold text-slate-800">{m.evaluated_by || "Faculty Mentor"}</div>
+                            {m.remarks && <div className="text-slate-400 text-[10px] italic">{m.remarks}</div>}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* POPUP MODAL: Schedule Exam Timetable with Subject Accordion */}
       {isPopupOpen && (

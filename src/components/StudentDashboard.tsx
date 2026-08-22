@@ -261,6 +261,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [studentExamsList, setStudentExamsList] = useState<any[]>([]);
   const [studentMarksList, setStudentMarksList] = useState<any[]>([]);
   const [examsLoading, setExamsLoading] = useState<boolean>(false);
+  const [examSubTab, setExamSubTab] = useState<"schedule" | "results">("schedule");
 
   const fetchStudentExamsAndMarks = async () => {
     if (!currentStudent?.college_id) return;
@@ -2482,106 +2483,308 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           </div>
         )}
 
-        {/* Tab 5: Exams & Seating Tickets */}
+        {/* Tab 5: Exams, Tickets & Assessment Scorecards */}
         {activeTab === "exams" && (() => {
           const displayExams = studentExamsList || [];
+          const displayMarks = studentMarksList || [];
+
+          // Compute summary stats for student results
+          let totalMarks = 0;
+          let totalMaxMarks = 0;
+          let passedCount = 0;
+          let arrearsCount = 0;
+          let absentCount = 0;
+
+          displayMarks.forEach((m: any) => {
+            if (m.is_absent) {
+              absentCount++;
+              arrearsCount++;
+            } else if (m.marks_obtained !== null && m.marks_obtained !== undefined) {
+              totalMarks += parseFloat(m.marks_obtained);
+              totalMaxMarks += parseFloat(m.max_marks || 50);
+              const passM = parseFloat(m.passing_marks || (m.max_marks * 0.4) || 20);
+              if (parseFloat(m.marks_obtained) >= passM) passedCount++;
+              else arrearsCount++;
+            }
+          });
+
+          const overallPct = totalMaxMarks > 0 ? ((totalMarks / totalMaxMarks) * 100).toFixed(1) : "—";
 
           return (
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-sm font-sans">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3.5">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-650">
-                    <BookOpen className="h-5 w-5" />
+            <div className="space-y-5 font-sans">
+              {/* Header Navigation & Sub-Tabs */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-650">
+                      <BookOpen className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                        Assessments & Exam Hub
+                        <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-black uppercase">
+                          {currentStudent?.department || "Department"}
+                        </span>
+                      </h2>
+                      <p className="text-[11px] text-slate-450 mt-0.5">
+                        Track upcoming schedules, download hall tickets, and review evaluated subject scorecards.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                      Examination Schedule & Tickets
-                      <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-black uppercase">
-                        {currentStudent?.department || "Department"}
-                      </span>
-                    </h2>
-                    <p className="text-[11px] text-slate-450 mt-0.5">
-                      Verify your upcoming assessment dates, timings, and allocated exam hall seating.
-                    </p>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Sub-tab pills */}
+                    <div className="flex items-center p-1 bg-slate-100 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setExamSubTab("schedule")}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                          examSubTab === "schedule"
+                            ? "bg-white text-indigo-700 shadow-xs"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        Timetable & Hall Tickets ({displayExams.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setExamSubTab("results")}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                          examSubTab === "results"
+                            ? "bg-white text-indigo-700 shadow-xs"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        Results & Scorecard ({displayMarks.length})
+                      </button>
+                    </div>
+
+                    {examSubTab === "schedule" && displayExams.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          toast(`Official Hall Ticket generated for ${currentStudent.name} (${currentStudent.roll_number || currentStudent.register_number || currentStudent.id}).`, "success");
+                        }}
+                        className="py-2 px-3.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                      >
+                        <Download className="h-4 w-4" />
+                        <span>Download Hall Ticket (PDF)</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {displayExams.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      toast(`Official Hall Ticket generated for ${currentStudent.name} (${currentStudent.roll_number || currentStudent.register_number || currentStudent.id}).`, "success");
-                    }}
-                    className="py-2 px-3.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                  >
-                    <Download className="h-4 w-4" />
-                    <span>Download Hall Ticket (PDF)</span>
-                  </button>
+                {/* Scorecard Quick KPIs (When on results view) */}
+                {examSubTab === "results" && displayMarks.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                    <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl text-center">
+                      <span className="text-[9px] font-black uppercase text-indigo-800 block">Evaluated Papers</span>
+                      <span className="text-lg font-black text-indigo-900">{displayMarks.length}</span>
+                    </div>
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                      <span className="text-[9px] font-black uppercase text-emerald-700 block">Passed</span>
+                      <span className="text-lg font-black text-emerald-800">{passedCount}</span>
+                    </div>
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-center">
+                      <span className="text-[9px] font-black uppercase text-rose-700 block">Arrears / Re-Appear</span>
+                      <span className="text-lg font-black text-rose-800">{arrearsCount}</span>
+                    </div>
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-center">
+                      <span className="text-[9px] font-black uppercase text-purple-700 block">Cumulative Score</span>
+                      <span className="text-lg font-black text-purple-900">{overallPct}%</span>
+                    </div>
+                  </div>
                 )}
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-slate-200 scroll-touch">
-                <table className="w-full border-collapse text-left text-xs min-w-[650px]">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
-                      <th className="p-3">Exam / Assessment</th>
-                      <th className="p-3">Subject Name</th>
-                      <th className="p-3">Exam Date</th>
-                      <th className="p-3">Session & Timings</th>
-                      <th className="p-3">Hall / Block</th>
-                      <th className="p-3 text-center">Seat Number</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                    {examsLoading ? (
-                      <tr>
-                        <td colSpan={6} className="p-8 text-center text-slate-400 font-bold">
-                          Loading your assessment schedule...
-                        </td>
-                      </tr>
-                    ) : displayExams.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="p-8 text-center text-slate-400 italic">
-                          No examination schedules published for your enrolled courses at this time.
-                        </td>
-                      </tr>
-                    ) : (
-                      displayExams.map((ex: any, idx: number) => {
-                        const seatNo = currentStudent.roll_number || currentStudent.register_number ? `${currentStudent.roll_number || currentStudent.register_number}` : `S-${100 + idx}`;
-                        return (
-                          <tr key={ex.id || idx} className="hover:bg-slate-50/60 transition-colors">
-                            <td className="p-3">
-                              <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10.5px] font-extrabold">
-                                {ex.exam_type}
-                              </span>
+              {/* VIEW 1: EXAMINATION SCHEDULE & TICKETS */}
+              {examSubTab === "schedule" && (
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto scroll-touch">
+                    <table className="w-full border-collapse text-left text-xs min-w-[650px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
+                          <th className="p-3">Exam / Assessment</th>
+                          <th className="p-3">Subject Name</th>
+                          <th className="p-3">Exam Date</th>
+                          <th className="p-3">Session & Timings</th>
+                          <th className="p-3">Hall / Block</th>
+                          <th className="p-3 text-center">Seat Number</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                        {examsLoading ? (
+                          <tr>
+                            <td colSpan={6} className="p-8 text-center text-slate-400 font-bold">
+                              Loading your assessment schedule...
                             </td>
-                            <td className="p-3 font-extrabold text-slate-900 truncate max-w-[200px]">{ex.subject_name}</td>
-                            <td className="p-3 text-slate-700 font-bold">
-                              <div className="flex items-center gap-1.5">
-                                <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                                <span>{ex.exam_date}</span>
-                              </div>
-                            </td>
-                            <td className="p-3 text-slate-650">
-                              <div className="flex items-center gap-1.5 text-[10.5px]">
-                                <Clock className="h-3 w-3 text-slate-400 shrink-0" />
-                                <span>{ex.session_time || `${ex.start_time} - ${ex.end_time}`}</span>
-                              </div>
-                            </td>
-                            <td className="p-3">
-                              <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px] text-slate-700 font-bold">
-                                <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
-                                {ex.hall_room || "Main Examination Hall"}
-                              </span>
-                            </td>
-                            <td className="p-3 text-center font-bold text-indigo-700 font-mono">{seatNo}</td>
                           </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                        ) : displayExams.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="p-8 text-center text-slate-400 italic">
+                              No examination schedules published for your enrolled courses at this time.
+                            </td>
+                          </tr>
+                        ) : (
+                          displayExams.map((ex: any, idx: number) => {
+                            const seatNo = currentStudent.roll_number || currentStudent.register_number ? `${currentStudent.roll_number || currentStudent.register_number}` : `S-${100 + idx}`;
+                            return (
+                              <tr key={ex.id || idx} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="p-3">
+                                  <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10.5px] font-extrabold">
+                                    {ex.exam_type}
+                                  </span>
+                                </td>
+                                <td className="p-3 font-extrabold text-slate-900 truncate max-w-[200px]">{ex.subject_name}</td>
+                                <td className="p-3 text-slate-700 font-bold">
+                                  <div className="flex items-center gap-1.5">
+                                    <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                                    <span>{ex.exam_date}</span>
+                                  </div>
+                                </td>
+                                <td className="p-3 text-slate-650">
+                                  <div className="flex items-center gap-1.5 text-[10.5px]">
+                                    <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                                    <span>{ex.session_time || `${ex.start_time} - ${ex.end_time}`}</span>
+                                  </div>
+                                </td>
+                                <td className="p-3">
+                                  <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px] text-slate-700 font-bold">
+                                    <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
+                                    {ex.hall_room || "Main Examination Hall"}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-center font-bold text-indigo-700 font-mono">{seatNo}</td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* VIEW 2: ASSESSMENT RESULTS & SCORECARD */}
+              {examSubTab === "results" && (
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto scroll-touch">
+                    <table className="w-full border-collapse text-left text-xs min-w-[700px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
+                          <th className="p-3">Exam Type</th>
+                          <th className="p-3">Subject Name</th>
+                          <th className="p-3">Exam Date</th>
+                          <th className="p-3 text-center">Marks Scored</th>
+                          <th className="p-3 text-center">Score %</th>
+                          <th className="p-3 text-center">Grade</th>
+                          <th className="p-3 text-center">Status</th>
+                          <th className="p-3">Evaluator / Remarks</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                        {examsLoading ? (
+                          <tr>
+                            <td colSpan={8} className="p-8 text-center text-slate-400 font-bold">
+                              Loading evaluated assessment scores...
+                            </td>
+                          </tr>
+                        ) : displayMarks.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="p-10 text-center text-slate-400 italic">
+                              No marks published by faculty yet. As subject mentors evaluate papers, your results will appear here in real-time.
+                            </td>
+                          </tr>
+                        ) : (
+                          displayMarks.map((m: any, idx: number) => {
+                            const isAbs = Boolean(m.is_absent);
+                            const marksNum = m.marks_obtained !== null && m.marks_obtained !== undefined ? parseFloat(m.marks_obtained) : null;
+                            const maxM = parseFloat(m.max_marks || 50);
+                            const passM = parseFloat(m.passing_marks || (maxM * 0.4) || 20);
+                            const pct = marksNum !== null ? Math.round((marksNum / maxM) * 100) : 0;
+                            const isPass = marksNum !== null && marksNum >= passM;
+
+                            return (
+                              <tr key={m.id || idx} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="p-3">
+                                  <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10.5px] font-extrabold">
+                                    {m.exam_type}
+                                  </span>
+                                </td>
+                                <td className="p-3">
+                                  <div className="font-extrabold text-slate-900">{m.subject_name}</div>
+                                  {m.subject_code && (
+                                    <div className="text-[10px] text-slate-400 font-mono">{m.subject_code}</div>
+                                  )}
+                                </td>
+                                <td className="p-3 text-slate-700 font-bold">
+                                  {m.exam_date}
+                                </td>
+                                <td className="p-3 text-center font-extrabold">
+                                  {isAbs ? (
+                                    <span className="text-rose-600 font-mono">ABSENT</span>
+                                  ) : marksNum !== null ? (
+                                    <span className="text-slate-900 font-mono">
+                                      {marksNum} <span className="text-slate-400 font-normal text-[11px]">/ {maxM}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-amber-600 italic">Pending</span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-center">
+                                  {isAbs || marksNum === null ? (
+                                    <span className="text-slate-400">—</span>
+                                  ) : (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <span className="font-black text-slate-800 text-[11px]">{pct}%</span>
+                                      <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                        <div
+                                          className={`h-full rounded-full ${pct >= 75 ? "bg-emerald-500" : pct >= 50 ? "bg-indigo-500" : "bg-rose-500"}`}
+                                          style={{ width: `${Math.min(pct, 100)}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                    isAbs
+                                      ? "bg-slate-100 text-slate-600"
+                                      : m.grade === "O" || m.grade === "A+" || m.grade === "A"
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      : m.grade === "B+" || m.grade === "B"
+                                      ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                      : isPass
+                                      ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                      : "bg-rose-50 text-rose-700 border border-rose-200"
+                                  }`}>
+                                    {isAbs ? "AB" : m.grade || (isPass ? "PASS" : "RA")}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase ${
+                                    isAbs
+                                      ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                      : isPass
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      : "bg-rose-50 text-rose-700 border border-rose-200"
+                                  }`}>
+                                    {isAbs ? "Absent" : isPass ? "Passed" : "Re-Appear"}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-[11px] text-slate-600">
+                                  <div className="font-semibold text-slate-800">{m.evaluated_by || "Subject Mentor"}</div>
+                                  {m.remarks && <div className="text-slate-400 text-[10px] italic mt-0.5">{m.remarks}</div>}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()}

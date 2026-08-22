@@ -20,15 +20,22 @@ export async function GET(request: Request) {
         return NextResponse.json({ success: false, message: "Exam not found" }, { status: 404 });
       }
 
+      const classGroup = searchParams.get("class_group");
+
       // Fetch students belonging to the exam's department & college
-      const students = await db.all(
-        `SELECT id, name, roll_number, register_number, email, classGroup, department 
-         FROM students 
-         WHERE (LOWER(college_id) = LOWER(?) OR college_id IS NULL)
-           AND (LOWER(department) LIKE LOWER(?) OR LOWER(classGroup) LIKE LOWER(?))
-         ORDER BY name ASC`,
-        [exam.college_id, `%${exam.department}%`, `%${exam.department}%`]
-      );
+      let stQuery = `SELECT id, name, roll_number, register_number, email, classGroup, department 
+                     FROM students 
+                     WHERE (LOWER(college_id) = LOWER(?) OR college_id IS NULL)
+                       AND (LOWER(department) LIKE LOWER(?) OR LOWER(classGroup) LIKE LOWER(?))`;
+      const stParams: any[] = [exam.college_id, `%${exam.department}%`, `%${exam.department}%`];
+
+      if (classGroup && classGroup !== "all") {
+        stQuery += " AND (classGroup = ? OR LOWER(classGroup) LIKE LOWER(?))";
+        stParams.push(classGroup, `%${classGroup}%`);
+      }
+
+      stQuery += " ORDER BY name ASC";
+      const students = await db.all(stQuery, stParams);
 
       // Fetch existing marks
       const marksRows = await db.all("SELECT * FROM student_exam_marks WHERE exam_id = ?", [examId]);
@@ -42,11 +49,14 @@ export async function GET(request: Request) {
           student_name: st.name,
           roll_number: st.roll_number || st.register_number || st.id,
           classGroup: st.classGroup,
+          department: st.department,
           marks_obtained: mark ? mark.marks_obtained : null,
-          max_marks: exam.max_marks || 50,
+          max_marks: mark?.max_marks || exam.max_marks || 50,
           is_absent: mark ? Boolean(mark.is_absent) : false,
           grade: mark ? mark.grade : null,
           remarks: mark ? mark.remarks : "",
+          evaluated_by: mark ? mark.evaluated_by : null,
+          updated_at: mark ? mark.updated_at : null,
         };
       });
 
@@ -66,9 +76,37 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, marks: studentMarks || [] });
     }
 
-    // General list
-    const allMarks = await db.all("SELECT * FROM student_exam_marks LIMIT 200");
-    return NextResponse.json({ success: true, marks: allMarks });
+    // General list / CAM / KAM / Mentor query
+    let allQuery = `SELECT sem.*, 
+                           s.name as student_name, s.roll_number, s.classGroup, s.department as student_department,
+                           es.exam_type, es.subject_name, es.subject_code, es.exam_date, es.session_time, es.max_marks, es.passing_marks, es.department as exam_department, es.semester
+                    FROM student_exam_marks sem
+                    JOIN students s ON sem.student_id = s.id
+                    JOIN exam_schedules es ON sem.exam_id = es.id
+                    WHERE 1=1`;
+    const allParams: any[] = [];
+
+    if (collegeId && collegeId !== "all") {
+      allQuery += " AND (sem.college_id = ? OR es.college_id = ?)";
+      allParams.push(collegeId, collegeId);
+    }
+
+    const examType = searchParams.get("exam_type");
+    if (examType && examType !== "all") {
+      allQuery += " AND es.exam_type = ?";
+      allParams.push(examType);
+    }
+
+    const department = searchParams.get("department");
+    if (department && department !== "all") {
+      allQuery += " AND (LOWER(es.department) LIKE LOWER(?) OR LOWER(s.department) LIKE LOWER(?))";
+      allParams.push(`%${department}%`, `%${department}%`);
+    }
+
+    allQuery += " ORDER BY es.exam_date DESC, s.name ASC LIMIT 500";
+
+    const allMarks = await db.all(allQuery, allParams);
+    return NextResponse.json({ success: true, marks: allMarks || [] });
   } catch (error: any) {
     console.error("Error fetching marks:", error);
     return NextResponse.json({ success: false, message: error.message || "Failed to fetch marks" }, { status: 500 });
@@ -96,13 +134,15 @@ export async function POST(request: Request) {
     for (const entry of marks) {
       const student_id = entry.student_id;
       const is_absent = entry.is_absent ? 1 : 0;
+      const entryMaxMarks = entry.max_marks ? parseFloat(entry.max_marks) : maxMarks;
+      const passingMarks = exam.passing_marks || (entryMaxMarks * 0.4);
       const marks_obtained = is_absent ? null : (entry.marks_obtained !== null && entry.marks_obtained !== undefined ? parseFloat(entry.marks_obtained) : null);
       const remarks = entry.remarks || "";
 
       // Auto-compute grade
       let grade = "F";
       if (!is_absent && marks_obtained !== null) {
-        const pct = (marks_obtained / maxMarks) * 100;
+        const pct = (marks_obtained / entryMaxMarks) * 100;
         if (pct >= 90) grade = "O";
         else if (pct >= 80) grade = "A+";
         else if (pct >= 70) grade = "A";
@@ -128,7 +168,7 @@ export async function POST(request: Request) {
           remarks = excluded.remarks,
           evaluated_by = excluded.evaluated_by,
           updated_at = CURRENT_TIMESTAMP`,
-        [id, exam_id, student_id, exam.college_id, marks_obtained, maxMarks, is_absent, grade, remarks, evaluated_by || "Campus Manager"]
+        [id, exam_id, student_id, exam.college_id, marks_obtained, entryMaxMarks, is_absent, grade, remarks, evaluated_by || "Campus Manager"]
       );
     }
 

@@ -52,6 +52,7 @@ import { Mentor360 } from "./kam/mentors/Mentor360";
 import { StudentDirectory } from "./kam/students/StudentDirectory";
 import { KAMAnalytics } from "./kam/analytics/KAMAnalytics";
 import { InterviewModule } from "./InterviewModule";
+import { ExamScheduleManager } from "./ExamScheduleManager";
 import { Card } from "./Card";
 import { Panel } from "./Panel";
 import { Button } from "./Button";
@@ -776,7 +777,8 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
                 icon: Calendar,
                 items: [
                   { id: "monitoring", label: "Attendance Monitoring", icon: Clock },
-                  { id: "timetable", label: "Timetable Master", icon: Calendar }
+                  { id: "timetable", label: "Timetable Master", icon: Calendar },
+                  { id: "exams", label: "Exam Schedules & Marks", icon: Award }
                 ]
               },
               {
@@ -1913,6 +1915,13 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ── TAB: EXAM SCHEDULES & MARKS REGISTRY ── */}
+          {activeTab === "exams" && (
+            <div className="space-y-6 animate-fadeIn">
+              <ExamScheduleManager />
             </div>
           )}
 

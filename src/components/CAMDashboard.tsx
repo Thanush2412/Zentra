@@ -3917,10 +3917,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           }
         })
       });
+
+      // Also dispatch In-App Notification to the faculty
+      if (item.mentor.id) {
+        await fetch("/api/notifications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: item.mentor.id,
+            title: `Action Required: Attendance Not Marked (${item.dateStr})`,
+            message: `Student attendance logs are missing for ${item.slot.course || "your class"} on ${item.dateStr} (${item.slot.time || "Scheduled Session"}). Please submit logs immediately.`,
+            type: "warning",
+            link: `/mentor/attendance?date=${item.dateStr}`
+          })
+        }).catch(() => {});
+      }
       
       const json = await res.json();
       if (json.success) {
-        toast(`Warning email sent to ${item.mentor.name} (copied thanush@faceprep.in)`, "success");
+        toast(`Warning alert sent to ${item.mentor.name} (${item.mentor.email})!`, "success");
       } else {
         toast(`Failed to send email: ${json.error || "Unknown error"}`, "error");
       }
@@ -7514,6 +7529,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* EXAMS & MARKS PERFORMANCE STUDIO */}
+          {activeTab === "exams_and_marks" && (
+            <div className="space-y-6 animate-fadeIn">
+              <ExamScheduleManager />
             </div>
           )}
 
