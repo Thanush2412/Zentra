@@ -280,6 +280,7 @@ export interface Department {
   default_room?: string;
   default_shift?: string;
   shift_based?: number;
+  sections?: string;
 }
 
 export type Course = Department;

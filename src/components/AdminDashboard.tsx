@@ -634,6 +634,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     end_year?: string;
     default_room?: string;
     default_shift?: string;
+    sections?: string;
   }>({
     id: "",
     name: "",
@@ -647,7 +648,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     start_year: "",
     end_year: "",
     default_room: "",
-    default_shift: "general"
+    default_shift: "general",
+    sections: ""
   });
   const [editingDept, setEditingDept] = useState<boolean>(false);
   const [newDeptNames, setNewDeptNames] = useState<Record<string, string>>({});
@@ -2184,7 +2186,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         start_year: dept.start_year || "",
         end_year: dept.end_year || "",
         default_room: dept.default_room || "",
-        default_shift: dept.default_shift || "general"
+        default_shift: dept.default_shift || "general",
+        sections: dept.sections || ""
       });
       setEditingDept(true);
     } else {
@@ -2201,7 +2204,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         start_year: "",
         end_year: "",
         default_room: "",
-        default_shift: "general"
+        default_shift: "general",
+        sections: ""
       });
       setEditingDept(false);
     }
@@ -2282,7 +2286,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         res = await updateCourse({
           ...deptForm,
           code: autoCode,
-          shift_based: isShiftSplit ? 1 : 0
+          shift_based: isShiftSplit ? 1 : 0,
+          sections: deptForm.sections || undefined
         } as Department);
       } else {
         res = await createCourse({
@@ -2298,7 +2303,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           end_year: deptForm.end_year,
           default_room: deptForm.default_room,
           default_shift: deptForm.default_shift,
-          shift_based: isShiftSplit ? 1 : 0
+          shift_based: isShiftSplit ? 1 : 0,
+          sections: deptForm.sections || undefined
         } as Omit<Department, "id">);
       }
       if (res.success) {
@@ -8135,6 +8141,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <option value="general">General Shift</option>
                       <option value="all">Both Shifts + General (Shift 1, 2 & General)</option>
                     </select>
+                  </div>
+
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
+                      Sections <span className="normal-case text-gray-400 font-normal">(Optional, comma separated e.g. A, B, C)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. A, B"
+                      value={deptForm.sections || ""}
+                      onChange={(e) => setDeptForm({ ...deptForm, sections: e.target.value })}
+                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800 text-xs"
+                    />
                   </div>
 
                   <div className="space-y-1 sm:col-span-2">

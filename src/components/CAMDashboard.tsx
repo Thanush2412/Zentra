@@ -3883,7 +3883,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [showDeptModal, setShowDeptModal] = useState(false);
   const [editingDept, setEditingDept] = useState(false);
   const [isDeptSubmitting, setIsDeptSubmitting] = useState(false);
-  const [deptForm, setDeptForm] = useState({
+  const [deptForm, setDeptForm] = useState<{
+    id: string;
+    name: string;
+    college_id: string;
+    code: string;
+    description: string;
+    status: string;
+    years: number;
+    start_date: string;
+    end_date: string;
+    start_year: string;
+    end_year: string;
+    default_room: string;
+    default_shift: string;
+    shift_based: number;
+    sections?: string;
+  }>({
     id: "",
     name: "",
     college_id: "",
@@ -3897,7 +3913,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     end_year: "",
     default_room: "",
     default_shift: "shift_1",
-    shift_based: 0
+    shift_based: 0,
+    sections: ""
   });
 
   const handleSendWarningEmail = async (item: any) => {
@@ -5674,7 +5691,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         end_year: dept.end_year || "",
         default_room: dept.default_room || "",
         default_shift: initialShift,
-        shift_based: isShiftSplit ? 1 : 0
+        shift_based: isShiftSplit ? 1 : 0,
+        sections: dept.sections || ""
       });
       // Pre-fill sections from existing class groups for this course
       setEditingDept(true);
@@ -5693,7 +5711,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         end_year: "",
         default_room: "",
         default_shift: "general",
-        shift_based: 0
+        shift_based: 0,
+        sections: ""
       });
       setEditingDept(false);
     }
@@ -5790,10 +5809,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         ...deptForm,
         name: deptForm.name.trim(),
         code: autoCode,
-        description: deptForm.description.trim(),
+        description: deptForm.description?.trim() || "",
         college_id: deptForm.college_id || activeCollegeId,
         default_shift: deptForm.default_shift || "general",
-        shift_based: isShiftSplit ? 1 : 0
+        shift_based: isShiftSplit ? 1 : 0,
+        sections: deptForm.sections || undefined
       };
 
       if (editingDept && deptForm.id) {
@@ -16864,6 +16884,19 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <option value="general">General Shift</option>
                       <option value="all">Both Shifts + General (Shift 1, 2 & General)</option>
                     </select>
+                  </div>
+
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">
+                      Sections <span className="normal-case text-slate-400 font-normal">(Optional, comma separated e.g. A, B, C)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. A, B"
+                      value={deptForm.sections || ""}
+                      onChange={(e) => setDeptForm({ ...deptForm, sections: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs font-semibold"
+                    />
                   </div>
 
                   <div className="space-y-1 sm:col-span-2">
