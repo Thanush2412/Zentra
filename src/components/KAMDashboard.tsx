@@ -55,7 +55,7 @@ import { InterviewModule } from "./InterviewModule";
 import { Card } from "./Card";
 import { Panel } from "./Panel";
 import { Button } from "./Button";
-import { formatDisplayDob, parseDateToYMD, evaluateDailyStudentAttendance } from "@/lib/utils";
+import { formatDisplayDob, parseDateToYMD, evaluateDailyStudentAttendance, mapDayOrderToDayName } from "@/lib/utils";
 
 /* ─── 1. Attendance Monitoring Infographics Banner ─── */
 interface AttMonitoringChartProps {
@@ -179,6 +179,7 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
     requests: handoverRequests,
     academicYears,
     departmentsList,
+    holidays,
     refreshData,
     isDataLoading
   } = useApp();
@@ -213,6 +214,27 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
 
   // Active Campus Selection Scope (Defaults to "all" for Portfolio view)
   const [selectedCollegeId, setSelectedCollegeId] = useState<string>("all");
+
+  // Daily configs from DB for day orders, day types, and holidays with remarks
+  const [dailyConfigsList, setDailyConfigsList] = useState<any[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadDailyConfigs() {
+      try {
+        const collegeParam = selectedCollegeId && selectedCollegeId !== "all" ? `?college_id=${encodeURIComponent(selectedCollegeId)}` : "";
+        const res = await fetch(`/api/daily-configs${collegeParam}`);
+        const json = await res.json();
+        if (json.success && isMounted) {
+          setDailyConfigsList(json.configs || []);
+        }
+      } catch (err) {
+        console.error("Failed to load daily configs:", err);
+      }
+    }
+    loadDailyConfigs();
+    return () => { isMounted = false; };
+  }, [selectedCollegeId]);
 
   // Filter Bar state
   const [selectedDept, setSelectedDept] = useState<string>("all");
@@ -308,6 +330,36 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
     return Array.from(set).sort();
   }, [activeCollegeStudents]);
 
+  // O(1) Daily Config Map lookup by dateStr
+  const dailyConfigMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (dailyConfigsList || []).forEach((c: any) => {
+      if (c?.dateStr) map.set(c.dateStr, c);
+    });
+    return map;
+  }, [dailyConfigsList]);
+
+  // O(1) Holiday map lookup combining static holidays AND dailyConfigsList where day_type === 'holiday'
+  const holidayMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (holidays || []).forEach((h: any) => {
+      const d = h?.date || h?.dateStr;
+      if (d) map.set(d, { isHoliday: true, name: h.name || h.description || "College Holiday", notes: h.notes || h.name || "College Holiday" });
+    });
+    (dailyConfigsList || []).forEach((c: any) => {
+      if (c?.dateStr && (c.day_type === "holiday" || (c.day_order && c.day_order.toLowerCase() === "none" && c.day_type === "holiday"))) {
+        const existing = map.get(c.dateStr);
+        map.set(c.dateStr, {
+          isHoliday: true,
+          name: c.notes || existing?.name || "College Holiday",
+          notes: c.notes || existing?.notes || "College Holiday",
+          ...c
+        });
+      }
+    });
+    return map;
+  }, [holidays, dailyConfigsList]);
+
   // Working dates list for Attendance Matrix
   const workingDates = useMemo(() => {
     const dateSet = new Set<string>();
@@ -323,17 +375,24 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
         cur.setDate(cur.getDate() + 1);
       }
     }
+    (dailyConfigsList || []).forEach(cfg => {
+      if (cfg.dateStr && cfg.dateStr >= attendanceStartDate && cfg.dateStr <= attendanceEndDate) {
+        dateSet.add(cfg.dateStr);
+      }
+    });
     return Array.from(dateSet).sort();
-  }, [attendanceStartDate, attendanceEndDate]);
+  }, [attendanceStartDate, attendanceEndDate, dailyConfigsList]);
 
-  // Precomputed dayNameMap for O(1) cell lookups (eliminates Date allocations during rendering)
+  // Precomputed dayNameMap for O(1) cell lookups, respecting Day Order (Day 1->Mon, Day 2->Tue, etc.)
   const dayNameMap = useMemo(() => {
     const map: Record<string, string> = {};
     workingDates.forEach(dStr => {
-      map[dStr] = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+      const cfg = dailyConfigMap.get(dStr);
+      const defaultWeekday = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+      map[dStr] = mapDayOrderToDayName(cfg?.day_order, defaultWeekday);
     });
     return map;
-  }, [workingDates]);
+  }, [workingDates, dailyConfigMap]);
 
   // Robust Student ID Alias Lookup (Matches ID, Roll Number, or Register Number)
   const studentIdLookup = useMemo(() => {
@@ -403,12 +462,16 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
       let totalMarkedDays = 0;
 
       workingDates.forEach(dStr => {
+        const hol = holidayMap.get(dStr);
+        const cfg = dailyConfigMap.get(dStr);
+        if (hol || cfg?.day_type === "holiday") return; // Exclude holidays from compliance calculations
+
         const dayName = dayNameMap[dStr];
         const daySlots = slotMap.get(`${dayName}__${(st.classGroup || "").toLowerCase().trim()}`) || [];
         const dayAtt = attendanceMap.get(`${st.id}_${dStr}`) || [];
 
         if (daySlots.length > 0 || dayAtt.length > 0) {
-          const evalRes = evaluateDailyStudentAttendance(dayAtt, daySlots.length, false);
+          const evalRes = evaluateDailyStudentAttendance(dayAtt, daySlots.length, false, false, cfg?.notes || "");
           if (evalRes.status === "P" || evalRes.status === "OD") {
             presentDays++;
             totalMarkedDays++;
@@ -523,6 +586,26 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
   const handleExportAttendanceRegister = async () => {
     try {
       const XLSX = await import("xlsx");
+      const dateHeaders = workingDates.map(dStr => {
+        const cfg = dailyConfigMap.get(dStr);
+        const hol = holidayMap.get(dStr);
+        const dmy = formatDisplayDob(dStr) || dStr;
+        const notes = cfg?.notes || hol?.notes || "";
+        if (hol || cfg?.day_type === "holiday") {
+          return `${dmy} [Holiday${notes ? `: ${notes}` : ""}]`;
+        }
+        if (cfg?.day_order && cfg.day_order !== "None") {
+          return `${dmy} [${cfg.day_order}${notes ? ` - ${notes}` : ""}]`;
+        }
+        if (cfg?.day_type && cfg.day_type !== "working") {
+          return `${dmy} [${cfg.day_type.replace("_", " ")}${notes ? `: ${notes}` : ""}]`;
+        }
+        if (notes) {
+          return `${dmy} [${notes}]`;
+        }
+        return dmy;
+      });
+
       const headers = [
         "Sl. No.",
         "Roll No",
@@ -533,7 +616,7 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
         "Total Present",
         "Total Absent",
         "Attendance %",
-        ...workingDates
+        ...dateHeaders
       ];
 
       const rows = filteredStudents.map((st, idx) => {
@@ -544,12 +627,22 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
         const pct = stStats ? stStats.pct : 0;
 
         const dateStatuses = workingDates.map(dStr => {
-          const d = new Date(dStr + "T00:00:00");
-          const dayName = d.toLocaleDateString("en-US", { weekday: "long" });
+          const hol = holidayMap.get(dStr);
+          const cfg = dailyConfigMap.get(dStr);
+          const isHoliday = !!hol || cfg?.day_type === "holiday";
+          const notes = cfg?.notes || hol?.notes || "";
+
+          if (isHoliday) {
+            return "H";
+          }
+
+          const dayName = dayNameMap[dStr];
           const daySlotsForDate = slotMap.get(`${dayName}__${(st.classGroup || "").toLowerCase().trim()}`) || [];
           const dayMarks = attendanceMap.get(`${st.id}_${dStr}`) || [];
           if (daySlotsForDate.length === 0 && dayMarks.length === 0) return "—";
-          const evalRes = evaluateDailyStudentAttendance(dayMarks, daySlotsForDate.length, false);
+          const isEvent = cfg?.day_type === "event" || (dayMarks || []).some(a => (a as any).attendanceTypeSub === "Event");
+          const isExam = !isEvent && (cfg?.day_type === "exam_day" || cfg?.day_type === "exam");
+          const evalRes = evaluateDailyStudentAttendance(dayMarks, daySlotsForDate.length, isExam, false, notes);
           return evalRes.status;
         });
 
@@ -1197,24 +1290,54 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
                         
                         {/* Working Date Column Headers */}
                         {workingDates.map(dStr => {
-                          const dDay = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+                          const cfg = dailyConfigMap.get(dStr);
+                          const holidayObj = holidayMap.get(dStr);
+                          const isHoliday = !!holidayObj || cfg?.day_type === "holiday";
+                          const isEvent = !isHoliday && (cfg?.day_type === "event");
+                          const isExam = !isHoliday && !isEvent && (cfg?.day_type === "exam_day" || cfg?.day_type === "exam");
+                          const dayOrder = (cfg?.day_order && cfg.day_order !== "None" && !isHoliday) ? cfg.day_order : null;
+                          const notes = cfg?.notes || holidayObj?.notes || holidayObj?.name || "";
+
+                          const calendarDay = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+                          const fullCalendarDay = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
                           const isToday = dStr === todayStr;
+
+                          const tooltipText = `${formatDisplayDob(dStr) || dStr} (${fullCalendarDay})${dayOrder ? ` • Order: ${dayOrder}` : ""}${isHoliday ? ` • Holiday: ${notes || "College Holiday"}` : isEvent ? ` • Event: ${notes || "Campus Event"}` : isExam ? ` • Exam Day: ${notes || "Assessment"}` : " • Regular Working Day"}${cfg?.session_mode ? ` • Mode: ${cfg.session_mode}` : ""}${notes && !isHoliday ? `\nRemarks: ${notes}` : ""}`;
+
                           return (
                             <th
                               key={dStr}
-                              className={`p-2 border-r border-slate-200 text-center min-w-[76px] ${
-                                isToday ? "bg-indigo-50/90 border-b-2 border-b-indigo-600" : ""
+                              className={`p-2 border-r border-slate-200 text-center min-w-[85px] transition-colors ${
+                                isToday ? "bg-indigo-50/90 border-b-2 border-b-indigo-600" : isHoliday ? "bg-rose-50/40" : isExam ? "bg-purple-50/60" : isEvent ? "bg-amber-50/40" : ""
                               }`}
+                              title={tooltipText}
                             >
                               {isToday && (
                                 <span className="inline-block px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[7.5px] font-black uppercase mb-0.5">
                                   TODAY
                                 </span>
                               )}
-                              <div className={`font-extrabold text-[9.5px] ${isToday ? "text-indigo-900 font-black" : "text-slate-700"}`}>
+                              <div className={`font-extrabold text-[9.5px] ${isToday ? "text-indigo-900 font-black" : isHoliday ? "text-rose-900" : isExam ? "text-purple-900" : isEvent ? "text-amber-900" : "text-slate-700"}`}>
                                 {formatDisplayDob(dStr) || dStr}
                               </div>
-                              <span className="text-[8px] text-slate-400 font-semibold">{dDay}</span>
+                              <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap">
+                                <span className="text-[8px] text-slate-400 font-semibold">{calendarDay}</span>
+                                {dayOrder && (
+                                  <span className="text-[7.5px] font-black px-1.5 py-0.2 rounded bg-indigo-600 text-white uppercase tracking-tight shadow-2xs">
+                                    {dayOrder}
+                                  </span>
+                                )}
+                                <span className={`text-[7px] font-black px-1 py-0.2 rounded uppercase ${
+                                  isHoliday ? "bg-rose-100 text-rose-800 border border-rose-200" : isEvent ? "bg-amber-100 text-amber-800 border border-amber-200" : isExam ? "bg-purple-100 text-purple-800 border border-purple-200" : "bg-slate-200/70 text-slate-600"
+                                }`}>
+                                  {isHoliday ? "Holiday" : isEvent ? "Event" : isExam ? "Exam" : "Working"}
+                                </span>
+                              </div>
+                              {notes && (
+                                <div className="text-[7.5px] font-bold text-slate-500 truncate max-w-[85px] mx-auto mt-0.5" title={notes}>
+                                  {notes}
+                                </div>
+                              )}
                             </th>
                           );
                         })}
@@ -1277,6 +1400,24 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
 
                               {/* Date-wise Cells */}
                               {workingDates.map(dStr => {
+                                const cfg = dailyConfigMap.get(dStr);
+                                const holidayObj = holidayMap.get(dStr);
+                                const isHoliday = !!holidayObj || cfg?.day_type === "holiday";
+                                const notes = cfg?.notes || holidayObj?.notes || holidayObj?.name || "";
+
+                                if (isHoliday) {
+                                  return (
+                                    <td key={dStr} className="p-1.5 text-center border-r border-slate-100 bg-rose-50/20">
+                                      <span
+                                        className="inline-block px-1.5 py-0.5 rounded text-[9.5px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-200 shadow-2xs"
+                                        title={`${st.name} | ${formatDisplayDob(dStr) || dStr}\n🎉 Holiday: ${notes || "College Holiday"}\n(No classes scheduled)`}
+                                      >
+                                        H
+                                      </span>
+                                    </td>
+                                  );
+                                }
+
                                 const dayName = dayNameMap[dStr];
                                 const daySlotsForCell = slotMap.get(`${dayName}__${(st.classGroup || "").toLowerCase().trim()}`) || [];
                                 const dayMarks = attendanceMap.get(`${st.id}_${dStr}`) || [];
@@ -1289,16 +1430,24 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
                                   );
                                 }
 
-                                const evalRes = evaluateDailyStudentAttendance(dayMarks, daySlotsForCell.length, false);
+                                const isEvent = cfg?.day_type === "event" || (dayMarks || []).some(a => (a as any).attendanceTypeSub === "Event");
+                                const isExam = !isEvent && (cfg?.day_type === "exam_day" || cfg?.day_type === "exam");
+                                const evalRes = evaluateDailyStudentAttendance(dayMarks, daySlotsForCell.length, isExam, false, notes);
 
                                 let badgeColor = "bg-slate-50 text-slate-400 border-slate-200";
                                 if (evalRes.status === "OD") badgeColor = "bg-purple-100 text-purple-800 border-purple-200";
                                 else if (evalRes.status === "P") badgeColor = "bg-emerald-100 text-emerald-800 border-emerald-200";
                                 else if (evalRes.status === "A") badgeColor = "bg-rose-100 text-rose-800 border-rose-200";
 
+                                const dayOrderLabel = cfg?.day_order && cfg.day_order !== "None" ? ` [${cfg.day_order}]` : "";
+                                const tooltipText = `${st.name} | ${formatDisplayDob(dStr) || dStr} (${dayName}${dayOrderLabel})${notes ? `\nNote: ${notes}` : ""}\n${evalRes.tooltipInfo}`;
+
                                 return (
                                   <td key={dStr} className="p-1.5 text-center border-r border-slate-100">
-                                    <span className={`inline-block px-1.5 py-0.5 rounded text-[9.5px] font-black uppercase border ${badgeColor}`}>
+                                    <span
+                                      className={`inline-block px-1.5 py-0.5 rounded text-[9.5px] font-black uppercase border ${badgeColor}`}
+                                      title={tooltipText}
+                                    >
                                       {evalRes.status}
                                     </span>
                                   </td>

@@ -661,34 +661,8 @@ export async function seedDatabase() {
 
   const isCustomSeed = existingColleges.length > 0;
 
-  // 1. Drop existing tables to ensure a clean schema migration
-  await db.exec("DROP TABLE IF EXISTS student_attendance;");
-  await db.exec("DROP TABLE IF EXISTS students;");
-  await db.exec("DROP TABLE IF EXISTS audit_logs;");
-  await db.exec("DROP TABLE IF EXISTS approved_handovers;");
-  await db.exec("DROP TABLE IF EXISTS handover_requests;");
-  await db.exec("DROP TABLE IF EXISTS slots;");
-  await db.exec("DROP TABLE IF EXISTS mentors;");
-  await db.exec("DROP TABLE IF EXISTS hr;");
-  await db.exec("DROP TABLE IF EXISTS subjects;");
-  await db.exec("DROP TABLE IF EXISTS departments;");
-  await db.exec("DROP TABLE IF EXISTS courses;");
-  await db.exec("DROP TABLE IF EXISTS users;");
-  await db.exec("DROP TABLE IF EXISTS notifications;");
-  await db.exec("DROP TABLE IF EXISTS announcements;");
-  await db.exec("DROP TABLE IF EXISTS holidays;");
-  await db.exec("DROP TABLE IF EXISTS login_history;");
-  await db.exec("DROP TABLE IF EXISTS sme_users;");
-  await db.exec("DROP TABLE IF EXISTS demo_sessions;");
-  await db.exec("DROP TABLE IF EXISTS subject_groups;");
-  await db.exec("DROP TABLE IF EXISTS demo_rules;");
-
-  if (!isCustomSeed) {
-    await db.exec("DROP TABLE IF EXISTS campus_managers;");
-    await db.exec("DROP TABLE IF EXISTS colleges;");
-    await db.exec("DROP TABLE IF EXISTS kam_users;");
-    await db.exec("DROP TABLE IF EXISTS admin_users;");
-  }
+  // 1. Ensure tables exist safely without dropping live database data
+  // (No DROP TABLE calls to guarantee data persistence)
 
   // 2. Recreate the tables
   await db.exec(`

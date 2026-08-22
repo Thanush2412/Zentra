@@ -40,7 +40,7 @@ import {
   Video,
   ExternalLink
 } from "lucide-react";
-import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate, isSkillSubject } from "@/lib/utils";
+import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 
 // Library Books Interface
@@ -55,8 +55,8 @@ interface BookItem {
 }
 
 export interface StudentDashboardProps {
-  activeTab?: "dashboard" | "schedule" | "marks" | "leave" | "exams" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu";
-  onTabChange?: (tab: "dashboard" | "schedule" | "marks" | "leave" | "exams" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu") => void;
+  activeTab?: "dashboard" | "schedule" | "leave" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu";
+  onTabChange?: (tab: "dashboard" | "schedule" | "leave" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu") => void;
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({
@@ -93,9 +93,140 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   } = useApp();
   const { toast } = useToast();
 
-  const [localActiveTab, setLocalActiveTab] = useState<"dashboard" | "schedule" | "marks" | "leave" | "exams" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu">("dashboard");
+  const [localActiveTab, setLocalActiveTab] = useState<"dashboard" | "schedule" | "leave" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu">("dashboard");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
+
+  const [highlightedDate, setHighlightedDate] = useState<string | null>(null);
+  const [highlightedWeek, setHighlightedWeek] = useState<number | null>(null);
+
+  // Handle notification jumps, search queries, and dynamic class/tab switching
+  useEffect(() => {
+    const handleNavigation = (targetUrl?: string, targetDate?: string, tabHint?: string) => {
+      let urlStr = targetUrl || (typeof window !== "undefined" ? window.location.search : "");
+      let dateParam = targetDate;
+      let tabParam = tabHint;
+
+      const params = new URLSearchParams(
+        urlStr.includes("?")
+          ? urlStr.split("?")[1]
+          : (typeof window !== "undefined" ? window.location.search : "")
+      );
+
+      if (!dateParam) {
+        dateParam = params.get("date") || undefined;
+      }
+      if (!tabParam) {
+        tabParam = params.get("tab") || undefined;
+      }
+
+      const catParam = params.get("category");
+      const subjParam = params.get("subject");
+      const weekParam = params.get("week");
+      const targetIdParam = params.get("targetId");
+
+      if (catParam === "skill" || catParam === "academic") {
+        setStudentTrackerCategory(catParam);
+      }
+      if (subjParam) {
+        if (catParam === "academic") {
+          setStudentAcadSubject(subjParam);
+        } else {
+          const matchSub =
+            assignedMentorSubjects.find(
+              (s) => s.toLowerCase().trim() === subjParam.toLowerCase().trim()
+            ) ||
+            studentSubjects.find(
+              (s) => s.name.toLowerCase().trim() === subjParam.toLowerCase().trim()
+            )?.name ||
+            subjParam;
+          setStudentTrackerSubject(matchSub);
+        }
+      }
+      if (weekParam) {
+        const wkNum = parseInt(weekParam, 10);
+        if (!isNaN(wkNum)) {
+          setStudentTrackerWeek(wkNum);
+          setHighlightedWeek(wkNum);
+          let attempts = 0;
+          const scrollTarget = () => {
+            attempts++;
+            const el =
+              document.getElementById(`skill-task-week-${wkNum}`) ||
+              document.getElementById(`acad-task-week-${wkNum}`);
+            if (el) {
+              el.scrollIntoView({ behavior: "smooth", block: "center" });
+            } else if (attempts < 10) {
+              setTimeout(scrollTarget, 100);
+            }
+          };
+          setTimeout(scrollTarget, 100);
+          setTimeout(() => setHighlightedWeek(null), 6000);
+        }
+      }
+      if (targetIdParam) {
+        let attempts = 0;
+        const scrollTargetId = () => {
+          attempts++;
+          const el = document.getElementById(targetIdParam);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+          } else if (attempts < 10) {
+            setTimeout(scrollTargetId, 100);
+          }
+        };
+        setTimeout(scrollTargetId, 100);
+      }
+
+      if (dateParam) {
+        const offset = calculateWeekOffsetForDate(dateParam);
+        setWeekOffset(offset);
+        setHighlightedDate(dateParam);
+        setActiveTab("schedule");
+        
+        // Auto scroll to target date row after render
+        setTimeout(() => {
+          const el = document.getElementById(`date-row-${dateParam}`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 300);
+
+        setTimeout(() => {
+          setHighlightedDate(null);
+        }, 6000);
+      } else if (tabParam && ["dashboard", "schedule", "marks", "leave", "exams", "library", "fees", "profile", "tracker", "interviews"].includes(tabParam)) {
+        setActiveTab(tabParam as any);
+      }
+    };
+
+    // 1. Check intent stored from notification click
+    if (typeof window !== "undefined") {
+      try {
+        const stored = sessionStorage.getItem("fp_notif_target");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Date.now() - (parsed.timestamp || 0) < 30000) {
+            handleNavigation(parsed.url, parsed.date);
+          }
+          sessionStorage.removeItem("fp_notif_target");
+        } else {
+          handleNavigation();
+        }
+      } catch (_) {
+        handleNavigation();
+      }
+    }
+
+    // 2. Global event listener for instant reactive navigation while on this page
+    const onNavEvent = (e: any) => {
+      if (e?.detail) {
+        handleNavigation(e.detail.url, e.detail.date);
+      }
+    };
+    window.addEventListener("fp_navigate_target", onNavEvent);
+    return () => window.removeEventListener("fp_navigate_target", onNavEvent);
+  }, [activeTab, setActiveTab, setWeekOffset]);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   useEffect(() => {
@@ -127,6 +258,33 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [paidFees, setPaidFees] = useState<Record<string, boolean>>({});
 
   const [dailyConfigsList, setDailyConfigsList] = useState<any[]>([]);
+  const [studentExamsList, setStudentExamsList] = useState<any[]>([]);
+  const [studentMarksList, setStudentMarksList] = useState<any[]>([]);
+  const [examsLoading, setExamsLoading] = useState<boolean>(false);
+
+  const fetchStudentExamsAndMarks = async () => {
+    if (!currentStudent?.college_id) return;
+    setExamsLoading(true);
+    try {
+      const dept = currentStudent.department || "";
+      const [examsRes, marksRes] = await Promise.all([
+        fetch(`/api/exams?college_id=${encodeURIComponent(currentStudent.college_id)}&department=${encodeURIComponent(dept)}`),
+        fetch(`/api/exams/marks?student_id=${encodeURIComponent(currentStudent.id)}`)
+      ]);
+      const examsData = await examsRes.json();
+      const marksData = await marksRes.json();
+      if (examsData.success) {
+        setStudentExamsList(examsData.exams || []);
+      }
+      if (marksData.success) {
+        setStudentMarksList(marksData.marks || []);
+      }
+    } catch (e) {
+      console.error("Error fetching exams & marks:", e);
+    } finally {
+      setExamsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const collegeId = currentStudent?.college_id || "college_1";
@@ -138,7 +296,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         }
       })
       .catch(err => console.error("Error fetching daily configs:", err));
-  }, [currentStudent?.college_id]);
+
+    fetchStudentExamsAndMarks();
+  }, [currentStudent?.college_id, currentStudent?.department, currentStudent?.id]);
   const [payingFeeId, setPayingFeeId] = useState<string | null>(null);
 
   // Profile edit state
@@ -435,8 +595,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     let absentDays = 0;
 
     recordsByDate.forEach((recs, dStr) => {
-      totalDays++;
+      const d = parseDbDate(dStr);
+      const isSunday = d.getDay() === 0;
       const isExam = isExamDate(dStr, dailyConfigsList, studentAttendance);
+      if (isSunday && !isExam) return; // Skip invalid Sunday records
+
+      totalDays++;
       const evalRes = evaluateDailyStudentAttendance(recs, 0, isExam);
       presentDays += evalRes.presentDays;
       absentDays += evalRes.absentDays;
@@ -549,12 +713,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
     for (let day = 1; day <= totalDaysInMonth; day++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const dayDate = new Date(year, month, day);
+      const isSunday = dayDate.getDay() === 0;
+
       const dayConfig = dailyConfigsList.find((c: any) => c.dateStr === dateStr);
-      const isHoliday = dayConfig?.day_type === "holiday";
+      const isHoliday = isSunday || dayConfig?.day_type === "holiday";
       const isEvent = dayConfig?.day_type === "event";
       const isExam = dayConfig?.day_type === "exam_day" || dayConfig?.day_type === "exam";
 
-      const attRecord = attendanceByDate.get(dateStr);
+      // Sundays are weekly holidays and never have regular working attendance
+      const attRecord = !isSunday || isExam || isEvent ? attendanceByDate.get(dateStr) : undefined;
       let status: "present" | "absent" | "holiday" | "event" | "exam" | "unmarked" = "unmarked";
 
       if (attRecord && attRecord.total > 0) {
@@ -567,7 +735,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           monthPresentDays++;
         }
       } else if (isHoliday) {
-        status = "holiday";
+        status = isSunday ? "unmarked" : "holiday";
       } else if (isEvent) {
         status = "event";
       } else if (isExam) {
@@ -623,11 +791,18 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // Automatically sync studentTrackerSubject with assignedMentorSubjects
   useEffect(() => {
     if (assignedMentorSubjects.length > 0) {
-      if (!studentTrackerSubject || !assignedMentorSubjects.some(s => s.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim())) {
+      if (
+        !studentTrackerSubject ||
+        !assignedMentorSubjects.some(
+          (s) =>
+            isSubjectNameMatch(s, studentTrackerSubject) ||
+            s.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim()
+        )
+      ) {
         setStudentTrackerSubject(assignedMentorSubjects[0]);
       }
     } else if (studentSubjects.length > 0 && !studentTrackerSubject) {
-      const skillSub = studentSubjects.find(s => isSkillSubject(s));
+      const skillSub = studentSubjects.find((s) => isSkillSubject(s));
       setStudentTrackerSubject(skillSub ? skillSub.name : studentSubjects[0].name);
     }
   }, [assignedMentorSubjects, studentSubjects, studentTrackerSubject]);
@@ -886,6 +1061,43 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [feePaySubmitting, setFeePaySubmitting] = useState(false);
   const [feePaySuccess, setFeePaySuccess] = useState<string | null>(null);
 
+  // Subject Materials (Unit-Wise Study Hub) Real State
+  const [materialsList, setMaterialsList] = useState<any[]>([]);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [selectedMaterialSubject, setSelectedMaterialSubject] = useState<string>("");
+  const [selectedMaterialUnit, setSelectedMaterialUnit] = useState<number | "all">("all");
+  const [materialTypeFilter, setMaterialTypeFilter] = useState<string>("all");
+  const [materialSearchQuery, setMaterialSearchQuery] = useState("");
+  const [previewMaterial, setPreviewMaterial] = useState<any | null>(null);
+
+  const fetchSubjectMaterials = async (subj?: string) => {
+    setMaterialsLoading(true);
+    try {
+      const targetSubj = subj || selectedMaterialSubject || (studentSubjects[0]?.name || "");
+      const res = await fetch(`/api/materials?subject=${encodeURIComponent(targetSubj)}`);
+      const data = await res.json();
+      if (data.success) {
+        setMaterialsList(data.materials || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setMaterialsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (studentSubjects.length > 0 && !selectedMaterialSubject) {
+      setSelectedMaterialSubject(studentSubjects[0].name);
+    }
+  }, [studentSubjects, selectedMaterialSubject]);
+
+  useEffect(() => {
+    if (selectedMaterialSubject) {
+      fetchSubjectMaterials(selectedMaterialSubject);
+    }
+  }, [selectedMaterialSubject]);
+
   const fetchFeeData = async () => {
     if (!currentStudent?.id) return;
     setFeeLoading(true);
@@ -945,21 +1157,28 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   { id: "dashboard", label: "Dashboard", icon: Activity },
                   { id: "schedule", label: "Schedule", icon: Calendar },
                   { id: "interviews", label: "My Interviews", icon: Award },
-                  { id: "marks", label: "Tests", icon: CheckCircle },
                   { id: "leave", label: "Leave & OD", icon: FileText },
                   { id: "tracker", label: "Skill Development", icon: GraduationCap },
                   { id: "exams", label: "Exams", icon: BookOpen },
-                  { id: "library", label: "Library", icon: Book },
+                  { id: "materials", label: "Subject Materials", icon: Book },
                   { id: "fees", label: "Fees", icon: CreditCard },
                   { id: "profile", label: "My Profile", icon: User }
                 ].map((tab) => {
                   const Icon = tab.icon;
-                  const isActive = activeTab === tab.id;
+                  const isActive = activeTab === tab.id || (tab.id === "materials" && activeTab === "library");
                   const count = getNotificationCount(tab.id);
                   return (
-                    <button
+                    <a
                       key={tab.id}
-                      onClick={() => setActiveTab(tab.id as any)}
+                      href={`/student/${tab.id}`}
+                      onClick={(e) => {
+                        if (e.ctrlKey || e.metaKey || e.button === 1) return;
+                        e.preventDefault();
+                        if (tab.id === "tracker") {
+                          setStudentTrackerCategory("skill");
+                        }
+                        window.location.href = `/student/${tab.id}`;
+                      }}
                       className={`w-full flex items-center rounded-md text-xs font-bold tracking-tight transition-all duration-200 cursor-pointer ${
                         isCollapsed ? "justify-center px-0 py-3" : "justify-start gap-3 px-4 py-3 text-left"
                       } ${
@@ -980,7 +1199,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           {count}
                         </span>
                       )}
-                    </button>
+                    </a>
                   );
                 })}
               </nav>
@@ -1014,11 +1233,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             { id: "dashboard", label: "Home", icon: Activity },
             { id: "schedule", label: "Schedule", icon: Calendar },
             { id: "tracker", label: "Skills", icon: GraduationCap },
-            { id: "fees", label: "Fees", icon: CreditCard },
+            { id: "materials", label: "Materials", icon: Book },
             { id: "more_menu", label: "More", icon: Menu },
           ].map(t => {
             const Icon = t.icon;
-            const isActive = activeTab === t.id || (t.id === "more_menu" && ["marks", "leave", "exams", "library", "profile"].includes(activeTab));
+            const isActive = activeTab === t.id || (t.id === "materials" && activeTab === "library") || (t.id === "more_menu" && ["leave", "exams", "fees", "profile"].includes(activeTab));
             const pendingCount = t.id === "tracker"
               ? weeklyTasks.filter(task => {
                   const isMatch = isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList);
@@ -1028,9 +1247,17 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 }).length
               : t.id === "fees" ? (feeData?.stats?.unpaidCount || 0) : 0;
             return (
-              <button
+              <a
                 key={t.id}
-                onClick={() => setActiveTab(t.id as any)}
+                href={`/student/${t.id}`}
+                onClick={(e) => {
+                  if (e.ctrlKey || e.metaKey || e.button === 1) return;
+                  e.preventDefault();
+                  if (t.id === "tracker") {
+                    setStudentTrackerCategory("skill");
+                  }
+                  window.location.href = `/student/${t.id}`;
+                }}
                 className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 py-1.5 rounded-xl transition-all cursor-pointer ${
                   isActive ? "text-indigo-600" : "text-slate-400"
                 }`}
@@ -1047,7 +1274,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   {t.label}
                 </span>
                 {isActive && <span className="absolute top-0 inset-x-1 h-0.5 bg-indigo-500 rounded-full" />}
-              </button>
+              </a>
             );
           })}
         </div>
@@ -1060,12 +1287,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <h1 className="text-xl font-extrabold tracking-tight text-slate-900 leading-none">
               {activeTab === "dashboard" && "Dashboard"}
               {activeTab === "schedule" && "Weekly Class Timetable"}
-              {activeTab === "tracker" && "Skill Development & Lab Evaluations"}
               {activeTab === "interviews" && "Academic Mock Interviews"}
-              {activeTab === "marks" && "Continuous Internal Assessment"}
               {activeTab === "leave" && "Student Leave & OD Tracker"}
+              {activeTab === "tracker" && "Skill Development & Lab Evaluations"}
               {activeTab === "exams" && "Semester Exams Seating"}
-              {activeTab === "library" && "Library OPAC Catalog Search"}
+              {(activeTab === "materials" || activeTab === "library") && "Subject Materials & Study Resources"}
               {activeTab === "fees" && "Online Dues & Fees Administration"}
               {activeTab === "profile" && "My Profile Portal"}
               {activeTab === "more_menu" && "More Services & Portals"}
@@ -1101,23 +1327,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         {activeTab === "more_menu" && (
           <div className="space-y-6 animate-fadeIn pb-10">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <button
-                type="button"
-                onClick={() => setActiveTab("marks")}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
-              >
-                <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-900/25 flex items-center justify-center text-amber-500 shrink-0 group-hover:scale-105 transition-transform">
-                  <Award className="h-5 w-5" />
-                </div>
-                <div>
-                  <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">CIA Test Marks</span>
-                  <span className="text-[10px] text-slate-450 dark:text-slate-400 font-medium">Internal assessment grades</span>
-                </div>
-              </button>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab("leave")}
+              <a
+                href="/student/leave"
+                onClick={(e) => {
+                  if (e.ctrlKey || e.metaKey || e.button === 1) return;
+                  e.preventDefault();
+                  window.location.href = "/student/leave";
+                }}
                 className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
                 <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/25 flex items-center justify-center text-indigo-500 shrink-0 group-hover:scale-105 transition-transform">
@@ -1127,11 +1344,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Leave & OD</span>
                   <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Apply and track requests</span>
                 </div>
-              </button>
+              </a>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab("exams")}
+              <a
+                href="/student/exams"
+                onClick={(e) => {
+                  if (e.ctrlKey || e.metaKey || e.button === 1) return;
+                  e.preventDefault();
+                  window.location.href = "/student/exams";
+                }}
                 className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
                 <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-900/25 flex items-center justify-center text-rose-500 shrink-0 group-hover:scale-105 transition-transform">
@@ -1141,25 +1362,33 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Exams Seating</span>
                   <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Seating and hall tickets</span>
                 </div>
-              </button>
+              </a>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab("library")}
+              <a
+                href="/student/materials"
+                onClick={(e) => {
+                  if (e.ctrlKey || e.metaKey || e.button === 1) return;
+                  e.preventDefault();
+                  window.location.href = "/student/materials";
+                }}
                 className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
                 <div className="h-10 w-10 rounded-xl bg-teal-50 dark:bg-teal-900/25 flex items-center justify-center text-teal-500 shrink-0 group-hover:scale-105 transition-transform">
                   <Book className="h-5 w-5" />
                 </div>
                 <div>
-                  <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Library OPAC</span>
-                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Search books and availability</span>
+                  <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Subject Materials</span>
+                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Unit-wise notes, slides & question banks</span>
                 </div>
-              </button>
+              </a>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab("profile")}
+              <a
+                href="/student/profile"
+                onClick={(e) => {
+                  if (e.ctrlKey || e.metaKey || e.button === 1) return;
+                  e.preventDefault();
+                  window.location.href = "/student/profile";
+                }}
                 className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group sm:col-span-2"
               >
                 <div className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-800/80 flex items-center justify-center text-slate-600 dark:text-slate-350 shrink-0 group-hover:scale-105 transition-transform">
@@ -1169,181 +1398,263 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">My Profile</span>
                   <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Personal info and settings</span>
                 </div>
-              </button>
+              </a>
             </div>
           </div>
         )}
 
         {/* Tab 1: Dashboard Attendance & Bunk Predictor */}
         {activeTab === "dashboard" && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeIn">
             {/* Left Columns (Col Span 2) */}
             <div className="lg:col-span-2 space-y-6">
-              
-              {/* Metrics cards row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 
-                {/* 1. Attendance Card (Styled like GPA card in screenshot) */}
-                <div className="bg-pastel-cream p-6 rounded-dribbble-card border-transparent relative flex flex-col justify-between shadow-xs min-h-[160px] group hover:shadow-md transition-all duration-300">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest block mb-1">Attendance GPA</span>
-                      <span className="text-4xl font-extrabold text-slate-900">{(overallPercentage / 20).toFixed(1)}</span>
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5">
-                      <div className="p-2.5 bg-white/90 border border-slate-100 text-slate-800 rounded-full shrink-0 shadow-xs">
-                        <ArrowUpRight className="h-4 w-4 text-slate-900 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                {/* 4 Real-Time Metrics Cards Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  
+                  {/* 1. Attendance GPA Card */}
+                  <div className="bg-pastel-cream p-5 rounded-2xl border border-amber-100/60 relative flex flex-col justify-between shadow-xs min-h-[140px] group hover:shadow-md transition-all duration-300">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest block mb-1">Attendance GPA</span>
+                        <span className="text-3xl font-extrabold text-slate-900">{(overallPercentage / 20).toFixed(1)}</span>
                       </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${
-                        overallPercentage >= 75 ? "bg-emerald-100 text-emerald-800 border border-emerald-200/50" : "bg-rose-100 text-rose-800 border border-rose-200/50"
-                      }`}>
-                        {overallPercentage >= 75 ? "High" : "Low"}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-slate-450 font-semibold leading-relaxed mt-4">
-                    Your attendance score translates to an elite academic standing. Keep it up!
-                  </p>
-                </div>
-
-                {/* 2. On-time / Predictor Card (Styled like On-time rate card in screenshot) */}
-                <div className="bg-pastel-blue p-6 rounded-dribbble-card border-transparent relative flex flex-col justify-between shadow-xs min-h-[160px] group hover:shadow-md transition-all duration-300">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest block mb-1">On-Time Rate</span>
-                      <span className="text-4xl font-extrabold text-slate-900">{overallPercentage.toFixed(0)}%</span>
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5">
-                      <div className="p-2.5 bg-white/90 border border-slate-100 text-slate-800 rounded-full shrink-0 shadow-xs">
-                        <ArrowUpRight className="h-4 w-4 text-slate-900 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${
-                        bunkStats.status === "safe" ? "bg-emerald-100 text-emerald-800 border border-emerald-200/50" : "bg-amber-100 text-amber-800 border border-amber-200/50"
-                      }`}>
-                        {bunkStats.status === "safe" ? "High" : "Alert"}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-slate-450 font-semibold leading-relaxed mt-4">
-                    {overallPercentage >= 75
-                      ? "Maintaining strong on-time consistency and attendance eligibility for semester assessments."
-                      : `Maintain regular attendance to meet the institutional ${bunkTarget}% compliance threshold.`}
-                  </p>
-                </div>
-
-              </div>
-
-              {/* Curriculum Tasks & Weekly Submissions (Replacing Mock Tasks) */}
-              <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-xs space-y-6">
-                <div className="flex items-center justify-between border-b border-slate-100/80 pb-4">
-                  <div>
-                    <h2 className="text-base font-extrabold text-slate-900 tracking-tight">Curriculum Tasks & Submissions</h2>
-                    <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Assigned weekly practicals, lab exercises, and term evaluations</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("tracker")}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-extrabold cursor-pointer shadow-xs transition-all hover:scale-105"
-                  >
-                    <span>Open Tracker</span>
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-
-                {/* Tasks List from DB / Context */}
-                <div className="space-y-3.5">
-                  {dashboardCohortTasks.length > 0 ? (
-                    dashboardCohortTasks.map((task) => {
-                      const studentSub = (studentTracker || []).find(
-                        (st) =>
-                          st.student_id === currentStudent.id &&
-                          st.week_number === task.week_number &&
-                          st.subject.toLowerCase() === task.subject.toLowerCase()
-                      );
-                      const isGraded = typeof studentSub?.marks === "number";
-                      const isSubmitted = !!studentSub?.submission_url;
-                      const formattedDate = task.created_at ? parseDbDate(task.created_at).toLocaleDateString() : undefined;
-
-                      return (
-                        <div
-                          key={task.id || `${task.subject}-${task.week_number}`}
-                          className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-xl hover:bg-slate-50 hover:shadow-xs transition-all duration-200"
+                      <div className="flex flex-col items-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("schedule")}
+                          className="p-2 bg-white/90 border border-slate-100 text-slate-800 rounded-full shrink-0 shadow-xs hover:bg-white cursor-pointer"
+                          title="Open Schedule"
                         >
-                          <div className="flex items-start gap-3.5 min-w-0">
-                            <div className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-black uppercase ${
-                              isGraded
-                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                : isSubmitted
-                                ? "bg-indigo-100 text-indigo-800 border border-indigo-200"
-                                : "bg-amber-100 text-amber-800 border border-amber-200"
-                            }`}>
-                              W{task.week_number}
-                            </div>
-                            <div className="min-w-0">
-                              <span className="text-xs font-bold text-slate-800 block truncate leading-tight">
-                                {task.task_name}
-                              </span>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-[9.5px] text-slate-400 font-extrabold uppercase tracking-wider">
-                                  {task.subject}
+                          <ArrowUpRight className="h-3.5 w-3.5 text-slate-900 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                        </button>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${
+                          overallPercentage >= 75 ? "bg-emerald-100 text-emerald-800 border border-emerald-200/50" : "bg-rose-100 text-rose-800 border border-rose-200/50"
+                        }`}>
+                          {overallPercentage >= 75 ? "High" : "Low"}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[10.5px] text-slate-500 font-semibold leading-relaxed mt-3">
+                      {overallPercentage >= 75 ? "Excellent academic standing & test eligibility." : "Attend upcoming classes to reach 75% target."}
+                    </p>
+                  </div>
+
+                  {/* 2. On-time / Predictor Card */}
+                  <div className="bg-pastel-blue p-5 rounded-2xl border border-indigo-100/60 relative flex flex-col justify-between shadow-xs min-h-[140px] group hover:shadow-md transition-all duration-300">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest block mb-1">On-Time Rate</span>
+                        <span className="text-3xl font-extrabold text-slate-900">{overallPercentage.toFixed(0)}%</span>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("schedule")}
+                          className="p-2 bg-white/90 border border-slate-100 text-slate-800 rounded-full shrink-0 shadow-xs hover:bg-white cursor-pointer"
+                          title="Open Schedule"
+                        >
+                          <ArrowUpRight className="h-3.5 w-3.5 text-slate-900 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                        </button>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${
+                          bunkStats.status === "safe" ? "bg-emerald-100 text-emerald-800 border border-emerald-200/50" : "bg-amber-100 text-amber-800 border border-amber-200/50"
+                        }`}>
+                          {bunkStats.status === "safe" ? "High" : "Alert"}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[10.5px] text-slate-500 font-semibold leading-relaxed mt-3">
+                      {bunkStats.status === "safe" ? `Safe to miss ${bunkStats.value} classes without dropping below ${bunkTarget}%.` : `Must attend next ${bunkStats.value} classes to recover.`}
+                    </p>
+                  </div>
+
+                  {/* 3. Academic Mock Interviews Summary Tile */}
+                  {(() => {
+                    const upcomingInterview = (studentInterviews || []).find((inv: any) => inv.status !== "evaluated") || (studentInterviews || [])[0];
+                    const evaluatedCount = (studentInterviews || []).filter((inv: any) => inv.status === "evaluated").length;
+
+                    return (
+                      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs relative flex flex-col justify-between group hover:shadow-md transition-all">
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Mock Interviews</span>
+                            <span className="text-lg font-black text-slate-900">
+                              {upcomingInterview ? upcomingInterview.subject || "Interview Round" : "No Pending Rounds"}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab("interviews")}
+                            className="p-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-full shrink-0 shadow-2xs hover:bg-slate-100 cursor-pointer"
+                            title="Open Interviews"
+                          >
+                            <ArrowUpRight className="h-3.5 w-3.5 text-slate-600" />
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+                          <span className="text-[10.5px] font-bold text-slate-500">
+                            {upcomingInterview?.target_date ? `Date: ${upcomingInterview.target_date}` : `${evaluatedCount} Evaluated`}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-100">
+                            {upcomingInterview ? upcomingInterview.status || "Scheduled" : "Active"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 4. Fees & Dues Standing Tile */}
+                  {(() => {
+                    const unpaidAmt = feeData?.stats?.totalUnpaidAmount || feeData?.stats?.pendingAmount || 0;
+                    const isClear = unpaidAmt === 0;
+
+                    return (
+                      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs relative flex flex-col justify-between group hover:shadow-md transition-all">
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Semester Fees</span>
+                            <span className="text-xl font-black text-slate-900">
+                              {isClear ? "All Dues Cleared" : `₹${unpaidAmt.toLocaleString("en-IN")}`}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab("fees")}
+                            className="p-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-full shrink-0 shadow-2xs hover:bg-slate-100 cursor-pointer"
+                            title="Open Fees"
+                          >
+                            <ArrowUpRight className="h-3.5 w-3.5 text-slate-600" />
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+                          <span className="text-[10.5px] font-bold text-slate-500">
+                            {isClear ? "Receipts available" : "Pending installment"}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                            isClear ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
+                          }`}>
+                            {isClear ? "Clear" : "Unpaid"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                </div>
+
+                {/* Curriculum Tasks & Weekly Submissions */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-5">
+                  <div className="flex items-center justify-between border-b border-slate-100/80 pb-4">
+                    <div>
+                      <h2 className="text-base font-extrabold text-slate-900 tracking-tight">Curriculum Tasks & Submissions</h2>
+                      <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Assigned weekly practicals, lab exercises, and term evaluations</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.location.href = "/student/tracker?category=skill";
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-extrabold cursor-pointer shadow-xs transition-all hover:scale-105"
+                    >
+                      <span>Open Tracker</span>
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Tasks List from DB / Context */}
+                  <div className="space-y-3.5">
+                    {dashboardCohortTasks.length > 0 ? (
+                      dashboardCohortTasks.map((task) => {
+                        const studentSub = (studentTracker || []).find(
+                          (st) =>
+                            st.student_id === currentStudent.id &&
+                            st.week_number === task.week_number &&
+                            st.subject.toLowerCase().trim() === task.subject.toLowerCase().trim()
+                        );
+                        const isGraded = typeof studentSub?.marks === "number";
+                        const isSubmitted = !!studentSub?.submission_url;
+                        const formattedDate = task.created_at ? parseDbDate(task.created_at).toLocaleDateString() : undefined;
+
+                        return (
+                          <div
+                            key={task.id || `${task.subject}-${task.week_number}`}
+                            className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-xl hover:bg-slate-50 hover:shadow-xs transition-all duration-200"
+                          >
+                            <div className="flex items-start gap-3.5 min-w-0">
+                              <div className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-black uppercase ${
+                                isGraded
+                                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                  : isSubmitted
+                                  ? "bg-indigo-100 text-indigo-800 border border-indigo-200"
+                                  : "bg-amber-100 text-amber-800 border border-amber-200"
+                              }`}>
+                                W{task.week_number}
+                              </div>
+                              <div className="min-w-0">
+                                <span className="text-xs font-bold text-slate-800 block truncate leading-tight">
+                                  {task.task_name}
                                 </span>
-                                {formattedDate && (
-                                  <span className="text-[9.5px] text-slate-400 font-medium flex items-center gap-0.5">
-                                    • Assigned: {formattedDate}
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-[9.5px] text-slate-400 font-extrabold uppercase tracking-wider">
+                                    {task.subject}
                                   </span>
-                                )}
+                                  {formattedDate && (
+                                    <span className="text-[9.5px] text-slate-400 font-medium flex items-center gap-0.5">
+                                      • Assigned: {formattedDate}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          <div className="flex items-center gap-3 shrink-0">
-                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-wider select-none ${
-                              isGraded
-                                ? "bg-emerald-100 text-emerald-805 border border-emerald-200/50"
-                                : isSubmitted
-                                ? "bg-indigo-50 text-indigo-700 border border-indigo-200/50"
-                                : "bg-amber-50 text-amber-700 border border-amber-200/50"
-                            }`}>
-                              {isGraded ? `Score: ${studentSub.marks}/10` : isSubmitted ? "Submitted" : "Pending"}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setStudentTrackerSubject(task.subject);
-                                setActiveTab("tracker");
-                              }}
-                              className="p-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 cursor-pointer shadow-2xs transition-colors"
-                              title="Go to submission"
-                            >
-                              <ArrowUpRight className="h-3.5 w-3.5 text-slate-500" />
-                            </button>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-wider select-none ${
+                                isGraded
+                                  ? "bg-emerald-100 text-emerald-805 border border-emerald-200/50"
+                                  : isSubmitted
+                                  ? "bg-indigo-50 text-indigo-700 border border-indigo-200/50"
+                                  : "bg-amber-50 text-amber-700 border border-amber-200/50"
+                              }`}>
+                                {isGraded ? `Score: ${studentSub.marks}/10` : isSubmitted ? "Submitted" : "Pending"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  window.location.href = `/student/tracker?category=skill&subject=${encodeURIComponent(task.subject)}&week=${task.week_number}`;
+                                }}
+                                className="p-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 cursor-pointer shadow-2xs transition-colors"
+                                title="Go to submission"
+                              >
+                                <ArrowUpRight className="h-3.5 w-3.5 text-slate-500" />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center py-8 px-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                      <FileText className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                      <p className="text-xs font-bold text-slate-700">No active weekly submissions</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Assigned faculty tasks and lab practicals will appear here.</p>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab("tracker")}
-                        className="mt-3 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs cursor-pointer inline-flex items-center gap-1.5"
-                      >
-                        <span>View Academic Tracker</span>
-                        <ArrowUpRight className="h-3 w-3" />
-                      </button>
-                    </div>
-                  )}
+                        );
+                      })
+                    ) : (
+                      <div className="text-center py-8 px-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                        <FileText className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                        <p className="text-xs font-bold text-slate-700">No active weekly submissions</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Assigned faculty tasks and lab practicals will appear here.</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.location.href = "/student/tracker?category=skill";
+                          }}
+                          className="mt-3 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs cursor-pointer inline-flex items-center gap-1.5"
+                        >
+                          <span>View Skill Tracker</span>
+                          <ArrowUpRight className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
+
               </div>
 
-            </div>
-
-            {/* Right Column (Col Span 1) */}
-            <div className="lg:col-span-1 space-y-6">
+              {/* Right Column (Col Span 1) */}
+              <div className="lg:col-span-1 space-y-6">
               
               {/* Class Attendance Calendar Card with Dates & Ticks */}
               <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-xs space-y-5">
@@ -1593,7 +1904,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     </div>
                   )}
                 </div>
-              </div>
+            </div>
 
             </div>
 
@@ -1666,9 +1977,18 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <tbody className="divide-y divide-slate-150 dark:divide-white/5 bg-white dark:bg-[#101015]">
                   {weekDates.map((date) => {
                     const dayConfig = dailyConfigsList.find((c: any) => c.dateStr === date.dateStr);
+                    const isHighlighted = highlightedDate === date.dateStr;
 
                     return (
-                      <tr key={date.day} className="h-24 hover:bg-slate-55/10 dark:hover:bg-white/[0.02] transition-colors">
+                      <tr 
+                        key={date.day} 
+                        id={`date-row-${date.dateStr}`}
+                        className={`h-24 transition-all duration-500 ${
+                          isHighlighted 
+                            ? "bg-indigo-50/80 dark:bg-indigo-950/40 ring-2 ring-indigo-500 ring-inset shadow-md" 
+                            : "hover:bg-slate-55/10 dark:hover:bg-white/[0.02]"
+                        }`}
+                      >
                         {/* First Cell: Day / Date */}
                         <td className="sticky left-0 z-10 p-3 text-xs font-bold text-slate-705 border-r border-slate-200 bg-slate-50/95 dark:bg-[#141419] dark:border-white/5 backdrop-blur-xs align-middle">
                           <div className="flex flex-col justify-center items-center">
@@ -1928,118 +2248,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           </div>
         )}
 
-        {/* Tab 3: Continuous Internal Assessment (CIA) */}
-        {activeTab === "marks" && (() => {
-          const allCourses = Array.from(new Set([
-            ...studentSubjects.map(s => s.name),
-            ...Object.keys(courseStats)
-          ])).filter(Boolean);
 
-          let totalScoreSum = 0;
-          let evaluatedSubjectCount = 0;
-          let totalTasksCount = 0;
-          let totalEvaluatedTasksCount = 0;
-
-          const courseRows = allCourses.map((courseName) => {
-            const stats = courseStats[courseName] || { present: 0, absent: 0, total: 0 };
-            const attPct = stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : (totalClasses > 0 ? Math.round(overallPercentage) : 0);
-            const trackerEntries = (studentTracker || []).filter(
-              (t) => t.student_id === currentStudent?.id && isSubjectNameMatch(t.subject, courseName)
-            );
-            const evaluatedTasks = trackerEntries.filter((t) => t.marks !== undefined && t.marks !== null);
-            totalTasksCount += trackerEntries.length;
-            totalEvaluatedTasksCount += evaluatedTasks.length;
-
-            const avgMarks = evaluatedTasks.length > 0
-              ? Math.round(evaluatedTasks.reduce((sum, t) => sum + Number(t.marks), 0) / evaluatedTasks.length)
-              : null;
-            const attScore = Math.min(10, Math.ceil(attPct / 10));
-
-            if (avgMarks !== null) {
-              const combinedScore = (attScore * 0.3) + ((avgMarks / 10) * 0.7);
-              totalScoreSum += combinedScore;
-              evaluatedSubjectCount++;
-            } else if (stats.total > 0) {
-              totalScoreSum += attScore;
-              evaluatedSubjectCount++;
-            }
-
-            return {
-              courseName,
-              stats,
-              attPct,
-              trackerEntries,
-              evaluatedTasks,
-              avgMarks,
-              attScore
-            };
-          });
-
-          const sgpa = evaluatedSubjectCount > 0
-            ? (totalScoreSum / evaluatedSubjectCount).toFixed(2)
-            : (overallPercentage > 0 ? (overallPercentage / 10).toFixed(2) : "0.00");
-
-          return (
-            <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm">
-              <div>
-                <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Continuous Internal Assessment (CIA)</h2>
-                <p className="text-[11px] text-slate-450 mt-1">
-                  Real-time subject-wise continuous evaluation sheets and internal grade projection dashboard.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* GPA card summary */}
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 flex flex-col justify-between items-center text-center space-y-4">
-                  <h3 className="text-xs font-extrabold text-slate-650 uppercase tracking-wider">Projected SGPA</h3>
-                  
-                  <div className="h-24 w-24 rounded-full border-4 border-indigo-600 bg-white flex flex-col items-center justify-center shadow-inner">
-                    <span className="text-2xl font-black text-indigo-700">{sgpa}</span>
-                    <span className="text-[8px] text-slate-450 uppercase font-black">SGPA</span>
-                  </div>
-
-                  <div className="text-[10px] text-slate-500 font-semibold space-y-0.5">
-                    <div>Enrolled Courses: <span className="font-extrabold text-slate-800">{allCourses.length}</span></div>
-                    <div>Evaluated Tasks: <span className="font-extrabold text-slate-800">{totalEvaluatedTasksCount} / {totalTasksCount}</span></div>
-                  </div>
-                </div>
-
-                <div className="md:col-span-2 overflow-x-auto rounded-xl border border-slate-200 scroll-touch">
-                  <table className="w-full border-collapse text-left text-xs min-w-[600px]">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
-                        <th className="p-3">Course / Subject</th>
-                        <th className="p-3 text-center">Attendance</th>
-                        <th className="p-3 text-center">Weekly Tasks</th>
-                        <th className="p-3 text-center">Evaluations</th>
-                        <th className="p-3 text-center">Attendance Mark (10)</th>
-                        <th className="p-3 text-center">Avg Evaluation Score</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                      {courseRows.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="p-6 text-center text-slate-400 italic">No courses found for the current semester.</td>
-                        </tr>
-                      ) : (
-                        courseRows.map(({ courseName, stats, attPct, trackerEntries, evaluatedTasks, avgMarks, attScore }) => (
-                          <tr key={courseName} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="p-3 font-extrabold text-slate-900 truncate max-w-[160px]">{courseName}</td>
-                            <td className="p-3 text-center text-slate-700">{stats.present} / {stats.total} ({attPct}%)</td>
-                            <td className="p-3 text-center text-slate-700">{trackerEntries.length} Tasks</td>
-                            <td className="p-3 text-center text-slate-700">{evaluatedTasks.length} Evaluated</td>
-                            <td className="p-3 text-center text-slate-700">{attScore} / 10</td>
-                            <td className="p-3 text-center font-bold text-indigo-700">{avgMarks !== null ? `${avgMarks}%` : "Pending"}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
 
         {/* Tab: My Interviews & Evaluation Marks */}
         {activeTab === "interviews" && (
@@ -2329,28 +2538,37 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           </div>
         )}
 
-        {/* Tab 5: Exams & Seating */}
+        {/* Tab 5: Exams & Seating Tickets */}
         {activeTab === "exams" && (() => {
-          const examCourses = Array.from(new Set([
-            ...studentSubjects.map(s => s.name),
-            ...Object.keys(courseStats)
-          ])).filter(Boolean);
+          const displayExams = studentExamsList || [];
 
           return (
-            <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3">
-                <div>
-                  <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Examination Schedule & Tickets</h2>
-                  <p className="text-[11px] text-slate-450 mt-1">Download official hall tickets and verify allocated exam seating arrangements.</p>
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-sm font-sans">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-650">
+                    <BookOpen className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                      Examination Schedule & Tickets
+                      <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-black uppercase">
+                        {currentStudent?.department || "Department"}
+                      </span>
+                    </h2>
+                    <p className="text-[11px] text-slate-450 mt-0.5">
+                      Verify your upcoming assessment dates, timings, and allocated exam hall seating.
+                    </p>
+                  </div>
                 </div>
 
-                {examCourses.length > 0 && (
+                {displayExams.length > 0 && (
                   <button
                     type="button"
                     onClick={() => {
-                      toast(`Hall Ticket generated for ${currentStudent.name} (${currentStudent.roll_number || currentStudent.register_number || currentStudent.id}).`, "success");
+                      toast(`Official Hall Ticket generated for ${currentStudent.name} (${currentStudent.roll_number || currentStudent.register_number || currentStudent.id}).`, "success");
                     }}
-                    className="py-1.5 px-3 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer"
+                    className="py-2 px-3.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                   >
                     <Download className="h-4 w-4" />
                     <span>Download Hall Ticket (PDF)</span>
@@ -2358,46 +2576,61 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 )}
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-slate-250 scroll-touch">
-                <table className="w-full border-collapse text-left text-xs min-w-[600px]">
+              <div className="overflow-x-auto rounded-xl border border-slate-200 scroll-touch">
+                <table className="w-full border-collapse text-left text-xs min-w-[650px]">
                   <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
-                      <th className="p-3">Date</th>
-                      <th className="p-3">Subject / Course Code</th>
-                      <th className="p-3">Session</th>
-                      <th className="p-3">Block / Hall Room</th>
-                      <th className="p-3 text-center">Seat No.</th>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
+                      <th className="p-3">Exam / Assessment</th>
+                      <th className="p-3">Subject Name</th>
+                      <th className="p-3">Exam Date</th>
+                      <th className="p-3">Session & Timings</th>
+                      <th className="p-3">Hall / Block</th>
+                      <th className="p-3 text-center">Seat Number</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                    {examCourses.length === 0 ? (
+                    {examsLoading ? (
                       <tr>
-                        <td colSpan={5} className="p-8 text-center text-slate-400 italic">
+                        <td colSpan={6} className="p-8 text-center text-slate-400 font-bold">
+                          Loading your assessment schedule...
+                        </td>
+                      </tr>
+                    ) : displayExams.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-slate-400 italic">
                           No examination schedules published for your enrolled courses at this time.
                         </td>
                       </tr>
                     ) : (
-                      examCourses.map((courseName, idx) => {
-                        const examDaysAhead = idx * 2 + 7;
-                        const d = new Date();
-                        d.setDate(d.getDate() + examDaysAhead);
-                        const dateStr = d.toISOString().slice(0, 10);
-                        const blockName = currentStudent.department ? `${currentStudent.department.split(" ")[0]} Block` : "Academic Block A";
-                        const hall = `Hall ${101 + (idx % 3)}`;
+                      displayExams.map((ex: any, idx: number) => {
                         const seatNo = currentStudent.roll_number || currentStudent.register_number ? `${currentStudent.roll_number || currentStudent.register_number}` : `S-${100 + idx}`;
-
                         return (
-                          <tr key={courseName} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="p-3 text-slate-700 font-bold">{dateStr}</td>
-                            <td className="p-3 font-extrabold text-slate-900 truncate max-w-[200px]">{courseName}</td>
-                            <td className="p-3 text-slate-650">{idx % 2 === 0 ? "FN (09:30 AM - 12:30 PM)" : "AN (01:30 PM - 04:30 PM)"}</td>
+                          <tr key={ex.id || idx} className="hover:bg-slate-50/60 transition-colors">
                             <td className="p-3">
-                              <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] text-slate-700 font-extrabold">
-                                <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
-                                {hall} ({blockName})
+                              <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10.5px] font-extrabold">
+                                {ex.exam_type}
                               </span>
                             </td>
-                            <td className="p-3 text-center font-bold text-indigo-700">{seatNo}</td>
+                            <td className="p-3 font-extrabold text-slate-900 truncate max-w-[200px]">{ex.subject_name}</td>
+                            <td className="p-3 text-slate-700 font-bold">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                                <span>{ex.exam_date}</span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-slate-650">
+                              <div className="flex items-center gap-1.5 text-[10.5px]">
+                                <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                                <span>{ex.session_time || `${ex.start_time} - ${ex.end_time}`}</span>
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px] text-slate-700 font-bold">
+                                <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
+                                {ex.hall_room || "Main Examination Hall"}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center font-bold text-indigo-700 font-mono">{seatNo}</td>
                           </tr>
                         );
                       })
@@ -2409,91 +2642,260 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           );
         })()}
 
-        {/* Tab 6: Library OPAC Finder */}
-        {activeTab === "library" && (
-          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Library OPAC Book Finder</h2>
-                  <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[8.5px] font-black uppercase tracking-wider">
-                    Curriculum Library
-                  </span>
+        {/* Tab 6: Subject Materials (Unit-wise Study Hub) */}
+        {(activeTab === "materials" || activeTab === "library") && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* Subject Selector & Header */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                      <BookOpen className="h-4 w-4" />
+                    </div>
+                    <h2 className="text-base font-black text-slate-900 tracking-tight">
+                      Subject Materials & Unit-wise Study Hub
+                    </h2>
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/60 text-[9px] font-black uppercase">
+                      Curriculum Notes & PPTs
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-semibold mt-1">
+                    Access verified unit-wise lecture notes, PPT presentations, question banks, and reference guides uploaded by course faculty.
+                  </p>
                 </div>
-                <p className="text-[11px] text-slate-450 mt-1">Search curriculum textbooks, reference guides, and physical library availability.</p>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fetchSubjectMaterials(selectedMaterialSubject)}
+                    className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 cursor-pointer shadow-2xs transition-colors"
+                    title="Refresh Materials"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${materialsLoading ? "animate-spin text-indigo-600" : ""}`} />
+                  </button>
+                </div>
               </div>
 
-              {/* Search input bar */}
-              <div className="relative w-full sm:w-72 shrink-0">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search books, authors, subjects..."
-                  value={librarySearch}
-                  onChange={(e) => setLibrarySearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-bold placeholder-slate-400"
-                />
+              {/* Enrolled Subject Selector Pills */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">
+                    Select Course Subject ({studentSubjects.length || 1})
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-bold">
+                    {studentClassDetails.sem} • {studentClassDetails.year}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {studentSubjects.map((subj) => {
+                    const isSelected = selectedMaterialSubject.toLowerCase().trim() === subj.name.toLowerCase().trim();
+                    return (
+                      <button
+                        key={subj.id || subj.name}
+                        type="button"
+                        onClick={() => setSelectedMaterialSubject(subj.name)}
+                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border shadow-xs ${
+                          isSelected
+                            ? "bg-slate-900 border-slate-900 text-white ring-2 ring-indigo-200 scale-105"
+                            : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                        }`}
+                      >
+                        <GraduationCap className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-indigo-300" : "text-slate-400"}`} />
+                        <span>{subj.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            {(() => {
-              const paginatedBooks = filteredBooks.slice((booksPage - 1) * booksPageSize, booksPage * booksPageSize);
-              return (
-                <div className="overflow-x-auto rounded-xl border border-slate-250 scroll-touch">
-                  <table className="w-full border-collapse text-left text-xs min-w-[650px]">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
-                        <th className="p-3">Book ID</th>
-                        <th className="p-3">Title</th>
-                        <th className="p-3">Author</th>
-                        <th className="p-3">Subject area</th>
-                        <th className="p-3">Shelf Code</th>
-                        <th className="p-3">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                      {filteredBooks.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="p-8 text-center text-slate-400">
-                            <div className="flex flex-col items-center justify-center gap-1.5 py-4">
-                              <Book className="h-7 w-7 text-slate-300" />
-                              <p className="font-bold text-slate-600 text-xs">No Matching Books Found</p>
-                              <p className="text-[11px] text-slate-400">Try searching with a different book title, author, or subject area.</p>
-                            </div>
-                          </td>
-                        </tr>
-                      ) : (
-                        paginatedBooks.map((book) => (
-                          <tr key={book.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="p-3 text-slate-400 font-mono">{book.id}</td>
-                            <td className="p-3 font-extrabold text-slate-900">{book.title}</td>
-                            <td className="p-3 text-slate-650">{book.author}</td>
-                            <td className="p-3 text-slate-450">{book.subject}</td>
-                            <td className="p-3 text-slate-700 font-bold">{book.shelf}</td>
-                            <td className="p-3">
-                              {book.status === "Available" ? (
-                                <span className="px-2 py-0.5 rounded bg-emerald-50 border border-emerald-100 text-emerald-700 text-[8.5px] font-black uppercase">
-                                  Available
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded bg-rose-50 border border-rose-100 text-rose-700 text-[8.5px] font-black uppercase flex flex-col items-start leading-none gap-0.5">
-                                  <span>Issued</span>
-                                  <span className="text-[7px] font-normal text-rose-500 font-mono">Due: {book.expectedReturn}</span>
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                  <Pagination
-                    currentPage={booksPage}
-                    totalItems={filteredBooks.length}
-                    pageSize={booksPageSize}
-                    onPageChange={setBooksPage}
-                    onPageSizeChange={setBooksPageSize}
+            {/* Unit Tabs & Filters Bar */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {/* Unit 1 to 5 Filter Tabs */}
+                <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMaterialUnit("all")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      selectedMaterialUnit === "all"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    All Units
+                  </button>
+                  {[1, 2, 3, 4, 5].map((unitNum) => (
+                    <button
+                      key={`unit_tab_${unitNum}`}
+                      type="button"
+                      onClick={() => setSelectedMaterialUnit(unitNum)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        selectedMaterialUnit === unitNum
+                          ? "bg-white text-indigo-600 shadow-xs"
+                          : "text-slate-500 hover:text-slate-900"
+                      }`}
+                    >
+                      Unit {unitNum}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Search Bar */}
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search topics, unit notes..."
+                    value={materialSearchQuery}
+                    onChange={(e) => setMaterialSearchQuery(e.target.value)}
+                    className="w-full pl-8.5 pr-4 py-2 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-bold placeholder-slate-400"
                   />
+                </div>
+              </div>
+
+              {/* Material Type Pills */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
+                <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mr-1">Filter Type:</span>
+                {[
+                  { id: "all", label: "All Formats" },
+                  { id: "notes", label: "PDF Notes" },
+                  { id: "ppt", label: "Slides (PPT)" },
+                  { id: "question_bank", label: "Question Banks" }
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setMaterialTypeFilter(t.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
+                      materialTypeFilter === t.id
+                        ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                        : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Materials Grid List */}
+            {(() => {
+              const filteredList = (materialsList || []).filter((item) => {
+                const matchesSubject = isSubjectNameMatch(item.subject, selectedMaterialSubject) || item.subject.toLowerCase().trim() === selectedMaterialSubject.toLowerCase().trim();
+                const matchesUnit = selectedMaterialUnit === "all" || item.unit_number === selectedMaterialUnit;
+                const matchesType = materialTypeFilter === "all" || item.material_type === materialTypeFilter;
+                const matchesSearch =
+                  !materialSearchQuery ||
+                  item.title.toLowerCase().includes(materialSearchQuery.toLowerCase()) ||
+                  (item.description && item.description.toLowerCase().includes(materialSearchQuery.toLowerCase())) ||
+                  (item.uploaded_by && item.uploaded_by.toLowerCase().includes(materialSearchQuery.toLowerCase()));
+
+                return matchesSubject && matchesUnit && matchesType && matchesSearch;
+              });
+
+              if (materialsLoading) {
+                return (
+                  <div className="py-20 text-center text-sm font-bold text-slate-400 flex flex-col items-center justify-center gap-3">
+                    <Loader2 className="h-7 w-7 text-indigo-600 animate-spin" />
+                    <span>Loading subject study materials...</span>
+                  </div>
+                );
+              }
+
+              if (filteredList.length === 0) {
+                return (
+                  <div className="bg-white border border-dashed border-slate-200 rounded-2xl p-12 text-center space-y-3">
+                    <div className="h-12 w-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+                      <BookOpen className="h-6 w-6" />
+                    </div>
+                    <h3 className="text-sm font-black text-slate-800">No Study Materials Found</h3>
+                    <p className="text-xs text-slate-400 max-w-md mx-auto">
+                      {selectedMaterialUnit !== "all"
+                        ? `No uploads found for Unit ${selectedMaterialUnit} in ${selectedMaterialSubject}. Try switching to another unit or filter.`
+                        : `Faculty has not yet published materials for ${selectedMaterialSubject}. Check back soon.`}
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredList.map((mat) => {
+                    const isPPT = mat.material_type === "ppt";
+                    const isQuestionBank = mat.material_type === "question_bank";
+                    const formattedDate = mat.created_at ? parseDbDate(mat.created_at).toLocaleDateString() : "Active Semester";
+
+                    return (
+                      <div
+                        key={mat.id}
+                        className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs hover:shadow-md hover:border-indigo-200 transition-all flex flex-col justify-between space-y-4 group"
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-wider shadow-2xs">
+                                Unit {mat.unit_number}
+                              </span>
+                              <span className={`px-2.5 py-1 rounded-xl text-[9.5px] font-black uppercase tracking-wider border ${
+                                isPPT
+                                  ? "bg-amber-50 text-amber-800 border-amber-200"
+                                  : isQuestionBank
+                                  ? "bg-purple-50 text-purple-800 border-purple-200"
+                                  : "bg-indigo-50 text-indigo-800 border-indigo-200"
+                              }`}>
+                                {isPPT ? "Lecture PPT" : isQuestionBank ? "Question Bank" : "PDF Notes"}
+                              </span>
+                            </div>
+
+                            <span className="text-[10px] font-bold text-slate-400">
+                              {mat.file_size || "2.4 MB"}
+                            </span>
+                          </div>
+
+                          <div>
+                            <h3 className="text-sm font-black text-slate-900 group-hover:text-indigo-600 transition-colors leading-snug">
+                              {mat.title}
+                            </h3>
+                            {mat.description && (
+                              <p className="text-xs text-slate-500 font-medium leading-relaxed mt-1.5 line-clamp-3">
+                                {mat.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="text-[10px] text-slate-400 font-bold block truncate">
+                              Faculty: <strong className="text-slate-700">{mat.uploaded_by || "Course Mentor"}</strong>
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-medium block">
+                              Published: {formattedDate}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (mat.file_url || mat.external_url) {
+                                  window.open(mat.file_url || mat.external_url, "_blank");
+                                } else {
+                                  toast(`Downloading "${mat.title}" (${mat.file_size || "PDF"})`, "success");
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs cursor-pointer transition-all hover:scale-105"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              <span>Download</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })()}
@@ -2850,7 +3252,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       return (
                         <div
                           key={`acad_wk_${wk}`}
-                          className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4 hover:shadow-sm transition-all"
+                          id={`acad-task-week-${wk}`}
+                          className={`bg-white border rounded-xl p-5 shadow-xs space-y-4 hover:shadow-sm transition-all duration-300 scroll-mt-24 ${
+                            highlightedWeek === wk
+                              ? "border-indigo-500 ring-4 ring-indigo-100 shadow-md scale-[1.01]"
+                              : "border-slate-200"
+                          }`}
                         >
                           {/* Week Card Header */}
                           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
@@ -3113,25 +3520,32 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {assignedMentorSubjects.map((subName) => {
-                          const isSelected = studentTrackerSubject.toLowerCase().trim() === subName.toLowerCase().trim();
+                          const isSelected =
+                            isSubjectNameMatch(studentTrackerSubject, subName) ||
+                            studentTrackerSubject.toLowerCase().trim() === subName.toLowerCase().trim();
                           const subStats = getSubjectTaskStats(subName);
+                          const cleanSubId = subName.toLowerCase().replace(/[^a-z0-9]/g, "-");
 
                           return (
                             <button
                               key={subName}
+                              id={`skill-subject-btn-${cleanSubId}`}
+                              data-subject={subName}
                               type="button"
-                              onClick={() => setStudentTrackerSubject(subName)}
-                              className={`relative px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 border ${
+                              onClick={() => {
+                                setStudentTrackerSubject(subName);
+                              }}
+                              className={`relative px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border shadow-xs ${
                                 isSelected
-                                  ? "bg-slate-900 border-slate-900 text-white shadow-xs"
-                                  : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                                  ? "bg-slate-900 border-slate-900 text-white ring-2 ring-indigo-200 scale-105"
+                                  : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
                               }`}
                             >
-                              <GraduationCap className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-indigo-300" : "text-slate-400"}`} />
+                              <GraduationCap className={`h-4 w-4 shrink-0 ${isSelected ? "text-indigo-300" : "text-slate-400"}`} />
                               <span>{subName}</span>
 
                               {subStats.hasNew && (
-                                <span className={`px-1.5 py-0.2 rounded text-[8px] font-black uppercase ${
+                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
                                   isSelected ? "bg-rose-500 text-white" : "bg-rose-100 text-rose-700"
                                 }`}>
                                   NEW
@@ -3139,8 +3553,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                               )}
 
                               {subStats.pendingCount > 0 && (
-                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                                  isSelected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+                                  isSelected ? "bg-white/20 text-white" : "bg-amber-100 text-amber-800"
                                 }`}>
                                   {subStats.pendingCount} Pending
                                 </span>
@@ -3178,13 +3592,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       const task = weeklyTasks.find(
                         t => (isCohortMatching(t.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
                               (currentStudent?.department && t.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
-                             t.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim() &&
+                             (isSubjectNameMatch(t.subject, studentTrackerSubject) || t.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim()) &&
                              t.week_number === wk
                       );
 
                       const entry = studentTracker.find(
                         e => e.student_id === currentStudent?.id &&
-                             e.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim() &&
+                             (isSubjectNameMatch(e.subject, studentTrackerSubject) || e.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim()) &&
                              e.week_number === wk
                       );
 
@@ -3199,8 +3613,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       return (
                         <div
                           key={wk}
-                          className={`bg-white border rounded-xl p-5 shadow-xs space-y-4 transition-all duration-200 ${
-                            isNewTask ? "border-rose-300 ring-1 ring-rose-100" : "border-slate-200"
+                          id={`skill-task-week-${wk}`}
+                          className={`bg-white border rounded-xl p-5 shadow-xs space-y-4 transition-all duration-300 scroll-mt-24 ${
+                            highlightedWeek === wk
+                              ? "border-indigo-500 ring-4 ring-indigo-100 shadow-md scale-[1.01]"
+                              : isNewTask
+                              ? "border-rose-300 ring-1 ring-rose-100"
+                              : "border-slate-200"
                           }`}
                         >
                           {/* Task Card Header */}

@@ -17,8 +17,9 @@ import {
   PieChart, Pie, Cell, Legend,
   AreaChart, Area, CartesianGrid
 } from "recharts";
-import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate, isSkillSubject } from "../lib/utils";
+import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, mapDayOrderToDayName } from "../lib/utils";
 import { InterviewModule } from "./InterviewModule";
+import { ExamScheduleManager } from "./ExamScheduleManager";
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,
@@ -2349,8 +2350,8 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
 };
 
 export interface CAMDashboardProps {
-  activeTab?: "overview" | "config" | "curriculum" | "academic_tracker" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events";
-  onTabChange?: (tab: "overview" | "config" | "curriculum" | "academic_tracker" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events") => void;
+  activeTab?: "overview" | "config" | "curriculum" | "academic_tracker" | "exams_and_marks" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events";
+  onTabChange?: (tab: "overview" | "config" | "curriculum" | "academic_tracker" | "exams_and_marks" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events") => void;
 }
 
 export const CAMDashboard: React.FC<CAMDashboardProps> = ({
@@ -2450,7 +2451,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     : (currentCAM?.college_name || colleges.find(c => c.id === activeCollegeId)?.name || "Primary Campus");
 
   // Tab State
-  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "config" | "curriculum" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events">("overview");
+  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "config" | "curriculum" | "academic_tracker" | "exams_and_marks" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events">("overview");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
@@ -2458,11 +2459,58 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const handleNav = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail) {
-        setActiveTab(customEvent.detail);
+        if (typeof customEvent.detail === "string") {
+          setActiveTab(customEvent.detail as any);
+        } else if (customEvent.detail?.url || customEvent.detail?.tab) {
+          const rawTab = customEvent.detail.tab || (customEvent.detail.url?.split("?")[0]?.split("/").pop());
+          const tabAliases: Record<string, any> = {
+            "schedule": "timetable",
+            "daily_config": "config",
+            "daily-configs": "config",
+            "leave-approvals": "handovers",
+            "leaves": "handovers",
+            "exams": "exams_and_marks",
+            "marks": "exams_and_marks",
+            "attendance": "monitoring"
+          };
+          const mapped = tabAliases[rawTab] || rawTab;
+          if (mapped) setActiveTab(mapped as any);
+        }
       }
     };
+
+    // Check stored intent from notification click
+    if (typeof window !== "undefined") {
+      try {
+        const stored = sessionStorage.getItem("fp_notif_target");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Date.now() - (parsed.timestamp || 0) < 30000) {
+            const rawTab = parsed.url?.split("?")[0]?.split("/").pop();
+            const tabAliases: Record<string, any> = {
+              "schedule": "timetable",
+              "daily_config": "config",
+              "daily-configs": "config",
+              "leave-approvals": "handovers",
+              "leaves": "handovers",
+              "exams": "exams_and_marks",
+              "marks": "exams_and_marks",
+              "attendance": "monitoring"
+            };
+            const mapped = tabAliases[rawTab] || rawTab;
+            if (mapped) setActiveTab(mapped as any);
+          }
+          sessionStorage.removeItem("fp_notif_target");
+        }
+      } catch (_) {}
+    }
+
     window.addEventListener("fp_navigate_tab", handleNav);
-    return () => window.removeEventListener("fp_navigate_tab", handleNav);
+    window.addEventListener("fp_navigate_target", handleNav);
+    return () => {
+      window.removeEventListener("fp_navigate_tab", handleNav);
+      window.removeEventListener("fp_navigate_target", handleNav);
+    };
   }, [setActiveTab]);
 
   // ── Auto-poll attendance every 30s when monitoring tab is open ──
@@ -3079,34 +3127,36 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const dateSet = new Set<string>();
     const start = new Date(startStr + "T00:00:00");
     const end = new Date(endStr + "T00:00:00");
-    const holidaySet = new Set<string>();
-    (holidays || []).forEach((h: any) => {
-      if (h?.date) holidaySet.add(h.date);
-      if (h?.dateStr) holidaySet.add(h.dateStr);
-    });
     
-    // 1. Calendar working days (Mon-Sat, excluding holidays)
+    // 1. Calendar days (Mon-Sat)
     if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
       const cur = new Date(start);
       while (cur <= end) {
         const dayOfWeek = cur.getDay(); // 0 = Sun
         const ymd = cur.toISOString().split("T")[0];
 
-        if (dayOfWeek !== 0 && !holidaySet.has(ymd)) {
+        if (dayOfWeek !== 0) {
           dateSet.add(ymd);
         }
         cur.setDate(cur.getDate() + 1);
       }
     }
 
-    // 2. Also include ANY date in studentAttendance within the range
+    // 2. Also include configured daily config dates in range
+    (dailyConfigsList || []).forEach(cfg => {
+      if (cfg.dateStr && cfg.dateStr >= startStr && cfg.dateStr <= endStr) {
+        dateSet.add(cfg.dateStr);
+      }
+    });
+
+    // 3. Also include ANY date in studentAttendance within the range
     (studentAttendance || []).forEach(att => {
       if (att.dateStr && att.dateStr >= startStr && att.dateStr <= endStr) {
         dateSet.add(att.dateStr);
       }
     });
 
-    // 3. Today (if within range)
+    // 4. Today (if within range)
     const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
     if (todayStr >= startStr && todayStr <= endStr) {
       dateSet.add(todayStr);
@@ -3147,36 +3197,120 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       ...dateHeaders
     ];
 
-    const dataRows = filteredStudents.length > 0 ? filteredStudents.map((st, idx) => {
-      const defaultStatuses = workingDates.map(() => "");
+    const rows = filteredStudents.map((st, idx) => [
+      idx + 1,
+      st.roll_number || st.id,
+      st.name,
+      st.department || "",
+      st.semester || "",
+      st.classGroup || "",
+      ...workingDates.map(() => "")
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Attendance Template");
+    const cgLabel = targetCG && targetCG !== "all" ? `_${targetCG.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "";
+    XLSX.writeFile(wb, `Attendance_Template_${sDate}_to_${eDate}${cgLabel}.xlsx`);
+    toast("Blank Attendance Template downloaded successfully!", "success");
+  };
+
+  const handleExportDateAttendance = async (startStr: string, endStr: string, studentsToExport: any[]) => {
+    const XLSX = await import("xlsx");
+    const sDate = startStr || attendanceStartDate || "2026-06-15";
+    const eDate = endStr || attendanceEndDate || new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
+    const workingDates = getSemesterWorkingDates(sDate, eDate);
+
+    // Build header labels with Day Order, Day Type, Remarks
+    const dateHeaders = workingDates.map(dStr => {
+      const cfg = attMonitoringDailyConfigMap.get(dStr);
+      const hol = attMonitoringHolidayMap.get(dStr);
+      const dmy = formatDateToDMY(dStr);
+      const notes = cfg?.notes || hol?.notes || "";
+      if (hol || cfg?.day_type === "holiday") {
+        return `${dmy} [Holiday${notes ? `: ${notes}` : ""}]`;
+      }
+      if (cfg?.day_order && cfg.day_order !== "None") {
+        return `${dmy} [${cfg.day_order}${notes ? ` - ${notes}` : ""}]`;
+      }
+      if (cfg?.day_type && cfg.day_type !== "working") {
+        return `${dmy} [${cfg.day_type.replace("_", " ")}${notes ? `: ${notes}` : ""}]`;
+      }
+      if (notes) {
+        return `${dmy} [${notes}]`;
+      }
+      return dmy;
+    });
+
+    const headers = [
+      "Sl. No.",
+      "Roll No",
+      "Name",
+      "Department",
+      "Class Group",
+      "Total days",
+      "Total of Present Days",
+      "Total of Absent Days",
+      "%",
+      ...dateHeaders
+    ];
+
+    const rows = studentsToExport.map((st, idx) => {
+      let presentDays = 0;
+      let absentDays = 0;
+      let totalWorkingDays = 0;
+
+      const dateStatuses = workingDates.map(dStr => {
+        const hol = attMonitoringHolidayMap.get(dStr);
+        const cfg = attMonitoringDailyConfigMap.get(dStr);
+        const isHoliday = !!hol || cfg?.day_type === "holiday";
+        const notes = cfg?.notes || hol?.notes || "";
+
+        if (isHoliday) {
+          return "H";
+        }
+
+        const dateObj = new Date(dStr + "T00:00:00");
+        const defaultDay = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+        const effectiveDay = mapDayOrderToDayName(cfg?.day_order, defaultDay);
+        const stSlots = collegeSlots.filter(s => s.day === effectiveDay && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
+        const stDayAtt = studentAttendance.filter(a => a.studentId === st.id && a.dateStr === dStr);
+
+        if (stSlots.length === 0 && stDayAtt.length === 0) return "—";
+        totalWorkingDays++;
+
+        const isExam = isExamDate(dStr, dailyConfigsList, studentAttendance);
+        const evalRes = evaluateDailyStudentAttendance(stDayAtt, stSlots.length, isExam, false, notes);
+
+        presentDays += evalRes.presentDays;
+        absentDays += evalRes.absentDays;
+        return evalRes.status;
+      });
+
+      const effectiveTotalDays = totalWorkingDays;
+      const pct = effectiveTotalDays > 0 ? Math.round((presentDays / effectiveTotalDays) * 100) : 0;
+
       return [
         idx + 1,
         st.roll_number || st.id,
         st.name,
         st.department || "",
-        st.semester || "",
         st.classGroup || "",
-        ...defaultStatuses
+        effectiveTotalDays,
+        presentDays,
+        absentDays,
+        `${pct}%`,
+        ...dateStatuses
       ];
-    }) : [
-      [
-        1,
-        "E24AI001",
-        "Sample Student",
-        "Computer Science",
-        "Semester 5",
-        targetCG || "BCA - Semester 5",
-        ...workingDates.map(() => "")
-      ]
-    ];
+    });
 
-    const targetColName = colleges.find(c => c.id === effectiveCollegeId)?.name || "Campus";
+    const targetColName = colleges.find(c => c.id === activeCollegeId)?.name || "Campus";
     const cleanColName = targetColName.replace(/[^a-zA-Z0-9]/g, "_");
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Attendance Template");
-    XLSX.writeFile(wb, `${cleanColName}_Attendance_Template_${sDate}_to_${eDate}.xlsx`);
-    toast(`Attendance template for ${targetColName} downloaded successfully!`, "success");
+    XLSX.utils.book_append_sheet(wb, ws, "Date Attendance");
+    XLSX.writeFile(wb, `${cleanColName}_Date_Attendance_${sDate}_to_${eDate}.xlsx`);
+    toast(`Attendance data for ${targetColName} exported successfully!`, "success");
   };
 
   const handleAttendanceFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3488,71 +3622,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   };
 
-  const handleExportDateAttendance = async (startStr: string, endStr: string, studentsToExport: any[]) => {
-    const XLSX = await import("xlsx");
-    const sDate = startStr || attendanceStartDate || "2026-06-15";
-    const eDate = endStr || attendanceEndDate || new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
-    const workingDates = getSemesterWorkingDates(sDate, eDate);
 
-    const dateHeaders = workingDates.map(d => formatDateToDMY(d));
-    const headers = [
-      "Sl. No.",
-      "Roll No",
-      "Name",
-      "Department",
-      "Class Group",
-      "Total days",
-      "Total of Present Days",
-      "Total of Absent Days",
-      "%",
-      ...dateHeaders
-    ];
-
-    const rows = studentsToExport.map((st, idx) => {
-      let presentDays = 0;
-      let absentDays = 0;
-      let totalWorkingDays = 0;
-
-      const dateStatuses = workingDates.map(dStr => {
-        const dateObj = new Date(dStr + "T00:00:00");
-        const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
-        const stSlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
-        const stDayAtt = studentAttendance.filter(a => a.studentId === st.id && a.dateStr === dStr);
-
-        if (stSlots.length === 0 && stDayAtt.length === 0) return "—";
-        totalWorkingDays++;
-
-        const isExam = isExamDate(dStr, dailyConfigsList, studentAttendance);
-        const evalRes = evaluateDailyStudentAttendance(stDayAtt, stSlots.length, isExam);
-
-        presentDays += evalRes.presentDays;
-        absentDays += evalRes.absentDays;
-        return evalRes.status;
-      });
-
-      const effectiveTotalDays = totalWorkingDays || workingDates.length;
-      const pct = effectiveTotalDays > 0 ? Math.round((presentDays / effectiveTotalDays) * 100) : 0;
-
-      return [
-        idx + 1,
-        st.roll_number || st.id,
-        st.name,
-        st.department || "",
-        st.classGroup || "",
-        effectiveTotalDays,
-        presentDays,
-        absentDays,
-        `${pct}%`,
-        ...dateStatuses
-      ];
-    });
-
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Master Attendance Register");
-    XLSX.writeFile(wb, `Master_Student_Attendance_${sDate}_to_${eDate}.xlsx`);
-    toast(`Exported Master Attendance Register for ${sDate} to ${eDate}!`, "success");
-  };
 
   const handleToggleStudentPeriodStatus = async (studentId: string, slotId: string, dateStr: string, currentStatus: string) => {
     const cycleMap: Record<string, string> = {
@@ -4556,10 +4626,40 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     return map;
   }, [studentAttendance]);
 
-  /** Sorted working dates in the selected date range (Mon–Sat, excl. holidays) — unified source of truth */
+  /** O(1) Daily Config Map lookup by dateStr */
+  const attMonitoringDailyConfigMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (dailyConfigsList || []).forEach((c: any) => {
+      if (c?.dateStr) map.set(c.dateStr, c);
+    });
+    return map;
+  }, [dailyConfigsList]);
+
+  /** O(1) Holiday map lookup combining static holidays AND dailyConfigsList where day_type === 'holiday' */
+  const attMonitoringHolidayMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (holidays || []).forEach((h: any) => {
+      const d = h?.date || h?.dateStr;
+      if (d) map.set(d, { isHoliday: true, name: h.name || h.description || "College Holiday", notes: h.notes || h.name || "College Holiday" });
+    });
+    (dailyConfigsList || []).forEach((c: any) => {
+      if (c?.dateStr && (c.day_type === "holiday" || (c.day_order && c.day_order.toLowerCase() === "none" && c.day_type === "holiday"))) {
+        const existing = map.get(c.dateStr);
+        map.set(c.dateStr, {
+          isHoliday: true,
+          name: c.notes || existing?.name || "College Holiday",
+          notes: c.notes || existing?.notes || "College Holiday",
+          ...c
+        });
+      }
+    });
+    return map;
+  }, [holidays, dailyConfigsList]);
+
+  /** Sorted working dates in the selected date range — unified source of truth */
   const attMonitoringWorkingDates = useMemo(() => {
     return getSemesterWorkingDates(attendanceStartDate, attendanceEndDate);
-  }, [attendanceStartDate, attendanceEndDate, holidays, studentAttendance]);
+  }, [attendanceStartDate, attendanceEndDate, holidays, dailyConfigsList, studentAttendance]);
 
   /** Set of exam dates (O(1) lookup to replace per-cell isExamDate() scan) */
   const attMonitoringExamDateSet = useMemo(() => {
@@ -4570,24 +4670,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     return s;
   }, [attMonitoringWorkingDates, dailyConfigsList, studentAttendance]);
 
-  /** O(1) Holiday map lookup (avoids linear holiday search in headers) */
-  const attMonitoringHolidayMap = useMemo(() => {
-    const map = new Map<string, any>();
-    (holidays || []).forEach((h: any) => {
-      if (h?.date) map.set(h.date, h);
-      if (h?.dateStr) map.set(h.dateStr, h);
-    });
-    return map;
-  }, [holidays]);
-
-  /** Pre-computed day name for each working date (avoids per-cell new Date().toLocaleDateString) */
+  /** Pre-computed effective day name for each date, respecting Day Order (Day 1->Mon, Day 2->Tue, etc.) */
   const attMonitoringDayNameMap = useMemo(() => {
     const m: Record<string, string> = {};
     attMonitoringWorkingDates.forEach(d => {
-      m[d] = new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+      const cfg = attMonitoringDailyConfigMap.get(d);
+      const defaultWeekday = new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+      m[d] = mapDayOrderToDayName(cfg?.day_order, defaultWeekday);
     });
     return m;
-  }, [attMonitoringWorkingDates]);
+  }, [attMonitoringWorkingDates, attMonitoringDailyConfigMap]);
 
   /** Slot lookup map: `${dayName}__${classGroupLower}` → Slot[] */
   const attMonitoringSlotMap = useMemo(() => {
@@ -4627,11 +4719,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     return attMonitoringFiltered.map(st => {
       let presentDays = 0, absentDays = 0, totalMarkedDays = 0;
       attMonitoringWorkingDates.forEach(dStr => {
+        const holidayObj = attMonitoringHolidayMap.get(dStr);
+        const cfg = attMonitoringDailyConfigMap.get(dStr);
+        if (holidayObj || cfg?.day_type === "holiday") return; // Holidays are excluded from compliance calculations
+
         const recs = attMonitoringMap.get(`${st.id}_${dStr}`);
         if (!recs || recs.length === 0) return;
         totalMarkedDays++;
         const isExam = attMonitoringExamDateSet.has(dStr);
-        const ev     = evaluateDailyStudentAttendance(recs, 0, isExam);
+        const ev     = evaluateDailyStudentAttendance(recs, 0, isExam, false, cfg?.notes || "");
         presentDays += ev.presentDays;
         absentDays  += ev.absentDays;
       });
@@ -4643,7 +4739,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         presentDays, absentDays, totalMarkedDays,
       };
     });
-  }, [attMonitoringFiltered, attMonitoringWorkingDates, attMonitoringMap, attMonitoringExamDateSet]);
+  }, [attMonitoringFiltered, attMonitoringWorkingDates, attMonitoringMap, attMonitoringExamDateSet, attMonitoringHolidayMap, attMonitoringDailyConfigMap]);
 
   /** O(1) Student Stats Map lookup */
   const attMonitoringStudentStatsMap = useMemo(() => {
@@ -7017,6 +7113,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     icon: BookOpen,
                     items: [
                       { id: "academic_tracker", label: "Academic Tracker", icon: BookOpen },
+                      { id: "exams_and_marks", label: "Exams & Marks", icon: Award },
                       { id: "config", label: "Academic Configuration", icon: Settings },
                       { id: "curriculum", label: "Batch Creation", icon: Layers }
                     ]
@@ -10204,51 +10301,85 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <th className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-rose-700">Total Absent</th>
                                   <th className="p-2.5 border-r border-slate-200 text-center min-w-[65px] text-indigo-700">%</th>
                                   {workingDates.map(dStr => {
-                                    // Use pre-computed dayNameMap and holidayMap — O(1)
-                                    const dDay = (dayNameMap[dStr] || "").slice(0, 3) || new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
-                                    const isToday = dStr === todayStr;
-                                    const holidayObj = holidayMap.get(dStr);
-                                    const isExam = examDateSet.has(dStr); // O(1) — was isExamDate() scan
-                                    const dayTypeLabel = holidayObj ? "Holiday" : isExam ? "Exam" : (dDay === "Sat" || dDay === "Sun") ? "Weekend" : "Regular";
+                                     const cfg = attMonitoringDailyConfigMap.get(dStr);
+                                     const holidayObj = attMonitoringHolidayMap.get(dStr);
+                                     const isHoliday = !!holidayObj || cfg?.day_type === "holiday";
+                                     const isEvent = !isHoliday && (cfg?.day_type === "event");
+                                     const isExam = !isHoliday && !isEvent && (examDateSet.has(dStr) || cfg?.day_type === "exam_day" || cfg?.day_type === "exam");
+                                     const dayOrder = (cfg?.day_order && cfg.day_order !== "None" && !isHoliday) ? cfg.day_order : null;
+                                     const notes = cfg?.notes || holidayObj?.notes || holidayObj?.name || "";
+                                     
+                                     const calendarDay = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+                                     const fullCalendarDay = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+                                     const isToday = dStr === todayStr;
 
-                                    return (
-                                      <th
-                                        key={dStr}
-                                        className={`p-2 border-r border-slate-200 text-center min-w-[76px] transition-colors ${
-                                          isToday ? "bg-indigo-50/80 border-b-2 border-b-indigo-600" : isExam ? "bg-purple-50/60" : ""
-                                        }`}
-                                        title={`${dDay}, ${formatDateToDMY(dStr)} • Type: ${dayTypeLabel}`}
-                                      >
-                                        {isToday && (
-                                          <span className="inline-block px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[7.5px] font-black uppercase tracking-wider mb-0.5 shadow-2xs">
-                                            TODAY
-                                          </span>
-                                        )}
-                                        <div className={`font-extrabold text-[9.5px] ${isToday ? "text-indigo-900 font-black" : isExam ? "text-purple-900" : "text-slate-700"}`}>
-                                          {formatDateToDMY(dStr)}
-                                        </div>
-                                        <div className="flex items-center justify-center gap-1 mt-0.5">
-                                          <span className="text-[8px] text-slate-400 font-semibold">{dDay}</span>
-                                          <span className={`text-[7px] font-extrabold px-1 py-0.2 rounded uppercase ${
-                                            holidayObj ? "bg-rose-100 text-rose-700" : isExam ? "bg-purple-100 text-purple-800 border border-purple-200" : "bg-slate-200/70 text-slate-600"
-                                          }`}>
-                                            {dayTypeLabel}
-                                          </span>
-                                        </div>
-                                      </th>
-                                    );
-                                  })}
+                                     const tooltipText = `${formatDateToDMY(dStr)} (${fullCalendarDay})${dayOrder ? ` • Order: ${dayOrder}` : ""}${isHoliday ? ` • Holiday: ${notes || "College Holiday"}` : isEvent ? ` • Event: ${notes || "Campus Event"}` : isExam ? ` • Exam Day: ${notes || "Assessment"}` : " • Regular Working Day"}${cfg?.session_mode ? ` • Mode: ${cfg.session_mode}` : ""}${notes && !isHoliday ? `\nRemarks: ${notes}` : ""}`;
+
+                                     return (
+                                       <th
+                                         key={dStr}
+                                         className={`p-2 border-r border-slate-200 text-center min-w-[85px] transition-colors ${
+                                           isToday ? "bg-indigo-50/80 border-b-2 border-b-indigo-600" : isHoliday ? "bg-rose-50/40" : isExam ? "bg-purple-50/60" : isEvent ? "bg-amber-50/40" : ""
+                                         }`}
+                                         title={tooltipText}
+                                       >
+                                         {isToday && (
+                                           <span className="inline-block px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[7.5px] font-black uppercase tracking-wider mb-0.5 shadow-2xs">
+                                             TODAY
+                                           </span>
+                                         )}
+                                         <div className={`font-extrabold text-[9.5px] ${isToday ? "text-indigo-900 font-black" : isHoliday ? "text-rose-900" : isExam ? "text-purple-900" : isEvent ? "text-amber-900" : "text-slate-700"}`}>
+                                           {formatDateToDMY(dStr)}
+                                         </div>
+                                         <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap">
+                                           <span className="text-[8px] text-slate-400 font-semibold">{calendarDay}</span>
+                                           {dayOrder && (
+                                             <span className="text-[7.5px] font-black px-1.5 py-0.2 rounded bg-indigo-600 text-white uppercase tracking-tight shadow-2xs">
+                                               {dayOrder}
+                                             </span>
+                                           )}
+                                           <span className={`text-[7px] font-black px-1 py-0.2 rounded uppercase ${
+                                             isHoliday ? "bg-rose-100 text-rose-800 border border-rose-200" : isEvent ? "bg-amber-100 text-amber-800 border border-amber-200" : isExam ? "bg-purple-100 text-purple-800 border border-purple-200" : "bg-slate-200/70 text-slate-600"
+                                           }`}>
+                                             {isHoliday ? "Holiday" : isEvent ? "Event" : isExam ? "Exam" : "Working"}
+                                           </span>
+                                         </div>
+                                         {notes && (
+                                           <div className="text-[7.5px] font-bold text-slate-500 truncate max-w-[85px] mx-auto mt-0.5" title={notes}>
+                                             {notes}
+                                           </div>
+                                         )}
+                                       </th>
+                                     );
+                                    })}
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 bg-white text-slate-700 text-xs">
                                 {paginatedStudents.map((st, idx) => {
-                                  // Use pre-computed stats map — O(1) lookup
                                   const stStats = studentStatsMap.get(st.id);
                                   const rowSerial = attendancePageSize > 0 ? ((safePage - 1) * attendancePageSize) + idx + 1 : idx + 1;
 
                                   const dateCells = workingDates.map(dStr => {
-                                    const dayName  = dayNameMap[dStr];              // O(1)
-                                    const stSlots  = getStudentSlots(dayName, st.classGroup);
+                                    const cfg = attMonitoringDailyConfigMap.get(dStr);
+                                    const holidayObj = attMonitoringHolidayMap.get(dStr);
+                                    const isHoliday = !!holidayObj || cfg?.day_type === "holiday";
+                                    const notes = cfg?.notes || holidayObj?.notes || holidayObj?.name || "";
+
+                                    if (isHoliday) {
+                                      return (
+                                        <td key={dStr} className="p-1.5 text-center border-r border-slate-100 bg-rose-50/20">
+                                          <span
+                                            className="inline-flex items-center justify-center h-5 w-6 rounded font-black text-[10px] bg-rose-100 text-rose-800 border border-rose-200 shadow-2xs cursor-default"
+                                            title={`${st.name} | ${formatDateToDMY(dStr)}\n🎉 Holiday: ${notes || "College Holiday"}\n(No classes scheduled)`}
+                                          >
+                                            H
+                                          </span>
+                                        </td>
+                                      );
+                                    }
+
+                                    const dayName = dayNameMap[dStr]; 
+                                    const stSlots = getStudentSlots(dayName, st.classGroup);
                                     const stDayAtt = attendanceMap.get(`${st.id}_${dStr}`) || [];
 
                                     // Only render blank if there are NO slots AND NO attendance records for this date
@@ -10260,15 +10391,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       );
                                     }
 
-                                    const isExam  = examDateSet.has(dStr);          // O(1) — was isExamDate() scan
-                                    const evalRes = evaluateDailyStudentAttendance(stDayAtt, stSlots.length, isExam);
+                                    const isEvent = cfg?.day_type === "event" || (stDayAtt || []).some(a => (a as any).attendanceTypeSub === "Event");
+                                    const isExam  = !isEvent && (examDateSet.has(dStr) || cfg?.day_type === "exam_day" || cfg?.day_type === "exam");
+                                    const evalRes = evaluateDailyStudentAttendance(stDayAtt, stSlots.length, isExam, false, notes);
 
                                     let badgeColor = "bg-slate-50 text-slate-300 border-slate-200";
                                     if (evalRes.status === "OD") badgeColor = "bg-purple-50 text-purple-700 border-purple-200";
                                     else if (evalRes.status === "P") badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200";
                                     else if (evalRes.status === "A") badgeColor = "bg-rose-50 text-rose-700 border-rose-200";
 
-                                    const tooltipText = `${st.name} | ${formatDateToDMY(dStr)} (${dayName})\n${evalRes.tooltipInfo}\n${stDayAtt.map((a, i) => `• Period ${i+1}: ${a.status.toUpperCase()}`).join('\n') || "No periods marked yet"}\n(Click to Mark/Edit)`;
+                                    const dayOrderLabel = cfg?.day_order && cfg.day_order !== "None" ? ` [${cfg.day_order}]` : "";
+                                    const tooltipText = `${st.name} | ${formatDateToDMY(dStr)} (${dayName}${dayOrderLabel})${notes ? `\nNote: ${notes}` : ""}\n${evalRes.tooltipInfo}\n${stDayAtt.map((a, i) => `• Period ${i+1}: ${a.status.toUpperCase()}`).join('\n') || "No periods marked yet"}\n(Click to Mark/Edit)`;
 
                                     return (
                                       <td key={dStr} className="p-1.5 text-center border-r border-slate-100">
@@ -13818,6 +13951,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     );
                   })()}
 
+                  {/* Tab: Exam Schedules & Marks Studio */}
+                  {activeTab === "exams_and_marks" && (
+                    <ExamScheduleManager />
+                  )}
+
                   {/* Tab 9: My Profile */}
                   {activeTab === "profile" && currentCAM && (
                     <div className="space-y-6 font-sans">
@@ -15269,7 +15407,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 const st = markingStudentForDate.student;
                 const dStr = markingStudentForDate.dateStr;
                 const dateObj = new Date(dStr + "T00:00:00");
-                const dayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+                const defaultDayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+                const customDayCfg = dailyConfigsList.find(c => c.dateStr === dStr);
+                const dayName = mapDayOrderToDayName(customDayCfg?.day_order, defaultDayName);
                 const stSlots = collegeSlots.filter(s => s.day === dayName && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
                 
                 const slotDedupeMap = new Map<string, typeof stSlots[0]>();
@@ -15328,6 +15468,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   }
                 };
 
+                const holidayObj = (holidays || []).find((h: any) => h?.date === dStr || h?.dateStr === dStr);
+                const studentDayAtts = studentAttendance.filter(a => a.studentId === st.id && a.dateStr === dStr);
+                const isHoliday = !!holidayObj || customDayCfg?.day_type === "holiday";
+                const isEvent = !isHoliday && (customDayCfg?.day_type === "event" || studentDayAtts.some(a => (a as any).attendanceTypeSub === "Event"));
+                const isExam = !isHoliday && !isEvent && (customDayCfg?.day_type === "exam_day" || customDayCfg?.day_type === "exam" || isExamDate(dStr, dailyConfigsList, studentAttendance));
+                const dayOrder = (customDayCfg?.day_order && customDayCfg.day_order !== "None" && !isHoliday) ? customDayCfg.day_order : null;
+                const remarks = customDayCfg?.notes || (holidayObj as any)?.notes || (holidayObj as any)?.name || (holidayObj as any)?.description || "";
+
                 return (
                   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 animate-in fade-in zoom-in-95 max-h-[90vh] flex flex-col">
@@ -15353,42 +15501,37 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             <p className="text-[11px] text-slate-500 font-semibold mt-0.5 flex items-center gap-2 flex-wrap">
                               <span>{st.roll_number || st.id} • {st.classGroup}</span>
                               <span>•</span>
-                              <strong className="text-indigo-600">{dayName}, {formatDateToDMY(dStr)}</strong>
-                              {(() => {
-                                const holidayObj = (holidays || []).find((h: any) => h?.date === dStr || h?.dateStr === dStr);
-                                const customDayCfg = dailyConfigsList.find(c => c.dateStr === dStr);
-                                const studentDayAtts = studentAttendance.filter(a => a.studentId === st.id && a.dateStr === dStr);
-                                const isHoliday = !!holidayObj || customDayCfg?.day_type === "holiday";
-                                const isEvent = customDayCfg?.day_type === "event" || studentDayAtts.some(a => (a as any).attendanceTypeSub === "Event");
-                                const isExam = !isEvent && (customDayCfg?.day_type === "exam_day" || customDayCfg?.day_type === "exam" || isExamDate(dStr, dailyConfigsList, studentAttendance));
-
-                                if (isHoliday) {
-                                  return (
-                                    <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-rose-50 text-rose-700 border border-rose-200">
-                                      Holiday / Non-Working Day
-                                    </span>
-                                  );
-                                }
-                                if (isEvent) {
-                                  return (
-                                    <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-amber-50 text-amber-700 border border-amber-200">
-                                      Event / Special Day
-                                    </span>
-                                  );
-                                }
-                                if (isExam) {
-                                  return (
-                                    <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-purple-50 text-purple-700 border border-purple-200">
-                                      Exam / Assessment Day
-                                    </span>
-                                  );
-                                }
-                                return (
-                                  <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    Regular Class Day
-                                  </span>
-                                );
-                              })()}
+                              <strong className="text-indigo-600">{defaultDayName}, {formatDateToDMY(dStr)}</strong>
+                              {dayOrder && (
+                                <span className="px-1.5 py-0.5 rounded font-black text-[9px] uppercase bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                  {dayOrder} ({dayName})
+                                </span>
+                              )}
+                              {isHoliday && (
+                                <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-rose-50 text-rose-700 border border-rose-200">
+                                  Holiday
+                                </span>
+                              )}
+                              {isEvent && (
+                                <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-amber-50 text-amber-700 border border-amber-200">
+                                  Event
+                                </span>
+                              )}
+                              {isExam && (
+                                <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-purple-50 text-purple-700 border border-purple-200">
+                                  Exam Day
+                                </span>
+                              )}
+                              {!isHoliday && !isEvent && !isExam && (
+                                <span className="px-2 py-0.5 rounded font-bold text-[9.5px] uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Regular Class Day
+                                </span>
+                              )}
+                              {remarks && (
+                                <span className="text-[10px] font-bold text-slate-500 italic">
+                                  ({remarks})
+                                </span>
+                              )}
                             </p>
                           </div>
                         </div>

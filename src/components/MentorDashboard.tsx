@@ -50,7 +50,7 @@ import {
   ArrowUpRight
 } from "lucide-react";
 import { InterviewModule } from "./InterviewModule";
-import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject } from "@/lib/utils";
+import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 import { Pagination } from "@/components/ui/Pagination";
 
@@ -1714,6 +1714,66 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   }, [onTabChange]);
 
   const setActiveTab = handleTabChange;
+
+  const [highlightedDate, setHighlightedDate] = useState<string | null>(null);
+
+  // Handle notification jumps, search queries, and dynamic class/tab switching
+  useEffect(() => {
+    const handleNavigation = (targetUrl?: string, targetDate?: string, tabHint?: string) => {
+      let urlStr = targetUrl || (typeof window !== "undefined" ? window.location.search : "");
+      let dateParam = targetDate;
+      let tabParam = tabHint;
+
+      if (!dateParam && typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        dateParam = params.get("date") || undefined;
+        if (!tabParam) tabParam = params.get("tab") || undefined;
+      }
+
+      if (dateParam) {
+        const offset = calculateWeekOffsetForDate(dateParam);
+        setWeekOffset(offset);
+        setHighlightedDate(dateParam);
+        setActiveTab("timetable");
+
+        setTimeout(() => {
+          setHighlightedDate(null);
+        }, 6000);
+      } else if (tabParam) {
+        const normalized = tabParam === "schedule" ? "timetable" : tabParam === "leaves" ? "handovers" : tabParam;
+        if (["home", "timetable", "handovers", "attendance", "profile", "tracker", "demo_evaluations", "more_menu", "interviews"].includes(normalized)) {
+          setActiveTab(normalized as any);
+        }
+      }
+    };
+
+    // 1. Check intent stored from notification click
+    if (typeof window !== "undefined") {
+      try {
+        const stored = sessionStorage.getItem("fp_notif_target");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Date.now() - (parsed.timestamp || 0) < 30000) {
+            handleNavigation(parsed.url, parsed.date);
+          }
+          sessionStorage.removeItem("fp_notif_target");
+        } else {
+          handleNavigation();
+        }
+      } catch (_) {
+        handleNavigation();
+      }
+    }
+
+    // 2. Global event listener for instant reactive navigation while on this page
+    const onNavEvent = (e: any) => {
+      if (e?.detail) {
+        handleNavigation(e.detail.url, e.detail.date);
+      }
+    };
+    window.addEventListener("fp_navigate_target", onNavEvent);
+    return () => window.removeEventListener("fp_navigate_target", onNavEvent);
+  }, [setActiveTab, setWeekOffset]);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   useEffect(() => {

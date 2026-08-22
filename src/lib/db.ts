@@ -470,6 +470,24 @@ export function getDb(): Promise<TursoDbAdapter> {
       UNIQUE(mentor_id, date, period_slot, subject, class_group)
     );
 
+    CREATE TABLE IF NOT EXISTS subject_materials (
+      id TEXT PRIMARY KEY,
+      subject TEXT NOT NULL,
+      unit_number INTEGER NOT NULL DEFAULT 1,
+      title TEXT NOT NULL,
+      description TEXT,
+      material_type TEXT NOT NULL DEFAULT 'notes',
+      file_url TEXT,
+      external_url TEXT,
+      file_size TEXT,
+      uploaded_by TEXT,
+      mentor_id TEXT,
+      class_group TEXT,
+      college_id TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS weekly_academic_tasks (
       id TEXT PRIMARY KEY,
       class_group TEXT NOT NULL,
@@ -858,6 +876,45 @@ export function getDb(): Promise<TursoDbAdapter> {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_by TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS exam_schedules (
+      id TEXT PRIMARY KEY,
+      college_id TEXT NOT NULL,
+      department TEXT NOT NULL,
+      semester TEXT NOT NULL,
+      exam_type TEXT NOT NULL,
+      subject_name TEXT NOT NULL,
+      subject_code TEXT,
+      exam_date TEXT NOT NULL,
+      session_time TEXT NOT NULL,
+      start_time TEXT,
+      end_time TEXT,
+      hall_room TEXT,
+      max_marks REAL DEFAULT 50,
+      passing_marks REAL DEFAULT 20,
+      created_by TEXT,
+      status TEXT DEFAULT 'Scheduled',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS student_exam_marks (
+      id TEXT PRIMARY KEY,
+      exam_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      college_id TEXT NOT NULL,
+      marks_obtained REAL,
+      max_marks REAL DEFAULT 50,
+      is_absent INTEGER DEFAULT 0,
+      grade TEXT,
+      remarks TEXT,
+      evaluated_by TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(exam_id, student_id),
+      FOREIGN KEY (exam_id) REFERENCES exam_schedules(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
     INSERT OR IGNORE INTO system_settings (key, value) VALUES ('mailing_enabled', 'true');
 
       CREATE INDEX IF NOT EXISTS idx_slots_mentorId ON slots(mentorId);
@@ -1106,12 +1163,19 @@ export function getDb(): Promise<TursoDbAdapter> {
         } catch (_) { }
 
         try {
+          // Clean any invalid Sunday attendance records from DB
+          await dbInstance.exec(`DELETE FROM student_attendance WHERE strftime('%w', dateStr) = '0';`);
+        } catch (_) { }
+
+
+
+        try {
           await syncMentorSubjectGroups(dbInstance);
         } catch (syncErr) {
           console.error("Error during syncMentorSubjectGroups:", syncErr);
         }
 
-        await dbInstance.run("INSERT OR REPLACE INTO schema_migrations (version) VALUES (5);");
+        await dbInstance.run("INSERT OR REPLACE INTO schema_migrations (version) VALUES (6);");
       }
 
       return dbInstance;

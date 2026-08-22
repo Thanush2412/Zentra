@@ -102,23 +102,25 @@ export async function POST(request: Request) {
       // 1. Insert Database Notifications for all Students & Mentors of this college
       try {
         const users = await db.all(
-          `SELECT id FROM users WHERE reference_id IN (SELECT id FROM mentors WHERE college_id = ?)
+          `SELECT id, role FROM users WHERE reference_id IN (SELECT id FROM mentors WHERE college_id = ?)
            UNION
-           SELECT id FROM users WHERE reference_id IN (SELECT id FROM students WHERE college_id = ?)`,
+           SELECT id, role FROM users WHERE reference_id IN (SELECT id FROM students WHERE college_id = ?)`,
           college_id, college_id
         );
 
         for (const u of users) {
           const notifId = "n_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
           const displayType = currentDayType === "holiday" ? "Holiday" : currentDayType === "event" ? "Event" : currentDayType === "exam_day" ? "Exam Day" : "Working Day";
+          const link = u.role === "mentor" ? `/mentor/schedule?date=${dStr}` : `/student/schedule?date=${dStr}`;
           await db.run(
-            `INSERT INTO notifications (id, user_id, title, message, type, is_read, created_at)
-             VALUES (?, ?, ?, ?, ?, 0, datetime('now'))`,
+            `INSERT INTO notifications (id, user_id, title, message, type, link, is_read, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'))`,
             notifId,
             u.id,
             `Campus Schedule Update: ${dStr}`,
             `The calendar schedule for ${dStr} has been configured as a ${displayType} (${currentDayOrder === "None" ? "No Day Order" : currentDayOrder}) operating in ${session_mode || "Offline"} mode. Notes: ${notes || "None"}`,
-            currentDayType === "holiday" ? "warning" : "info"
+            currentDayType === "holiday" ? "warning" : "info",
+            link
           );
         }
       } catch (errNotif) {

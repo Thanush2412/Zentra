@@ -1119,7 +1119,7 @@ export function getCollegePeriodTimeSlots(
  * 4. Regular Day: If marked present in all recorded periods (and aCount === 0), counts as 'P' (presentDays = 1).
  */
 export interface DailyAttendanceEvaluation {
-  status: "P" | "A" | "OD" | "—";
+  status: "P" | "A" | "OD" | "H" | "—";
   presentDays: number;
   absentDays: number;
   totalMarked: number;
@@ -1127,17 +1127,39 @@ export interface DailyAttendanceEvaluation {
   aCount: number;
   odCount: number;
   isExamDay: boolean;
+  isHoliday?: boolean;
   tooltipInfo: string;
+}
+
+export function mapDayOrderToDayName(dayOrder?: string | null, defaultDay: string = "Monday"): string {
+  if (!dayOrder || dayOrder === "None" || dayOrder === "none") {
+    return defaultDay;
+  }
+  const match = dayOrder.match(/^Day (\d+)$/i);
+  if (match) {
+    const orderNum = parseInt(match[1], 10);
+    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    if (orderNum >= 1 && orderNum <= dayNames.length) {
+      return dayNames[orderNum - 1];
+    }
+  }
+  return defaultDay;
 }
 
 export function isExamDate(
   dateStr: string,
   dailyConfigs: any[] = [],
-  studentAttendance: any[] = []
+  studentAttendance: any[] = [],
+  examSchedules: any[] = []
 ): boolean {
   if (!dateStr) return false;
 
-  // 1. Check daily configs
+  // 1. Check scheduled exams
+  if (examSchedules && examSchedules.some((ex: any) => ex.exam_date === dateStr)) {
+    return true;
+  }
+
+  // 2. Check daily configs
   const cfg = dailyConfigs.find((c: any) => c.dateStr === dateStr);
   if (cfg) {
     const dType = (cfg.day_type || "").toLowerCase();
@@ -1148,7 +1170,7 @@ export function isExamDate(
     }
   }
 
-  // 2. Check attendance records for this date
+  // 3. Check attendance records for this date
   const hasExamRecord = (studentAttendance || []).some(
     (a: any) => a.dateStr === dateStr && (
       (a.attendanceTypeSub && a.attendanceTypeSub.toLowerCase().includes("exam")) ||
@@ -1162,8 +1184,25 @@ export function isExamDate(
 export function evaluateDailyStudentAttendance(
   records: Array<{ status: string; [key: string]: any }>,
   stSlotsCount: number = 0,
-  isExamDay: boolean = false
+  isExamDay: boolean = false,
+  isHoliday: boolean = false,
+  holidayRemarks: string = ""
 ): DailyAttendanceEvaluation {
+  if (isHoliday) {
+    return {
+      status: "H",
+      presentDays: 0,
+      absentDays: 0,
+      totalMarked: 0,
+      pCount: 0,
+      aCount: 0,
+      odCount: 0,
+      isExamDay: false,
+      isHoliday: true,
+      tooltipInfo: `Holiday${holidayRemarks ? ` — ${holidayRemarks}` : " (No classes scheduled)"}`
+    };
+  }
+
   if (!records || records.length === 0) {
     return {
       status: "—",
@@ -1174,6 +1213,7 @@ export function evaluateDailyStudentAttendance(
       aCount: 0,
       odCount: 0,
       isExamDay,
+      isHoliday: false,
       tooltipInfo: "No attendance recorded"
     };
   }
@@ -1303,4 +1343,35 @@ export function isSkillSubject(subject: { name?: string; type?: string } | strin
   }
 
   return false;
+}
+
+/**
+ * Calculates the weekOffset integer relative to current week (Monday-based) for a given target YYYY-MM-DD date.
+ * Allows jump-to-week for class schedule notifications.
+ */
+export function calculateWeekOffsetForDate(targetDateStr: string, baseDateStr?: string): number {
+  try {
+    const target = new Date(targetDateStr + "T00:00:00");
+    if (isNaN(target.getTime())) return 0;
+    
+    // Find Monday of target week
+    const targetMon = new Date(target);
+    const tDay = targetMon.getDay();
+    const tDiff = (tDay === 0 ? -6 : 1) - tDay;
+    targetMon.setDate(targetMon.getDate() + tDiff);
+    targetMon.setHours(0, 0, 0, 0);
+
+    // Find Monday of base week
+    const base = baseDateStr ? new Date(baseDateStr + "T00:00:00") : new Date();
+    const baseMon = new Date(base);
+    const bDay = baseMon.getDay();
+    const bDiff = (bDay === 0 ? -6 : 1) - bDay;
+    baseMon.setDate(baseMon.getDate() + bDiff);
+    baseMon.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.round((targetMon.getTime() - baseMon.getTime()) / (1000 * 60 * 60 * 24));
+    return Math.round(diffDays / 7);
+  } catch {
+    return 0;
+  }
 }

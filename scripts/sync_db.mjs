@@ -31,13 +31,8 @@ function loadEnv() {
 
 loadEnv();
 
-const REMOTE_URL = process.env.TURSO_DATABASE_URL;
-const AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
-
-if (!REMOTE_URL || !AUTH_TOKEN) {
-  console.error("❌ Missing TURSO_DATABASE_URL or TURSO_AUTH_TOKEN in .env.local");
-  process.exit(1);
-}
+const REMOTE_URL = "libsql://zentra-thanush-k.aws-ap-south-1.turso.io";
+const AUTH_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODQ1MjE2OTUsImlkIjoiMDE5ZjdkYzctNzIwMS03MDk0LTg0NjMtOTQ1M2FiZmM4MTVhIiwia2lkIjoieDlfZW5Qbmk3TGVoeER0RXpfSmptWjZDejk0Vzg5X1VhYVVya1dJWU5COCIsInJpZCI6IjU5OTZjZWJlLTczNTktNGYzNC05YTJlLTIwNjVmZTI3ZjIyMCJ9.UwFvp-pYDNO2dy9ELwXIZXNebTOZnSkCWFApwKeCJFWG0eZYPL3y1y8DitJkJOcM__fUOOcuU3seWfgbUoluCQ";
 
 const LOCAL_DB_PATH = path.resolve(process.cwd(), "database.sqlite");
 const SQL_DUMP_PATH = path.resolve(process.cwd(), "local_backup.sql");
@@ -173,10 +168,55 @@ async function main() {
   await localClient.execute("PRAGMA foreign_keys = ON;");
 
   console.log("\n========================================================");
-  console.log("🎉 DATABASE SYNC & SQL DUMP COMPLETED SUCCESSFULLY!");
+  console.log("🎉 WHOLE DB DOWNLOADED & BACKED UP SUCCESSFULLY!");
   console.log(`📁 Local SQLite File: ${LOCAL_DB_PATH} (${(fs.statSync(LOCAL_DB_PATH).size / (1024 * 1024)).toFixed(2)} MB)`);
   console.log(`📄 Local SQL Dump:   ${SQL_DUMP_PATH} (${(fs.statSync(SQL_DUMP_PATH).size / (1024 * 1024)).toFixed(2)} MB)`);
   console.log("========================================================");
+
+  // Verification of attendance on the 48 dates alone
+  const DATES = [
+    "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18", "2026-06-19",
+    "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25",
+    "2026-06-29", "2026-06-30",
+    "2026-07-01", "2026-07-02", "2026-07-03",
+    "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10",
+    "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17",
+    "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24",
+    "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31",
+    "2026-08-03", "2026-08-04",
+    "2026-08-06", "2026-08-07",
+    "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14",
+    "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21"
+  ];
+
+  console.log("\n🔍 Checking attendance on Prod on the 48 dates alone for BCA:");
+  const bcaStudents = await localClient.execute(
+    "SELECT id, name FROM students WHERE LOWER(classGroup) LIKE '%bca%' OR LOWER(department) LIKE '%bca%'"
+  );
+  console.log(`   Found ${bcaStudents.rows.length} BCA students.`);
+
+  if (bcaStudents.rows.length > 0) {
+    const studentIds = bcaStudents.rows.map(s => s.id);
+    const placeholders = studentIds.map(() => "?").join(",");
+    const datePlaceholders = DATES.map(() => "?").join(",");
+
+    const matchedAtt = await localClient.execute({
+      sql: `SELECT COUNT(*) as cnt, COUNT(DISTINCT dateStr) as dateCount 
+            FROM student_attendance 
+            WHERE studentId IN (${placeholders}) AND dateStr IN (${datePlaceholders})`,
+      args: [...studentIds, ...DATES]
+    });
+
+    const extraBcaAtt = await localClient.execute({
+      sql: `SELECT COUNT(*) as cnt, COUNT(DISTINCT dateStr) as extraDates 
+            FROM student_attendance 
+            WHERE studentId IN (${placeholders}) AND dateStr NOT IN (${datePlaceholders})`,
+      args: [...studentIds, ...DATES]
+    });
+
+    console.log(`   Attendance rows across approved 48 dates: ${matchedAtt.rows[0].cnt} rows (${matchedAtt.rows[0].dateCount} distinct dates present)`);
+    console.log(`   Attendance rows outside 48 dates for BCA: ${extraBcaAtt.rows[0].cnt} rows (${extraBcaAtt.rows[0].extraDates} dates)`);
+  }
 }
 
 main().catch(err => {

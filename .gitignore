@@ -10,7 +10,7 @@
 *.tsbuildinfo
 next-env.d.ts
 
-# Temporary, Debug & Scratch
+# Temporary, Debug, Scratch & Local Experiments
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -23,15 +23,35 @@ yarn-error.log*
 /scratch/
 scratch/
 scratch*
+scratch_*
+scratch_*.mjs
+scratch_*.js
+scratch_*.ts
 /tmp/
 /temp/
+landmarks.txt
+Code.gs
+data/
+/data/
+Naveen htmls/
+"Naveen htmls"/
+
+# Backups & SQL Dumps
+backups/
+/backups/
+*.sql
+*.sql.bak
+local_backup.sql
 
 # Scripts & Launchers
 *.ps1
 *.bat
 *.cmd
+*.sh
 launch_*
 launch_all_cams.*
+/scripts/
+scripts/
 
 # Python Cache & Environments
 __pycache__/
@@ -63,6 +83,8 @@ ENV/
 *.db-wal
 *.db.bak
 zentra_timetable.db
+zentra.db
+timetable.db
 
 # Large Data & Excel Files
 *.xlsx
@@ -79,11 +101,34 @@ zentra_timetable.db
 *.sw?
 .gemini/
 
-# Vercel
-.vercel
+# Audit, Specification & Analysis Reports
+API_DOCUMENTATION.md
+ATTENDANCE_PERFORMANCE_OPTIMIZATION.md
+AUDIT.md
+DASHBOARD_PERFORMANCE_AUDIT.md
 FEE_DASHBOARD_REDESIGN.md
+INTERVIEW_MODULE_SPECIFICATION.md
+KAM_DASHBOARD_GAPS.md
+KAM_UI_IMPROVEMENTS.md
+PERFORMANCE_AND_LOGOUT_FIXES.md
 PERFORMANCE_AUDIT_REPORT.md
+UI_ISSUES_AUDIT.md
+UI_LOADING_STATES_AUDIT.md
+state_machine_flowchart.md
+flow.md
+*AUDIT*.md
+*GAPS*.md
+*IMPROVEMENTS*.md
+*FIXES*.md
+*REPORT*.md
+*flow*.md
+*OPTIMIZATION*.md
+*SPECIFICATION*.md
+*REDESIGN*.md
+
+# Vercel & Docs Generators
+.vercel
 docs/generate_manuals.js
-.gitignore
 docs/CAM_Dashboard_Module_Guide.md
 docs/Mentor_Dashboard_Module_Guide.md
+local_backup.sql

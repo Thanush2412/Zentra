@@ -31,66 +31,6 @@ export async function GET(request: Request) {
       academicEvents = await db.all("SELECT * FROM academic_events ORDER BY date ASC");
     }
 
-    if (academicEvents.length === 0) {
-      // Auto-seed default events tagged to default college
-      await db.run(
-        `INSERT INTO academic_events (id, name, date, end_date, category, department, audience, status, venue, desc, college_id, coordinator, chief_guest) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          "e1", 
-          "HackSphere 2026 - 24hr Campus Hackathon", 
-          "2026-08-28", 
-          "2026-08-29", 
-          "Coding Fest & Hackathon", 
-          "Computer Science", 
-          "All Campus", 
-          "Upcoming", 
-          "Innovation & AI Labs", 
-          "Flagship 24-hour inter-departmental coding marathon and product building hackathon with mentorship from alumni and tech leaders.",
-          collegeId || "college_1",
-          "Prof. Vignesh (HOD-CSE)",
-          "Sundeep G. (Principal Architect, Tech Corp)"
-        ]
-      );
-      await db.run(
-        `INSERT INTO academic_events (id, name, date, end_date, category, department, audience, status, venue, desc, college_id, coordinator) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          "e2", 
-          "CyberShield & Cloud Security Hands-on BootCamp", 
-          "2026-09-08", 
-          "2026-09-09", 
-          "Workshop & Hands-on BootCamp", 
-          "Information Technology", 
-          "Students Only", 
-          "Upcoming", 
-          "Campus Tech Center", 
-          "Two-day hands-on cybersecurity workshop focusing on network penetration testing, Docker security, and cloud threat mitigation.",
-          collegeId || "college_1",
-          "Dr. Priya M. (IT Dept Coordinator)"
-        ]
-      );
-      await db.run(
-        `INSERT INTO academic_events (id, name, date, end_date, category, department, audience, status, venue, desc, college_id, coordinator) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          "e3", 
-          "InnovateX - Annual Tech Symposium & Project Expo", 
-          "2026-09-22", 
-          "2026-09-23", 
-          "Technical Symposium & Project Expo", 
-          "All Departments", 
-          "All Campus", 
-          "Upcoming", 
-          "Main University Auditorium & Exhibition Hall", 
-          "Annual student tech project demonstration, robotics showcase, circuit debugging challenges, and paper presentation.",
-          collegeId || "college_1",
-          "Prof. Harish K. (Symposium Head)"
-        ]
-      );
-      academicEvents = await db.all("SELECT * FROM academic_events ORDER BY date ASC");
-    }
-
     return NextResponse.json({ success: true, academicYears, academicEvents });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

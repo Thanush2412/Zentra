@@ -8,21 +8,7 @@ import { getDb } from "@/lib/db";
 export async function GET() {
   try {
     const db = await getDb();
-    let tasks = await db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC");
-    
-    if (tasks.length === 0) {
-      // Auto-seed default tasks
-      await db.run(
-        "INSERT INTO kam_tasks (id, title, collegeId, priority, status, dueDate) VALUES (?, ?, ?, ?, ?, ?)",
-        ["1", "Resolve test 2 pending mark entries", "college_1", "high", "pending", "2026-07-05"]
-      );
-      await db.run(
-        "INSERT INTO kam_tasks (id, title, collegeId, priority, status, dueDate) VALUES (?, ?, ?, ?, ?, ?)",
-        ["2", "Verify room 103 discrepancy in Lecture schedule", "college_1", "medium", "pending", "2026-07-10"]
-      );
-      tasks = await db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC");
-    }
-
+    const tasks = await db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC");
     return NextResponse.json({ success: true, tasks });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

@@ -148,10 +148,13 @@ export async function dispatchExternalInterviewNotifications(
     for (const userId of Array.from(notificationUserIds)) {
       const notifId = `notif_ext_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       try {
+        const u = await db.get("SELECT role FROM users WHERE id = ?", userId);
+        const role = u?.role || "cam";
+        const link = role === "student" ? "/student/interviews" : role === "mentor" ? "/mentor/interviews" : role === "kam" ? "/kam/analytics" : "/cam/interviews";
         await db.run(
           `INSERT INTO notifications (id, user_id, title, message, is_read, link, created_at)
            VALUES (?, ?, ?, ?, 0, ?, ?)`,
-          [notifId, userId, notifTitle, notifMsg, "/cam", now]
+          [notifId, userId, notifTitle, notifMsg, link, now]
         );
       } catch (errNotif) {
         console.warn("Error inserting in-app notification:", errNotif);

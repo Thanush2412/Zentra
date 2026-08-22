@@ -51,13 +51,13 @@ export async function GET(request: Request) {
       let attSql: string;
       let attParams: any[];
       if (role === "student" && userId) {
-        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 1000";
+        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId = ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr DESC LIMIT 1000";
         attParams = [userId];
       } else if (collegeId) {
-        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) AND dateStr >= ? ORDER BY dateStr ASC";
+        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) AND dateStr >= ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr ASC";
         attParams = [collegeId, thresh];
       } else {
-        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? ORDER BY dateStr ASC LIMIT 20000";
+        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr ASC LIMIT 20000";
         attParams = [thresh];
       }
       const att = await db.all(attSql, ...attParams);
@@ -101,10 +101,10 @@ export async function GET(request: Request) {
     const dateThreshold = sixMonthsAgo.toISOString().slice(0, 10);
 
     const attendanceSql = (role === "student" && userId)
-      ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId = ? ORDER BY dateStr DESC LIMIT 1000"
+      ? "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId = ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr DESC LIMIT 1000"
       : collegeId
-        ? "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? ORDER BY sa.dateStr ASC"
-        : "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? ORDER BY dateStr ASC LIMIT 20000";
+        ? "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0' ORDER BY sa.dateStr ASC"
+        : "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr ASC LIMIT 20000";
     const attendanceParams = (role === "student" && userId) 
       ? [userId] 
       : collegeId && (role === "cam")

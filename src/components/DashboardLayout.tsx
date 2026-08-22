@@ -31,7 +31,8 @@ import {
   Bell,
   ExternalLink,
   Inbox,
-  MessageSquare
+  MessageSquare,
+  ArrowUpRight
 } from "lucide-react";
 
 interface DashboardLayoutProps {
@@ -145,6 +146,142 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       })
       .catch(() => setNotifications([]))
       .finally(() => setNotificationsLoading(false));
+  };
+
+  const resolveNotificationTarget = (n: any) => {
+    if (!n) return null;
+    const rawLink = n.link?.trim();
+    if (rawLink && (rawLink.startsWith("http://") || rawLink.startsWith("https://"))) {
+      return { url: rawLink, isExternal: true, actionLabel: "Open Link" };
+    }
+
+    const title = (n.title || "").toLowerCase();
+    const message = (n.message || "").toLowerCase();
+    const fullText = `${title} ${message}`;
+
+    // Extract any YYYY-MM-DD date mentioned
+    const dateMatch = `${n.title || ""} ${n.message || ""}`.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+    const targetDate = dateMatch ? dateMatch[1] : null;
+
+    // Resolve base prefix for current role
+    const role = currentRole || "student";
+    const roleBase = `/${role === "fee_manager" ? "fee-manager" : role}`;
+
+    // If explicit relative link exists
+    if (rawLink) {
+      let cleanLink = rawLink.startsWith("/") ? rawLink : `${roleBase}/${rawLink}`;
+      // Adapt cross-role links if needed
+      if (cleanLink.startsWith("/cam") && role === "student") {
+        cleanLink = cleanLink.replace(/^\/cam/, "/student");
+      } else if (cleanLink.startsWith("/cam") && role === "mentor") {
+        cleanLink = cleanLink.replace(/^\/cam/, "/mentor");
+      }
+      return { url: cleanLink, isExternal: false, targetDate, actionLabel: "View Details" };
+    }
+
+    // Smart semantic categorization based on text
+    if (fullText.includes("schedule") || fullText.includes("calendar") || fullText.includes("timetable") || fullText.includes("day order") || fullText.includes("holiday") || fullText.includes("class session") || fullText.includes("campus schedule")) {
+      if (role === "student") return { url: `/student/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Class Schedule" };
+      if (role === "mentor") return { url: `/mentor/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Timetable" };
+      if (role === "cam") return { url: `/cam/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule" };
+      if (role === "kam") return { url: `/kam/attendance${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Attendance" };
+      if (role === "admin") return { url: `/admin/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule" };
+    }
+
+    if (fullText.includes("interview") || fullText.includes("mock") || fullText.includes("gmeet") || fullText.includes("evaluat") || fullText.includes("split")) {
+      if (role === "student") return { url: `/student/interviews`, isExternal: false, targetDate, actionLabel: "View Interview" };
+      if (role === "mentor") return { url: `/mentor/interviews`, isExternal: false, targetDate, actionLabel: "View Interviews" };
+      if (role === "cam") return { url: `/cam/interviews`, isExternal: false, targetDate, actionLabel: "Open Interviews" };
+      if (role === "kam") return { url: `/kam/analytics`, isExternal: false, targetDate, actionLabel: "View Analytics" };
+      if (role === "admin") return { url: `/admin/interviews`, isExternal: false, targetDate, actionLabel: "View Interviews" };
+    }
+
+    if (fullText.includes("leave") || fullText.includes("on-duty") || fullText.includes("on duty") || fullText.includes(" od ") || fullText.includes("handover") || fullText.includes("permission") || fullText.includes("approval")) {
+      if (role === "student") return { url: `/student/leave`, isExternal: false, targetDate, actionLabel: "View Leave & OD" };
+      if (role === "mentor") return { url: `/mentor/leaves`, isExternal: false, targetDate, actionLabel: "View Leaves" };
+      if (role === "cam") return { url: `/cam/leave-approvals`, isExternal: false, targetDate, actionLabel: "Review Approvals" };
+      if (role === "admin") return { url: `/admin/approvals`, isExternal: false, targetDate, actionLabel: "View Approvals" };
+      if (role === "hr") return { url: `/hr`, isExternal: false, targetDate, actionLabel: "View HR Portal" };
+    }
+
+    if (fullText.includes("exam") || fullText.includes("hall ticket") || fullText.includes("seating")) {
+      if (role === "student") return { url: `/student/exams`, isExternal: false, targetDate, actionLabel: "View Exam Schedule" };
+      if (role === "mentor") return { url: `/mentor/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
+      if (role === "cam") return { url: `/cam/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
+      if (role === "admin") return { url: `/admin/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
+    }
+
+    if (fullText.includes("mark") || fullText.includes("cia") || fullText.includes("grade") || fullText.includes("score")) {
+      if (role === "student") return { url: `/student/marks`, isExternal: false, targetDate, actionLabel: "View Marks" };
+      if (role === "mentor") return { url: `/mentor/marks`, isExternal: false, targetDate, actionLabel: "View Marks" };
+    }
+
+    if (fullText.includes("task") || fullText.includes("tracker") || fullText.includes("practical") || fullText.includes("submission") || fullText.includes("assignment")) {
+      if (role === "student") return { url: `/student/tracker`, isExternal: false, targetDate, actionLabel: "Open Tracker" };
+      if (role === "mentor") return { url: `/mentor/submissions`, isExternal: false, targetDate, actionLabel: "View Submissions" };
+    }
+
+    if (fullText.includes("fee") || fullText.includes("due") || fullText.includes("payment") || fullText.includes("tuition") || fullText.includes("invoice")) {
+      if (role === "student") return { url: `/student/fees`, isExternal: false, targetDate, actionLabel: "View Fees" };
+      if (role === "fee_manager" || role === "admin") return { url: `/fee-manager`, isExternal: false, targetDate, actionLabel: "View Fee Manager" };
+    }
+
+    if (fullText.includes("library") || fullText.includes("book") || fullText.includes("opac")) {
+      if (role === "student") return { url: `/student/library`, isExternal: false, targetDate, actionLabel: "Open Library" };
+    }
+
+    if (fullText.includes("profile") || fullText.includes("password") || fullText.includes("account")) {
+      if (role === "student") return { url: `/student/profile`, isExternal: false, targetDate, actionLabel: "View Profile" };
+      if (role === "mentor") return { url: `/mentor/profile`, isExternal: false, targetDate, actionLabel: "View Profile" };
+    }
+
+    // Default fallback to role dashboard
+    return { url: `${roleBase}/dashboard`, isExternal: false, targetDate, actionLabel: "View Details" };
+  };
+
+  const handleNotificationClick = (n: any) => {
+    if (!n) return;
+    const target = resolveNotificationTarget(n);
+
+    // Mark as read immediately
+    if (!n.is_read) {
+      markNotifRead(n.id);
+    }
+    setShowNotifications(false);
+
+    if (!target) return;
+
+    if (target.isExternal) {
+      if (typeof window !== "undefined") {
+        window.open(target.url, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      // Store intent so client tabbed components can immediately consume on navigation
+      try {
+        sessionStorage.setItem("fp_notif_target", JSON.stringify({
+          url: target.url,
+          date: target.targetDate,
+          title: n.title,
+          message: n.message,
+          timestamp: Date.now()
+        }));
+      } catch (_) {}
+
+      // Dispatch global window event for instant responsive tab changes
+      window.dispatchEvent(new CustomEvent("fp_navigate_target", {
+        detail: {
+          url: target.url,
+          date: target.targetDate,
+          title: n.title,
+          message: n.message
+        }
+      }));
+
+      router.push(target.url);
+    }
   };
 
   const markNotifRead = async (id: string, navigateTo?: string | null) => {
@@ -712,12 +849,15 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                             : t === "warning" || t === "alert"
                             ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/60"
                             : "bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/60";
+                        const target = resolveNotificationTarget(n);
                         const Icon =
                           t === "reminder" ? Bell : t === "success" ? CheckCircle2 : t === "warning" ? AlertCircle : MessageSquare;
+
                         return (
                           <div
                             key={n.id}
-                            className={`group relative px-3.5 py-3 transition-all ${
+                            onClick={() => handleNotificationClick(n)}
+                            className={`group relative px-3.5 py-3 transition-all cursor-pointer ${
                               isRead
                                 ? "bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                                 : "bg-indigo-50/40 dark:bg-indigo-950/10 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/20"
@@ -732,7 +872,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-start justify-between gap-2">
-                                  <p className={`text-[11px] font-black text-slate-800 dark:text-slate-100 leading-snug ${!isRead ? "text-slate-900 dark:text-white" : ""}`}>
+                                  <p className={`text-[11px] font-black text-slate-800 dark:text-slate-100 leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors ${!isRead ? "text-slate-900 dark:text-white" : ""}`}>
                                     {n.title || "Notification"}
                                   </p>
                                   <span className="shrink-0 text-[9px] font-mono font-semibold text-slate-400">
@@ -758,28 +898,25 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                                 <p className="mt-0.5 text-[10.5px] leading-snug text-slate-600 dark:text-slate-400 font-medium line-clamp-3">
                                   {n.message}
                                 </p>
-                                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                                  {n.link && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        markNotifRead(n.id, n.link);
-                                        setShowNotifications(false);
-                                      }}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-[9.5px] font-bold shadow-xs transition-all"
-                                    >
-                                      <ExternalLink className="h-3 w-3" />
-                                      Open
-                                    </button>
+                                <div className="mt-2.5 flex items-center justify-between gap-2 flex-wrap">
+                                  {target && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 group-hover:bg-indigo-700 active:bg-indigo-800 text-white text-[9.5px] font-bold shadow-xs transition-all">
+                                      {target.isExternal ? <ExternalLink className="h-3 w-3" /> : <ArrowUpRight className="h-3 w-3" />}
+                                      <span>{target.actionLabel}</span>
+                                    </span>
                                   )}
                                   {!isRead && (
                                     <button
                                       type="button"
-                                      onClick={() => markNotifRead(n.id)}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9.5px] font-bold transition-colors"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        markNotifRead(n.id);
+                                      }}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] font-bold transition-colors ml-auto"
+                                      title="Mark as read without opening"
                                     >
-                                      <Check className="h-3 w-3" />
-                                      Mark read
+                                      <Check className="h-3 w-3 text-emerald-600" />
+                                      <span>Mark read</span>
                                     </button>
                                   )}
                                 </div>
