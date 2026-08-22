@@ -94,10 +94,10 @@ export async function GET(request: Request) {
     const slotParams = collegeId ? [collegeId] : [];
 
     const studentSql = isStudent && userId
-      ? "SELECT id, name, email, role, classGroup, department, college_id, roll_number, register_number, hire_score, efset_score FROM students WHERE id = ?"
+      ? "SELECT * FROM students WHERE id = ?"
       : collegeId
-        ? "SELECT id, name, email, role, classGroup, department, college_id, roll_number, register_number, hire_score, efset_score, phone, parent_phone, dob, gender FROM students WHERE college_id = ?"
-        : "SELECT id, name, email, role, classGroup, department, college_id, roll_number, register_number, hire_score, efset_score, phone, parent_phone, dob, gender FROM students LIMIT 5000";
+        ? "SELECT * FROM students WHERE college_id = ?"
+        : "SELECT * FROM students LIMIT 5000";
     const studentParams = (isStudent && userId) ? [userId] : collegeId ? [collegeId] : [];
 
     const subjectSql = collegeId ? "SELECT * FROM subjects WHERE college_id = ? OR college_id IS NULL" : "SELECT * FROM subjects";
