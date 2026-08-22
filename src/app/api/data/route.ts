@@ -31,13 +31,13 @@ export async function GET(request: Request) {
     let collegeId: string | null = null;
     if (role && userId && role !== "admin" && role !== "kam") {
       if (role === "cam") {
-        const cam = await db.get("SELECT college_id FROM campus_managers WHERE id = ?", userId);
+        const cam = await db.get("SELECT college_id FROM campus_managers WHERE id = ? OR email = ?", userId, userId);
         collegeId = cam ? cam.college_id : null;
       } else if (role === "mentor") {
-        const mentor = await db.get("SELECT college_id FROM mentors WHERE id = ?", userId);
+        const mentor = await db.get("SELECT college_id FROM mentors WHERE id = ? OR email = ?", userId, userId);
         collegeId = mentor ? mentor.college_id : null;
       } else if (role === "student") {
-        const student = await db.get("SELECT college_id FROM students WHERE id = ?", userId);
+        const student = await db.get("SELECT college_id FROM students WHERE id = ? OR email = ?", userId, userId);
         collegeId = student ? student.college_id : null;
       }
     }
@@ -254,7 +254,7 @@ export async function GET(request: Request) {
       approvedHandovers: filteredApprovedHandovers,
       auditLogs,
       subjects: filteredSubjects,
-      departments: filteredCourses,
+      departments: (departmentsData && departmentsData.length > 0) ? departmentsData : filteredCourses,
       courses: filteredCourses,
       students: filteredStudents,
       studentAttendance: filteredStudentAttendance,

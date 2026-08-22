@@ -53,14 +53,36 @@ export async function POST(request: Request) {
     }
 
     if (existing) {
-      // Gracefully ensure it is assigned to this college and active
+      // Gracefully ensure it is assigned to this college and update all batch configurations
       await db.run(
-        "UPDATE courses SET college_id = ?, code = COALESCE(NULLIF(?, ''), code), description = COALESCE(NULLIF(?, ''), description), default_shift = COALESCE(NULLIF(?, ''), default_shift), shift_based = ? WHERE id = ?",
+        `UPDATE courses SET 
+          college_id = ?, 
+          code = COALESCE(NULLIF(?, ''), code), 
+          description = COALESCE(NULLIF(?, ''), description), 
+          status = COALESCE(NULLIF(?, ''), status, 'Active'),
+          years = COALESCE(?, years, 4),
+          start_date = COALESCE(NULLIF(?, ''), start_date, ''),
+          end_date = COALESCE(NULLIF(?, ''), end_date, ''),
+          start_year = COALESCE(NULLIF(?, ''), start_year, ''),
+          end_year = COALESCE(NULLIF(?, ''), end_year, ''),
+          default_room = COALESCE(NULLIF(?, ''), default_room),
+          default_shift = COALESCE(NULLIF(?, ''), default_shift), 
+          shift_based = ?,
+          sections = COALESCE(NULLIF(?, ''), sections)
+        WHERE id = ?`,
         targetCollegeId || existing.college_id || "college_1",
         code || "",
         description || "",
-        default_shift || null,
+        status || existing.status || "Active",
+        years !== undefined ? Number(years) : (existing.years || 4),
+        start_date || existing.start_date || "",
+        end_date || existing.end_date || "",
+        start_year || existing.start_year || "",
+        end_year || existing.end_year || "",
+        default_room || existing.default_room || null,
+        default_shift || existing.default_shift || null,
         shift_based === undefined ? (existing.shift_based || 0) : Number(shift_based),
+        sections || existing.sections || null,
         existing.id
       );
 
@@ -73,15 +95,23 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
-        message: "Department registered successfully.",
+        message: "Department registered and batch configuration updated successfully.",
         course: {
           ...existing,
           name: cleanName,
           college_id: targetCollegeId || existing.college_id || "college_1",
           code: code || existing.code || "",
           description: description || existing.description || "",
+          status: status || existing.status || "Active",
+          years: years !== undefined ? Number(years) : (existing.years || 4),
+          start_date: start_date || existing.start_date || "",
+          end_date: end_date || existing.end_date || "",
+          start_year: start_year || existing.start_year || "",
+          end_year: end_year || existing.end_year || "",
+          default_room: default_room || existing.default_room || null,
           default_shift: default_shift || existing.default_shift || null,
-          shift_based: shift_based === undefined ? (existing.shift_based || 0) : Number(shift_based)
+          shift_based: shift_based === undefined ? (existing.shift_based || 0) : Number(shift_based),
+          sections: sections || existing.sections || null
         }
       });
     }

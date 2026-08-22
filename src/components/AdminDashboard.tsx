@@ -2277,11 +2277,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsDeptSubmitting(true);
     try {
       let res;
+      const isShiftSplit = deptForm.default_shift === "both" || deptForm.default_shift === "all";
       const autoCode = generateCodeFromName(deptForm.name.trim());
       if (editingDept) {
         res = await updateCourse({
           ...deptForm,
-          code: autoCode
+          code: autoCode,
+          shift_based: isShiftSplit ? 1 : 0
         } as Department);
       } else {
         res = await createCourse({
@@ -2296,7 +2298,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           start_year: deptForm.start_year,
           end_year: deptForm.end_year,
           default_room: deptForm.default_room,
-          default_shift: deptForm.default_shift
+          default_shift: deptForm.default_shift,
+          shift_based: isShiftSplit ? 1 : 0
         } as Omit<Department, "id">);
       }
       if (res.success) {
