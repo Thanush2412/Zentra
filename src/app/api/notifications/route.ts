@@ -139,15 +139,16 @@ export async function GET(request: Request) {
   try {
     const db = await getDb();
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
+    const userId = searchParams.get("userId") || searchParams.get("user_id");
 
     if (!userId) {
-      return NextResponse.json({ success: false, message: "userId is required" }, { status: 400 });
+      return NextResponse.json({ success: false, message: "userId or user_id is required" }, { status: 400 });
     }
 
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
     const notifications = await db.all(
-      "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
-      [userId]
+      "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+      [userId, limit]
     );
 
     const unreadCount = notifications.filter((n: any) => n.is_read === 0).length;
