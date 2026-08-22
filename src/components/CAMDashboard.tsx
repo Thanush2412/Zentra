@@ -25,7 +25,7 @@ import {
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,
   PlusCircle, Check, ArrowRight, Settings, MessageSquare, ShieldAlert,
   Award, TrendingUp, FileText, FileSpreadsheet, RefreshCw, Plus, Trash2, Edit2, Download, Upload, ChevronDown, Loader2, Save,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle, User, SlidersHorizontal, CalendarCheck2, IndianRupee, BadgePercent, X, Mail, Lock, Menu, Briefcase, Layers
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle, User, SlidersHorizontal, CalendarCheck2, IndianRupee, BadgePercent, X, Mail, Lock, Menu, Briefcase, Layers, Info
 } from "lucide-react";
 
 
@@ -212,7 +212,7 @@ const fmt = (n: number) => "₹" + n.toLocaleString("en-IN", { maximumFractionDi
 
 const FeeBadge = ({ status }: { status: string }) => {
   if (status === "paid") return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#D528A2]/10 text-[#D528A2] text-[10px] font-bold">Paid</span>;
-  if (status === "partial") return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#F4A863]/10 text-[#F4A863] text-[10px] font-bold">⏳ Partial</span>;
+  if (status === "partial") return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#F4A863]/10 text-[#F4A863] text-[10px] font-bold">Partial</span>;
   return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold">Unpaid</span>;
 };
 
@@ -4470,6 +4470,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [studentAttendanceFilter, setStudentAttendanceFilter] = useState("all");
   const [attendancePage, setAttendancePage] = useState(1);
   const [attendancePageSize, setAttendancePageSize] = useState(50);
+  const [selectedHeaderDateModal, setSelectedHeaderDateModal] = useState<string | null>(null);
+  const [dateModalSearch, setDateModalSearch] = useState("");
+  const [dateModalStatusFilter, setDateModalStatusFilter] = useState<"all" | "present" | "absent" | "od" | "unmarked">("all");
+  const [dateModalDeptFilter, setDateModalDeptFilter] = useState("all");
+  const [dateModalCohortFilter, setDateModalCohortFilter] = useState("all");
 
   // 6. Tasks & Issues states
   const localTasks = localTasksFromDB;
@@ -10317,12 +10322,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                                      return (
                                        <th
-                                         key={dStr}
-                                         className={`p-2 border-r border-slate-200 text-center min-w-[85px] transition-colors ${
-                                           isToday ? "bg-indigo-50/80 border-b-2 border-b-indigo-600" : isHoliday ? "bg-rose-50/40" : isExam ? "bg-purple-50/60" : isEvent ? "bg-amber-50/40" : ""
-                                         }`}
-                                         title={tooltipText}
-                                       >
+                                          key={dStr}
+                                          onClick={() => setSelectedHeaderDateModal(dStr)}
+                                          className={`p-2 border-r border-slate-200 text-center min-w-[88px] transition-all cursor-pointer select-none group hover:bg-indigo-100/80 hover:shadow-xs active:scale-[0.98] ${
+                                            isToday ? "bg-indigo-50/90 border-b-2 border-b-indigo-600 ring-1 ring-inset ring-indigo-200" : isHoliday ? "bg-rose-50/50" : isExam ? "bg-purple-50/70" : isEvent ? "bg-amber-50/50" : "hover:bg-slate-100"
+                                          }`}
+                                          title={`${tooltipText}\nClick to view full day attendance summary & student list`}
+                                        >
                                          {isToday && (
                                            <span className="inline-block px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[7.5px] font-black uppercase tracking-wider mb-0.5 shadow-2xs">
                                              TODAY
@@ -10526,6 +10532,391 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             )}
                           </div>
                         </div>
+
+                      {/* ─── DATE HEADER DETAILS & ATTENDANCE SUMMARY MODAL WITH FULL STUDENT ROSTER ─── */}
+                      {selectedHeaderDateModal && (() => {
+                        const modalDateStr = selectedHeaderDateModal;
+                        const cfg = attMonitoringDailyConfigMap.get(modalDateStr);
+                        const holidayObj = attMonitoringHolidayMap.get(modalDateStr);
+                        const isHoliday = !!holidayObj || cfg?.day_type === "holiday";
+                        const isEvent = !isHoliday && (cfg?.day_type === "event");
+                        const isExam = !isHoliday && !isEvent && (examDateSet.has(modalDateStr) || cfg?.day_type === "exam_day" || cfg?.day_type === "exam");
+                        const dayOrder = (cfg?.day_order && cfg.day_order !== "None" && !isHoliday) ? cfg.day_order : null;
+                        const notes = cfg?.notes || holidayObj?.notes || holidayObj?.name || "";
+                        const sessionMode = cfg?.session_mode || "Full Day (Offline)";
+                        const fullCalendarDay = new Date(modalDateStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+                        const isToday = modalDateStr === todayStr;
+
+                        // Helper to standardize student evaluated category
+                        const getStudentDayCategory = (statusStr: string): "present" | "absent" | "od" | "unmarked" => {
+                          const s = (statusStr || "").trim().toUpperCase();
+                          if (s === "P" || s === "PRESENT") return "present";
+                          if (s === "A" || s === "AB" || s === "ABSENT") return "absent";
+                          if (s === "OD") return "od";
+                          return "unmarked";
+                        };
+
+                        // Build detailed student roster for this single date
+                        const allModalStudentRows = filtered.map((st) => {
+                          const defaultDay = new Date(modalDateStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+                          const effectiveDay = mapDayOrderToDayName(cfg?.day_order, defaultDay);
+                          const stSlots = collegeSlots.filter(s => s.day === effectiveDay && (!s.classGroup || isCohortMatch(s.classGroup, st.classGroup)));
+                          const stDayAtt = (studentAttendance || []).filter(a => a.studentId === st.id && a.dateStr === modalDateStr);
+
+                          if (isHoliday) {
+                            return {
+                              student: st,
+                              status: "H",
+                              category: "unmarked" as const,
+                              pCount: 0,
+                              aCount: 0,
+                              odCount: 0,
+                              totalSlots: stSlots.length,
+                              tooltipInfo: "College Holiday",
+                              records: stDayAtt
+                            };
+                          }
+
+                          if (stSlots.length === 0 && stDayAtt.length === 0) {
+                            return {
+                              student: st,
+                              status: "—",
+                              category: "unmarked" as const,
+                              pCount: 0,
+                              aCount: 0,
+                              odCount: 0,
+                              totalSlots: 0,
+                              tooltipInfo: "No slots scheduled",
+                              records: []
+                            };
+                          }
+
+                          const evalRes = evaluateDailyStudentAttendance(stDayAtt, stSlots.length, isExam, false, notes);
+                          const cat = getStudentDayCategory(evalRes.status);
+
+                          return {
+                            student: st,
+                            status: evalRes.status,
+                            category: cat,
+                            pCount: evalRes.pCount,
+                            aCount: evalRes.aCount,
+                            odCount: evalRes.odCount,
+                            totalSlots: stSlots.length,
+                            tooltipInfo: evalRes.tooltipInfo,
+                            records: stDayAtt
+                          };
+                        });
+
+                        // Extract available departments & cohorts in this date's student rows
+                        const modalAvailableDepts = Array.from(
+                          new Set(
+                            allModalStudentRows
+                              .map(r => r.student.department)
+                              .filter((d): d is string => Boolean(d))
+                          )
+                        ).sort();
+
+                        const modalAvailableCohorts = Array.from(
+                          new Set(
+                            allModalStudentRows
+                              .filter(r => dateModalDeptFilter === "all" || r.student.department === dateModalDeptFilter)
+                              .map(r => r.student.classGroup)
+                              .filter((cg): cg is string => Boolean(cg))
+                          )
+                        ).sort();
+
+                        // 1. Scope students by selected Department & Cohort filters first
+                        const deptCohortScopedRows = allModalStudentRows.filter((r) => {
+                          const matchesDept = dateModalDeptFilter === "all" || r.student.department === dateModalDeptFilter;
+                          const matchesCohort = dateModalCohortFilter === "all" || r.student.classGroup === dateModalCohortFilter;
+                          return matchesDept && matchesCohort;
+                        });
+
+                        // 2. Calculate summary counts & percentages dynamically for the scoped cohort/department
+                        const presentCount = deptCohortScopedRows.filter(r => r.category === "present").length;
+                        const absentCount = deptCohortScopedRows.filter(r => r.category === "absent").length;
+                        const odCount = deptCohortScopedRows.filter(r => r.category === "od").length;
+                        const unmarkedCount = deptCohortScopedRows.filter(r => r.category === "unmarked").length;
+
+                        const totalEvaluated = presentCount + absentCount + odCount;
+                        const presentPct = totalEvaluated > 0 ? Math.round(((presentCount + odCount) / totalEvaluated) * 100) : 0;
+                        const absentPct = totalEvaluated > 0 ? Math.round((absentCount / totalEvaluated) * 100) : 0;
+
+                        // 3. Filter student rows further by search query and active status filter tab
+                        const filteredRoster = deptCohortScopedRows.filter((r) => {
+                          const q = dateModalSearch.toLowerCase().trim();
+                          const matchesSearch = !q ||
+                            (r.student.name || "").toLowerCase().includes(q) ||
+                            (r.student.roll_number || "").toLowerCase().includes(q) ||
+                            (r.student.department || "").toLowerCase().includes(q) ||
+                            (r.student.classGroup || "").toLowerCase().includes(q);
+
+                          const matchesStatus = dateModalStatusFilter === "all" || r.category === dateModalStatusFilter;
+                          return matchesSearch && matchesStatus;
+                        });
+
+                        const filterTabsList: Array<{ key: "all" | "present" | "absent" | "od" | "unmarked"; label: string; count: number }> = [
+                          { key: "all", label: "All", count: deptCohortScopedRows.length },
+                          { key: "present", label: "Present", count: presentCount },
+                          { key: "absent", label: "Absent", count: absentCount },
+                          { key: "od", label: "OD", count: odCount },
+                          { key: "unmarked", label: "Unmarked", count: unmarkedCount },
+                        ];
+
+                        return (
+                          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                            <div className="bg-white rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] shadow-2xl flex flex-col space-y-4 border border-slate-200 animate-scaleUp font-sans">
+                              {/* Modal Header */}
+                              <div className="flex items-start justify-between border-b border-slate-150 pb-3">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className="text-lg font-black text-slate-900">
+                                      Attendance Details: {formatDateToDMY(modalDateStr)}
+                                    </h3>
+                                    <span className="text-xs font-bold text-slate-500">
+                                      ({fullCalendarDay})
+                                    </span>
+                                    {isToday && (
+                                      <span className="px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[8px] font-black uppercase tracking-wider shadow-2xs">
+                                        Today
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                    {dayOrder && (
+                                      <span className="px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-black uppercase">
+                                        {dayOrder}
+                                      </span>
+                                    )}
+                                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase ${
+                                      isHoliday ? "bg-rose-50 text-rose-700 border border-rose-200" :
+                                      isEvent ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                                      isExam ? "bg-purple-50 text-purple-700 border border-purple-200" :
+                                      "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    }`}>
+                                      {isHoliday ? "College Holiday" : isEvent ? "Campus Event" : isExam ? "Examination Day" : "Regular Working Day"}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-400">
+                                      Mode: <strong className="text-slate-600">{sessionMode}</strong>
+                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-400">
+                                      Enrolled: <strong className="text-slate-600">{deptCohortScopedRows.length}</strong>
+                                      {deptCohortScopedRows.length !== allModalStudentRows.length && (
+                                        <span className="text-slate-400 font-medium"> (of {allModalStudentRows.length})</span>
+                                      )}
+                                    </span>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedHeaderDateModal(null);
+                                    setDateModalSearch("");
+                                    setDateModalStatusFilter("all");
+                                    setDateModalDeptFilter("all");
+                                    setDateModalCohortFilter("all");
+                                  }}
+                                  className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors"
+                                >
+                                  <X className="h-5 w-5" />
+                                </button>
+                              </div>
+
+                              {/* Remarks / Event description if present */}
+                              {notes && (
+                                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs flex items-center gap-2">
+                                  <Info className="h-4 w-4 text-indigo-500 shrink-0" />
+                                  <p className="text-slate-700 font-semibold leading-tight">
+                                    <span className="text-[10px] font-black uppercase text-slate-400 mr-1.5">Remarks:</span>
+                                    {notes}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Summary Stats Cards */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-center">
+                                  <span className="text-[9px] font-extrabold uppercase text-emerald-700 block">Present</span>
+                                  <span className="text-lg font-black text-emerald-800">{presentCount}</span>
+                                  <span className="text-[9px] text-emerald-600 font-bold block">{presentPct}%</span>
+                                </div>
+                                <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl text-center">
+                                  <span className="text-[9px] font-extrabold uppercase text-rose-700 block">Absent</span>
+                                  <span className="text-lg font-black text-rose-800">{absentCount}</span>
+                                  <span className="text-[9px] text-rose-600 font-bold block">{absentPct}%</span>
+                                </div>
+                                <div className="p-3 bg-sky-50/70 border border-sky-200 rounded-xl text-center">
+                                  <span className="text-[9px] font-extrabold uppercase text-sky-700 block">On-Duty</span>
+                                  <span className="text-lg font-black text-sky-800">{odCount}</span>
+                                </div>
+                                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                                  <span className="text-[9px] font-extrabold uppercase text-slate-500 block">Unmarked</span>
+                                  <span className="text-lg font-black text-slate-700">{unmarkedCount}</span>
+                                </div>
+                              </div>
+
+                              {/* Roster Controls: Search, Department & Cohort Filters + Status Filters */}
+                              <div className="flex flex-col gap-2 pt-1">
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+                                    <div className="relative w-full sm:w-56">
+                                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                                      <input
+                                        type="text"
+                                        placeholder="Search student or roll no..."
+                                        value={dateModalSearch}
+                                        onChange={(e) => setDateModalSearch(e.target.value)}
+                                        className="w-full pl-8 pr-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-indigo-500"
+                                      />
+                                    </div>
+
+                                    {modalAvailableDepts.length > 1 && (
+                                      <select
+                                        value={dateModalDeptFilter}
+                                        onChange={(e) => {
+                                          setDateModalDeptFilter(e.target.value);
+                                          setDateModalCohortFilter("all");
+                                        }}
+                                        className="py-1.5 px-3 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-indigo-500"
+                                      >
+                                        <option value="all">All Departments ({modalAvailableDepts.length})</option>
+                                        {modalAvailableDepts.map(d => (
+                                          <option key={d} value={d}>{d}</option>
+                                        ))}
+                                      </select>
+                                    )}
+
+                                    {modalAvailableCohorts.length > 1 && (
+                                      <select
+                                        value={dateModalCohortFilter}
+                                        onChange={(e) => setDateModalCohortFilter(e.target.value)}
+                                        className="py-1.5 px-3 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-indigo-500 max-w-[200px] truncate"
+                                      >
+                                        <option value="all">All Cohorts ({modalAvailableCohorts.length})</option>
+                                        {modalAvailableCohorts.map(c => (
+                                          <option key={c} value={c}>{c}</option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto">
+                                    {filterTabsList.map((tab) => {
+                                      const isSelected = dateModalStatusFilter === tab.key;
+
+                                      return (
+                                        <button
+                                          key={tab.key}
+                                          type="button"
+                                          onClick={() => setDateModalStatusFilter(tab.key)}
+                                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                            isSelected
+                                              ? "bg-slate-900 text-white shadow-2xs"
+                                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                          }`}
+                                        >
+                                          {tab.label} ({tab.count})
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Student Roster Table */}
+                              <div className="overflow-y-auto max-h-[360px] border border-slate-200 rounded-xl">
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
+                                    <tr>
+                                      <th className="p-2.5 text-center w-12">#</th>
+                                      <th className="p-2.5">Student Details</th>
+                                      <th className="p-2.5">Department / Cohort</th>
+                                      <th className="p-2.5 text-center">Periods Detail</th>
+                                      <th className="p-2.5 text-center">Day Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 bg-white">
+                                    {filteredRoster.length === 0 ? (
+                                      <tr>
+                                        <td colSpan={5} className="p-8 text-center text-slate-400 font-medium italic">
+                                          No students matching the selected filter.
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      filteredRoster.map((r, idx) => {
+                                        const st = r.student;
+                                        return (
+                                          <tr key={st.id} className="hover:bg-slate-50/80 transition-colors">
+                                            <td className="p-2.5 text-center text-slate-400 font-mono text-[11px]">
+                                              {idx + 1}
+                                            </td>
+                                            <td className="p-2.5">
+                                              <div className="font-extrabold text-slate-900">{st.name}</div>
+                                              <div className="font-mono text-[10px] text-slate-400">{st.roll_number || st.id}</div>
+                                            </td>
+                                            <td className="p-2.5">
+                                              <span className="font-semibold text-slate-700">{st.department || "General"}</span>
+                                              {st.classGroup && (
+                                                <span className="block text-[10px] text-slate-400 font-medium truncate max-w-[200px]">
+                                                  {st.classGroup}
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="p-2.5 text-center font-mono text-[11px] text-slate-600">
+                                              {r.totalSlots > 0 ? (
+                                                <span>P: {r.pCount} | AB: {r.aCount} | OD: {r.odCount}</span>
+                                              ) : (
+                                                <span className="text-slate-300">—</span>
+                                              )}
+                                            </td>
+                                            <td className="p-2.5 text-center">
+                                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                                r.category === "present" ? "bg-emerald-100 text-emerald-800" :
+                                                r.category === "absent" ? "bg-rose-100 text-rose-800" :
+                                                r.category === "od" ? "bg-sky-100 text-sky-800" :
+                                                r.status === "H" ? "bg-rose-50 text-rose-600 border border-rose-200" :
+                                                "bg-slate-100 text-slate-500"
+                                              }`}>
+                                                {r.category === "present" ? "Present" :
+                                                 r.category === "absent" ? "Absent" :
+                                                 r.category === "od" ? "OD" :
+                                                 r.status === "H" ? "Holiday" : "Unmarked"}
+                                              </span>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {/* Footer */}
+                              <div className="border-t border-slate-150 pt-3 flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-bold text-slate-400">
+                                  Showing {filteredRoster.length} of {deptCohortScopedRows.length} students
+                                  {deptCohortScopedRows.length !== allModalStudentRows.length && (
+                                    <span className="text-slate-400"> (of {allModalStudentRows.length} total)</span>
+                                  )}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedHeaderDateModal(null);
+                                    setDateModalSearch("");
+                                    setDateModalStatusFilter("all");
+                                    setDateModalDeptFilter("all");
+                                    setDateModalCohortFilter("all");
+                                  }}
+                                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+                                >
+                                  Close
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Missed Attendance Registry */}
                       {(() => {
