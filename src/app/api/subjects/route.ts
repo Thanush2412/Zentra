@@ -29,6 +29,61 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
+
+    // Check if bulk array is provided
+    const rawList = Array.isArray(body) ? body : Array.isArray(body.subjects) ? body.subjects : null;
+
+    if (rawList && rawList.length > 0) {
+      const createdSubjects: any[] = [];
+      let countRow = await db.get("SELECT COUNT(*) as count FROM subjects");
+      let currentCount = countRow?.count || 0;
+
+      for (let i = 0; i < rawList.length; i++) {
+        const item = rawList[i];
+        const { department, semester, name, type, college_id, year, weekly_hours, subject_group, shift } = item;
+        if (!department || !semester || !name) continue;
+
+        let calculatedYear = year;
+        if (!calculatedYear) {
+          calculatedYear = "Year 1";
+          if (semester.includes("3") || semester.includes("4")) calculatedYear = "Year 2";
+          else if (semester.includes("5") || semester.includes("6")) calculatedYear = "Year 3";
+          else if (semester.includes("7") || semester.includes("8")) calculatedYear = "Year 4";
+        }
+
+        currentCount++;
+        const newId = `sub_${currentCount}_${Date.now()}_${i}`;
+        const weeklyHoursVal = parseInt(weekly_hours, 10) || 4;
+        const shiftVal = shift || "general";
+        const subjectType = type || "SKILL";
+
+        await db.run(
+          `INSERT INTO subjects (id, department, semester, name, type, college_id, year, weekly_hours, subject_group, shift) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          newId, department, semester, name.trim(), subjectType, college_id || null, calculatedYear, weeklyHoursVal, subject_group || "General", shiftVal
+        );
+
+        createdSubjects.push({
+          id: newId,
+          department,
+          semester,
+          name: name.trim(),
+          type: subjectType,
+          college_id: college_id || null,
+          year: calculatedYear,
+          weekly_hours: weeklyHoursVal,
+          subject_group: subject_group || "General",
+          shift: shiftVal
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        count: createdSubjects.length,
+        subjects: createdSubjects,
+        message: `Successfully created ${createdSubjects.length} subjects.`
+      });
+    }
+
     const { department, semester, name, type, college_id, year, weekly_hours, subject_group, shift } = body;
 
     if (!department || !semester || !name || !type) {
@@ -52,10 +107,25 @@ export async function POST(request: Request) {
 
     await db.run(
       `INSERT INTO subjects (id, department, semester, name, type, college_id, year, weekly_hours, subject_group, shift) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      newId, department, semester, name, type, college_id || null, calculatedYear, weeklyHoursVal, subject_group || "General", shiftVal
+      newId, department, semester, name.trim(), type, college_id || null, calculatedYear, weeklyHoursVal, subject_group || "General", shiftVal
     );
 
-    return NextResponse.json({ success: true, message: "Subject created successfully." });
+    return NextResponse.json({
+      success: true,
+      message: "Subject created successfully.",
+      subject: {
+        id: newId,
+        department,
+        semester,
+        name: name.trim(),
+        type,
+        college_id: college_id || null,
+        year: calculatedYear,
+        weekly_hours: weeklyHoursVal,
+        subject_group: subject_group || "General",
+        shift: shiftVal
+      }
+    });
   } catch (error: any) {
     console.error("API POST Subjects error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

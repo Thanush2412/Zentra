@@ -2282,15 +2282,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const createSubject = async (subjectData: Omit<Subject, "id">) => {
+  const createSubject = async (subjectData: Omit<Subject, "id"> | Omit<Subject, "id">[]) => {
     try {
+      const payload = Array.isArray(subjectData) ? { subjects: subjectData } : subjectData;
       const res = await fetch("/api/subjects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(subjectData)
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.success) {
+        if (data.subjects && Array.isArray(data.subjects)) {
+          setSubjectsList(prev => [...prev, ...data.subjects]);
+        } else if (data.subject) {
+          setSubjectsList(prev => [...prev, data.subject]);
+        }
         await refreshData();
       }
       return data;
@@ -2308,6 +2314,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
+        setSubjectsList(prev => prev.map(s => s.id === subjectData.id ? { ...s, ...subjectData } : s));
         await refreshData();
       }
       return data;
@@ -2323,6 +2330,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
+        setSubjectsList(prev => prev.filter(s => s.id !== id));
         await refreshData();
       }
       return data;

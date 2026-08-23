@@ -23,6 +23,7 @@ import {
   GraduationCap,
   Plus,
   Edit,
+  Edit2,
   Trash2,
   X,
   Eye,
@@ -1950,6 +1951,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Subject handlers
+  const [subjectModalTab, setSubjectModalTab] = useState<"bulk" | "single">("bulk");
+  const [bulkSubjectsText, setBulkSubjectsText] = useState("");
+  const [bulkDefaultType, setBulkDefaultType] = useState("SKILL");
+  const [bulkDefaultHours, setBulkDefaultHours] = useState(4);
+  const [showPasteAccordion, setShowPasteAccordion] = useState(true);
+  const [dynamicSubjects, setDynamicSubjects] = useState<Array<{ id: string; name: string; type: string; weekly_hours: number; isEditing?: boolean }>>([
+    { id: "row_1", name: "", type: "SKILL", weekly_hours: 4 },
+    { id: "row_2", name: "", type: "ACADEMIC", weekly_hours: 4 },
+    { id: "row_3", name: "", type: "LAB", weekly_hours: 2 }
+  ]);
+
   const normalizeSubjectType = (rawType?: string) => {
     if (!rawType) return "SKILL";
     const u = rawType.trim().toUpperCase();
@@ -1960,9 +1972,158 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return u;
   };
 
+  const parseBulkSubjectsList = (text: string, defaultType: string, defaultHours: number) => {
+    if (!text || !text.trim()) return [];
+    const lines = text.split(/\r?\n/);
+    const results: { name: string; type: string; weekly_hours: number; raw: string }[] = [];
+    const seen = new Set<string>();
+
+    for (const rawLine of lines) {
+      const trimmed = rawLine.trim();
+      if (!trimmed) continue;
+
+      let cleanLine = trimmed.replace(/^(\d+[\.\)]|\-|\*|•)\s*/, "").trim();
+      if (!cleanLine) continue;
+
+      let parts: string[] = [];
+      if (cleanLine.includes("|")) {
+        parts = cleanLine.split("|").map(p => p.trim()).filter(Boolean);
+      } else if (cleanLine.includes("\t")) {
+        parts = cleanLine.split("\t").map(p => p.trim()).filter(Boolean);
+      } else if (cleanLine.includes(",")) {
+        parts = cleanLine.split(",").map(p => p.trim()).filter(Boolean);
+      } else if (cleanLine.includes(";")) {
+        parts = cleanLine.split(";").map(p => p.trim()).filter(Boolean);
+      } else {
+        parts = [cleanLine];
+      }
+
+      const name = parts[0] ? parts[0].trim() : "";
+      if (!name) continue;
+
+      let resolvedType = defaultType || "SKILL";
+      let resolvedHours = defaultHours || 4;
+
+      if (parts.length >= 2) {
+        const p1 = parts[1].trim().toUpperCase();
+        if (["SKILL", "PRACTICAL"].includes(p1)) resolvedType = "SKILL";
+        else if (["ACADEMIC", "THEORY", "CORE"].includes(p1)) resolvedType = "ACADEMIC";
+        else if (["LAB", "LABORATORY"].includes(p1)) resolvedType = "LAB";
+        else if (["GENERAL", "ELECTIVE"].includes(p1)) resolvedType = "GENERAL";
+        else if (!isNaN(Number(parts[1]))) {
+          resolvedHours = Number(parts[1]);
+        }
+      }
+
+      if (parts.length >= 3) {
+        const p2 = Number(parts[2].trim());
+        if (!isNaN(p2) && p2 > 0) {
+          resolvedHours = p2;
+        }
+      }
+
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push({
+          name,
+          type: normalizeSubjectType(resolvedType),
+          weekly_hours: resolvedHours || 4,
+          raw: trimmed
+        });
+      }
+    }
+
+    return results;
+  };
+
+  const handleAddDynamicSubjectRow = () => {
+    setDynamicSubjects(prev => [
+      ...prev,
+      {
+        id: "row_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
+        name: "",
+        type: bulkDefaultType || "SKILL",
+        weekly_hours: bulkDefaultHours || 4,
+        isEditing: true
+      }
+    ]);
+  };
+
+  const handleUpdateDynamicSubject = (id: string, field: "name" | "type" | "weekly_hours" | "isEditing", val: any) => {
+    setDynamicSubjects(prev => prev.map(item => item.id === id ? { ...item, [field]: val } : item));
+  };
+
+  const handleDeleteDynamicSubject = (id: string) => {
+    setDynamicSubjects(prev => {
+      const next = prev.filter(item => item.id !== id);
+      return next.length > 0 ? next : [{ id: "row_" + Date.now(), name: "", type: bulkDefaultType || "SKILL", weekly_hours: bulkDefaultHours || 4 }];
+    });
+  };
+
+  const handlePasteIntoRow = (e: React.ClipboardEvent<HTMLInputElement>, targetRowId: string) => {
+    const pastedText = e.clipboardData.getData("text");
+    if (!pastedText) return;
+
+    if (pastedText.includes("\n") || pastedText.includes("\r") || pastedText.includes("\t") || pastedText.includes("|")) {
+      const parsed = parseBulkSubjectsList(pastedText, bulkDefaultType, bulkDefaultHours);
+      if (parsed.length > 1 || (parsed.length === 1 && (pastedText.includes("|") || pastedText.includes("\t")))) {
+        e.preventDefault();
+        
+        setDynamicSubjects(prev => {
+          const targetIndex = prev.findIndex(r => r.id === targetRowId);
+          if (targetIndex === -1) return prev;
+
+          const allCurrentEmpty = prev.every(r => !r.name || !r.name.trim());
+          
+          if (allCurrentEmpty) {
+            return parsed.map((p, i) => ({
+              id: "row_" + Date.now() + "_" + i + "_" + Math.random().toString(36).substring(2, 5),
+              name: p.name,
+              type: p.type,
+              weekly_hours: p.weekly_hours,
+              isEditing: false
+            }));
+          }
+
+          const before = prev.slice(0, targetIndex);
+          const newRows = parsed.map((p, i) => ({
+            id: "row_" + Date.now() + "_" + i + "_" + Math.random().toString(36).substring(2, 5),
+            name: p.name,
+            type: p.type,
+            weekly_hours: p.weekly_hours,
+            isEditing: false
+          }));
+          const after = prev.slice(targetIndex + 1).filter(r => r.name && r.name.trim());
+
+          return [...before, ...newRows, ...after];
+        });
+
+        toast(`Pasted & auto-populated ${parsed.length} subject(s)!`, "success");
+      }
+    }
+  };
+
+  const handlePopulateFromPaste = (textToParse?: string) => {
+    const text = textToParse !== undefined ? textToParse : bulkSubjectsText;
+    const parsed = parseBulkSubjectsList(text, bulkDefaultType, bulkDefaultHours);
+    if (parsed.length > 0) {
+      setDynamicSubjects(parsed.map((p, i) => ({
+        id: "row_" + Date.now() + "_" + i + "_" + Math.random().toString(36).substring(2, 5),
+        name: p.name,
+        type: p.type,
+        weekly_hours: p.weekly_hours,
+        isEditing: false
+      })));
+    }
+  };
+
   const handleOpenSubjectModal = (s?: Subject, defaultDept?: string, defaultYear?: string) => {
     setModalError(null);
+    setBulkSubjectsText("");
+    setShowPasteAccordion(false);
     if (s) {
+      setSubjectModalTab("single");
       setSubjectForm({
         id: s.id,
         name: s.name,
@@ -1983,6 +2144,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       else if (defaultYear === "Year 3") defaultSem = "Semester 5";
       else if (defaultYear === "Year 4") defaultSem = "Semester 7";
 
+      setSubjectModalTab("bulk");
       setSubjectForm({
         id: "",
         name: "",
@@ -1995,6 +2157,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         mentorIds: [],
         mentor_group: "General"
       });
+      setDynamicSubjects([
+        { id: "row_" + Date.now() + "_1", name: "", type: "SKILL", weekly_hours: 4 },
+        { id: "row_" + Date.now() + "_2", name: "", type: "ACADEMIC", weekly_hours: 4 },
+        { id: "row_" + Date.now() + "_3", name: "", type: "LAB", weekly_hours: 2 }
+      ]);
       setEditingSubject(null);
       setLockDeptAndYear(!!defaultDept);
     }
@@ -2004,8 +2171,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSubjectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError(null);
-    if (!subjectForm.name.trim() || !subjectForm.department.trim()) {
-      setModalError("Subject Name and Department are required.");
+
+    if (!subjectForm.department.trim()) {
+      setModalError("Course / Department is required.");
       return;
     }
     if (!subjectForm.college_id) {
@@ -2013,42 +2181,94 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
 
-    const payload = {
-      name: subjectForm.name.trim(),
-      department: subjectForm.department.trim(),
-      semester: subjectForm.semester,
-      type: subjectForm.type,
-      college_id: subjectForm.college_id || undefined,
-      year: subjectForm.year,
-      weekly_hours: subjectForm.weekly_hours,
-      subject_group: subjectForm.mentor_group,
-      mentor_group: subjectForm.mentor_group
-    };
-
     try {
-      let res;
       if (editingSubject) {
-        res = await updateSubject({ ...payload, id: editingSubject.id });
-      } else {
-        res = await createSubject(payload);
-        // After subject created, append it to each selected mentor's subjects list
-        if (res.success && subjectForm.mentorIds.length > 0) {
-          for (const mId of subjectForm.mentorIds) {
-            const mentor = mentors.find(m => m.id === mId);
-            if (!mentor) continue;
-            const existingSubs = mentor.subjects ? mentor.subjects.split(/\n|,|;/).map(s => s.trim()).filter(Boolean) : [];
-            if (!existingSubs.includes(subjectForm.name.trim())) {
-              existingSubs.push(subjectForm.name.trim());
-            }
-            await updateMentor({ ...mentor, subjects: existingSubs.join("\n") });
-          }
+        if (!subjectForm.name.trim()) {
+          setModalError("Subject Name is required.");
+          return;
         }
-      }
-      if (res.success) {
-        setShowSubjectModal(false);
-        await fetchAdminDetails();
+        const payload = {
+          name: subjectForm.name.trim(),
+          department: subjectForm.department.trim(),
+          semester: subjectForm.semester,
+          type: subjectForm.type,
+          college_id: subjectForm.college_id || undefined,
+          year: subjectForm.year,
+          weekly_hours: subjectForm.weekly_hours,
+          subject_group: subjectForm.mentor_group,
+          mentor_group: subjectForm.mentor_group
+        };
+        const res = await updateSubject({ ...payload, id: editingSubject.id });
+        if (res.success) {
+          setShowSubjectModal(false);
+          toast("Subject updated successfully.", "success");
+          await fetchAdminDetails();
+        } else {
+          setModalError(res.message || "Failed to save subject.");
+        }
+      } else if (subjectModalTab === "bulk") {
+        const validSubjects = dynamicSubjects.filter(s => s.name && s.name.trim() !== "");
+        if (validSubjects.length === 0) {
+          setModalError("Please enter at least one valid Subject Name in the rows below.");
+          return;
+        }
+
+        const payload = validSubjects.map(p => ({
+          name: p.name.trim(),
+          department: subjectForm.department.trim(),
+          semester: subjectForm.semester,
+          type: p.type || "SKILL",
+          college_id: subjectForm.college_id || undefined,
+          year: subjectForm.year,
+          weekly_hours: Number(p.weekly_hours) || 4,
+          subject_group: subjectForm.mentor_group,
+          mentor_group: subjectForm.mentor_group
+        }));
+
+        const res = await createSubject(payload as any);
+        if (res.success) {
+          setShowSubjectModal(false);
+          setBulkSubjectsText("");
+          toast(`Successfully created ${validSubjects.length} subject(s) for ${subjectForm.department} (${subjectForm.semester})!`, "success");
+          await fetchAdminDetails();
+        } else {
+          setModalError(res.message || "Failed to create subjects.");
+        }
       } else {
-        setModalError(res.message || "Failed to save subject.");
+        if (!subjectForm.name.trim()) {
+          setModalError("Subject Name is required.");
+          return;
+        }
+        const payload = {
+          name: subjectForm.name.trim(),
+          department: subjectForm.department.trim(),
+          semester: subjectForm.semester,
+          type: subjectForm.type,
+          college_id: subjectForm.college_id || undefined,
+          year: subjectForm.year,
+          weekly_hours: subjectForm.weekly_hours,
+          subject_group: subjectForm.mentor_group,
+          mentor_group: subjectForm.mentor_group
+        };
+        const res = await createSubject(payload);
+        if (res.success) {
+          if (subjectForm.mentorIds.length > 0) {
+            for (const mId of subjectForm.mentorIds) {
+              const mentor = mentors.find(m => m.id === mId);
+              if (!mentor) continue;
+              const existingSubs = mentor.subjects ? mentor.subjects.split(/\n|,|;/).map(s => s.trim()).filter(Boolean) : [];
+              if (!existingSubs.includes(subjectForm.name.trim())) {
+                existingSubs.push(subjectForm.name.trim());
+              }
+              await updateMentor({ ...mentor, subjects: existingSubs.join("\n") });
+            }
+          }
+          setShowSubjectModal(false);
+          toast("Subject created successfully.", "success");
+          await fetchAdminDetails();
+        } else {
+          setModalError(res.message || "Failed to save subject.");
+        }
       }
     } catch (err: any) {
       setModalError(err.message || "An unexpected error occurred.");
@@ -7692,281 +7912,612 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
+        {/* ── Add / Edit Subject Modal Popup (Structured Input Table & Quick Paste) ── */}
         {showSubjectModal && (
           <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className={`bg-white rounded-xl border border-gray-150 shadow-xl w-full overflow-hidden animate-slideUp transition-all ${editingSubject ? "max-w-md" : "max-w-3xl"}`}>
-              <div className="flex justify-between items-center p-5 border-b border-gray-100 bg-gray-50">
-                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                  <GraduationCap className="h-5 w-5 text-indigo-655" />
-                  {editingSubject ? "Edit Subject Details" : "Add Subject to Catalog"}
-                </h3>
-                <button onClick={() => setShowSubjectModal(false)} className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                  <X className="h-4 w-4" />
-                </button>
+            <div className={`bg-white rounded-2xl border border-gray-150 shadow-2xl w-full overflow-hidden animate-slideUp transition-all ${editingSubject ? "max-w-md" : "max-w-4xl"}`}>
+              {/* Modal Header */}
+              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/80">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-650 border border-indigo-100">
+                    <GraduationCap className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-gray-900 text-base">
+                      {editingSubject ? "Edit Subject Details" : "Add Subjects to Curriculum"}
+                    </h3>
+                    <p className="text-xs text-gray-500 font-medium mt-0.5">
+                      {editingSubject ? "Update subject configuration and details" : "Configure and create multiple subjects with structured inputs"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {!editingSubject && (
+                    <div className="bg-gray-200/80 p-0.5 rounded-xl flex items-center gap-0.5 text-xs font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setSubjectModalTab("bulk")}
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                          subjectModalTab === "bulk"
+                            ? "bg-white text-indigo-600 shadow-xs font-black"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        <Grid className="h-3.5 w-3.5" />
+                        <span>Structured / Bulk</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSubjectModalTab("single")}
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                          subjectModalTab === "single"
+                            ? "bg-white text-indigo-600 shadow-xs font-black"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                        <span>Single Subject</span>
+                      </button>
+                    </div>
+                  )}
+                  <button onClick={() => setShowSubjectModal(false)} className="p-2 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer text-gray-400 hover:text-gray-700 ml-1">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
 
-              <form onSubmit={handleSubjectSubmit} className="p-5 space-y-4 text-xs font-semibold">
+              <form onSubmit={handleSubjectSubmit} className="p-6 space-y-5 text-xs font-semibold max-h-[82vh] flex flex-col overflow-hidden">
                 {modalError && (
-                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                  <div className="p-3.5 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-2 shrink-0">
                     <ShieldAlert className="h-4 w-4 shrink-0" />
                     {modalError}
                   </div>
                 )}
 
-                <div className={editingSubject ? "space-y-3" : "grid grid-cols-1 md:grid-cols-2 gap-6"}>
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Subject Name</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Modern Natural Language Processing"
-                        value={subjectForm.name}
-                        onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
-                        className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
-                      />
-                    </div>
+                {/* ═════════ STRUCTURED BULK MODE ═════════ */}
+                {!editingSubject && subjectModalTab === "bulk" && (() => {
+                  const validSubjectsCount = dynamicSubjects.filter(s => s.name && s.name.trim() !== "").length;
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Course Name</label>
-                        <select
-                          required
-                          disabled={lockDeptAndYear}
-                          value={subjectForm.department}
-                          onChange={(e) => setSubjectForm({ ...subjectForm, department: e.target.value })}
-                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          <option value="">— Select Course —</option>
-                          {coursesList.map(dept => (
-                            <option key={dept.id} value={dept.name}>{dept.name}</option>
-                          ))}
-                        </select>
-                      </div>
+                  return (
+                    <div className="space-y-4 flex-1 overflow-y-auto pr-1">
+                      {/* Top Scope Card (Course, Campus, Year, Semester, Mentor Group) */}
+                      <div className="p-4 bg-gray-50/90 border border-gray-200 rounded-xl space-y-3 shrink-0">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500 uppercase tracking-wider block font-bold">Course / Department *</label>
+                            <select
+                              required
+                              disabled={lockDeptAndYear}
+                              value={subjectForm.department}
+                              onChange={(e) => setSubjectForm({ ...subjectForm, department: e.target.value })}
+                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 disabled:opacity-60"
+                            >
+                              <option value="">— Select Course —</option>
+                              {coursesList.map(dept => (
+                                <option key={dept.id} value={dept.name}>{dept.name}</option>
+                              ))}
+                            </select>
+                          </div>
 
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Assigned Campus</label>
-                        <select
-                          required
-                          value={subjectForm.college_id}
-                          onChange={(e) => setSubjectForm({ ...subjectForm, college_id: e.target.value })}
-                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-805"
-                        >
-                          <option value="">— Campus —</option>
-                          {colleges.map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500 uppercase tracking-wider block font-bold">Target Campus *</label>
+                            <select
+                              required
+                              value={subjectForm.college_id}
+                              onChange={(e) => setSubjectForm({ ...subjectForm, college_id: e.target.value })}
+                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                            >
+                              <option value="">— Select Campus —</option>
+                              {colleges.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                              ))}
+                            </select>
+                          </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Academic Year</label>
-                        <select
-                          required
-                          disabled={lockDeptAndYear}
-                          value={subjectForm.year}
-                          onChange={(e) => {
-                            const newYear = e.target.value;
-                            let newSem = "Semester 1";
-                            if (newYear === "Year 2") newSem = "Semester 3";
-                            else if (newYear === "Year 3") newSem = "Semester 5";
-                            else if (newYear === "Year 4") newSem = "Semester 7";
-                            setSubjectForm({ ...subjectForm, year: newYear, semester: newSem });
-                          }}
-                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          <option value="Year 1">Year 1</option>
-                          <option value="Year 2">Year 2</option>
-                          <option value="Year 3">Year 3</option>
-                          <option value="Year 4">Year 4</option>
-                        </select>
-                      </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500 uppercase tracking-wider block font-bold">Academic Year *</label>
+                            <select
+                              required
+                              disabled={lockDeptAndYear}
+                              value={subjectForm.year}
+                              onChange={(e) => {
+                                const newYear = e.target.value;
+                                let newSem = "Semester 1";
+                                if (newYear === "Year 2") newSem = "Semester 3";
+                                else if (newYear === "Year 3") newSem = "Semester 5";
+                                else if (newYear === "Year 4") newSem = "Semester 7";
+                                setSubjectForm({ ...subjectForm, year: newYear, semester: newSem });
+                              }}
+                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 disabled:opacity-60"
+                            >
+                              <option value="Year 1">Year 1</option>
+                              <option value="Year 2">Year 2</option>
+                              <option value="Year 3">Year 3</option>
+                              <option value="Year 4">Year 4</option>
+                            </select>
+                          </div>
 
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Semester</label>
-                        <select
-                          required
-                          value={subjectForm.semester}
-                          onChange={(e) => setSubjectForm({ ...subjectForm, semester: e.target.value })}
-                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                        >
-                          {subjectForm.year === "Year 1" && (
-                            <>
-                              <option value="Semester 1">Semester 1</option>
-                              <option value="Semester 2">Semester 2</option>
-                            </>
-                          )}
-                          {subjectForm.year === "Year 2" && (
-                            <>
-                              <option value="Semester 3">Semester 3</option>
-                              <option value="Semester 4">Semester 4</option>
-                            </>
-                          )}
-                          {subjectForm.year === "Year 3" && (
-                            <>
-                              <option value="Semester 5">Semester 5</option>
-                              <option value="Semester 6">Semester 6</option>
-                            </>
-                          )}
-                          {subjectForm.year === "Year 4" && (
-                            <>
-                              <option value="Semester 7">Semester 7</option>
-                              <option value="Semester 8">Semester 8</option>
-                            </>
-                          )}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Subject Type / Domain</label>
-                        <select
-                          required
-                          value={normalizeSubjectType(subjectForm.type)}
-                          onChange={(e) => setSubjectForm({ ...subjectForm, type: e.target.value })}
-                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                        >
-                          <option value="SKILL">SKILL (Practical Training)</option>
-                          <option value="ACADEMIC">ACADEMIC (Core Theory)</option>
-                          <option value="LAB">LAB (Practical Laboratory)</option>
-                          <option value="GENERAL">GENERAL (Elective / Foundational)</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Weekly Hours</label>
-                        <input
-                          type="number"
-                          required
-                          min={1}
-                          max={20}
-                          placeholder="e.g. 4"
-                          value={subjectForm.weekly_hours}
-                          onChange={(e) => setSubjectForm({ ...subjectForm, weekly_hours: parseInt(e.target.value) || 4 })}
-                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-[#D528A2] text-gray-805"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Mentor Group</label>
-                      <select
-                        required
-                        value={subjectForm.mentor_group}
-                        onChange={(e) => setSubjectForm({ ...subjectForm, mentor_group: e.target.value })}
-                        className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                      >
-                        {subjectGroups.map(sg => (
-                          <option key={sg.id} value={sg.name}>{sg.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {!editingSubject && (() => {
-                    const campusMentors = mentors.filter(m => m.college_id === subjectForm.college_id);
-                    if (campusMentors.length === 0) {
-                      return (
-                        <div className="flex flex-col items-center justify-center p-8 bg-gray-55 border border-dashed border-gray-200 rounded-xl h-full text-center">
-                          <Users className="h-8 w-8 text-gray-300 mb-2" />
-                          <span className="text-[11px] text-gray-400 font-bold">No Staff on Selected Campus</span>
-                          <span className="text-[9px] text-gray-400 mt-0.5">You can link staff to this subject later.</span>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500 uppercase tracking-wider block font-bold">Target Semester *</label>
+                            <select
+                              required
+                              value={subjectForm.semester}
+                              onChange={(e) => setSubjectForm({ ...subjectForm, semester: e.target.value })}
+                              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                            >
+                              {subjectForm.year === "Year 1" && (
+                                <>
+                                  <option value="Semester 1">Semester 1</option>
+                                  <option value="Semester 2">Semester 2</option>
+                                </>
+                              )}
+                              {subjectForm.year === "Year 2" && (
+                                <>
+                                  <option value="Semester 3">Semester 3</option>
+                                  <option value="Semester 4">Semester 4</option>
+                                </>
+                              )}
+                              {subjectForm.year === "Year 3" && (
+                                <>
+                                  <option value="Semester 5">Semester 5</option>
+                                  <option value="Semester 6">Semester 6</option>
+                                </>
+                              )}
+                              {subjectForm.year === "Year 4" && (
+                                <>
+                                  <option value="Semester 7">Semester 7</option>
+                                  <option value="Semester 8">Semester 8</option>
+                                </>
+                              )}
+                            </select>
+                          </div>
                         </div>
-                      );
-                    }
-                    const filteredMentors = campusMentors.filter(m =>
-                      !subjectStaffSearch ||
-                      (m.name || "").toLowerCase().includes(subjectStaffSearch.toLowerCase()) ||
-                      (m.department || "").toLowerCase().includes(subjectStaffSearch.toLowerCase())
-                    );
-                    return (
-                      <div className="flex flex-col h-full space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
-                            Assign Staff <span className="text-gray-300 font-normal normal-case">(optional)</span>
-                          </label>
-                          <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-                            {subjectForm.mentorIds.length} Selected
-                          </span>
+                      </div>
+
+                      {/* Vercel-style Direct Multi-Line Paste Tip Banner */}
+                      <div className="p-3 bg-indigo-50/60 border border-indigo-150 rounded-xl flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="p-1.5 rounded-lg bg-indigo-100/80 text-indigo-700 shrink-0">
+                            <Sparkles className="h-4 w-4" />
+                          </div>
+                          <div className="text-xs text-indigo-950 font-semibold leading-tight">
+                            <span className="font-bold text-indigo-900">Direct Smart Paste: </span>
+                            Copy multiple subject rows from Excel or syllabus and paste directly (<kbd className="px-1.5 py-0.5 bg-white border border-indigo-200 rounded text-[10px] font-mono text-indigo-800 font-bold shadow-2xs">Ctrl+V</kbd>) into any Subject Name box below.
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-gray-500 font-bold">Default Domain:</span>
+                          <select
+                            value={bulkDefaultType}
+                            onChange={(e) => setBulkDefaultType(e.target.value)}
+                            className="bg-white border border-indigo-200 rounded-lg px-2 py-1 font-bold text-[11px] text-indigo-900 focus:outline-none cursor-pointer"
+                          >
+                            <option value="SKILL">SKILL</option>
+                            <option value="ACADEMIC">ACADEMIC</option>
+                            <option value="LAB">LAB</option>
+                            <option value="GENERAL">GENERAL</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Structured Subject Rows Table (with Headers, Individual Input Boxes & Action Buttons on the Right) */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between px-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-extrabold text-gray-900 text-xs uppercase tracking-wider">
+                              Subject Entry Rows
+                            </h4>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              {validSubjectsCount} {validSubjectsCount === 1 ? "Subject" : "Subjects"} Configured
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setDynamicSubjects([])}
+                              className="text-[11px] font-bold text-gray-400 hover:text-rose-600 transition-colors cursor-pointer"
+                            >
+                              Clear All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleAddDynamicSubjectRow}
+                              className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-extrabold border border-indigo-200 transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              <span>Add Row</span>
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Staff Search Bar */}
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                          <input
-                            type="text"
-                            placeholder="Search staff by name or dept..."
-                            value={subjectStaffSearch}
-                            onChange={(e) => setSubjectStaffSearch(e.target.value)}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-gray-800"
-                          />
+                        {/* Column Header Bar */}
+                        <div className="grid grid-cols-12 gap-2.5 px-3 py-2 bg-gray-100/80 rounded-xl border border-gray-200 text-[10.5px] font-extrabold text-gray-600 uppercase tracking-wider items-center">
+                          <div className="col-span-1 text-center font-mono">#</div>
+                          <div className="col-span-5">Subject Name * (Paste Here)</div>
+                          <div className="col-span-3">Domain / Type</div>
+                          <div className="col-span-2 text-center">Weekly Hrs</div>
+                          <div className="col-span-1 text-center">Actions</div>
                         </div>
 
-                        <div className="flex-1 max-h-56 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100 bg-gray-55">
-                          {filteredMentors.length === 0 ? (
-                            <div className="p-4 text-center text-gray-400 text-[11px] italic">
-                              No staff match "{subjectStaffSearch}"
+                        {/* Dynamic Input Rows */}
+                        <div className="space-y-2 max-h-[280px] overflow-y-auto pr-0.5">
+                          {dynamicSubjects.length === 0 ? (
+                            <div className="p-8 text-center bg-gray-50 border border-dashed border-gray-200 rounded-xl space-y-2">
+                              <p className="text-xs font-bold text-gray-500">No subject rows added yet.</p>
+                              <button
+                                type="button"
+                                onClick={handleAddDynamicSubjectRow}
+                                className="px-4 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-xs hover:bg-indigo-700 cursor-pointer"
+                              >
+                                + Add First Subject
+                              </button>
                             </div>
                           ) : (
-                            filteredMentors.map(m => {
-                              const checked = subjectForm.mentorIds.includes(m.id);
-                              return (
-                                <label
-                                  key={m.id}
-                                  className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-indigo-50/40 transition-colors"
-                                >
+                            dynamicSubjects.map((row, idx) => (
+                              <div
+                                key={row.id}
+                                className={`grid grid-cols-12 gap-2.5 p-2 rounded-xl border transition-all items-center ${
+                                  row.name.trim() 
+                                    ? "bg-white border-gray-200 hover:border-indigo-300 shadow-2xs" 
+                                    : "bg-amber-50/30 border-amber-200/80"
+                                }`}
+                              >
+                                {/* Row Index */}
+                                <div className="col-span-1 flex items-center justify-center">
+                                  <span className="w-6 h-6 rounded-lg bg-gray-100 text-gray-600 font-mono text-[11px] font-extrabold flex items-center justify-center border border-gray-200">
+                                    {idx + 1}
+                                  </span>
+                                </div>
+
+                                {/* Subject Name Input Box with Direct Vercel-style Paste */}
+                                <div className="col-span-5">
                                   <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => {
-                                      const next = checked
-                                        ? subjectForm.mentorIds.filter(id => id !== m.id)
-                                        : [...subjectForm.mentorIds, m.id];
-                                      setSubjectForm({ ...subjectForm, mentorIds: next });
-                                    }}
-                                    className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 cursor-pointer"
+                                    type="text"
+                                    required
+                                    placeholder="e.g. Data Structures (or paste Excel list)"
+                                    value={row.name}
+                                    onPaste={(e) => handlePasteIntoRow(e, row.id)}
+                                    onChange={(e) => handleUpdateDynamicSubject(row.id, "name", e.target.value)}
+                                    className="w-full bg-gray-50/60 focus:bg-white border border-gray-200 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                   />
-                                  <div className="min-w-0 flex-1">
-                                    <div className="font-bold text-gray-800 truncate text-xs">{m.name}</div>
-                                    {(m.mentor_group) && <div className="text-[9px] text-gray-400 truncate">{m.mentor_group}</div>}
-                                  </div>
-                                  {checked && (
-                                    <span className="text-[9px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                                      Assigned
-                                    </span>
-                                  )}
-                                </label>
-                              );
-                            })
+                                </div>
+
+                                {/* Subject Domain / Type Dropdown */}
+                                <div className="col-span-3">
+                                  <select
+                                    value={normalizeSubjectType(row.type)}
+                                    onChange={(e) => handleUpdateDynamicSubject(row.id, "type", e.target.value)}
+                                    className="w-full bg-gray-50/60 focus:bg-white border border-gray-200 focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-xs font-bold text-gray-800 focus:outline-none cursor-pointer"
+                                  >
+                                    <option value="SKILL">SKILL (Practical)</option>
+                                    <option value="ACADEMIC">ACADEMIC (Theory)</option>
+                                    <option value="LAB">LAB (Laboratory)</option>
+                                    <option value="GENERAL">GENERAL (Elective)</option>
+                                  </select>
+                                </div>
+
+                                {/* Weekly Hours Stepper Box */}
+                                <div className="col-span-2">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={20}
+                                    value={row.weekly_hours}
+                                    onChange={(e) => handleUpdateDynamicSubject(row.id, "weekly_hours", parseInt(e.target.value) || 4)}
+                                    className="w-full bg-gray-50/60 focus:bg-white border border-gray-200 focus:border-indigo-500 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-900 text-center focus:outline-none"
+                                  />
+                                </div>
+
+                                {/* Actions on the Right (Edit & Delete) */}
+                                <div className="col-span-1 flex items-center justify-center gap-1">
+                                  <button
+                                    type="button"
+                                    title="Edit / Select Row"
+                                    onClick={() => handleUpdateDynamicSubject(row.id, "isEditing", !row.isEditing)}
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                  >
+                                    <Edit className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Delete this row"
+                                    onClick={() => handleDeleteDynamicSubject(row.id)}
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))
                           )}
                         </div>
-                        {subjectForm.mentorIds.length > 0 && (
-                          <p className="text-[10px] text-indigo-600 font-semibold leading-none pt-1">
-                            {subjectForm.mentorIds.length} mentor{subjectForm.mentorIds.length > 1 ? "s" : ""} will be linked.
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
 
-                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-                  <button
-                    type="button"
-                    onClick={() => setShowSubjectModal(false)}
-                    className="px-4 py-2 hover:bg-gray-100 text-gray-555 rounded-xl transition-all font-bold cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
-                  >
-                    {editingSubject ? "Save Changes" : "Create Subject"}
-                  </button>
+                        {/* Bottom Add Row Bar */}
+                        <button
+                          type="button"
+                          onClick={handleAddDynamicSubjectRow}
+                          className="w-full py-2 border-2 border-dashed border-gray-200 hover:border-indigo-400 hover:bg-indigo-50/30 rounded-xl text-gray-500 hover:text-indigo-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-2"
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>Add Another Subject Row</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* ═════════ SINGLE SUBJECT MODE / EDIT MODE ═════════ */}
+                {(editingSubject || subjectModalTab === "single") && (
+                  <div className={editingSubject ? "space-y-3" : "grid grid-cols-1 md:grid-cols-2 gap-6"}>
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Subject Name *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Modern Natural Language Processing"
+                          value={subjectForm.name}
+                          onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
+                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Course Name</label>
+                          <select
+                            required
+                            disabled={lockDeptAndYear}
+                            value={subjectForm.department}
+                            onChange={(e) => setSubjectForm({ ...subjectForm, department: e.target.value })}
+                            className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            <option value="">— Select Course —</option>
+                            {coursesList.map(dept => (
+                              <option key={dept.id} value={dept.name}>{dept.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Assigned Campus</label>
+                          <select
+                            required
+                            value={subjectForm.college_id}
+                            onChange={(e) => setSubjectForm({ ...subjectForm, college_id: e.target.value })}
+                            className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-805"
+                          >
+                            <option value="">— Campus —</option>
+                            {colleges.map(c => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Academic Year</label>
+                          <select
+                            required
+                            disabled={lockDeptAndYear}
+                            value={subjectForm.year}
+                            onChange={(e) => {
+                              const newYear = e.target.value;
+                              let newSem = "Semester 1";
+                              if (newYear === "Year 2") newSem = "Semester 3";
+                              else if (newYear === "Year 3") newSem = "Semester 5";
+                              else if (newYear === "Year 4") newSem = "Semester 7";
+                              setSubjectForm({ ...subjectForm, year: newYear, semester: newSem });
+                            }}
+                            className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            <option value="Year 1">Year 1</option>
+                            <option value="Year 2">Year 2</option>
+                            <option value="Year 3">Year 3</option>
+                            <option value="Year 4">Year 4</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Semester</label>
+                          <select
+                            required
+                            value={subjectForm.semester}
+                            onChange={(e) => setSubjectForm({ ...subjectForm, semester: e.target.value })}
+                            className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                          >
+                            {subjectForm.year === "Year 1" && (
+                              <>
+                                <option value="Semester 1">Semester 1</option>
+                                <option value="Semester 2">Semester 2</option>
+                              </>
+                            )}
+                            {subjectForm.year === "Year 2" && (
+                              <>
+                                <option value="Semester 3">Semester 3</option>
+                                <option value="Semester 4">Semester 4</option>
+                              </>
+                            )}
+                            {subjectForm.year === "Year 3" && (
+                              <>
+                                <option value="Semester 5">Semester 5</option>
+                                <option value="Semester 6">Semester 6</option>
+                              </>
+                            )}
+                            {subjectForm.year === "Year 4" && (
+                              <>
+                                <option value="Semester 7">Semester 7</option>
+                                <option value="Semester 8">Semester 8</option>
+                              </>
+                            )}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Subject Type / Domain</label>
+                          <select
+                            required
+                            value={normalizeSubjectType(subjectForm.type)}
+                            onChange={(e) => setSubjectForm({ ...subjectForm, type: e.target.value })}
+                            className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                          >
+                            <option value="SKILL">SKILL (Practical Training)</option>
+                            <option value="ACADEMIC">ACADEMIC (Core Theory)</option>
+                            <option value="LAB">LAB (Practical Laboratory)</option>
+                            <option value="GENERAL">GENERAL (Elective / Foundational)</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Weekly Hours</label>
+                          <input
+                            type="number"
+                            required
+                            min={1}
+                            max={20}
+                            placeholder="e.g. 4"
+                            value={subjectForm.weekly_hours}
+                            onChange={(e) => setSubjectForm({ ...subjectForm, weekly_hours: parseInt(e.target.value) || 4 })}
+                            className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-[#D528A2] text-gray-805"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Mentor Group</label>
+                        <select
+                          required
+                          value={subjectForm.mentor_group}
+                          onChange={(e) => setSubjectForm({ ...subjectForm, mentor_group: e.target.value })}
+                          className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
+                        >
+                          {subjectGroups.map(sg => (
+                            <option key={sg.id} value={sg.name}>{sg.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {!editingSubject && (() => {
+                      const campusMentors = mentors.filter(m => m.college_id === subjectForm.college_id);
+                      if (campusMentors.length === 0) {
+                        return (
+                          <div className="flex flex-col items-center justify-center p-8 bg-gray-55 border border-dashed border-gray-200 rounded-xl h-full text-center">
+                            <Users className="h-8 w-8 text-gray-300 mb-2" />
+                            <span className="text-[11px] text-gray-400 font-bold">No Staff on Selected Campus</span>
+                            <span className="text-[9px] text-gray-400 mt-0.5">You can link staff to this subject later.</span>
+                          </div>
+                        );
+                      }
+                      const filteredMentors = campusMentors.filter(m =>
+                        !subjectStaffSearch ||
+                        (m.name || "").toLowerCase().includes(subjectStaffSearch.toLowerCase()) ||
+                        (m.department || "").toLowerCase().includes(subjectStaffSearch.toLowerCase())
+                      );
+                      return (
+                        <div className="flex flex-col h-full space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
+                              Assign Staff <span className="text-gray-300 font-normal normal-case">(optional)</span>
+                            </label>
+                            <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                              {subjectForm.mentorIds.length} Selected
+                            </span>
+                          </div>
+
+                          {/* Staff Search Bar */}
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                            <input
+                              type="text"
+                              placeholder="Search staff by name or dept..."
+                              value={subjectStaffSearch}
+                              onChange={(e) => setSubjectStaffSearch(e.target.value)}
+                              className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-gray-800"
+                            />
+                          </div>
+
+                          <div className="flex-1 max-h-56 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100 bg-gray-55">
+                            {filteredMentors.length === 0 ? (
+                              <div className="p-4 text-center text-gray-400 text-[11px] italic">
+                                No staff match "{subjectStaffSearch}"
+                              </div>
+                            ) : (
+                              filteredMentors.map(m => {
+                                const checked = subjectForm.mentorIds.includes(m.id);
+                                return (
+                                  <label
+                                    key={m.id}
+                                    className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-indigo-50/40 transition-colors"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => {
+                                        const next = checked
+                                          ? subjectForm.mentorIds.filter(id => id !== m.id)
+                                          : [...subjectForm.mentorIds, m.id];
+                                        setSubjectForm({ ...subjectForm, mentorIds: next });
+                                      }}
+                                      className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 cursor-pointer"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="font-bold text-gray-800 truncate text-xs">{m.name}</div>
+                                      {(m.mentor_group) && <div className="text-[9px] text-gray-400 truncate">{m.mentor_group}</div>}
+                                    </div>
+                                    {checked && (
+                                      <span className="text-[9px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                        Assigned
+                                      </span>
+                                    )}
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                          {subjectForm.mentorIds.length > 0 && (
+                            <p className="text-[10px] text-indigo-600 font-semibold leading-none pt-1">
+                              {subjectForm.mentorIds.length} mentor{subjectForm.mentorIds.length > 1 ? "s" : ""} will be linked.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Footer Buttons */}
+                <div className="flex justify-between items-center pt-4 border-t border-gray-100 shrink-0">
+                  {!editingSubject && subjectModalTab === "bulk" && (
+                    <div className="text-xs text-gray-500 font-medium">
+                      Creating into <strong className="text-gray-900">{subjectForm.department || "Selected Course"}</strong> → <strong className="text-indigo-600">{subjectForm.semester}</strong>
+                    </div>
+                  )}
+                  {(!(!editingSubject && subjectModalTab === "bulk")) && <div />}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowSubjectModal(false)}
+                      className="px-4 py-2 hover:bg-gray-100 text-gray-600 rounded-xl transition-all font-bold cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn-gradient px-6 py-2 text-white rounded-xl shadow-sm transition-all font-extrabold cursor-pointer"
+                    >
+                      {editingSubject 
+                        ? "Save Changes" 
+                        : subjectModalTab === "bulk"
+                          ? `Create ${dynamicSubjects.filter(s => s.name && s.name.trim() !== "").length} Subjects`
+                          : "Create Subject"}
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
