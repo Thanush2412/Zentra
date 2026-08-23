@@ -15321,18 +15321,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   c => c.name.trim().toLowerCase() === selectedDept.trim().toLowerCase()
                 );
 
-                const defaultCourseShift = (() => {
-                  if (!selectedCourseObj) return "Shift 1";
+                // 100% Auto-derived Shift from Course / College configuration
+                const autoShift = (() => {
+                  if (!selectedCourseObj) return "General";
                   const ds = (selectedCourseObj.default_shift || "").toLowerCase();
                   if (ds === "shift_1") return "Shift 1";
                   if (ds === "shift_2") return "Shift 2";
                   if (ds === "general") return "General";
                   if (ds === "both") return "Shift 1";
-                  return "Shift 1";
+                  if (selectedCourseObj.shift_based === 1 || isCampusShiftBased) return "Shift 1";
+                  return "General";
                 })();
 
-                const selectedShift = templateShift || defaultCourseShift || "Shift 1";
-                const composedClass = `${selectedDept} - ${selectedShift} - ${templateSem || "Semester 1"}`;
+                const composedClass = (autoShift && autoShift !== "General")
+                  ? `${selectedDept} - ${autoShift} - ${templateSem || "Semester 1"}`
+                  : `${selectedDept} - ${templateSem || "Semester 1"}`;
 
                 return (
                   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
@@ -15368,59 +15371,24 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </div>
                           <select
                             value={selectedDept}
-                            onChange={(e) => {
-                              const newDept = e.target.value;
-                              setTemplateDept(newDept);
-                              const nextCourse = (collegeCourses.length > 0 ? collegeCourses : coursesList).find(
-                                c => c.name.trim().toLowerCase() === newDept.trim().toLowerCase()
-                              );
-                              const nextDs = (nextCourse?.default_shift || "").toLowerCase();
-                              if (nextDs === "shift_1") setTemplateShift("Shift 1");
-                              else if (nextDs === "shift_2") setTemplateShift("Shift 2");
-                              else if (nextDs === "general") setTemplateShift("General");
-                              else if (nextDs === "both") setTemplateShift("Shift 1");
-                              else setTemplateShift("Shift 1");
-                            }}
+                            onChange={(e) => setTemplateDept(e.target.value)}
                             className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
                           >
                             {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
                           </select>
                         </div>
 
-                        {/* Shift Selection (Always Visible with Auto-Detection) */}
-                        <div>
-                          <div className="flex justify-between items-center mb-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Shift Type *</label>
-                            <span className="text-[9.5px] text-slate-400 font-medium">
-                              (Auto-set to {defaultCourseShift})
+                        {/* Shift Type Display (Auto-derived from Course, No Manual Selection) */}
+                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Shift Type</span>
+                            <span className="font-extrabold text-slate-800 text-xs">
+                              {autoShift} {autoShift === "Shift 1" ? "(Morning Shift)" : autoShift === "Shift 2" ? "(Evening Shift)" : "(Full Day)"}
                             </span>
                           </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            {[
-                              { id: "Shift 1", label: "Shift 1", sub: "Morning" },
-                              { id: "Shift 2", label: "Shift 2", sub: "Evening" },
-                              { id: "General", label: "General", sub: "Full Day" }
-                            ].map((sh) => {
-                              const isSelected = selectedShift === sh.id;
-                              return (
-                                <button
-                                  key={sh.id}
-                                  type="button"
-                                  onClick={() => setTemplateShift(sh.id)}
-                                  className={`p-2 rounded-xl text-center border transition-all cursor-pointer ${
-                                    isSelected
-                                      ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
-                                      : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
-                                  }`}
-                                >
-                                  <div className="font-extrabold text-xs">{sh.label}</div>
-                                  <div className={`text-[9px] font-medium ${isSelected ? "text-indigo-100" : "text-slate-400"}`}>
-                                    {sh.sub}
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-150">
+                            ⚡ Auto-Derived
+                          </span>
                         </div>
 
                         <div>
@@ -15451,7 +15419,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            handleDownloadStudentTemplate(composedClass, selectedShift);
+                            handleDownloadStudentTemplate(composedClass, autoShift);
                             setShowTemplateModal(false);
                           }}
                           className="px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5 active:scale-95"
