@@ -1,0 +1,224 @@
+export const preferredRegion = "bom1";
+export const maxDuration = 30;
+
+import { NextResponse } from "next/server";
+import { getDb } from "@/lib/db";
+
+export async function GET(request: Request) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    const collegeId = searchParams.get("collegeId");
+    const kamId = searchParams.get("kamId");
+
+    // Fetch colleges in scope
+    let colleges: any[] = [];
+    if (collegeId && collegeId !== "all") {
+      colleges = await db.all("SELECT * FROM colleges WHERE id = ?", collegeId);
+    } else if (kamId) {
+      // Strictly scope to this KAM's assigned colleges — no NULL leak
+      colleges = await db.all("SELECT * FROM colleges WHERE kam_id = ? ORDER BY name ASC", kamId);
+    } else {
+      colleges = await db.all("SELECT * FROM colleges ORDER BY name ASC");
+    }
+
+    const collegeIds = colleges.map(c => c.id);
+    if (collegeIds.length === 0) {
+      return NextResponse.json({
+        success: true,
+        summary: { totalSubjects: 0, avgCompletionPct: 0, onTrackCount: 0, laggingCount: 0, totalTeachingHours: 0 },
+        campusDelivery: [],
+        subjectDelivery: []
+      });
+    }
+
+    // Query academic_tracker records
+    const collegePlaceholders = collegeIds.map(() => "?").join(",");
+    const [trackerRows, subjectsList, slotsList] = await Promise.all([
+      db.all(`
+        SELECT at.*, c.name as college_name, m.name as mentor_full_name
+        FROM academic_tracker at
+        LEFT JOIN colleges c ON at.college_id = c.id
+        LEFT JOIN mentors m ON at.mentor_id = m.id
+        WHERE at.college_id IN (${collegePlaceholders})
+        ORDER BY at.date DESC
+      `, ...collegeIds).catch(() => []),
+      db.all(`
+        SELECT s.*, c.name as college_name
+        FROM subjects s
+        LEFT JOIN colleges c ON s.college_id = c.id
+        WHERE s.college_id IN (${collegePlaceholders}) OR s.college_id IS NULL
+      `, ...collegeIds).catch(() => []),
+      db.all(`
+        SELECT sl.*, c.name as college_name, m.name as mentor_name
+        FROM slots sl
+        LEFT JOIN colleges c ON sl.college_id = c.id
+        LEFT JOIN mentors m ON sl.mentorId = m.id
+        WHERE sl.college_id IN (${collegePlaceholders})
+      `, ...collegeIds).catch(() => [])
+    ]);
+
+    // Calculate topics/syllabus progress per subject
+    // Assume standard 5 units (each unit ~10 topics = ~50 topics target per semester subject)
+    const subjectMap = new Map<string, any>();
+
+    (subjectsList || []).forEach(sub => {
+      const key = `${sub.college_id || 'all'}__${sub.department}__${sub.name.toLowerCase().trim()}`;
+      if (!subjectMap.has(key)) {
+        subjectMap.set(key, {
+          id: sub.id,
+          name: sub.name,
+          department: sub.department,
+          semester: sub.semester,
+          collegeId: sub.college_id || "general",
+          collegeName: sub.college_name || "Institution",
+          weeklyHours: sub.weekly_hours || 4,
+          targetTopics: 45, // baseline semester syllabus target
+          completedTopics: 0,
+          conductedHours: 0,
+          lastConductedDate: null,
+          mentors: new Set<string>()
+        });
+      }
+    });
+
+    // Populate conducted topics & hours from academic_tracker
+    (trackerRows || []).forEach(t => {
+      const key = `${t.college_id || 'all'}__${t.subject ? '' : ''}__${(t.subject || '').toLowerCase().trim()}`;
+      // Search matching entry in subjectMap
+      let found: any = null;
+      for (const [k, v] of subjectMap.entries()) {
+        if (
+          (!t.college_id || v.collegeId === t.college_id) &&
+          v.name.toLowerCase().trim() === (t.subject || '').toLowerCase().trim()
+        ) {
+          found = v;
+          break;
+        }
+      }
+
+      if (found) {
+        found.completedTopics += 1;
+        found.conductedHours += 1; // approx 1 hour per period slot
+        if (t.mentor_name || t.mentor_full_name) {
+          found.mentors.add(t.mentor_name || t.mentor_full_name);
+        }
+        if (!found.lastConductedDate || t.date > found.lastConductedDate) {
+          found.lastConductedDate = t.date;
+        }
+      } else {
+        // Create virtual tracker subject if not pre-seeded in subjects table
+        const virtualKey = `${t.college_id}__${t.subject}`;
+        const existing = subjectMap.get(virtualKey);
+        if (existing) {
+          existing.completedTopics += 1;
+          existing.conductedHours += 1;
+          if (t.mentor_name || t.mentor_full_name) existing.mentors.add(t.mentor_name || t.mentor_full_name);
+        } else {
+          subjectMap.set(virtualKey, {
+            id: t.id,
+            name: t.subject,
+            department: t.class_group ? t.class_group.split(" ")[0] : "General",
+            semester: "Current",
+            collegeId: t.college_id,
+            collegeName: t.college_name || "Campus",
+            weeklyHours: 4,
+            targetTopics: 45,
+            completedTopics: 1,
+            conductedHours: 1,
+            lastConductedDate: t.date,
+            mentors: new Set(t.mentor_name || t.mentor_full_name ? [t.mentor_name || t.mentor_full_name] : [])
+          });
+        }
+      }
+    });
+
+    const subjectDelivery = Array.from(subjectMap.values()).map(s => {
+      const completionPct = Math.min(100, Math.round((s.completedTopics / s.targetTopics) * 100));
+      // Expected progress benchmark: ~60% mid-semester
+      const expectedPct = 65;
+      const gapPct = completionPct - expectedPct;
+      const status = completionPct >= 65 ? "On Track" : completionPct >= 50 ? "Moderate" : "Lagging";
+
+      return {
+        ...s,
+        mentors: Array.from(s.mentors),
+        completionPct,
+        expectedPct,
+        gapPct,
+        status
+      };
+    }).sort((a, b) => a.completionPct - b.completionPct);
+
+    // Group by campus
+    const campusMap = new Map<string, any>();
+    colleges.forEach(c => {
+      campusMap.set(c.id, {
+        id: c.id,
+        name: c.name,
+        code: c.code || c.id,
+        totalSubjects: 0,
+        completedTopicsSum: 0,
+        targetTopicsSum: 0,
+        totalConductedHours: 0,
+        laggingSubjectsCount: 0
+      });
+    });
+
+    subjectDelivery.forEach(s => {
+      const c = campusMap.get(s.collegeId);
+      if (c) {
+        c.totalSubjects += 1;
+        c.completedTopicsSum += s.completedTopics;
+        c.targetTopicsSum += s.targetTopics;
+        c.totalConductedHours += s.conductedHours;
+        if (s.status === "Lagging") c.laggingSubjectsCount += 1;
+      }
+    });
+
+    const campusDelivery = Array.from(campusMap.values()).map(c => {
+      const avgCompletionPct = c.targetTopicsSum > 0
+        ? Math.round((c.completedTopicsSum / c.targetTopicsSum) * 100)
+        : 0;
+      return {
+        ...c,
+        avgCompletionPct,
+        status: avgCompletionPct >= 65 ? "Optimal" : avgCompletionPct >= 50 ? "At Risk" : "Critical"
+      };
+    });
+
+    let totalCompletedTopics = 0;
+    let totalTargetTopics = 0;
+    let totalConductedHours = 0;
+    let laggingCount = 0;
+    let onTrackCount = 0;
+
+    subjectDelivery.forEach(s => {
+      totalCompletedTopics += s.completedTopics;
+      totalTargetTopics += s.targetTopics;
+      totalConductedHours += s.conductedHours;
+      if (s.status === "Lagging") laggingCount += 1;
+      else onTrackCount += 1;
+    });
+
+    const avgCompletionPct = totalTargetTopics > 0
+      ? Math.round((totalCompletedTopics / totalTargetTopics) * 100)
+      : 0;
+
+    return NextResponse.json({
+      success: true,
+      summary: {
+        totalSubjects: subjectDelivery.length,
+        avgCompletionPct,
+        expectedBenchmark: 65,
+        onTrackCount,
+        laggingCount,
+        totalTeachingHours: totalConductedHours
+      },
+      campusDelivery,
+      subjectDelivery
+    });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}

@@ -9,6 +9,7 @@ export async function GET(request: Request) {
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const collegeId = searchParams.get("collegeId");
+    const kamId = searchParams.get("kamId");
     const department = searchParams.get("department");
     const classGroup = searchParams.get("classGroup");
     const startDate = searchParams.get("startDate");
@@ -29,6 +30,15 @@ export async function GET(request: Request) {
     if (collegeId && collegeId !== "all") {
       query += " AND st.college_id = ?";
       params.push(collegeId);
+    } else if (kamId) {
+      const kamColleges = await db.all("SELECT id FROM colleges WHERE kam_id = ?", kamId);
+      const kamCollegeIds = kamColleges.map((c: any) => c.id);
+      if (kamCollegeIds.length === 0) {
+        return NextResponse.json({ success: true, trendData: [], summary: { overallAvgPct: 0, highestDate: null, lowestDate: null } });
+      }
+      const inClause = `(${kamCollegeIds.map(() => "?").join(",")})`;
+      query += ` AND st.college_id IN ${inClause}`;
+      params.push(...kamCollegeIds);
     }
     if (department && department !== "all") {
       query += " AND (st.department = ? OR st.department LIKE ?)";

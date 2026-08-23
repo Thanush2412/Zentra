@@ -29,6 +29,8 @@ export async function GET(request: Request) {
     const fields = searchParams.get("fields"); // e.g. "attendance" for surgical re-fetch
 
     let collegeId: string | null = null;
+    // KAM: resolve all assigned college IDs for multi-college scoping
+    let kamCollegeIds: string[] = [];
     if (role && userId && role !== "admin" && role !== "kam") {
       if (role === "cam") {
         const cam = await db.get("SELECT college_id FROM campus_managers WHERE id = ? OR email = ?", userId, userId);
@@ -39,6 +41,16 @@ export async function GET(request: Request) {
       } else if (role === "student") {
         const student = await db.get("SELECT college_id FROM students WHERE id = ? OR email = ?", userId, userId);
         collegeId = student ? student.college_id : null;
+      }
+    } else if (role === "kam" && userId) {
+      // Resolve KAM's own ID from kam_users (userId may be the kam_users.id or email)
+      const kamRow = await db.get(
+        "SELECT id FROM kam_users WHERE id = ? OR email = ? OR id IN (SELECT reference_id FROM users WHERE id = ? OR email = ?)",
+        userId, userId, userId, userId
+      );
+      if (kamRow?.id) {
+        const kamColleges = await db.all("SELECT id FROM colleges WHERE kam_id = ?", kamRow.id);
+        kamCollegeIds = kamColleges.map((c: any) => c.id);
       }
     }
 
@@ -86,34 +98,53 @@ export async function GET(request: Request) {
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     const fullDateThreshold = sixMonthsAgo.toISOString().slice(0, 10);
 
-    // Dynamic queries
-    const mentorSql = collegeId ? "SELECT * FROM mentors WHERE college_id = ?" : "SELECT * FROM mentors";
-    const mentorParams = collegeId ? [collegeId] : [];
+    // Dynamic queries — for KAM with multiple colleges, build IN-clause helpers
+    const kamHasColleges = isKAM && kamCollegeIds.length > 0;
+    const kamInClause = kamHasColleges ? `(${kamCollegeIds.map(() => "?").join(",")})` : null;
 
-    const slotSql = collegeId ? "SELECT * FROM slots WHERE college_id = ?" : "SELECT * FROM slots";
-    const slotParams = collegeId ? [collegeId] : [];
+    const mentorSql = kamHasColleges
+      ? `SELECT * FROM mentors WHERE college_id IN ${kamInClause}`
+      : collegeId ? "SELECT * FROM mentors WHERE college_id = ?" : "SELECT * FROM mentors";
+    const mentorParams = kamHasColleges ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
+
+    const slotSql = kamHasColleges
+      ? `SELECT * FROM slots WHERE college_id IN ${kamInClause}`
+      : collegeId ? "SELECT * FROM slots WHERE college_id = ?" : "SELECT * FROM slots";
+    const slotParams = kamHasColleges ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
 
     const studentSql = isStudent && userId
       ? "SELECT * FROM students WHERE id = ?"
-      : collegeId
-        ? "SELECT * FROM students WHERE college_id = ?"
-        : "SELECT * FROM students LIMIT 5000";
-    const studentParams = (isStudent && userId) ? [userId] : collegeId ? [collegeId] : [];
+      : kamHasColleges
+        ? `SELECT * FROM students WHERE college_id IN ${kamInClause}`
+        : collegeId
+          ? "SELECT * FROM students WHERE college_id = ?"
+          : "SELECT * FROM students LIMIT 5000";
+    const studentParams = (isStudent && userId) ? [userId] : kamHasColleges ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
 
-    const subjectSql = collegeId ? "SELECT * FROM subjects WHERE college_id = ? OR college_id IS NULL" : "SELECT * FROM subjects";
-    const subjectParams = collegeId ? [collegeId] : [];
+    const subjectSql = kamHasColleges
+      ? `SELECT * FROM subjects WHERE college_id IN ${kamInClause} OR college_id IS NULL`
+      : collegeId ? "SELECT * FROM subjects WHERE college_id = ? OR college_id IS NULL" : "SELECT * FROM subjects";
+    const subjectParams = kamHasColleges ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
 
-    const courseSql = collegeId ? "SELECT * FROM courses WHERE college_id = ? OR college_id IS NULL ORDER BY name" : "SELECT * FROM courses ORDER BY name";
-    const courseParams = collegeId ? [collegeId] : [];
+    const courseSql = kamHasColleges
+      ? `SELECT * FROM courses WHERE college_id IN ${kamInClause} OR college_id IS NULL ORDER BY name`
+      : collegeId ? "SELECT * FROM courses WHERE college_id = ? OR college_id IS NULL ORDER BY name" : "SELECT * FROM courses ORDER BY name";
+    const courseParams = kamHasColleges ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
 
-    const departmentSql = collegeId ? "SELECT * FROM departments WHERE college_id = ? OR college_id IS NULL ORDER BY name" : "SELECT * FROM departments ORDER BY name";
-    const departmentParams = collegeId ? [collegeId] : [];
+    const departmentSql = kamHasColleges
+      ? `SELECT * FROM departments WHERE college_id IN ${kamInClause} OR college_id IS NULL ORDER BY name`
+      : collegeId ? "SELECT * FROM departments WHERE college_id = ? OR college_id IS NULL ORDER BY name" : "SELECT * FROM departments ORDER BY name";
+    const departmentParams = kamHasColleges ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
 
-    const holidaySql = collegeId ? "SELECT * FROM holidays WHERE college_id = ? OR college_id IS NULL ORDER BY date" : "SELECT * FROM holidays ORDER BY date";
-    const holidayParams = collegeId ? [collegeId] : [];
+    const holidaySql = kamHasColleges
+      ? `SELECT * FROM holidays WHERE college_id IN ${kamInClause} OR college_id IS NULL ORDER BY date`
+      : collegeId ? "SELECT * FROM holidays WHERE college_id = ? OR college_id IS NULL ORDER BY date" : "SELECT * FROM holidays ORDER BY date";
+    const holidayParams = kamHasColleges ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
 
-    const announcementSql = collegeId ? "SELECT * FROM announcements WHERE college_id = ? OR college_id IS NULL ORDER BY created_at DESC LIMIT 30" : "SELECT * FROM announcements ORDER BY created_at DESC LIMIT 30";
-    const announcementParams = collegeId ? [collegeId] : [];
+    const announcementSql = kamHasColleges
+      ? `SELECT * FROM announcements WHERE college_id IN ${kamInClause} OR college_id IS NULL ORDER BY created_at DESC LIMIT 30`
+      : collegeId ? "SELECT * FROM announcements WHERE college_id = ? OR college_id IS NULL ORDER BY created_at DESC LIMIT 30" : "SELECT * FROM announcements ORDER BY created_at DESC LIMIT 30";
+    const announcementParams = kamHasColleges ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
 
     // Role-optimized attendance query
     let attendanceSql = "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE dateStr >= ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr ASC LIMIT 5000";
@@ -122,6 +153,9 @@ export async function GET(request: Request) {
     if (isStudent && userId) {
       attendanceSql = "SELECT id, studentId, slotId, dateStr, status, type, mode FROM student_attendance WHERE studentId = ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr DESC LIMIT 400";
       attendanceParams = [userId];
+    } else if (kamHasColleges) {
+      attendanceSql = `SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id IN ${kamInClause} AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0' ORDER BY sa.dateStr ASC LIMIT 20000`;
+      attendanceParams = [...kamCollegeIds, fullDateThreshold];
     } else if (isMentor && collegeId) {
       attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0' ORDER BY sa.dateStr ASC LIMIT 8000";
       attendanceParams = [collegeId, mentorDateThreshold];
@@ -159,10 +193,17 @@ export async function GET(request: Request) {
       db.all(courseSql, ...courseParams),
       db.all(studentSql, ...studentParams),
       db.all(attendanceSql, ...attendanceParams),
-      collegeId && !isStudent
-        ? db.all("SELECT * FROM leave_requests WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) ORDER BY timestamp DESC LIMIT 40", collegeId).catch(() => [])
-        : (!isStudent ? db.all("SELECT * FROM leave_requests ORDER BY timestamp DESC LIMIT 40").catch(() => []) : Promise.resolve([])),
-      db.all("SELECT * FROM colleges"),
+      kamHasColleges && !isStudent
+        ? db.all(`SELECT * FROM leave_requests WHERE studentId IN (SELECT id FROM students WHERE college_id IN ${kamInClause}) ORDER BY timestamp DESC LIMIT 100`, ...kamCollegeIds).catch(() => [])
+        : collegeId && !isStudent
+          ? db.all("SELECT * FROM leave_requests WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) ORDER BY timestamp DESC LIMIT 40", collegeId).catch(() => [])
+          : (!isStudent ? db.all("SELECT * FROM leave_requests ORDER BY timestamp DESC LIMIT 40").catch(() => []) : Promise.resolve([])),
+      // Colleges: scoped to KAM's assigned colleges; admins get all
+      kamHasColleges
+        ? db.all(`SELECT * FROM colleges WHERE id IN ${kamInClause}`, ...kamCollegeIds)
+        : isKAM && kamCollegeIds.length === 0
+          ? Promise.resolve([])  // KAM with no assigned colleges — return empty, not everything
+          : db.all("SELECT * FROM colleges"),
       userId && (isAdminOrKAM || isCAM)
         ? db.all("SELECT id, user_id, title, message, is_read, link, type, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 15", userId).catch(() => [])
         : Promise.resolve([]),
@@ -186,9 +227,11 @@ export async function GET(request: Request) {
       isAdminOrKAM ? db.all("SELECT * FROM campus_issues ORDER BY created_at DESC LIMIT 50").catch(() => []) : Promise.resolve([]),
       !isStudent ? db.all("SELECT * FROM academic_years").catch(() => []) : Promise.resolve([]),
       isAdminOrKAM || isCAM ? db.all("SELECT * FROM academic_events ORDER BY date ASC").catch(() => []) : Promise.resolve([]),
-      (!isStudent && collegeId)
-        ? db.all("SELECT * FROM student_interviews WHERE origin_college_id = ? OR target_college_id = ? OR college_id = ? ORDER BY created_at DESC LIMIT 40", collegeId, collegeId, collegeId).catch(() => [])
-        : (!isStudent ? db.all("SELECT * FROM student_interviews ORDER BY created_at DESC LIMIT 40").catch(() => []) : Promise.resolve([])),
+      (!isStudent && kamHasColleges)
+        ? db.all(`SELECT * FROM student_interviews WHERE origin_college_id IN ${kamInClause} OR target_college_id IN ${kamInClause} OR college_id IN ${kamInClause} ORDER BY created_at DESC LIMIT 100`, ...kamCollegeIds, ...kamCollegeIds, ...kamCollegeIds).catch(() => [])
+        : (!isStudent && collegeId)
+          ? db.all("SELECT * FROM student_interviews WHERE origin_college_id = ? OR target_college_id = ? OR college_id = ? ORDER BY created_at DESC LIMIT 40", collegeId, collegeId, collegeId).catch(() => [])
+          : (!isStudent ? db.all("SELECT * FROM student_interviews ORDER BY created_at DESC LIMIT 40").catch(() => []) : Promise.resolve([])),
       !isStudent ? db.all("SELECT * FROM interview_evaluations ORDER BY created_at DESC LIMIT 40").catch(() => []) : Promise.resolve([]),
       isAdminOrKAM ? db.all("SELECT * FROM approvals ORDER BY created_at DESC LIMIT 40").catch(() => []) : Promise.resolve([]),
       !isStudent ? db.all("SELECT * FROM leave_balances LIMIT 40").catch(() => []) : Promise.resolve([]),

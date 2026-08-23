@@ -4839,6 +4839,51 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
 
 
+  // Helper to find matching batch
+  const findMatchingBatch = (course: string, sem: string, targetShift?: "shift_1" | "shift_2" | "general") => {
+    if (!course) return activeBatches[0] || "";
+    const sh = targetShift || viewerShift;
+
+    // 1. Try to find a batch in activeBatches matching course, sem, and specifically the target shift
+    const matchWithShift = activeBatches.find(cg => {
+      const slot = collegeSlots.find(s => s.classGroup === cg);
+      const c = slot?.department || getCourseFromClassGroup(cg);
+      if (c !== course) return false;
+      
+      const s = slot?.semester || getSemesterFromClassGroup(cg);
+      if (sem && s !== sem) return false;
+
+      const cgLower = cg.toLowerCase();
+      const hasShiftSlots = collegeSlots.some(sl => sl.classGroup === cg && (sl.shift || "general").toLowerCase() === sh.toLowerCase());
+      if (hasShiftSlots) return true;
+
+      if (sh === "shift_1") return cgLower.includes("shift 1") || cgLower.includes("shift_1") || cgLower.includes("shift1") || cgLower.includes("s1");
+      if (sh === "shift_2") return cgLower.includes("shift 2") || cgLower.includes("shift_2") || cgLower.includes("shift2") || cgLower.includes("s2");
+      if (sh === "general") return cgLower.includes("general") || (!cgLower.includes("shift 1") && !cgLower.includes("shift 2") && !cgLower.includes("shift_1") && !cgLower.includes("shift_2") && !cgLower.includes("shift1") && !cgLower.includes("shift2"));
+      return false;
+    });
+    if (matchWithShift) return matchWithShift;
+
+    // 2. Fallback to any batch matching course and sem
+    const matchCourseSem = activeBatches.find(cg => {
+      const slot = collegeSlots.find(s => s.classGroup === cg);
+      const c = slot?.department || getCourseFromClassGroup(cg);
+      if (c !== course) return false;
+      const s = slot?.semester || getSemesterFromClassGroup(cg);
+      if (sem && s !== sem) return false;
+      return true;
+    });
+    if (matchCourseSem) return matchCourseSem;
+
+    // 3. Fallback to any batch matching course
+    const matchCourseOnly = activeBatches.find(cg => {
+      const slot = collegeSlots.find(s => s.classGroup === cg);
+      const c = slot?.department || getCourseFromClassGroup(cg);
+      return c === course;
+    });
+    return matchCourseOnly || activeBatches[0] || "";
+  };
+
   // Re-sync divided dropdown states when activeBatches or activeCollegeId changes
   useEffect(() => {
     if (activeBatches.length > 0) {
@@ -4872,17 +4917,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       }
       setSelectedCohortSem(defaultSem);
       
-      // Find matching genClassGroup
-      const matched = activeBatches.find(cg => {
-        const slot = collegeSlots.find(s => s.classGroup === cg);
-        const c = slot?.department || getCourseFromClassGroup(cg);
-        if (c !== defaultCourse) return false;
-        
-        const s = slot?.semester || getSemesterFromClassGroup(cg);
-        return s === defaultSem;
-      });
-      
-      setViewerClassGroup(matched || activeBatches[0] || "");
+      const matched = findMatchingBatch(defaultCourse, defaultSem, viewerShift);
+      setViewerClassGroup(matched);
     } else {
       setSelectedCohortCourse("");
       setSelectedCohortSem("");
@@ -4908,47 +4944,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const firstSem = sems[0] || "";
     setSelectedCohortSem(firstSem);
     
-    const matched = activeBatches.find(cg => {
-      const slot = collegeSlots.find(s => s.classGroup === cg);
-      const c = slot?.department || getCourseFromClassGroup(cg);
-      if (c !== course) return false;
-      
-      const s = slot?.semester || getSemesterFromClassGroup(cg);
-      return s === firstSem;
-    });
-    setViewerClassGroup(matched || "");
+    const matched = findMatchingBatch(course, firstSem, viewerShift);
+    setViewerClassGroup(matched);
   };
 
   const handleCohortSemChange = (sem: string) => {
     setSelectedCohortSem(sem);
-    const matched = activeBatches.find(cg => {
-      const slot = collegeSlots.find(s => s.classGroup === cg);
-      const c = slot?.department || getCourseFromClassGroup(cg);
-      if (c !== selectedCohortCourse) return false;
-      
-      const s = slot?.semester || getSemesterFromClassGroup(cg);
-      return s === sem;
-    });
-    setViewerClassGroup(matched || "");
+    const matched = findMatchingBatch(selectedCohortCourse, sem, viewerShift);
+    setViewerClassGroup(matched);
   };
 
-  // Auto select first valid shift for the selected class group in viewer
-  useEffect(() => {
-    if (viewerClassGroup) {
-      const validShifts = (["shift_1", "shift_2", "general"] as const).filter(sh => {
-        const hasSlots = collegeSlots.some(s => s.classGroup === viewerClassGroup && s.shift === sh);
-        if (hasSlots) return true;
-        const nameLower = viewerClassGroup.toLowerCase();
-        if (sh === "shift_1" && (nameLower.includes("shift 1") || nameLower.includes("shift_1") || nameLower.includes("shift1"))) return true;
-        if (sh === "shift_2" && (nameLower.includes("shift 2") || nameLower.includes("shift_2") || nameLower.includes("shift2"))) return true;
-        if (sh === "general" && (nameLower.includes("general") || (!nameLower.includes("shift 1") && !nameLower.includes("shift 2") && !nameLower.includes("shift1") && !nameLower.includes("shift2")))) return true;
-        return false;
-      });
-      if (validShifts.length > 0 && !validShifts.includes(viewerShift)) {
-        setViewerShift(validShifts[0]);
-      }
+  const handleViewerShiftChange = (sh: "shift_1" | "shift_2" | "general") => {
+    setViewerShift(sh);
+    const matched = findMatchingBatch(selectedCohortCourse, selectedCohortSem, sh);
+    if (matched) {
+      setViewerClassGroup(matched);
     }
-  }, [viewerClassGroup, viewerShift, collegeSlots]);
+  };
 
   // Helper to auto calculate semester based on current year/month and course start_date
   const calculateSemesterForCourse = (courseObj: any): string => {
@@ -9121,7 +9133,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       <button
                                         key={sh}
                                         type="button"
-                                        onClick={() => setViewerShift(sh)}
+                                        onClick={() => handleViewerShiftChange(sh)}
                                         className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                                           viewerShift === sh
                                             ? "bg-indigo-600 text-white shadow-sm"
@@ -9338,7 +9350,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                   s.day === day &&
                                                   (s.time === time || isTimeSlotMatch(s.time, time)) &&
                                                   (s.classGroup === viewerClassGroup || isCohortMatch(s.classGroup, viewerClassGroup)) &&
-                                                  s.shift === (hasShifts ? viewerShift : "general")
+                                                  (s.shift || "general").toLowerCase() === (hasShifts ? viewerShift : "general").toLowerCase()
                                               );
                                               const mentor = slot ? collegeMentors.find(m => m.id === slot.mentorId) : null;
                                               return (

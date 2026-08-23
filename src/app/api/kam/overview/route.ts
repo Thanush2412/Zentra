@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 
     // Fetch colleges assigned to this KAM, or all colleges if kamId not specified
     const colleges = kamId
-      ? await db.all("SELECT * FROM colleges WHERE kam_id = ? OR kam_id IS NULL ORDER BY name ASC", kamId)
+      ? await db.all("SELECT * FROM colleges WHERE kam_id = ? ORDER BY name ASC", kamId)
       : await db.all("SELECT * FROM colleges ORDER BY name ASC");
 
     const collegeIds = colleges.map((c: any) => c.id);

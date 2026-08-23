@@ -10,15 +10,19 @@ interface StudentDirectoryProps {
   initialDepartment?: string;
   initialClassGroup?: string;
   initialRiskFilter?: string;
+  kamId?: string;
 }
 
 export const StudentDirectory: React.FC<StudentDirectoryProps> = ({
   initialCollegeId,
   initialDepartment,
   initialClassGroup,
-  initialRiskFilter
+  initialRiskFilter,
+  kamId
 }) => {
-  const { colleges } = useApp ? useApp() : { colleges: [] };
+  const { colleges: rawColleges, currentKAM } = useApp ? useApp() : { colleges: [], currentKAM: null };
+  const effectiveKamId = kamId || currentKAM?.id;
+  const colleges = effectiveKamId ? rawColleges.filter((c: any) => c.kam_id === effectiveKamId || (c as any).kamId === effectiveKamId) : rawColleges;
   const [selectedCollegeId, setSelectedCollegeId] = useState(initialCollegeId || "all");
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +38,7 @@ export const StudentDirectory: React.FC<StudentDirectoryProps> = ({
       try {
         const params = new URLSearchParams();
         if (selectedCollegeId && selectedCollegeId !== "all") params.append("collegeId", selectedCollegeId);
+        if (effectiveKamId) params.append("kamId", effectiveKamId);
         if (initialDepartment && initialDepartment !== "all") params.append("department", initialDepartment);
         if (initialClassGroup && initialClassGroup !== "all") params.append("classGroup", initialClassGroup);
         if (riskFilter !== "all") params.append("risk", riskFilter);
@@ -58,7 +63,7 @@ export const StudentDirectory: React.FC<StudentDirectoryProps> = ({
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [selectedCollegeId, initialDepartment, initialClassGroup, riskFilter, search]);
+  }, [selectedCollegeId, effectiveKamId, initialDepartment, initialClassGroup, riskFilter, search]);
 
   const handleExportStudents = async () => {
     try {
