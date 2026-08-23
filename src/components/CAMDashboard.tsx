@@ -2813,12 +2813,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [templateSem, setTemplateSem] = useState<string>("Semester 1");
 
   // Download Student Excel Template matching requested headers
-  const handleDownloadStudentTemplate = async (classGroupOverride?: string) => {
+  const handleDownloadStudentTemplate = async (classGroupOverride?: string, shiftOverride?: string) => {
     const campusDepts = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
     const resolvedDept = templateDept || campusDepts[0] || "General";
-    const resolvedShift = isCampusShiftBased ? (templateShift || "Shift 1") : "General";
+    const resolvedShift = shiftOverride || templateShift || "Shift 1";
     const resolvedSem = templateSem || "Semester 1";
-    const resolvedClass = classGroupOverride || (isCampusShiftBased ? `${resolvedDept} - ${resolvedShift} - ${resolvedSem}` : `${resolvedDept} - ${resolvedSem}`);
+    const resolvedClass = classGroupOverride || `${resolvedDept} - ${resolvedShift} - ${resolvedSem}`;
     const selectedClass = resolvedClass;
     const headers = [
       "Sl. No.",
@@ -15317,26 +15317,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
                 const selectedDept = templateDept || deptOptions[0] || "General";
 
-                const selectedCourseObj = collegeCourses.find(
+                const selectedCourseObj = (collegeCourses.length > 0 ? collegeCourses : coursesList).find(
                   c => c.name.trim().toLowerCase() === selectedDept.trim().toLowerCase()
                 );
 
-                const allowedShifts = (() => {
-                  if (!selectedCourseObj) return ["Shift 1", "Shift 2", "General"];
+                const defaultCourseShift = (() => {
+                  if (!selectedCourseObj) return "Shift 1";
                   const ds = (selectedCourseObj.default_shift || "").toLowerCase();
-                  if (ds === "shift_1") return ["Shift 1"];
-                  if (ds === "shift_2") return ["Shift 2"];
-                  if (ds === "general") return ["General"];
-                  if (ds === "both") return ["Shift 1", "Shift 2"];
-                  if (ds === "all") return ["Shift 1", "Shift 2", "General"];
-                  if (selectedCourseObj.shift_based === 1) return ["Shift 1", "Shift 2"];
-                  return ["General"];
+                  if (ds === "shift_1") return "Shift 1";
+                  if (ds === "shift_2") return "Shift 2";
+                  if (ds === "general") return "General";
+                  if (ds === "both") return "Shift 1";
+                  return "Shift 1";
                 })();
 
-                const selectedShift = allowedShifts.includes(templateShift) ? templateShift : allowedShifts[0];
-                const composedClass = (selectedShift && selectedShift !== "General")
-                  ? `${selectedDept} - ${selectedShift} - ${templateSem || "Semester 1"}`
-                  : `${selectedDept} - ${templateSem || "Semester 1"}`;
+                const selectedShift = templateShift || defaultCourseShift || "Shift 1";
+                const composedClass = `${selectedDept} - ${selectedShift} - ${templateSem || "Semester 1"}`;
 
                 return (
                   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
@@ -15362,17 +15358,28 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                       <div className="space-y-3.5 text-xs">
                         <div>
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Course / Department</label>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Course / Department</label>
+                            {selectedCourseObj && (
+                              <span className="text-[9.5px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                                {selectedCourseObj.shift_based === 1 ? "Shift Based Course" : "Standard Course"}
+                              </span>
+                            )}
+                          </div>
                           <select
                             value={selectedDept}
                             onChange={(e) => {
-                              setTemplateDept(e.target.value);
-                              const nextCourse = collegeCourses.find(c => c.name.trim().toLowerCase() === e.target.value.trim().toLowerCase());
+                              const newDept = e.target.value;
+                              setTemplateDept(newDept);
+                              const nextCourse = (collegeCourses.length > 0 ? collegeCourses : coursesList).find(
+                                c => c.name.trim().toLowerCase() === newDept.trim().toLowerCase()
+                              );
                               const nextDs = (nextCourse?.default_shift || "").toLowerCase();
                               if (nextDs === "shift_1") setTemplateShift("Shift 1");
                               else if (nextDs === "shift_2") setTemplateShift("Shift 2");
                               else if (nextDs === "general") setTemplateShift("General");
                               else if (nextDs === "both") setTemplateShift("Shift 1");
+                              else setTemplateShift("Shift 1");
                             }}
                             className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
                           >
@@ -15380,18 +15387,41 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </select>
                         </div>
 
-                        {allowedShifts.length > 1 && (
-                          <div>
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Shift</label>
-                            <select
-                              value={selectedShift}
-                              onChange={(e) => setTemplateShift(e.target.value)}
-                              className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
-                            >
-                              {allowedShifts.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
+                        {/* Shift Selection (Always Visible with Auto-Detection) */}
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Shift Type *</label>
+                            <span className="text-[9.5px] text-slate-400 font-medium">
+                              (Auto-set to {defaultCourseShift})
+                            </span>
                           </div>
-                        )}
+                          <div className="grid grid-cols-3 gap-2">
+                            {[
+                              { id: "Shift 1", label: "Shift 1", sub: "Morning" },
+                              { id: "Shift 2", label: "Shift 2", sub: "Evening" },
+                              { id: "General", label: "General", sub: "Full Day" }
+                            ].map((sh) => {
+                              const isSelected = selectedShift === sh.id;
+                              return (
+                                <button
+                                  key={sh.id}
+                                  type="button"
+                                  onClick={() => setTemplateShift(sh.id)}
+                                  className={`p-2 rounded-xl text-center border transition-all cursor-pointer ${
+                                    isSelected
+                                      ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                                      : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                                  }`}
+                                >
+                                  <div className="font-extrabold text-xs">{sh.label}</div>
+                                  <div className={`text-[9px] font-medium ${isSelected ? "text-indigo-100" : "text-slate-400"}`}>
+                                    {sh.sub}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
 
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Semester</label>
@@ -15405,8 +15435,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </div>
 
                         <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 text-[11px] text-indigo-900 font-semibold space-y-1">
-                          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Generated Target Class</span>
-                          <span className="font-bold text-slate-800 block">{composedClass}</span>
+                          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Generated Target Class (Cohort)</span>
+                          <span className="font-extrabold text-slate-900 block text-xs tracking-tight">{composedClass}</span>
                         </div>
                       </div>
 
@@ -15421,7 +15451,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            handleDownloadStudentTemplate(composedClass);
+                            handleDownloadStudentTemplate(composedClass, selectedShift);
                             setShowTemplateModal(false);
                           }}
                           className="px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5 active:scale-95"
