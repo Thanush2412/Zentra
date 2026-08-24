@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState } from "react";
 import { useApp, Slot, Mentor } from "@/context/AppContext";
@@ -675,7 +675,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
               const ledgerList = Array.from(ledgerMap.entries()).map(([key, data]) => {
                 const parts = key.split("_#_");
                 const otherId = parts[0];
-                const balance = data.given - data.received; // Debt balance: positive = you owe them; negative = they owe you
+                const balance = data.received - data.given; // Positive = credit (they owe you); Negative = debit (you owe them)
                 return {
                   otherId,
                   otherName: data.otherName,
@@ -819,23 +819,25 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                                   <td className="p-3 font-bold text-slate-805">{row.otherName}</td>
                                   <td className="p-3 text-center font-semibold text-slate-550">{row.given}</td>
                                   <td className="p-3 text-center font-semibold text-slate-550">{row.received}</td>
-                                  <td className="p-3 text-right font-black text-slate-800">{row.balance}</td>
-                                  <td className="p-3 text-right font-black">
+                                  <td className={`p-3 text-right font-black text-xs whitespace-nowrap ${row.balance > 0 ? "text-emerald-600" : row.balance < 0 ? "text-rose-600" : "text-slate-600"}`}>
+                                    {row.balance > 0 ? `+${row.balance}` : row.balance < 0 ? `-${Math.abs(row.balance)}` : "0"}
+                                  </td>
+                                  <td className="p-3 text-right whitespace-nowrap">
                                     {row.balance === 0 ? (
-                                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-650 border border-slate-200 text-[9px] font-black uppercase">
+                                      <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-650 border border-slate-200 text-[9.5px] font-black uppercase inline-flex items-center">
                                         Balanced (0)
                                       </span>
                                     ) : isPastMonth ? (
-                                      <span className="px-2 py-0.5 rounded bg-red-105 text-red-800 border border-red-250 text-[9px] font-black uppercase animate-pulse">
-                                        Warning: Attention Required ({row.balance > 0 ? `Owe ${row.balance}` : `Owed ${Math.abs(row.balance)}`})
+                                      <span className="px-2.5 py-1 rounded bg-red-50 text-rose-700 border border-red-200 text-[9.5px] font-black uppercase inline-flex items-center animate-pulse">
+                                        {row.balance < 0 ? `You owe ${Math.abs(row.balance)} hr` : `Owed ${row.balance} hr`} — Overdue
                                       </span>
-                                    ) : row.balance > 0 ? (
-                                      <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-250 text-[9px] font-black uppercase">
-                                        You owe them ({row.balance})
+                                    ) : row.balance < 0 ? (
+                                      <span className="px-2.5 py-1 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[9.5px] font-black uppercase inline-flex items-center">
+                                        You owe them ({Math.abs(row.balance)})
                                       </span>
                                     ) : (
-                                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-250 text-[9px] font-black uppercase">
-                                        They owe you ({Math.abs(row.balance)})
+                                      <span className="px-2.5 py-1 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9.5px] font-black uppercase inline-flex items-center">
+                                        They owe you ({row.balance})
                                       </span>
                                     )}
                                   </td>

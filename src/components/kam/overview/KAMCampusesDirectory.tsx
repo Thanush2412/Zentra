@@ -5,17 +5,23 @@ import { Building2, Users, GraduationCap, Clock, ArrowUpRight, Search, Mail, Pho
 import { useApp } from "@/context/AppContext";
 
 interface KAMCampusesDirectoryProps {
+  colleges?: any[];
+  kamId?: string;
   selectedCollegeId: string;
   onSelectCollege: (collegeId: string) => void;
   onNavigateTab: (tabId: string) => void;
 }
 
 export const KAMCampusesDirectory: React.FC<KAMCampusesDirectoryProps> = ({
+  colleges: propColleges,
+  kamId,
   selectedCollegeId,
   onSelectCollege,
   onNavigateTab
 }) => {
-  const { colleges, students, mentors, studentAttendance } = useApp();
+  const { colleges: allColleges, currentKAM, students, mentors, studentAttendance } = useApp();
+  const effectiveKamId = kamId || currentKAM?.id;
+  const colleges = propColleges || (effectiveKamId ? allColleges.filter(c => c.kam_id === effectiveKamId || (c as any).kamId === effectiveKamId) : allColleges);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"institutions" | "cams">("institutions");
 

@@ -327,19 +327,19 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
   // College-scoped datasets strictly bounded to KAM jurisdiction
   const activeCollegeStudents = useMemo(() => {
     const kamScoped = students.filter(s => s.college_id && assignedCollegeIds.has(s.college_id));
-    if (selectedCollegeId === "all") return kamScoped.length > 0 ? kamScoped : students;
+    if (selectedCollegeId === "all") return kamScoped;
     return kamScoped.filter(s => s.college_id === selectedCollegeId);
   }, [students, assignedCollegeIds, selectedCollegeId]);
 
   const activeCollegeMentors = useMemo(() => {
     const kamScoped = mentors.filter(m => m.college_id && assignedCollegeIds.has(m.college_id));
-    if (selectedCollegeId === "all") return kamScoped.length > 0 ? kamScoped : mentors;
+    if (selectedCollegeId === "all") return kamScoped;
     return kamScoped.filter(m => m.college_id === selectedCollegeId);
   }, [mentors, assignedCollegeIds, selectedCollegeId]);
 
   const activeCollegeSlots = useMemo(() => {
     const kamScoped = slots.filter(s => s.college_id && assignedCollegeIds.has(s.college_id));
-    if (selectedCollegeId === "all") return kamScoped.length > 0 ? kamScoped : slots;
+    if (selectedCollegeId === "all") return kamScoped;
     return kamScoped.filter(s => s.college_id === selectedCollegeId);
   }, [slots, assignedCollegeIds, selectedCollegeId]);
 
@@ -1539,6 +1539,8 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
           {/* ── TAB: SUPERVISED INSTITUTIONS & CAM LEADERSHIP ── */}
           {activeTab === "campuses" && (
             <KAMCampusesDirectory
+              colleges={colleges}
+              kamId={currentKAM?.id ?? undefined}
               selectedCollegeId={selectedCollegeId}
               onSelectCollege={setSelectedCollegeId}
               onNavigateTab={setActiveTab}
@@ -1679,6 +1681,7 @@ export function KAMDashboard({ activeTab: externalTab, onTabChange }: KAMDashboa
       {selectedStudentFor360 && (
         <Student360
           studentId={selectedStudentFor360}
+          collegeId={selectedCollegeId !== "all" ? selectedCollegeId : undefined}
           onClose={() => setSelectedStudentFor360(null)}
         />
       )}

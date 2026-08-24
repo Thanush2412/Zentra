@@ -299,6 +299,7 @@ export const StudentDirectory: React.FC<StudentDirectoryProps> = ({
       {selectedStudentId && (
         <Student360
           studentId={selectedStudentId}
+          collegeId={students.find(s => s.id === selectedStudentId)?.college_id || (selectedCollegeId !== "all" ? selectedCollegeId : undefined)}
           onClose={() => setSelectedStudentId(null)}
         />
       )}

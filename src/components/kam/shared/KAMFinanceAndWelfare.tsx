@@ -41,16 +41,16 @@ export const KAMFinanceAndWelfare: React.FC<{
   }, [selectedCollegeId, kamId]);
 
   const fees = data?.fees || {
-    totalFees: 24000000,
-    totalPaid: 20500000,
-    totalOutstanding: 3500000,
-    collectionRate: 85.4,
-    agingOverdue30d: 1250000,
+    totalFees: 0,
+    totalPaid: 0,
+    totalOutstanding: 0,
+    collectionRate: 0,
+    agingOverdue30d: 0,
     campusFeeBreakdown: []
   };
 
-  const welfare = data?.welfare || { totalStudentLeavesToday: 18, totalStudentOdToday: 12, pendingApprovals: 5, recentRequests: [] };
-  const issues = data?.issues || { totalIssues: 34, resolvedIssues: 28, resolutionRate: 82, categories: [] };
+  const welfare = data?.welfare || { totalStudentLeavesToday: 0, totalStudentOdToday: 0, pendingApprovals: 0, recentRequests: [] };
+  const issues = data?.issues || { totalIssues: 0, resolvedIssues: 0, resolutionRate: 100, categories: [] };
   const events = data?.events || [];
 
   const fmtCurrency = (n: number) => {

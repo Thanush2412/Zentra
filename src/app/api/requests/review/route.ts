@@ -98,6 +98,46 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Request has already been processed" });
     }
 
+    if (handoverRequest.request_type === "exam_marks_edit") {
+      const targetStatus = status === "approved" ? "approved" : "rejected";
+      await db.run(
+        "UPDATE handover_requests SET status = ?, headerReason = ?, approvedBy = ? WHERE id = ?",
+        targetStatus,
+        headerReason || null,
+        cleanApproverName,
+        requestId
+      );
+
+      if (status === "approved") {
+        // Parse proposed mark from reason (e.g. "Proposed Mark: 45")
+        const proposedMatch = (handoverRequest.reason || "").match(/Proposed Mark:\s*([\d.]+)/i);
+        const proposedMark = proposedMatch ? parseFloat(proposedMatch[1]) : null;
+        if (proposedMark !== null && !isNaN(proposedMark)) {
+          const exam = await db.get("SELECT * FROM exam_schedules WHERE id = ?", [handoverRequest.slotId]);
+          const maxMarks = exam?.max_marks || 50;
+          const passingMarks = exam?.passing_marks || (maxMarks * 0.4);
+          let grade = "F";
+          const pct = (proposedMark / maxMarks) * 100;
+          if (pct >= 90) grade = "O";
+          else if (pct >= 80) grade = "A+";
+          else if (pct >= 70) grade = "A";
+          else if (pct >= 60) grade = "B+";
+          else if (pct >= 50) grade = "B";
+          else if (proposedMark >= passingMarks) grade = "C";
+          else grade = "RA / F";
+
+          await db.run(
+            `UPDATE student_exam_marks 
+             SET marks_obtained = ?, is_absent = 0, grade = ?, updated_at = CURRENT_TIMESTAMP, remarks = ?
+             WHERE exam_id = ? AND student_id = ?`,
+            [proposedMark, grade, `CAM Approved (${cleanApproverName}): ${headerReason || 'Mark Updated'}`, handoverRequest.slotId, handoverRequest.targetStaffId]
+          );
+        }
+      }
+
+      return NextResponse.json({ success: true, message: `Exam mark modification request ${status} successfully!` });
+    }
+
     let targetStatus = status; // e.g. "approved" or "rejected"
     if (handoverRequest.status === "pending_cam") {
       if (status === "approved") {

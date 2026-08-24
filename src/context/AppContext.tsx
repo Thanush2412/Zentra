@@ -225,7 +225,7 @@ export interface HandoverRequest {
   approvedBy?: string;
   timestamp: string;
   classGroup?: string;
-  request_type?: "handover" | "swap_compensate";
+  request_type?: "handover" | "swap_compensate" | "exam_marks_edit" | string;
   compensates_handover_id?: string;
 }
 

@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     const inClause = `(${collegeIds.map(() => "?").join(",")})`;
 
     // Query academic performance records scoped to colleges
-    const [studentsList, academicScores, tasksScores] = await Promise.all([
+    const [studentsList, examMarksList, examSchedulesList, tasksScores] = await Promise.all([
       db.all(`
         SELECT st.id, st.name, st.roll_number, st.department, st.classGroup, st.college_id, c.name as college_name
         FROM students st
@@ -43,11 +43,19 @@ export async function GET(request: Request) {
         WHERE st.college_id IN ${inClause}
       `, ...collegeIds).catch(() => []),
       db.all(`
-        SELECT sat.*, s.college_id, s.department as student_dept, s.name as student_name, c.name as college_name
-        FROM student_academic_tracker sat
-        JOIN students s ON sat.student_email = s.email OR sat.student_id = s.id
+        SELECT sem.*, s.college_id, s.department as student_dept, s.name as student_name, c.name as college_name,
+               es.exam_type, es.subject_name
+        FROM student_exam_marks sem
+        JOIN students s ON sem.student_id = s.id
         LEFT JOIN colleges c ON s.college_id = c.id
+        LEFT JOIN exam_schedules es ON sem.exam_id = es.id
         WHERE s.college_id IN ${inClause}
+      `, ...collegeIds).catch(() => []),
+      db.all(`
+        SELECT es.*, c.name as college_name
+        FROM exam_schedules es
+        LEFT JOIN colleges c ON es.college_id = c.id
+        WHERE es.college_id IN ${inClause}
       `, ...collegeIds).catch(() => []),
       db.all(`
         SELECT st.*, s.college_id, s.department as student_dept, c.name as college_name
@@ -84,14 +92,18 @@ export async function GET(request: Request) {
       deptMap.get(key)!.totalStudents += 1;
     });
 
-    academicScores.forEach((row: any) => {
+    examMarksList.forEach((row: any) => {
+      if (row.is_absent === 1) return;
       const dept = row.student_dept || "General";
       const key = `${row.college_id}__${dept}`;
       const entry = deptMap.get(key);
-      const score = Number(row.assessment_marks || row.total_marks || row.quiz_marks || 0);
-      if (entry && score > 0) {
-        entry.ciaScores.push(score);
-        if (score >= 50) entry.passedCount += 1;
+      const maxMarks = Number(row.max_marks || 50);
+      const marksObtained = Number(row.marks_obtained || 0);
+      const pct = maxMarks > 0 ? (marksObtained / maxMarks) * 100 : marksObtained;
+
+      if (entry && pct >= 0) {
+        entry.ciaScores.push(pct);
+        if (pct >= 50) entry.passedCount += 1;
       }
     });
 
@@ -99,7 +111,7 @@ export async function GET(request: Request) {
       const dept = row.student_dept || "General";
       const key = `${row.college_id}__${dept}`;
       const entry = deptMap.get(key);
-      const score = Number(row.score || 0);
+      const score = Number(row.marks || row.score || 0);
       if (entry && score > 0) {
         entry.labScores.push(score);
       }
@@ -108,13 +120,13 @@ export async function GET(request: Request) {
     const departmentAverages = Array.from(deptMap.values()).map(d => {
       const avgCia = d.ciaScores.length > 0
         ? Math.round((d.ciaScores.reduce((a, b) => a + b, 0) / d.ciaScores.length) * 10) / 10
-        : 72; // baseline normative
+        : 0;
       const avgLab = d.labScores.length > 0
         ? Math.round((d.labScores.reduce((a, b) => a + b, 0) / d.labScores.length) * 10) / 10
-        : 78;
+        : 0;
       const passRate = d.ciaScores.length > 0
         ? Math.round((d.passedCount / d.ciaScores.length) * 100)
-        : 84;
+        : 0;
 
       return {
         department: d.department,
@@ -123,15 +135,49 @@ export async function GET(request: Request) {
         avgCiaScore: avgCia,
         avgLabScore: avgLab,
         passRate: passRate,
-        status: passRate >= 80 ? "Optimal" : passRate >= 65 ? "Moderate" : "Critical"
+        status: d.ciaScores.length === 0 ? "No Exams" : passRate >= 80 ? "Optimal" : passRate >= 65 ? "Moderate" : "Critical"
       };
     }).sort((a, b) => b.passRate - a.passRate);
 
     // Summary calculation
-    const allCia = departmentAverages.map(d => d.avgCiaScore);
-    const overallAvgCia = allCia.length > 0 ? Math.round(allCia.reduce((a, b) => a + b, 0) / allCia.length) : 74;
-    const allPass = departmentAverages.map(d => d.passRate);
-    const overallPassRate = allPass.length > 0 ? Math.round(allPass.reduce((a, b) => a + b, 0) / allPass.length) : 85;
+    const recordedCia = departmentAverages.filter(d => d.avgCiaScore > 0).map(d => d.avgCiaScore);
+    const overallAvgCia = recordedCia.length > 0 ? Math.round(recordedCia.reduce((a, b) => a + b, 0) / recordedCia.length) : 0;
+    const recordedPass = departmentAverages.filter(d => d.passRate > 0).map(d => d.passRate);
+    const overallPassRate = recordedPass.length > 0 ? Math.round(recordedPass.reduce((a, b) => a + b, 0) / recordedPass.length) : 0;
+    const topDeptObj = departmentAverages.find(d => d.avgCiaScore > 0);
+
+    // Build real assessment cycle breakdown from exam_schedules
+    const cycleMap = new Map<string, { count: number; totalPct: number; marksCount: number; status: string }>();
+    examSchedulesList.forEach((es: any) => {
+      const type = es.exam_type || "Internal Assessment";
+      if (!cycleMap.has(type)) {
+        cycleMap.set(type, { count: 0, totalPct: 0, marksCount: 0, status: es.status || "Scheduled" });
+      }
+      cycleMap.get(type)!.count++;
+    });
+
+    examMarksList.forEach((em: any) => {
+      const type = em.exam_type || "Internal Assessment";
+      if (cycleMap.has(type) && em.is_absent !== 1) {
+        const maxMarks = Number(em.max_marks || 50);
+        const marksObtained = Number(em.marks_obtained || 0);
+        const pct = maxMarks > 0 ? (marksObtained / maxMarks) * 100 : marksObtained;
+        const entry = cycleMap.get(type)!;
+        entry.totalPct += pct;
+        entry.marksCount++;
+      }
+    });
+
+    const assessmentBreakdown = Array.from(cycleMap.entries()).map(([type, data]) => {
+      const actualAvg = data.marksCount > 0 ? Math.round(data.totalPct / data.marksCount) : 0;
+      return {
+        assessmentType: type,
+        weightage: "25%",
+        targetAvg: 75,
+        actualAvg,
+        compliance: data.marksCount > 0 ? "🟢 Completed" : data.status === "Ongoing" ? "🟡 In-Progress" : "🔵 Scheduled"
+      };
+    });
 
     return NextResponse.json({
       success: true,
@@ -139,16 +185,11 @@ export async function GET(request: Request) {
         totalStudents: studentsList.length,
         avgCiaScore: overallAvgCia,
         overallPassRate: overallPassRate,
-        topDepartment: departmentAverages[0]?.department || "Computer Science",
-        totalExamsRecorded: academicScores.length
+        topDepartment: topDeptObj ? topDeptObj.department : "—",
+        totalExamsRecorded: examMarksList.length
       },
       departmentAverages,
-      assessmentBreakdown: [
-        { assessmentType: "CIA 1 (Continuous Internal Assessment)", weightage: "25%", targetAvg: 75, actualAvg: Math.max(50, overallAvgCia - 2), compliance: "🟢 Completed" },
-        { assessmentType: "CIA 2 (Mid-Term Examination)", weightage: "25%", targetAvg: 75, actualAvg: overallAvgCia, compliance: "🟢 Completed" },
-        { assessmentType: "Model Practical Assessment", weightage: "20%", targetAvg: 80, actualAvg: 78, compliance: "🟡 In-Progress" },
-        { assessmentType: "Semester Final Assessment", weightage: "30%", targetAvg: 80, actualAvg: Math.min(100, overallAvgCia + 4), compliance: "🔵 Scheduled" }
-      ]
+      assessmentBreakdown
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

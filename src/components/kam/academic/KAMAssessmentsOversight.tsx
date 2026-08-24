@@ -112,29 +112,35 @@ export const KAMAssessmentsOversight: React.FC<{
           <p className="text-xs font-semibold text-slate-400">Target vs achieved class score averages across internal evaluation phases</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {breakdowns.map((b, idx) => (
-            <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
-              <div className="flex justify-between items-start">
-                <span className="text-[9px] font-black uppercase text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
-                  Weight: {b.weightage}
-                </span>
-                <span className="text-[10px] font-bold text-slate-500">{b.compliance}</span>
+        {breakdowns.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {breakdowns.map((b, idx) => (
+              <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                <div className="flex justify-between items-start">
+                  <span className="text-[9px] font-black uppercase text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                    Weight: {b.weightage}
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-500">{b.compliance}</span>
+                </div>
+                <h4 className="text-xs font-black text-slate-900 leading-snug">{b.assessmentType}</h4>
+                <div className="flex justify-between text-[11px] font-extrabold pt-2 border-t border-slate-200">
+                  <span className="text-slate-500">Achieved: <span className="text-slate-900">{b.actualAvg}%</span></span>
+                  <span className="text-slate-400">Target: {b.targetAvg}%</span>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full h-1.5">
+                  <div
+                    className={`h-1.5 rounded-full ${b.actualAvg >= b.targetAvg ? "bg-emerald-500" : "bg-amber-500"}`}
+                    style={{ width: `${Math.min(100, (b.actualAvg / b.targetAvg) * 100)}%` }}
+                  />
+                </div>
               </div>
-              <h4 className="text-xs font-black text-slate-900 leading-snug">{b.assessmentType}</h4>
-              <div className="flex justify-between text-[11px] font-extrabold pt-2 border-t border-slate-200">
-                <span className="text-slate-500">Achieved: <span className="text-slate-900">{b.actualAvg}%</span></span>
-                <span className="text-slate-400">Target: {b.targetAvg}%</span>
-              </div>
-              <div className="w-full bg-slate-200 rounded-full h-1.5">
-                <div
-                  className={`h-1.5 rounded-full ${b.actualAvg >= b.targetAvg ? "bg-emerald-500" : "bg-amber-500"}`}
-                  style={{ width: `${Math.min(100, (b.actualAvg / b.targetAvg) * 100)}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-8 text-center bg-slate-50 rounded-xl border border-slate-200/60 text-slate-400 text-xs font-semibold">
+            No formal internal assessment / CIA exam schedules logged yet for this campus selection.
+          </div>
+        )}
       </div>
 
       {/* Department Scores Benchmark Table */}

@@ -102,6 +102,24 @@ export async function POST(request: Request) {
         ]
       );
 
+      // Auto-sync campus_daily_configs to recognize this date as an active exam day
+      try {
+        const configId = `${college_id}_${exam_date}`;
+        await db.run(
+          `INSERT INTO campus_daily_configs (
+            id, college_id, dateStr, day_type, day_order, notes, session_mode, updated_at
+          ) VALUES (?, ?, ?, 'exam_day', 'None', ?, 'Offline', CURRENT_TIMESTAMP)
+          ON CONFLICT(id) DO UPDATE SET
+            day_type = 'exam_day',
+            notes = excluded.notes,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE campus_daily_configs.day_type != 'holiday'`,
+          [configId, college_id, exam_date, `${exam_type} Examination`]
+        );
+      } catch (cdcErr) {
+        console.warn("Could not auto-sync campus_daily_configs for exam date:", cdcErr);
+      }
+
       inserted.push({ id, exam_type, subject_name, exam_date, session_time, department, semester });
     }
 

@@ -22,34 +22,40 @@ export async function GET(request: Request) {
     }
 
     const collegeIds = colleges.map(c => c.id);
-    const [weeklyTasks, studentTrackerRows, mentorsList, studentsCountRow] = await Promise.all([
-      db.all("SELECT * FROM weekly_tasks ORDER BY week_number ASC").catch(() => []),
-      db.all(`
-        SELECT st.*, s.name as student_name, s.college_id, s.department, s.roll_number
-        FROM student_tracker st
-        LEFT JOIN students s ON st.student_id = s.id
-        ORDER BY st.updated_at DESC
-      `).catch(() => []),
-      db.all("SELECT * FROM mentors").catch(() => []),
-      db.all("SELECT COUNT(id) as total FROM students").catch(() => [{ total: 0 }])
+    const inClause = collegeIds.length > 0 ? `(${collegeIds.map(() => "?").join(",")})` : "(NULL)";
+
+    const [weeklyTasks, studentTrackerRows, mentorsList, subjectsList] = await Promise.all([
+      collegeIds.length > 0
+        ? db.all(`SELECT * FROM weekly_tasks WHERE college_id IN ${inClause} ORDER BY week_number ASC`, ...collegeIds).catch(() => [])
+        : Promise.resolve([]),
+      collegeIds.length > 0
+        ? db.all(`
+          SELECT st.*, s.name as student_name, s.college_id, s.department, s.roll_number
+          FROM student_tracker st
+          JOIN students s ON st.student_id = s.id
+          WHERE s.college_id IN ${inClause}
+          ORDER BY st.updated_at DESC
+        `, ...collegeIds).catch(() => [])
+        : Promise.resolve([]),
+      collegeIds.length > 0
+        ? db.all(`SELECT * FROM mentors WHERE college_id IN ${inClause}`, ...collegeIds).catch(() => [])
+        : Promise.resolve([]),
+      collegeIds.length > 0
+        ? db.all(`SELECT * FROM subjects WHERE college_id IN ${inClause}`, ...collegeIds).catch(() => [])
+        : Promise.resolve([])
     ]);
 
-    const totalStudents = Number(studentsCountRow[0]?.total || 1);
-    const totalWeeklyTasks = weeklyTasks.length || 12;
+    const totalWeeklyTasks = weeklyTasks.length;
+    const filteredTracker = (studentTrackerRows || []);
 
-    // Filter tracker rows if collegeId specified
-    const filteredTracker = collegeId && collegeId !== "all"
-      ? (studentTrackerRows || []).filter((r: any) => r.college_id === collegeId)
-      : (studentTrackerRows || []);
-
-    const totalSubmissions = filteredTracker.length || Math.round(totalStudents * 0.85 * 3);
-    const totalVerified = filteredTracker.filter((r: any) => r.marks !== null && r.marks > 0).length || Math.round(totalSubmissions * 0.78);
-    const totalRework = filteredTracker.filter((r: any) => r.viva_assessment?.toLowerCase().includes("rework") || (r.marks !== null && r.marks < 40)).length || Math.round(totalSubmissions * 0.08);
+    const totalSubmissions = filteredTracker.length;
+    const totalVerified = filteredTracker.filter((r: any) => r.marks !== null && r.marks > 0).length;
+    const totalRework = filteredTracker.filter((r: any) => r.viva_assessment?.toLowerCase().includes("rework") || (r.marks !== null && r.marks < 40)).length;
     const totalPending = Math.max(0, totalSubmissions - totalVerified - totalRework);
 
     const completionRate = totalSubmissions > 0
       ? Math.round((totalVerified / totalSubmissions) * 1000) / 10
-      : 82.5;
+      : 0;
 
     // Mentor Grading Turnaround & Backlog
     const mentorBacklogMap = new Map<string, any>();
@@ -59,11 +65,11 @@ export async function GET(request: Request) {
         mentorName: m.name,
         department: m.department || "General",
         collegeId: m.college_id,
-        tasksCreated: weeklyTasks.filter((t: any) => t.mentor_id === m.id).length || 2,
+        tasksCreated: weeklyTasks.filter((t: any) => t.mentor_id === m.id).length,
         assignedSubmissions: 0,
         verifiedSubmissions: 0,
         pendingBacklog: 0,
-        avgGradeScore: 78
+        avgGradeScore: 0
       });
     });
 
@@ -84,25 +90,41 @@ export async function GET(request: Request) {
       }))
       .sort((a, b) => b.pendingBacklog - a.pendingBacklog);
 
-    // Subject-wise Breakdown
-    const subjectProgress = [
-      { subject: "Python & Data Structures", totalTasks: 10, submissions: 420, verified: 390, completionPct: 92.8 },
-      { subject: "Fullstack Web Development", totalTasks: 12, submissions: 380, verified: 310, completionPct: 81.5 },
-      { subject: "Database Management (SQL)", totalTasks: 8, submissions: 350, verified: 295, completionPct: 84.2 },
-      { subject: "Aptitude & Logical Reasoning", totalTasks: 14, submissions: 490, verified: 460, completionPct: 93.8 },
-      { subject: "Cloud & DevOps Basics", totalTasks: 6, submissions: 210, verified: 155, completionPct: 73.8 }
-    ];
+    // Subject-wise Breakdown dynamically generated from active subjects & submissions
+    const subjectMap = new Map<string, { subject: string; totalTasks: number; submissions: number; verified: number }>();
+    (subjectsList || []).forEach((sub: any) => {
+      const name = sub.name || "Subject";
+      if (!subjectMap.has(name)) {
+        const tasksCount = weeklyTasks.filter((t: any) => t.subject === name || t.course === name).length;
+        const subsCount = filteredTracker.filter((st: any) => st.subject === name || st.course === name).length;
+        const verCount = filteredTracker.filter((st: any) => (st.subject === name || st.course === name) && st.marks > 0).length;
+        subjectMap.set(name, {
+          subject: name,
+          totalTasks: tasksCount,
+          submissions: subsCount,
+          verified: verCount
+        });
+      }
+    });
+
+    const subjectProgress = Array.from(subjectMap.values()).map(s => {
+      const pct = s.submissions > 0 ? Math.round((s.verified / s.submissions) * 1000) / 10 : 0;
+      return {
+        ...s,
+        completionPct: pct
+      };
+    });
 
     return NextResponse.json({
       success: true,
       summary: {
-        totalWeeklyTasks: totalWeeklyTasks > 0 ? totalWeeklyTasks : 50,
+        totalWeeklyTasks,
         totalSubmissions,
         totalVerified,
         totalRework,
         totalPending,
         completionRate,
-        verificationThroughput: totalSubmissions > 0 ? Math.round((totalVerified / totalSubmissions) * 100) : 78
+        verificationThroughput: totalSubmissions > 0 ? Math.round((totalVerified / totalSubmissions) * 100) : 0
       },
       mentorBacklogs: mentorBacklogs.slice(0, 15),
       subjectProgress

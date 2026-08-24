@@ -12,13 +12,27 @@ export async function GET(
     const db = await getDb();
     const { id } = await params;
 
-    // 1. Fetch Student Core Info
-    const student = await db.get(`
-      SELECT st.*, c.name as college_name
-      FROM students st
-      LEFT JOIN colleges c ON st.college_id = c.id
-      WHERE st.id = ? OR st.roll_number = ? OR st.register_number = ?
-    `, id, id, id);
+    const { searchParams } = new URL(request.url);
+    const collegeId = searchParams.get("collegeId");
+
+    // 1. Fetch Student Core Info with campus-specific resolution
+    let student;
+    if (collegeId && collegeId !== "all") {
+      student = await db.get(`
+        SELECT st.*, c.name as college_name
+        FROM students st
+        LEFT JOIN colleges c ON st.college_id = c.id
+        WHERE st.college_id = ? AND (st.id = ? OR st.roll_number = ? OR st.register_number = ?)
+      `, collegeId, id, id, id);
+    }
+    if (!student) {
+      student = await db.get(`
+        SELECT st.*, c.name as college_name
+        FROM students st
+        LEFT JOIN colleges c ON st.college_id = c.id
+        WHERE st.id = ? OR st.roll_number = ? OR st.register_number = ?
+      `, id, id, id);
+    }
 
     if (!student) {
       return NextResponse.json({ success: false, message: "Student not found" }, { status: 404 });

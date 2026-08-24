@@ -131,6 +131,56 @@ export const MentorExamMarksStudio: React.FC = () => {
     });
   }, [exams, currentMentor, examSearch, examTabFilter, todayStr]);
 
+  // Modal state for CAM Marks Edit Request
+  const [editRequestModalOpen, setEditRequestModalOpen] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<StudentRosterRow | null>(null);
+  const [proposedMark, setProposedMark] = useState<string>("");
+  const [editReason, setEditReason] = useState<string>("");
+  const [isSubmittingEditReq, setIsSubmittingEditReq] = useState(false);
+  const [pendingEditRequests, setPendingEditRequests] = useState<Record<string, string>>({}); // student_id -> proposedMark
+
+  // Check if exam is officially completed (date and end time have passed)
+  const isExamOver = useMemo(() => {
+    if (!selectedExam || !selectedExam.exam_date) return true;
+    const today = new Date().toISOString().slice(0, 10);
+    if (selectedExam.exam_date < today) return true;
+    if (selectedExam.exam_date > today) return false;
+    
+    // Same day: check end time
+    const endTimeStr = (selectedExam.session_time || "").split("-")[1]?.trim() || "05:00 PM";
+    const match = endTimeStr.match(/(\d+)(?::|\.)(\d+)\s*(AM|PM)?/i);
+    if (!match) return true;
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    const isPM = (match[3] || "").toUpperCase() === "PM" || endTimeStr.toLowerCase().includes("pm");
+    if (isPM && h !== 12) h += 12;
+    if (!isPM && h === 12) h = 0;
+    const now = new Date();
+    const endDateTime = new Date();
+    endDateTime.setHours(h, m || 0, 0, 0);
+    return now >= endDateTime;
+  }, [selectedExam]);
+
+  // Fetch pending edit requests for this exam
+  const fetchPendingEditRequests = async (examId: string) => {
+    try {
+      const res = await fetch(`/api/requests`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.requests)) {
+        const pendingMap: Record<string, string> = {};
+        data.requests.forEach((r: any) => {
+          if (r.slotId === examId && (r.status === "pending" || r.status === "pending_cam")) {
+            const markMatch = (r.reason || "").match(/Proposed Mark:\s*([\d.]+)/i);
+            if (markMatch) pendingMap[r.targetStaffId] = markMatch[1];
+          }
+        });
+        setPendingEditRequests(pendingMap);
+      }
+    } catch (e) {
+      console.error("Error fetching pending mark edit requests:", e);
+    }
+  };
+
   // 2. Fetch student roster when an exam is selected
   const selectExamForGrading = async (exam: ExamItem) => {
     setSelectedExam(exam);
@@ -140,6 +190,7 @@ export const MentorExamMarksStudio: React.FC = () => {
     setLoadingRoster(true);
 
     try {
+      fetchPendingEditRequests(exam.id);
       const res = await fetch(`/api/exams/marks?exam_id=${encodeURIComponent(exam.id)}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.roster)) {
@@ -294,6 +345,57 @@ export const MentorExamMarksStudio: React.FC = () => {
       toast("Error saving marks: " + err.message, "error");
     } finally {
       setIsSavingMarks(false);
+    }
+  };
+
+  // Handle Submit Mark Edit Request to CAM
+  const handleSubmitMarkEditRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStudent || !selectedExam) return;
+    if (!proposedMark.trim() || isNaN(parseFloat(proposedMark))) {
+      toast("Please enter a valid proposed mark", "warning");
+      return;
+    }
+    const num = parseFloat(proposedMark);
+    if (num < 0 || num > globalMaxMarks) {
+      toast(`Marks must be between 0 and ${globalMaxMarks}`, "warning");
+      return;
+    }
+    if (!editReason.trim()) {
+      toast("Please provide a mandatory reason for changing already entered marks", "warning");
+      return;
+    }
+
+    setIsSubmittingEditReq(true);
+    try {
+      const res = await fetch("/api/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mentorId: currentMentor?.id || "mentor_1",
+          slotId: selectedExam.id,
+          dateStr: selectedExam.exam_date,
+          dateFormatted: selectedExam.exam_date,
+          targetStaffId: editingStudent.student_id,
+          reason: `[Exam Mark Edit Request] Exam: ${selectedExam.exam_type} | Student: ${editingStudent.student_name} (${editingStudent.roll_number}) | Old Mark: ${editingStudent.marks_obtained} | Proposed Mark: ${proposedMark} | Reason: ${editReason.trim()}`,
+          subjectName: selectedExam.subject_name
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast("Marks edit approval request submitted to Campus Manager (CAM)!", "success");
+        setEditRequestModalOpen(false);
+        setEditingStudent(null);
+        setProposedMark("");
+        setEditReason("");
+        fetchPendingEditRequests(selectedExam.id);
+      } else {
+        toast(data.message || "Failed to submit request", "error");
+      }
+    } catch (err: any) {
+      toast("Error: " + err.message, "error");
+    } finally {
+      setIsSubmittingEditReq(false);
     }
   };
 
@@ -521,8 +623,8 @@ export const MentorExamMarksStudio: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSaveMarks}
-                  disabled={isSavingMarks || loadingRoster}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+                  disabled={!isExamOver || isSavingMarks || loadingRoster}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSavingMarks ? (
                     <>
@@ -539,6 +641,21 @@ export const MentorExamMarksStudio: React.FC = () => {
               </div>
             </div>
 
+            {/* Lock Banner when exam is in progress or in future */}
+            {!isExamOver && (
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shadow-2xs">
+                <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-extrabold text-xs uppercase tracking-wide text-amber-800">
+                    🔒 Examination in Progress / Scheduled
+                  </div>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    This examination concludes on <strong>{selectedExam?.exam_date}</strong> at <strong>{selectedExam?.session_time || "scheduled end time"}</strong>. You can preview the student roster, but marks entry will automatically unlock once the examination session is completed.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Scale Setting & Summary KPIs */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-1">
               {/* Max Marks Scale Config */}
@@ -550,13 +667,14 @@ export const MentorExamMarksStudio: React.FC = () => {
                   type="number"
                   min={1}
                   max={500}
+                  disabled={!isExamOver}
                   value={globalMaxMarks}
                   onChange={(e) => {
                     const val = parseFloat(e.target.value) || 50;
                     setGlobalMaxMarks(val);
                     setGlobalPassingMarks(Math.round(val * 0.4));
                   }}
-                  className="w-full bg-white border border-indigo-200 rounded-lg px-2.5 py-1 text-sm font-black text-indigo-900 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-white border border-indigo-200 rounded-lg px-2.5 py-1 text-sm font-black text-indigo-900 focus:outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </div>
 
@@ -569,9 +687,10 @@ export const MentorExamMarksStudio: React.FC = () => {
                   type="number"
                   min={1}
                   max={globalMaxMarks}
+                  disabled={!isExamOver}
                   value={globalPassingMarks}
                   onChange={(e) => setGlobalPassingMarks(parseFloat(e.target.value) || 0)}
-                  className="w-full bg-white border border-indigo-200 rounded-lg px-2.5 py-1 text-sm font-black text-indigo-900 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-white border border-indigo-200 rounded-lg px-2.5 py-1 text-sm font-black text-indigo-900 focus:outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </div>
 
@@ -651,14 +770,14 @@ export const MentorExamMarksStudio: React.FC = () => {
           {/* Student Marks Evaluation Table */}
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <div className="overflow-x-auto max-h-[550px] scroll-touch">
-              <table className="w-full text-left text-xs border-collapse min-w-[750px]">
+              <table className="w-full text-left text-xs border-collapse min-w-[800px]">
                 <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
                   <tr>
                     <th className="p-3 text-center w-12">#</th>
                     <th className="p-3">Student Details</th>
                     <th className="p-3">Class / Cohort</th>
-                    <th className="p-3 w-40 text-center">Marks Obtained</th>
-                    <th className="p-3 text-center w-28">Scale (Out Of)</th>
+                    <th className="p-3 w-48 text-center">Marks Obtained</th>
+                    <th className="p-3 text-center w-24">Scale</th>
                     <th className="p-3 text-center w-28">Grade</th>
                     <th className="p-3 text-center w-24">Absent (AB)</th>
                     <th className="p-3">Remarks / Feedback</th>
@@ -683,6 +802,8 @@ export const MentorExamMarksStudio: React.FC = () => {
                       const state = marksState[st.student_id] || { marks: "", isAbsent: false, remarks: "" };
                       const marksNum = state.marks.trim() !== "" && !state.isAbsent ? parseFloat(state.marks) : null;
                       const { grade, label, color } = computeGrade(marksNum, state.isAbsent, globalMaxMarks, globalPassingMarks);
+                      const isAlreadySubmitted = st.marks_obtained !== null && st.marks_obtained !== undefined;
+                      const pendingReqMark = pendingEditRequests[st.student_id];
 
                       return (
                         <tr key={st.student_id} className="hover:bg-slate-50/70 transition-colors">
@@ -697,35 +818,76 @@ export const MentorExamMarksStudio: React.FC = () => {
                             <span className="font-semibold text-slate-700">{st.classGroup || st.department || "General"}</span>
                           </td>
                           <td className="p-3 text-center">
-                            <div className="relative inline-block w-28">
-                              <input
-                                type="number"
-                                min={0}
-                                max={globalMaxMarks}
-                                step="0.5"
-                                disabled={state.isAbsent}
-                                placeholder="—"
-                                value={state.isAbsent ? "" : state.marks}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setMarksState(prev => ({
-                                    ...prev,
-                                    [st.student_id]: {
-                                      ...prev[st.student_id],
-                                      marks: val,
-                                      isAbsent: false
+                            {!isExamOver ? (
+                              <div className="py-1.5 px-3 bg-slate-100 text-slate-400 font-black text-xs rounded-xl border border-slate-200 text-center">
+                                🔒 Locked
+                              </div>
+                            ) : isAlreadySubmitted ? (
+                              <div className="flex items-center justify-center gap-2">
+                                <span className="font-black text-sm text-slate-900 px-2 py-0.5 bg-slate-100 border border-slate-200 rounded-lg">
+                                  {st.marks_obtained}
+                                </span>
+                                {pendingReqMark ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-black uppercase">
+                                    Req: {pendingReqMark} (Pending CAM)
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingStudent(st);
+                                      setProposedMark(String(st.marks_obtained));
+                                      setEditReason("");
+                                      setEditRequestModalOpen(true);
+                                    }}
+                                    className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-black uppercase inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                    title="Marks have been submitted. Click to request CAM approval to edit mark."
+                                  >
+                                    <Edit3 className="h-3 w-3" />
+                                    <span>Edit (Req CAM)</span>
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="relative inline-block w-28">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={globalMaxMarks}
+                                  step="0.5"
+                                  disabled={state.isAbsent}
+                                  placeholder="—"
+                                  value={state.isAbsent ? "" : state.marks}
+                                  onChange={(e) => {
+                                    const rawVal = e.target.value;
+                                    if (rawVal === "") {
+                                      setMarksState(prev => ({ ...prev, [st.student_id]: { ...prev[st.student_id], marks: "", isAbsent: false } }));
+                                      return;
                                     }
-                                  }));
-                                }}
-                                className={`w-full py-1.5 px-3 text-center text-xs font-black rounded-xl border focus:outline-none transition-all ${
-                                  state.isAbsent
-                                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                                    : marksNum !== null && marksNum < globalPassingMarks
-                                    ? "bg-rose-50/80 text-rose-800 border-rose-300 focus:border-rose-500"
-                                    : "bg-white text-slate-900 border-slate-300 focus:border-indigo-600 shadow-2xs"
-                                }`}
-                              />
-                            </div>
+                                    let num = parseFloat(rawVal);
+                                    if (isNaN(num)) num = 0;
+                                    if (num > globalMaxMarks) num = globalMaxMarks;
+                                    if (num < 0) num = 0;
+
+                                    setMarksState(prev => ({
+                                      ...prev,
+                                      [st.student_id]: {
+                                        ...prev[st.student_id],
+                                        marks: String(num),
+                                        isAbsent: false
+                                      }
+                                    }));
+                                  }}
+                                  className={`w-full py-1.5 px-3 text-center text-xs font-black rounded-xl border focus:outline-none transition-all ${
+                                    state.isAbsent
+                                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                      : marksNum !== null && marksNum < globalPassingMarks
+                                      ? "bg-rose-50/80 text-rose-800 border-rose-300 focus:border-rose-500"
+                                      : "bg-white text-slate-900 border-slate-300 focus:border-indigo-600 shadow-2xs"
+                                  }`}
+                                />
+                              </div>
+                            )}
                           </td>
                           <td className="p-3 text-center">
                             <span className="font-mono font-bold text-slate-500 text-xs">
@@ -741,6 +903,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                             <input
                               type="checkbox"
                               checked={state.isAbsent}
+                              disabled={!isExamOver || isAlreadySubmitted}
                               onChange={(e) => {
                                 const checked = e.target.checked;
                                 setMarksState(prev => ({
@@ -752,12 +915,13 @@ export const MentorExamMarksStudio: React.FC = () => {
                                   }
                                 }));
                               }}
-                              className="h-4 w-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer"
+                              className="h-4 w-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer disabled:opacity-50"
                             />
                           </td>
                           <td className="p-3">
                             <input
                               type="text"
+                              disabled={!isExamOver || isAlreadySubmitted}
                               placeholder="Optional feedback..."
                               value={state.remarks}
                               onChange={(e) => {
@@ -770,7 +934,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                                   }
                                 }));
                               }}
-                              className="w-full text-xs font-medium py-1 px-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-indigo-500"
+                              className="w-full text-xs font-medium py-1 px-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
                             />
                           </td>
                         </tr>
@@ -791,8 +955,8 @@ export const MentorExamMarksStudio: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSaveMarks}
-                  disabled={isSavingMarks || loadingRoster}
-                  className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+                  disabled={!isExamOver || isSavingMarks || loadingRoster}
+                  className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Save className="h-4 w-4" />
                   <span>{isSavingMarks ? "Saving..." : "Save & Publish Marks"}</span>
@@ -800,6 +964,101 @@ export const MentorExamMarksStudio: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* ── POPUP MODAL: Request CAM Approval to Edit Marks ── */}
+          {editRequestModalOpen && editingStudent && selectedExam && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+              <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-150 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                      <Edit3 className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900">Request Marks Modification</h3>
+                      <p className="text-[10.5px] text-slate-500 font-medium">CAM Approval Required to alter submitted mark</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditRequestModalOpen(false);
+                      setEditingStudent(null);
+                    }}
+                    className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-semibold">Student:</span>
+                    <span className="font-bold text-slate-800">{editingStudent.student_name} ({editingStudent.roll_number})</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-semibold">Exam & Subject:</span>
+                    <span className="font-bold text-slate-800">{selectedExam.exam_type} — {selectedExam.subject_name}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-200/60 pt-1.5">
+                    <span className="text-slate-500 font-semibold">Current Saved Mark:</span>
+                    <span className="font-black text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                      {editingStudent.marks_obtained ?? "—"} / {globalMaxMarks}
+                    </span>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSubmitMarkEditRequest} className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700">Proposed New Mark (Max: {globalMaxMarks})</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={globalMaxMarks}
+                      step="0.5"
+                      required
+                      placeholder={`0 - ${globalMaxMarks}`}
+                      value={proposedMark}
+                      onChange={(e) => setProposedMark(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs font-black text-slate-900 focus:outline-none focus:border-indigo-600"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700">Mandatory Justification / Reason</label>
+                    <textarea
+                      rows={3}
+                      required
+                      placeholder="e.g. Paper re-evaluation verified by Head of Dept; correction in question 4 totaling."
+                      value={editReason}
+                      onChange={(e) => setEditReason(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-600"
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditRequestModalOpen(false);
+                        setEditingStudent(null);
+                      }}
+                      className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-xs transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmittingEditReq}
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isSubmittingEditReq ? "Submitting..." : "Send Request to CAM"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

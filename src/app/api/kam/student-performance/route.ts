@@ -134,31 +134,43 @@ export async function GET(request: Request) {
     let totalScoreSum = 0;
 
     const evaluatedStudents = students.map((s: any) => {
-      const attPct = attMap.get(s.id) ?? (s.attendancePct ? Number(s.attendancePct) : 82);
-      const examPct = examMap.get(s.id) ?? 68;
-      const taskData = taskMap.get(s.id) || { submitted: 4, verified: 3, avgScore: 70 };
-      const interviewScore = interviewMap.get(s.id) ?? 65;
+      const attPct = attMap.get(s.id) ?? (s.attendancePct ? Number(s.attendancePct) : 0);
+      const examPct = examMap.get(s.id) ?? 0;
+      const taskData = taskMap.get(s.id) || { submitted: 0, verified: 0, avgScore: 0 };
+      const interviewScore = interviewMap.get(s.id) ?? 0;
 
-      const rawHireScore = s.hire_score ? parseFloat(s.hire_score) : 60;
-      const hireScore = isNaN(rawHireScore) ? 60 : Math.min(100, Math.max(0, rawHireScore <= 10 ? rawHireScore * 10 : rawHireScore));
+      const rawHireScore = s.hire_score ? parseFloat(s.hire_score) : 0;
+      const hireScore = isNaN(rawHireScore) ? 0 : Math.min(100, Math.max(0, rawHireScore <= 10 ? rawHireScore * 10 : rawHireScore));
 
-      // Weighted Composite Score Formula
-      // Attendance (25%) + Exams (30%) + Lab Tasks (20%) + Interview (15%) + HireScore (10%)
-      const compositeScore = Math.round(
-        (attPct * 0.25) +
-        (examPct * 0.30) +
-        ((taskData.avgScore || 70) * 0.20) +
-        (interviewScore * 0.15) +
-        (hireScore * 0.10)
-      );
+      // Weighted Composite Score Formula based on available data
+      let compositeScore = 0;
+      let totalWeight = 0;
 
-      totalScoreSum += compositeScore;
+      if (attPct > 0 || attMap.has(s.id)) {
+        compositeScore += attPct * 0.40;
+        totalWeight += 0.40;
+      }
+      if (examPct > 0 || examMap.has(s.id)) {
+        compositeScore += examPct * 0.30;
+        totalWeight += 0.30;
+      }
+      if (taskData.submitted > 0) {
+        compositeScore += (taskData.avgScore || 0) * 0.15;
+        totalWeight += 0.15;
+      }
+      if (interviewScore > 0) {
+        compositeScore += interviewScore * 0.15;
+        totalWeight += 0.15;
+      }
+
+      const finalCompositeScore = totalWeight > 0 ? Math.round(compositeScore / totalWeight) : attPct;
+      totalScoreSum += finalCompositeScore;
 
       let riskTier: "HIGH" | "MEDIUM" | "LOW" = "LOW";
-      if (compositeScore < 55 || attPct < 60 || examPct < 40) {
+      if (attPct < 60 || finalCompositeScore < 55) {
         riskTier = "HIGH";
         highRiskCount++;
-      } else if (compositeScore < 72 || attPct < 75 || examPct < 60) {
+      } else if (attPct < 75 || finalCompositeScore < 72) {
         riskTier = "MEDIUM";
         mediumRiskCount++;
       } else {
@@ -181,8 +193,8 @@ export async function GET(request: Request) {
         labTaskAvgScore: taskData.avgScore,
         interviewScore,
         hireScore,
-        efsetScore: s.efset_score || "B2 Proficient",
-        compositeScore,
+        efsetScore: s.efset_score || "—",
+        compositeScore: finalCompositeScore,
         riskTier
       };
     });

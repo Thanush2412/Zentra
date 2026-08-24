@@ -86,21 +86,12 @@ export async function GET(request: Request) {
       }
     });
 
-    // Provide default fallback realistic numbers if empty database
-    if (totalFees === 0) {
-      totalFees = 24000000; // 2.40 Cr
-      totalPaid = 20500000; // 2.05 Cr
-      paidCount = 680;
-      partialCount = 140;
-      unpaidCount = 65;
-    }
-
     const totalOutstanding = Math.max(0, totalFees - totalPaid);
-    const collectionRate = totalFees > 0 ? Math.round((totalPaid / totalFees) * 1000) / 10 : 85.4;
+    const collectionRate = totalFees > 0 ? Math.round((totalPaid / totalFees) * 1000) / 10 : 0;
 
     const campusFeeBreakdown = Array.from(campusFeeMap.values()).map(c => {
       const out = Math.max(0, c.totalFees - c.totalPaid);
-      const rate = c.totalFees > 0 ? Math.round((c.totalPaid / c.totalFees) * 100) : 85;
+      const rate = c.totalFees > 0 ? Math.round((c.totalPaid / c.totalFees) * 100) : 0;
       return {
         ...c,
         totalOutstanding: out,
@@ -122,16 +113,27 @@ export async function GET(request: Request) {
     });
 
     // 3. Feedback & Issue Resolution SLAs
-    const totalIssues = (issuesRows.length + feedbackRows.length) || 34;
-    const resolvedIssues = (issuesRows.filter((i: any) => i.status === "resolved").length + feedbackRows.filter((f: any) => f.status === "resolved").length) || 28;
-    const escalatedIssues = (issuesRows.filter((i: any) => i.escalated === 1).length) || 4;
+    const totalIssues = issuesRows.length + feedbackRows.length;
+    const resolvedIssues = issuesRows.filter((i: any) => i.status === "resolved").length + feedbackRows.filter((f: any) => f.status === "resolved").length;
+    const escalatedIssues = issuesRows.filter((i: any) => i.escalated === 1).length;
 
-    const issueCategories = [
-      { category: "Academic Syllabus & Pacing", count: 12, avgResolutionDays: 1.8, status: "Medium" },
-      { category: "Faculty & Lab Mentors", count: 8, avgResolutionDays: 3.2, status: "High" },
-      { category: "Timetable & Room Clashes", count: 5, avgResolutionDays: 0.8, status: "Low" },
-      { category: "Infrastructure & Lab Systems", count: 9, avgResolutionDays: 4.5, status: "High" }
-    ];
+    // Group actual categories from real issues
+    const categoryMap = new Map<string, number>();
+    issuesRows.forEach((i: any) => {
+      const cat = i.category || i.type || "General";
+      categoryMap.set(cat, (categoryMap.get(cat) || 0) + 1);
+    });
+    feedbackRows.forEach((f: any) => {
+      const cat = f.category || f.type || "Student Feedback";
+      categoryMap.set(cat, (categoryMap.get(cat) || 0) + 1);
+    });
+
+    const issueCategories = Array.from(categoryMap.entries()).map(([category, count]) => ({
+      category,
+      count,
+      avgResolutionDays: 1.5,
+      status: count > 5 ? "High" : count > 2 ? "Medium" : "Low"
+    }));
 
     // 4. Regional Academic Events Calendar
     const upcomingEvents = (eventsRows || []).slice(0, 8).map((e: any) => ({
@@ -139,9 +141,9 @@ export async function GET(request: Request) {
       name: e.name,
       date: e.date,
       endDate: e.end_date || e.date,
-      category: e.category || "Hackathon & Tech Fest",
+      category: e.category || "Academic Event",
       department: e.department || "All Departments",
-      venue: e.venue || "Main Auditorium & Lab Hub",
+      venue: e.venue || "Campus",
       status: e.status || "Upcoming",
       coordinator: e.coordinator || "Faculty Lead"
     }));
@@ -160,16 +162,16 @@ export async function GET(request: Request) {
         campusFeeBreakdown
       },
       welfare: {
-        totalStudentLeavesToday: totalStudentLeavesToday || 18,
-        totalStudentOdToday: totalStudentOdToday || 12,
-        pendingApprovals: pendingApprovals || 5,
+        totalStudentLeavesToday,
+        totalStudentOdToday,
+        pendingApprovals,
         recentRequests: (studentLeaveRows || []).slice(0, 10)
       },
       issues: {
         totalIssues,
         resolvedIssues,
         escalatedIssues,
-        resolutionRate: totalIssues > 0 ? Math.round((resolvedIssues / totalIssues) * 100) : 82,
+        resolutionRate: totalIssues > 0 ? Math.round((resolvedIssues / totalIssues) * 100) : 100,
         categories: issueCategories
       },
       events: upcomingEvents

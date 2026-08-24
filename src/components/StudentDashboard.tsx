@@ -878,11 +878,26 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       return false;
     });
 
+    const matchingExam = (studentExamsList || []).find((ex: any) => ex.exam_date === dateStr);
+    const isExamDay = (dailyConfig && (dailyConfig.day_type === "exam_day" || dailyConfig.day_type === "exam")) || Boolean(matchingExam);
+
+    if (isExamDay) {
+      return {
+        type: "exam" as const,
+        config: dailyConfig || null,
+        exam: matchingExam || null,
+        attendance: dayAttendance || (slot ? myAttendance.find((a) => a.slotId === slot.id && a.dateStr === dateStr) : null) || null,
+        slot: slot || null,
+        handover: null
+      };
+    }
+
     if (!slot) {
-      if (dailyConfig && (dailyConfig.day_type === "event" || dailyConfig.day_type === "exam_day" || dailyConfig.day_type === "exam")) {
+      if (dailyConfig && dailyConfig.day_type === "event") {
         return {
-          type: (dailyConfig.day_type === "event" ? "event" : "exam") as "event" | "exam",
+          type: "event" as const,
           config: dailyConfig,
+          exam: null,
           attendance: dayAttendance || null,
           slot: null,
           handover: null
@@ -896,12 +911,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
     // Find if student has an attendance marked for this slot on this date or day-level attendance
     const att = myAttendance.find((a) => a.slotId === slot.id && a.dateStr === dateStr) || 
-                ((dailyConfig && (dailyConfig.day_type === "exam_day" || dailyConfig.day_type === "exam" || dailyConfig.day_type === "event")) ? dayAttendance : null);
+                (dailyConfig?.day_type === "event" ? dayAttendance : null);
     
     return {
       type: "slot" as const,
       slot,
       handover,
+      exam: null,
       attendance: att || null,
       config: dailyConfig || null
     };
@@ -2108,21 +2124,31 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           }
 
                           if (cellData?.type === "exam") {
+                            const examInfo = cellData.exam;
                             return (
-                              <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-purple-50/15 dark:bg-purple-950/5">
-                                <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-purple-200 dark:border-purple-900/40 bg-purple-50/60 dark:bg-purple-950/20 shadow-xs">
+                              <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-purple-50/20 dark:bg-purple-950/10">
+                                <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-purple-300 dark:border-purple-800/60 bg-purple-50/70 dark:bg-purple-950/30 shadow-xs">
                                   <div>
-                                    <span className="px-1.5 py-0.5 rounded bg-purple-200/80 border border-purple-300 text-[7.5px] font-black text-purple-800 uppercase tracking-wide">
-                                      EXAMINATION
-                                    </span>
-                                    <div className="text-[9.5px] font-bold text-purple-950 dark:text-purple-200 mt-1 line-clamp-1">
-                                      {cellData.config?.notes || "Assessment Session"}
+                                    <div className="flex items-center justify-between gap-1 mb-1">
+                                      <span className="px-1.5 py-0.5 rounded bg-purple-600 text-[7.5px] font-black text-white uppercase tracking-wider">
+                                        📝 {examInfo?.exam_type || "EXAMINATION"}
+                                      </span>
+                                      {examInfo?.hall_room && (
+                                        <span className="text-[7.5px] font-bold text-purple-700 dark:text-purple-300 truncate max-w-[80px]">
+                                          📍 {examInfo.hall_room}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] font-extrabold text-purple-950 dark:text-purple-100 line-clamp-1 leading-tight">
+                                      {examInfo?.subject_name || cellData.config?.notes || "Assessment Session"}
                                     </div>
                                   </div>
-                                  <div className="flex items-center justify-between text-[8px] mt-1 pt-1 border-t border-purple-200/60 font-black uppercase">
-                                    <span className="text-purple-700">Exam Day</span>
+                                  <div className="flex items-center justify-between text-[8px] mt-1 pt-1 border-t border-purple-200/60 dark:border-purple-800/40 font-black uppercase">
+                                    <span className="text-purple-700 dark:text-purple-300 font-mono">
+                                      {examInfo?.session_time || formatTimeLabel(time)}
+                                    </span>
                                     {cellData.attendance ? (
-                                      <span className={`px-1.5 py-0.5 rounded ${
+                                      <span className={`px-1.5 py-0.5 rounded text-[7.5px] ${
                                         cellData.attendance.status === "present"
                                           ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
                                           : "bg-rose-100 text-rose-800 border border-rose-300"
@@ -2130,7 +2156,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                         {cellData.attendance.status}
                                       </span>
                                     ) : (
-                                      <span className="text-purple-600/70 italic">Unmarked</span>
+                                      <span className="text-purple-600/70 italic text-[7.5px]">Exam Mode</span>
                                     )}
                                   </div>
                                 </div>

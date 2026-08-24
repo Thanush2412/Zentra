@@ -107,28 +107,34 @@ export const KAMPracticalSkills: React.FC<{ selectedCollegeId?: string; kamId?: 
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {subjectProgress.map((s, idx) => (
-            <div key={idx} className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-slate-800">{s.subject}</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700">
-                  {s.completionPct}%
-                </span>
+        {subjectProgress.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {subjectProgress.map((s, idx) => (
+              <div key={idx} className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-800">{s.subject}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700">
+                    {s.completionPct}%
+                  </span>
+                </div>
+                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-indigo-600 rounded-full transition-all"
+                    style={{ width: `${s.completionPct}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 pt-1 border-t border-slate-200/60">
+                  <span>{s.submissions} Submissions</span>
+                  <span className="text-emerald-600 font-bold">{s.verified} Verified</span>
+                </div>
               </div>
-              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-indigo-600 rounded-full transition-all"
-                  style={{ width: `${s.completionPct}%` }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 pt-1 border-t border-slate-200/60">
-                <span>{s.submissions} Submissions</span>
-                <span className="text-emerald-600 font-bold">{s.verified} Verified</span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-8 text-center bg-slate-50 rounded-xl border border-slate-200/60 text-slate-400 text-xs font-semibold">
+            No active practical lab courses recorded for this selection.
+          </div>
+        )}
       </div>
 
       {/* ── 3. Mentor Grading Backlog & Turnaround ── */}

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, {
   createContext,
@@ -148,8 +148,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {isActionLoading && (
         <div className="fixed top-0 left-0 right-0 z-[10001] h-1.5 bg-slate-200/40 dark:bg-slate-800/40 overflow-hidden pointer-events-none">
           <div 
-            className="h-full bg-gradient-to-r from-indigo-500 via-[#D528A2] via-purple-500 to-rose-500 shadow-[0_0_12px_rgba(213,40,162,0.8)] animate-pulse w-full"
-            style={{ animation: "top-loader-pulse 1.2s ease-in-out infinite alternate" }} 
+            className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600 w-full"
           />
         </div>
       )}

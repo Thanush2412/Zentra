@@ -305,7 +305,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
         pendingLateCamReq ? (
           <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2 text-xs text-amber-900 bg-amber-50/50 p-2.5 rounded-lg border border-amber-200/60">
             <div className="flex items-center gap-2 min-w-0">
-              <Clock className="h-3.5 w-3.5 text-amber-600 animate-pulse shrink-0" />
+              <Clock className="h-3.5 w-3.5 text-amber-600 shrink-0" />
               <span className="truncate font-medium">
                 Late Punch Request sent to CAM: <span className="italic">"{pendingLateCamReq.reason?.replace("[Late Mentor Attendance Punch] ", "")}"</span>
               </span>
@@ -1451,6 +1451,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     setWeekOffset(0);
   }, []);
 
+  const [mentorExamsList, setMentorExamsList] = useState<any[]>([]);
+
   useEffect(() => {
     if (currentMentor?.college_id) {
       fetch(`/api/daily-configs?college_id=${currentMentor.college_id}`)
@@ -1461,6 +1463,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           }
         })
         .catch(err => console.error("Error fetching daily configs:", err));
+
+      fetch(`/api/exams?college_id=${encodeURIComponent(currentMentor.college_id)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.exams)) {
+            setMentorExamsList(data.exams);
+          }
+        })
+        .catch(err => console.error("Error fetching exams for mentor:", err));
     }
   }, [currentMentor?.college_id]);
 
@@ -2926,13 +2937,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const timetableCellMap = useMemo(() => {
     const map = new Map<string, {
       slot: any;
-      type: "own" | "covering" | "demo" | null;
+      type: "own" | "covering" | "demo" | "exam" | null;
       cellStatus: "active" | "pending" | "handover" | null;
       hasAttendance: boolean;
       pendingReq: any | null;
       approvedReq: any | null;
       demoSession: any | null;
       originalMentorId?: string;
+      exam?: any | null;
     }>();
 
     // Build fast lookup maps
@@ -2970,6 +2982,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           return;
         }
 
+        // Check if there is an exam scheduled on this date
+        const cfg = dailyConfigsMap.get(date.dateStr);
+        const matchingExam = (mentorExamsList || []).find((ex: any) => ex.exam_date === date.dateStr);
+        const isExamDate = (cfg && cfg.day_type === "exam_day") || Boolean(matchingExam);
+
         // 1. Own slot
         const ownSlot = mySlots.find(s => s.day === queryDay && isTimeMatch(s.time, time));
         if (ownSlot) {
@@ -2993,7 +3010,30 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             return;
           }
 
+          if (isExamDate) {
+            map.set(`${date.dateStr}|${time}`, { slot: ownSlot, type: "exam", cellStatus: "active", hasAttendance, pendingReq, approvedReq, demoSession: null, exam: matchingExam || null });
+            return;
+          }
+
           map.set(`${date.dateStr}|${time}`, { slot: ownSlot, type: "own", cellStatus, hasAttendance, pendingReq, approvedReq, demoSession: null });
+          return;
+        }
+
+        // If it is an exam day and there is a matching exam for this mentor's department
+        if (isExamDate && matchingExam) {
+          const examSlot = {
+            id: `exam_${matchingExam.id || date.dateStr}_${time}`,
+            mentorId: currentMentor.id,
+            college_id: currentMentor.college_id || "",
+            day: queryDay,
+            time: matchingExam.session_time || time,
+            course: matchingExam.subject_name,
+            classGroup: matchingExam.department,
+            location: matchingExam.hall_room || "Examination Hall",
+            shift: currentShift
+          };
+          const hasAttendance = attendanceKeySet.has(`${examSlot.id}|${date.dateStr}`);
+          map.set(`${date.dateStr}|${time}`, { slot: examSlot, type: "exam", cellStatus: "active", hasAttendance, pendingReq: null, approvedReq: null, demoSession: null, exam: matchingExam });
           return;
         }
 
@@ -3036,7 +3076,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       });
     });
     return map;
-  }, [weekDates, timeSlots, mySlots, approvedHandovers, requests, studentAttendance, demoSessions,
+  }, [weekDates, timeSlots, mySlots, approvedHandovers, requests, studentAttendance, demoSessions, mentorExamsList,
     currentMentor.id, currentMentor.college_id, slotsByIdMap, dailyConfigsMap,
     selectedClassFilter, selectedStatusFilter, selectedLocationFilter]);
 
@@ -3180,6 +3220,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
     // Use already-cached daily config map instead of a duplicate fetch on every cell click
     const configForDate = dailyConfigsMap.get(dateStr);
+    const matchingExam = (mentorExamsList || []).find((ex: any) => ex.exam_date === dateStr);
+
     if (configForDate && configForDate.day_type && configForDate.day_type !== "None") {
       setIsDayConfigSet(true);
       setDayConfigDetails(configForDate);
@@ -3190,6 +3232,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         setAttendanceType("Regular");
       }
       setAttendanceMode(configForDate.session_mode === "Online" ? "Online" : "Offline");
+    } else if (matchingExam) {
+      setIsDayConfigSet(true);
+      setDayConfigDetails({
+        college_id: currentMentor.college_id,
+        dateStr,
+        day_type: "exam_day",
+        day_order: "None",
+        notes: `${matchingExam.exam_type} Examination`,
+        session_mode: "Offline"
+      });
+      setAttendanceType("Non-Regular");
+      setAttendanceTypeSub("Exam");
+      setAttendanceMode("Offline");
     } else {
       if (!firstExisting) {
         setIsDayConfigSet(false);
@@ -3602,10 +3657,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       })()}
 
       <main className="flex-grow overflow-x-hidden overflow-y-auto h-full floating-main-panel p-4 md:p-6 space-y-6 pb-20 md:pb-6 scroll-touch relative">
-        {/* Tab-switch pending indicator — shows instantly on click while React prepares the new tab */}
+        {/* Tab-switch pending indicator */}
         {isTabPending && (
           <div className="absolute inset-x-0 top-0 h-0.5 z-40 overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-indigo-500 via-[#D528A2] to-indigo-500 animate-pulse w-full" />
+            <div className="h-full bg-gradient-to-r from-indigo-500 via-[#D528A2] to-indigo-500 w-full" />
           </div>
         )}
         {/* Tab More Menu: Grid of remaining tabs */}
@@ -3915,7 +3970,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   if (pendingLateCamReq) {
                                     return (
                                       <span className="text-[9.5px] font-black text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center justify-center gap-1 w-full sm:w-auto text-center">
-                                        <Clock className="h-3 w-3 shrink-0 animate-pulse" /> Pending CAM
+                                        <Clock className="h-3 w-3 shrink-0" /> Pending CAM
                                       </span>
                                     );
                                   }
@@ -4021,7 +4076,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                     const ledgerList = Array.from(ledgerMap.values()).map(data => ({
                       ...data,
-                      balance: data.given - data.received // + means you owe them; - means they owe you
+                      balance: data.received - data.given // + means you covered more (they owe you / credit); - means you gave more (you owe them / debit)
                     }));
 
                     const formatMonthLabel = (mStr: string) => {
@@ -4064,36 +4119,36 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   <td className="p-3 font-bold text-slate-800">{row.otherName}</td>
                                   <td className="p-3 text-center">
                                     {row.given > 0
-                                      ? <span className="px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 font-black">−{row.given} hr{row.given > 1 ? "s" : ""}</span>
+                                      ? <span className="px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 font-black whitespace-nowrap">−{row.given} hr{row.given > 1 ? "s" : ""}</span>
                                       : <span className="text-slate-300 font-semibold">—</span>}
                                   </td>
                                   <td className="p-3 text-center">
                                     {row.received > 0
-                                      ? <span className="px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 font-black">+{row.received} hr{row.received > 1 ? "s" : ""}</span>
+                                      ? <span className="px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 font-black whitespace-nowrap">+{row.received} hr{row.received > 1 ? "s" : ""}</span>
                                       : <span className="text-slate-300 font-semibold">—</span>}
                                   </td>
-                                  <td className={`p-3 text-right font-black text-sm ${row.balance > 0 ? "text-rose-600" : row.balance < 0 ? "text-emerald-600" : "text-slate-500"}`}>
-                                    {row.balance > 0 ? `+${row.balance}` : row.balance}
+                                  <td className={`p-3 text-right font-black text-sm whitespace-nowrap ${row.balance > 0 ? "text-emerald-600" : row.balance < 0 ? "text-rose-600" : "text-slate-500"}`}>
+                                    {row.balance > 0 ? `+${row.balance}` : row.balance < 0 ? `-${Math.abs(row.balance)}` : "0"}
                                   </td>
-                                  <td className="p-3 text-right">
+                                  <td className="p-3 text-right whitespace-nowrap">
                                     {row.balance === 0 ? (
-                                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[9px] font-black uppercase">Balanced Yes</span>
+                                      <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 border border-slate-200 text-[9.5px] font-black uppercase inline-flex items-center">Balanced</span>
                                     ) : isPastMonth ? (
-                                      <span className="px-2 py-0.5 rounded bg-red-50 text-rose-700 border border-red-200 text-[9px] font-black uppercase animate-pulse">
-                                        {row.balance > 0 ? `You owe ${row.balance} hr` : `Owed ${Math.abs(row.balance)} hr`} — Overdue
+                                      <span className="px-2.5 py-1 rounded-md bg-red-50 text-rose-700 border border-red-200 text-[9.5px] font-black uppercase inline-flex items-center">
+                                        {row.balance < 0 ? `You owe ${Math.abs(row.balance)} hr` : `Owed ${row.balance} hr`} — Overdue
                                       </span>
-                                    ) : row.balance > 0 ? (
-                                      <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-black uppercase">
-                                        Compensate {row.balance} hr to {row.otherName.split(" ")[0]}
+                                    ) : row.balance < 0 ? (
+                                      <span className="px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[9.5px] font-black uppercase inline-flex items-center">
+                                        Compensate {Math.abs(row.balance)} hr to {row.otherName.split(" ")[0]}
                                       </span>
                                     ) : (
-                                      <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-black uppercase">
-                                        {row.otherName.split(" ")[0]} owes you {Math.abs(row.balance)} hr
+                                      <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9.5px] font-black uppercase inline-flex items-center">
+                                        {row.otherName.split(" ")[0]} owes you {row.balance} hr
                                       </span>
                                     )}
                                   </td>
-                                  <td className="p-3 text-center">
-                                    {row.balance > 0 ? (
+                                  <td className="p-3 text-center whitespace-nowrap">
+                                    {row.balance < 0 ? (
                                       (() => {
                                         // Check if there's already a pending swap offer for this pair
                                         const pendingSwap = requests.find(
@@ -4103,7 +4158,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                             (r.status === "pending" || r.status === "pending_cam")
                                         );
                                         return pendingSwap ? (
-                                          <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-600 text-[9px] font-black uppercase">Offer Sent Yes</span>
+                                          <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-600 text-[9px] font-black uppercase">Offer Sent</span>
                                         ) : (
                                           <button
                                             type="button"
@@ -4153,7 +4208,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <div className="bg-gradient-to-br from-pink-50/50 via-white to-white border border-pink-100 rounded-xl p-5 shadow-xs space-y-4">
                       <div className="flex items-center justify-between border-b border-pink-100/50 pb-2">
                         <div className="flex items-center gap-2">
-                          <Sparkles className="h-4.5 w-4.5 text-pink-500 animate-pulse" />
+                          <Sparkles className="h-4.5 w-4.5 text-pink-500" />
                           <h3 className="text-xs font-black text-slate-805 uppercase tracking-widest">Upcoming Demo Reviews</h3>
                         </div>
                         <span className="px-2 py-0.5 bg-pink-50 border border-pink-150 text-pink-600 text-[8px] font-black uppercase rounded-lg">
@@ -4401,7 +4456,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         : "bg-amber-50/60 border-amber-300 text-amber-900 hover:bg-amber-100/40"
                       }`}
                   >
-                    <span className={`h-2 w-2 rounded-full ${selectedStatusFilter === "pending" ? "bg-white" : "bg-amber-500 animate-pulse"}`}></span>
+                    <span className={`h-2 w-2 rounded-full ${selectedStatusFilter === "pending" ? "bg-white" : "bg-amber-500"}`}></span>
                     Cover Pending
                   </button>
 
@@ -4612,6 +4667,53 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             );
                           }
 
+                          if (cellData?.type === "exam") {
+                            const examInfo = cellData.exam;
+                            const hasAtt = cellData.hasAttendance;
+                            return (
+                              <td key={time} className="p-1.5 h-24 border-r border-gray-150 last:border-r-0 transition-all bg-purple-50/20">
+                                <div
+                                  onClick={() => {
+                                    if (slot) {
+                                      handleCellClick(date.day, date.dateStr, date.formatted, time);
+                                    }
+                                  }}
+                                  className="h-full flex flex-col justify-between p-2 rounded-xl border border-purple-300 bg-purple-50/70 text-xs shadow-2xs cursor-pointer hover:shadow-md hover:border-purple-400 transition-all"
+                                >
+                                  <div>
+                                    <div className="flex items-center justify-between gap-1 mb-1">
+                                      <span className="px-1.5 py-0.5 rounded bg-purple-600 text-[8px] font-black text-white uppercase tracking-wide">
+                                        📝 {examInfo?.exam_type || "EXAMINATION"}
+                                      </span>
+                                      {examInfo?.hall_room && (
+                                        <span className="text-[7.5px] font-bold text-purple-700 truncate max-w-[80px]">
+                                          📍 {examInfo.hall_room}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="font-extrabold text-[10px] text-purple-950 line-clamp-1 leading-tight mb-0.5">
+                                      {examInfo?.subject_name || slot?.course || "Assessment Session"}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[8px] mt-1 pt-1 border-t border-purple-200/60 font-black uppercase">
+                                    <span className="text-purple-700 font-mono">
+                                      {examInfo?.session_time || formatTimeLabel(time)}
+                                    </span>
+                                    {hasAtt ? (
+                                      <span className="px-1.5 py-0.5 rounded text-[7.5px] bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                        Marked
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 rounded text-[7.5px] bg-purple-100 text-purple-800 border border-purple-300">
+                                        Mark Exam Att
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            );
+                          }
+
                           // Check Handover state for this slot on this date — use pre-computed values
                           const pendingReq = cellData?.pendingReq ?? null;
                           const approvedReq = cellData?.approvedReq ?? null;
@@ -4699,7 +4801,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                                       if (pendingLateCamReq) {
                                         return (
-                                          <span className="text-[8.5px] font-black text-amber-700 flex items-center gap-0.5 uppercase tracking-wider animate-pulse">
+                                          <span className="text-[8.5px] font-black text-amber-700 flex items-center gap-0.5 uppercase tracking-wider">
                                             ⏰ CAM Pending
                                           </span>
                                         );
@@ -4713,7 +4815,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       }
                                       if (!isFuture) {
                                         return (
-                                          <span className="text-[8.5px] font-black text-amber-700 flex items-center gap-0.5 uppercase tracking-wider animate-pulse">
+                                          <span className="text-[8.5px] font-black text-amber-700 flex items-center gap-0.5 uppercase tracking-wider">
                                             Pending
                                           </span>
                                         );
@@ -5526,6 +5628,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   type: "own"
                                 });
                                 
+                                // Initialize local attendance from existing session records
+                                const initialAtt: Record<string, "present" | "absent" | "od" | "not_marked"> = {};
+                                (session.records || []).forEach((r: any) => {
+                                  initialAtt[r.studentId] = (r.status as any) || "present";
+                                });
+                                setLocalAttendance(initialAtt);
+                                setOriginalAttendance(initialAtt);
+                                setAttendanceFilterStatus("all");
+                                setAttendanceSearchTerm("");
+                                
                                 // Directly open attendance studio in read-only view mode
                                 setIsAttendanceStudioOpen(true);
                                 setModalTab("attendance");
@@ -5731,6 +5843,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       type="button"
                       onClick={() => {
                         setIsModalOpen(false);
+                        setAttendanceFilterStatus("all");
+                        setAttendanceSearchTerm("");
                         setIsAttendanceStudioOpen(true);
                       }}
                       className="w-full text-left p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50 transition-all shadow-2xs cursor-pointer group flex items-start gap-3"
@@ -5903,9 +6017,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           // Allow editing if: window is open OR has CAM approval for late edit
           const isPastDay = (selectedCell.dateStr < todayStr || isLocked) && !hasCAMApproval;
 
-          const presentCount = Object.values(localAttendance).filter(v => v === "present").length;
-          const absentCount = Object.values(localAttendance).filter(v => v === "absent").length;
-          const odCount = Object.values(localAttendance).filter(v => v === "od").length;
+          const presentCount = classStudents.filter(s => (localAttendance[s.id] || "present") === "present").length;
+          const absentCount = classStudents.filter(s => localAttendance[s.id] === "absent").length;
+          const odCount = classStudents.filter(s => localAttendance[s.id] === "od").length;
 
           const filteredStudents = memoizedFilteredStudents;
 

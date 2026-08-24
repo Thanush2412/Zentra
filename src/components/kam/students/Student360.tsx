@@ -23,10 +23,11 @@ import {
 
 interface Student360Props {
   studentId: string;
+  collegeId?: string;
   onClose: () => void;
 }
 
-export const Student360: React.FC<Student360Props> = ({ studentId, onClose }) => {
+export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, onClose }) => {
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +39,8 @@ export const Student360: React.FC<Student360Props> = ({ studentId, onClose }) =>
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/kam/students/${encodeURIComponent(studentId)}/progress`);
+        const query = collegeId ? `?collegeId=${encodeURIComponent(collegeId)}` : "";
+        const res = await fetch(`/api/kam/students/${encodeURIComponent(studentId)}/progress${query}`);
         const json = await res.json();
         if (json.success && isMounted) {
           setData(json);

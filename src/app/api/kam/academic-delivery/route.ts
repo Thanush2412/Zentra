@@ -47,7 +47,7 @@ export async function GET(request: Request) {
         SELECT s.*, c.name as college_name
         FROM subjects s
         LEFT JOIN colleges c ON s.college_id = c.id
-        WHERE s.college_id IN (${collegePlaceholders}) OR s.college_id IS NULL
+        WHERE s.college_id IN (${collegePlaceholders})
       `, ...collegeIds).catch(() => []),
       db.all(`
         SELECT sl.*, c.name as college_name, m.name as mentor_name
@@ -84,16 +84,22 @@ export async function GET(request: Request) {
 
     // Populate conducted topics & hours from academic_tracker
     (trackerRows || []).forEach(t => {
-      const key = `${t.college_id || 'all'}__${t.subject ? '' : ''}__${(t.subject || '').toLowerCase().trim()}`;
-      // Search matching entry in subjectMap
+      // Search matching entry in subjectMap with department affinity
       let found: any = null;
       for (const [k, v] of subjectMap.entries()) {
-        if (
-          (!t.college_id || v.collegeId === t.college_id) &&
-          v.name.toLowerCase().trim() === (t.subject || '').toLowerCase().trim()
-        ) {
-          found = v;
-          break;
+        const clgMatch = !t.college_id || v.collegeId === t.college_id;
+        const nameMatch = v.name.toLowerCase().trim() === (t.subject || '').toLowerCase().trim();
+        if (clgMatch && nameMatch) {
+          const deptMatch = t.class_group && (
+            (t.class_group.toLowerCase().includes("bba") && v.department.toLowerCase().includes("bba")) ||
+            (t.class_group.toLowerCase().includes("bca") && v.department.toLowerCase().includes("bca")) ||
+            (t.class_group.toLowerCase().includes("cs") && v.department.toLowerCase().includes("cs"))
+          );
+          if (deptMatch) {
+            found = v;
+            break;
+          }
+          if (!found) found = v;
         }
       }
 

@@ -11745,7 +11745,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         {req.reason}
                                       </td>
                                       <td className="p-3 border-r border-slate-100">
-                                        {req.status === "needs_cam_allocation" ? (
+                                        {req.request_type === "exam_marks_edit" ? (
+                                          <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-purple-50 border-purple-200 text-purple-700 flex items-center gap-1 w-fit">
+                                            <span>📝 Exam Mark Edit</span>
+                                          </span>
+                                        ) : req.status === "needs_cam_allocation" ? (
                                           <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-indigo-50 border-indigo-200 text-indigo-700 flex items-center gap-1 w-fit">
                                             <span>🛡️ Needs CAM Allocation</span>
                                           </span>
@@ -11772,7 +11776,58 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         )}
                                       </td>
                                       <td className="p-3 text-right">
-                                        {(req.status === "needs_cam_allocation" || req.status === "rejected") ? (
+                                        {req.request_type === "exam_marks_edit" ? (
+                                          <div className="flex gap-2 justify-end">
+                                            <button
+                                              type="button"
+                                              disabled={loadingActions[`approve_req_${req.id}`]}
+                                              onClick={async () => {
+                                                if (await showConfirm({ message: `Approve this Exam Mark Modification Request? New mark will be saved into the official exam record.`, confirmLabel: "Approve Mark", title: "Approve Mark Edit" })) {
+                                                  setActionLoading(`approve_req_${req.id}`, true);
+                                                  try {
+                                                    await handleRequest(req.id, "approved", "Approved by CAM", "Campus Manager");
+                                                    toast("Exam mark modification approved successfully!", "success");
+                                                    refreshData();
+                                                  } finally {
+                                                    setActionLoading(`approve_req_${req.id}`, false);
+                                                  }
+                                                }
+                                              }}
+                                              className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                                            >
+                                              {loadingActions[`approve_req_${req.id}`] ? (
+                                                <>
+                                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                                  Approving...
+                                                </>
+                                              ) : "Approve Mark"}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              disabled={loadingActions[`reject_req_${req.id}`]}
+                                              onClick={async () => {
+                                                if (await showConfirm({ message: "Are you sure you want to reject this mark modification request?", danger: true, confirmLabel: "Reject" })) {
+                                                  setActionLoading(`reject_req_${req.id}`, true);
+                                                  try {
+                                                    await handleRequest(req.id, "rejected", "Rejected by CAM", "Campus Manager");
+                                                    toast("Exam mark modification request rejected.", "info");
+                                                    refreshData();
+                                                  } finally {
+                                                    setActionLoading(`reject_req_${req.id}`, false);
+                                                  }
+                                                }
+                                              }}
+                                              className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                                            >
+                                              {loadingActions[`reject_req_${req.id}`] ? (
+                                                <>
+                                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                                  Rejecting...
+                                                </>
+                                              ) : "Reject"}
+                                            </button>
+                                          </div>
+                                        ) : (req.status === "needs_cam_allocation" || req.status === "rejected") ? (
                                           <button
                                             type="button"
                                             onClick={() => openCamAssignModal(req)}
