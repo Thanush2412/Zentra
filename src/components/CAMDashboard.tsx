@@ -12308,49 +12308,66 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   {/* Student Tracker Audit Tab */}
                   {activeTab === "tracker" && (() => {
                     // ── DB-driven cascading filters ───────────────────────────────────────
-                    // Helper: match college_id loosely (includes subjects with null college_id
-                    // as well as those explicitly tied to this campus)
                     const matchesCollege = (id?: string | null) =>
                       !id || id === activeCollegeId;
 
-                    // Step 1: Departments from DB scoped to this college
-                    const trackerDepts = departmentsList
-                      .filter(d => matchesCollege(d.college_id))
-                      .map(d => d.name.trim())
-                      .filter(Boolean)
-                      .sort();
-                    // Deduplicate case-insensitively
-                    const trackerDeptsUniq = Array.from(
-                      new Map(trackerDepts.map(d => [d.toLowerCase(), d])).values()
-                    );
+                    // Step 1: Course Name directly from Batch Creation module for active campus
+                    const trackerCourses = Array.from(
+                      new Set(
+                        (collegeCourses.length > 0
+                          ? collegeCourses
+                          : departmentsList.filter(d => matchesCollege(d.college_id))
+                        )
+                          .map(c => c.name.trim())
+                          .filter(Boolean)
+                      )
+                    ).sort();
 
-                    const activeDept = camTrackerDept || trackerDeptsUniq[0] || "";
+                    const activeDept = (camTrackerDept && trackerCourses.includes(camTrackerDept))
+                      ? camTrackerDept
+                      : trackerCourses[0] || "";
 
-                    // Step 2: Semesters from subjects table for the chosen department
-                    const trackerSemesters = Array.from(new Set(
-                      subjectsList
-                        .filter(s => matchesCollege(s.college_id) &&
-                                     (s.department?.trim().toLowerCase() === activeDept.trim().toLowerCase() ||
-                                      s.department?.trim().toLowerCase().includes(activeDept.trim().toLowerCase()) ||
-                                      activeDept.trim().toLowerCase().includes(s.department?.trim().toLowerCase() || "")))
+                    const selectedCourseObj = collegeCourses.find(c => c.name.trim().toLowerCase() === activeDept.trim().toLowerCase());
+
+                    // Helper to match course names without separate parsing
+                    const matchesCourseName = (studentDeptOrClass: string, courseName: string, courseCode?: string) => {
+                      if (!studentDeptOrClass || !courseName) return false;
+                      const s = studentDeptOrClass.trim().toLowerCase();
+                      const c = courseName.trim().toLowerCase();
+                      const code = (courseCode || "").trim().toLowerCase();
+
+                      return s === c ||
+                             s.replace(/^[ivx]+\s+/i, "") === c ||
+                             s.startsWith(c) ||
+                             s.includes(c) ||
+                             (code && (s === code || s.includes(code)));
+                    };
+
+                    // Step 2: Semesters derived from course years + subjects table + students
+                    const courseYears = selectedCourseObj?.years || 3;
+                    const standardSemesters = Array.from({ length: courseYears * 2 }, (_, i) => `Semester ${i + 1}`);
+
+                    const trackerSemesters = Array.from(new Set([
+                      ...standardSemesters,
+                      ...subjectsList
+                        .filter(s => matchesCollege(s.college_id) && matchesCourseName(s.department || "", activeDept, selectedCourseObj?.code))
                         .map(s => s.semester)
                         .filter(Boolean)
-                    )).sort((a, b) => {
+                    ])).sort((a, b) => {
                       const na = parseInt((a || "").replace(/\D/g, "") || "0");
                       const nb = parseInt((b || "").replace(/\D/g, "") || "0");
                       return na - nb;
                     });
 
-                    const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
-                    const finalSemesters = trackerSemesters.length > 0 ? trackerSemesters : defaultSems;
-                    const activeSemester = camTrackerSemester || finalSemesters[0] || "Semester 1";
+                    const finalSemesters = trackerSemesters.length > 0 ? trackerSemesters : standardSemesters;
+                    const activeSemester = (camTrackerSemester && finalSemesters.includes(camTrackerSemester))
+                      ? camTrackerSemester
+                      : finalSemesters[0] || "Semester 1";
 
                     // Step 3: Subjects from DB filtered by dept + semester & ONLY Skill Subjects
                     const allDeptSemSubjects = subjectsList.filter(
                       s => matchesCollege(s.college_id) &&
-                           (s.department?.trim().toLowerCase() === activeDept.trim().toLowerCase() ||
-                            s.department?.trim().toLowerCase().includes(activeDept.trim().toLowerCase()) ||
-                            activeDept.trim().toLowerCase().includes(s.department?.trim().toLowerCase() || "")) &&
+                           matchesCourseName(s.department || "", activeDept, selectedCourseObj?.code) &&
                            (s.semester?.trim().toLowerCase() === activeSemester.trim().toLowerCase() || !s.semester)
                     );
                     const skillSubjectObjs = allDeptSemSubjects.filter(s => isSkillSubject(s));
@@ -12362,19 +12379,41 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                     const activeWeek: number = typeof camTrackerWeek === "number" ? camTrackerWeek : 1;
 
+                    // Unified student matcher for selected course and semester
+                    const matchesCohortStudent = (s: any) => {
+                      if (s.college_id && activeCollegeId && s.college_id !== activeCollegeId) return false;
+                      const sDept = (s.department || "").trim();
+                      const sClass = (s.classGroup || "").trim();
+                      const inCourse = matchesCourseName(sDept, activeDept, selectedCourseObj?.code) ||
+                                       matchesCourseName(sClass, activeDept, selectedCourseObj?.code);
+                      if (!inCourse) return false;
+
+                      if (!activeSemester || activeSemester === "ALL") return true;
+
+                      const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").trim().toLowerCase();
+                      const semLower = activeSemester.trim().toLowerCase();
+                      const semNum = semLower.match(/\d+/)?.[0];
+
+                      if (sSem === semLower) return true;
+                      if (semNum && (sSem.includes(`semester ${semNum}`) || sSem.includes(`sem ${semNum}`))) return true;
+                      if (semNum && sClass.toLowerCase().includes(`semester ${semNum}`)) return true;
+                      if (semNum) {
+                        const yrNum = Math.ceil(parseInt(semNum, 10) / 2);
+                        const romanYears = ["", "i", "ii", "iii", "iv"];
+                        const roman = romanYears[yrNum];
+                        if (roman && (sClass.toLowerCase().startsWith(`${roman} `) || sClass.toLowerCase().includes(` ${roman} `) || sDept.toLowerCase().startsWith(`${roman} `))) {
+                          return true;
+                        }
+                      }
+                      return false;
+                    };
+
                     // Export Tracker Data to Excel
                     const exportTrackerData = async () => {
                       try {
                         const XLSX = await import("xlsx");
 
-                        const classStudents = students.filter(s => {
-                          if (s.college_id && activeCollegeId && s.college_id !== activeCollegeId) return false;
-                          if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
-                          const sDept = (s.department || "").toLowerCase().trim();
-                          const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
-                          return (sDept === activeDept.toLowerCase().trim() || sDept.includes(activeDept.toLowerCase().trim()) || activeDept.toLowerCase().trim().includes(sDept)) &&
-                                 (sSem === activeSemester.toLowerCase().trim() || !activeSemester);
-                        });
+                        const classStudents = students.filter(matchesCohortStudent);
 
                         if (classStudents.length === 0) {
                           toast("No students found to export for the selected cohort.", "warning");
@@ -12464,8 +12503,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               }}
                               className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
                             >
-                              {trackerDeptsUniq.map(d => <option key={d} value={d}>{d}</option>)}
-                              {trackerDeptsUniq.length === 0 && <option value="">No departments</option>}
+                              {trackerCourses.map(d => <option key={d} value={d}>{d}</option>)}
+                              {trackerCourses.length === 0 && <option value="">No courses</option>}
                             </select>
                           </div>
                           {/* 2. Semester */}
@@ -12582,15 +12621,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       {/* ── Student Performance Analytics ── */}
                       {activeDept && activeSemester && activeSubject && (() => {
                         // Students in this class group
-                        const chartClassGroup = `${activeDept} - ${activeSemester}`;
-                        const classStudentsForChart = students.filter(s => {
-                          if (s.college_id && activeCollegeId && s.college_id !== activeCollegeId) return false;
-                          if (s.classGroup && isCohortMatching(s.classGroup, chartClassGroup, coursesList, subjectsList)) return true;
-                          const sDept = (s.department || "").toLowerCase().trim();
-                          const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
-                          return (sDept === activeDept.toLowerCase().trim() || sDept.includes(activeDept.toLowerCase().trim()) || activeDept.toLowerCase().trim().includes(sDept)) &&
-                                 (sSem === activeSemester.toLowerCase().trim() || !activeSemester);
-                        });
+                        const classStudentsForChart = students.filter(matchesCohortStudent);
                         const studentCount = classStudentsForChart.length;
                         if (studentCount === 0) return null;
 
@@ -12799,15 +12830,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             );
                           }
 
-                          // Students matched by dept + semester from DB with fallback cohort matching
-                          const classStudents = students.filter(s => {
-                            if (s.college_id && activeCollegeId && s.college_id !== activeCollegeId) return false;
-                            if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
-                            const sDept = (s.department || "").toLowerCase().trim();
-                            const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
-                            return (sDept === activeDept.toLowerCase().trim() || sDept.includes(activeDept.toLowerCase().trim()) || activeDept.toLowerCase().trim().includes(sDept)) &&
-                                   (sSem === activeSemester.toLowerCase().trim() || !activeSemester);
-                          });
+                          // Students matched by dept + semester from DB with uniform matching
+                          const classStudents = students.filter(matchesCohortStudent);
 
                           if (classStudents.length === 0) {
                             return (
@@ -14132,11 +14156,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       return false;
                     });
 
-                    // Unique values for dropdown filters
-                    const availableDepts = Array.from(new Set([
-                      ...departmentsList.filter(d => !activeCollegeId || d.college_id === activeCollegeId).map(d => d.name),
-                      ...collegeCourses.map(c => c.name)
-                    ])).filter(Boolean).sort();
+                    // Unique course/department names directly from Batch Creation module for active campus
+                    const availableDepts = Array.from(
+                      new Set(
+                        (collegeCourses.length > 0
+                          ? collegeCourses
+                          : departmentsList.filter(d => !activeCollegeId || d.college_id === activeCollegeId)
+                        )
+                          .map(c => c.name.trim())
+                          .filter(Boolean)
+                      )
+                    ).sort();
 
                     const availableCohorts = Array.from(new Set([
                       ...campusLogs.map(l => l.class_group),
@@ -14245,7 +14275,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     // Filtered records
                     const filteredLogs = campusLogs.filter(log => {
                       if (camAcadDeptFilter !== "all") {
-                        if (!(log.class_group || "").toLowerCase().includes(camAcadDeptFilter.toLowerCase().trim())) return false;
+                        const logClass = (log.class_group || "").toLowerCase().trim();
+                        const cLower = camAcadDeptFilter.toLowerCase().trim();
+                        const courseObj = collegeCourses.find(c => c.name.trim().toLowerCase() === cLower);
+                        const cCodeLower = (courseObj?.code || "").trim().toLowerCase();
+
+                        const matchesCourse = logClass === cLower ||
+                                              logClass.replace(/^[ivx]+\s+/i, "") === cLower ||
+                                              logClass.startsWith(cLower) ||
+                                              logClass.includes(cLower) ||
+                                              (cCodeLower && (logClass === cCodeLower || logClass.includes(cCodeLower)));
+                        if (!matchesCourse) return false;
                       }
                       if (camAcadCohortFilter !== "all") {
                         if ((log.class_group || "").toLowerCase().trim() !== camAcadCohortFilter.toLowerCase().trim()) return false;

@@ -3372,32 +3372,86 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
   const memoizedTrackerClassStudents = useMemo(() => {
     if (activeTab !== "tracker") return [];
-    // Derive active class group using same logic as tracker tab
-    const campusDepts = Array.from(new Set(coursesList.filter(c => !c.college_id || c.college_id === currentMentor?.college_id).map(c => c.name.trim()).filter(Boolean))).sort();
-    const deptOptions = campusDepts.length > 0 ? campusDepts : Array.from(new Set(mentorClasses.map(c => getDeptFromClassGroup(c) || c))).filter(Boolean);
-    const activeDept = trackerDept || deptOptions[0] || currentMentor?.mentor_group || "";
-    const semesterOptions = Array.from(new Set(
-      subjectsList.filter(s => {
-        if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
-        const d = (s.department || "").toLowerCase().trim();
-        const mg = (s.mentor_group || "").toLowerCase().trim();
-        const act = activeDept.toLowerCase().trim();
-        return d === act || mg === act || (d.length > 2 && act.includes(d)) || (act.length > 2 && d.includes(act));
-      }).map(s => s.semester).filter(Boolean)
-    )).sort((a, b) => parseInt((a || "").replace(/\D/g, "") || "0") - parseInt((b || "").replace(/\D/g, "") || "0"));
-    const defaultSems = ["Semester 5", "Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 6", "Semester 7", "Semester 8"];
+    // Derive active class group using exact course names from Batch Creation
+    const campusCourses = Array.from(
+      new Set(
+        (coursesList || [])
+          .filter(c => !c.college_id || c.college_id === currentMentor?.college_id)
+          .map(c => c.name.trim())
+          .filter(Boolean)
+      )
+    ).sort();
+
+    const mentorAssignedCourses = campusCourses.filter(courseName => {
+      const cLower = courseName.toLowerCase();
+      return (
+        mentorClasses.some(cl => cl.toLowerCase().includes(cLower)) ||
+        mySlots.some(s => (s.course || "").toLowerCase().includes(cLower) || (s.classGroup || "").toLowerCase().includes(cLower)) ||
+        (currentMentor?.mentor_group || "").toLowerCase().includes(cLower) ||
+        (currentMentor?.department || "").toLowerCase().includes(cLower)
+      );
+    });
+
+    const deptOptions = mentorAssignedCourses.length > 0 ? mentorAssignedCourses : (campusCourses.length > 0 ? campusCourses : [currentMentor?.department || "General"]);
+    const activeDept = trackerDept && deptOptions.includes(trackerDept) ? trackerDept : deptOptions[0] || "";
+
+    const selectedCourseObj = coursesList.find(c => c.name.trim().toLowerCase() === activeDept.trim().toLowerCase());
+    const courseYears = selectedCourseObj?.years || 3;
+    const standardSemesters = Array.from({ length: courseYears * 2 }, (_, i) => `Semester ${i + 1}`);
+
+    const semesterOptions = Array.from(new Set([
+      ...standardSemesters,
+      ...subjectsList
+        .filter(s => {
+          if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
+          const sDept = (s.department || "").toLowerCase().trim();
+          const sMg = (s.mentor_group || "").toLowerCase().trim();
+          const act = activeDept.toLowerCase().trim();
+          const code = (selectedCourseObj?.code || "").toLowerCase().trim();
+          return sDept === act || sMg === act || (code && sDept === code) || sDept.startsWith(act) || act.startsWith(sDept);
+        })
+        .map(s => s.semester)
+        .filter(Boolean)
+    ])).sort((a, b) => parseInt((a || "").replace(/\D/g, "") || "0") - parseInt((b || "").replace(/\D/g, "") || "0"));
+
+    const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
     const finalSemOptions = semesterOptions.length > 0 ? semesterOptions : defaultSems;
-    const activeSem = trackerSem || finalSemOptions[0] || "Semester 5";
-    const activeClassGroup = `${activeDept} - ${activeSem}`;
+    const activeSem = trackerSem && finalSemOptions.includes(trackerSem) ? trackerSem : finalSemOptions[0] || "Semester 1";
 
     return students.filter(s => {
       if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
-      if (s.classGroup && isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList)) return true;
-      const sDept = (s.department || "").toLowerCase().trim();
-      const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").toLowerCase().trim();
-      return sDept === activeDept.toLowerCase().trim() && sSem === activeSem.toLowerCase().trim();
+      const sDept = (s.department || "").trim();
+      const sClass = (s.classGroup || "").trim();
+      const cLower = activeDept.trim().toLowerCase();
+      const cCodeLower = (selectedCourseObj?.code || "").trim().toLowerCase();
+
+      const inCourse = sDept.toLowerCase() === cLower ||
+                       sDept.replace(/^[ivx]+\s+/i, "").toLowerCase() === cLower ||
+                       sClass.toLowerCase().startsWith(cLower) ||
+                       sClass.toLowerCase().includes(cLower) ||
+                       (cCodeLower && (sDept.toLowerCase() === cCodeLower || sClass.toLowerCase().includes(cCodeLower)));
+      if (!inCourse) return false;
+
+      if (!activeSem || activeSem === "ALL") return true;
+
+      const sSem = (s.semester || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : "") || "").trim().toLowerCase();
+      const semLower = activeSem.trim().toLowerCase();
+      const semNum = semLower.match(/\d+/)?.[0];
+
+      if (sSem === semLower) return true;
+      if (semNum && (sSem.includes(`semester ${semNum}`) || sSem.includes(`sem ${semNum}`))) return true;
+      if (semNum && sClass.toLowerCase().includes(`semester ${semNum}`)) return true;
+      if (semNum) {
+        const yrNum = Math.ceil(parseInt(semNum, 10) / 2);
+        const romanYears = ["", "i", "ii", "iii", "iv"];
+        const roman = romanYears[yrNum];
+        if (roman && (sClass.toLowerCase().startsWith(`${roman} `) || sClass.toLowerCase().includes(` ${roman} `) || sDept.toLowerCase().startsWith(`${roman} `))) {
+          return true;
+        }
+      }
+      return false;
     });
-  }, [activeTab, students, currentMentor, trackerDept, trackerSem, coursesList, mentorClasses, subjectsList]);
+  }, [activeTab, students, currentMentor, trackerDept, trackerSem, coursesList, mentorClasses, subjectsList, mySlots]);
 
   // --- Attendance Tab Memoizations — lifts IIFE work out of JSX ---
   // Match by slot ownership — markedBy is optional so we match slotId to mentor's slots
@@ -6596,51 +6650,59 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         })()}
 
         {(activeTab === "tracker") && (() => {
-          const rawDepts = [
-            ...mentorClasses.map(c => getDeptFromClassGroup(c) || c),
-            ...mySlots.map(s => s.department || getDeptFromClassGroup(s.classGroup) || "").filter(Boolean),
-            ...(currentMentor?.mentor_group ? [getDeptFromClassGroup(currentMentor.mentor_group)] : []),
-            ...(currentMentor?.department ? [getDeptFromClassGroup(currentMentor.department)] : [])
-          ];
-          const mentorClassDepts = Array.from(new Set(rawDepts.map(d => getDeptFromClassGroup(d)).filter(Boolean)));
+          // Direct Batch Creation courses for this mentor's campus
+          const campusCourses = Array.from(
+            new Set(
+              (coursesList || [])
+                .filter(c => !c.college_id || c.college_id === currentMentor?.college_id)
+                .map(c => c.name.trim())
+                .filter(Boolean)
+            )
+          ).sort();
 
-          const campusDepts = Array.from(new Set(
-            coursesList
-              .filter(c => !c.college_id || c.college_id === currentMentor?.college_id)
-              .map(c => getDeptFromClassGroup(c.name) || c.name.trim())
-              .filter(Boolean)
-          )).sort();
+          const mentorAssignedCourses = campusCourses.filter(courseName => {
+            const cLower = courseName.toLowerCase();
+            return (
+              mentorClasses.some(cl => cl.toLowerCase().includes(cLower)) ||
+              mySlots.some(s => (s.course || "").toLowerCase().includes(cLower) || (s.classGroup || "").toLowerCase().includes(cLower)) ||
+              (currentMentor?.mentor_group || "").toLowerCase().includes(cLower) ||
+              (currentMentor?.department || "").toLowerCase().includes(cLower)
+            );
+          });
 
-          const deptOptions = mentorClassDepts.length > 0
-            ? mentorClassDepts
-            : (campusDepts.length > 0 ? campusDepts : [getDeptFromClassGroup(currentMentor?.department) || "General Department"]);
-
+          const deptOptions = mentorAssignedCourses.length > 0 ? mentorAssignedCourses : (campusCourses.length > 0 ? campusCourses : [currentMentor?.department || "General"]);
           const activeDept = trackerDept && deptOptions.includes(trackerDept)
             ? trackerDept
             : deptOptions[0] || currentMentor?.mentor_group || "";
 
-          const semesterOptions = Array.from(new Set(
-            subjectsList
+          const selectedCourseObj = coursesList.find(c => c.name.trim().toLowerCase() === activeDept.trim().toLowerCase());
+          const courseYears = selectedCourseObj?.years || 3;
+          const standardSemesters = Array.from({ length: courseYears * 2 }, (_, i) => `Semester ${i + 1}`);
+
+          const semesterOptions = Array.from(new Set([
+            ...standardSemesters,
+            ...subjectsList
               .filter(s => {
                 if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
                 const d = (s.department || "").toLowerCase().trim();
                 const mg = (s.mentor_group || "").toLowerCase().trim();
                 const act = activeDept.toLowerCase().trim();
-                return d === act || mg === act || (d.length > 2 && act.includes(d)) || (act.length > 2 && d.includes(act));
+                const code = (selectedCourseObj?.code || "").toLowerCase().trim();
+                return d === act || mg === act || (code && d === code) || d.startsWith(act) || act.startsWith(d);
               })
               .map(s => s.semester)
               .filter(Boolean)
-          )).sort((a, b) => {
+          ])).sort((a, b) => {
             const na = parseInt((a || "").replace(/\D/g, "") || "0");
             const nb = parseInt((b || "").replace(/\D/g, "") || "0");
             return na - nb;
           });
 
-          const defaultSems = ["Semester 5", "Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 6", "Semester 7", "Semester 8"];
+          const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
           const finalSemOptions = semesterOptions.length > 0 ? semesterOptions : defaultSems;
           const activeSem = trackerSem && finalSemOptions.includes(trackerSem)
             ? trackerSem
-            : finalSemOptions[0] || "Semester 5";
+            : finalSemOptions[0] || "Semester 1";
 
           const subjectObjs = subjectsList.filter(s => {
             if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
