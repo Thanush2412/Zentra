@@ -55,7 +55,7 @@ const InterviewModule = dynamic(() => import("./InterviewModule").then(m => m.In
 const MentorProfileModal = dynamic(() => import("./MentorProfileModal").then(m => m.MentorProfileModal), { ssr: false });
 const MentorExamMarksStudio = dynamic(() => import("./MentorExamMarksStudio").then(m => m.MentorExamMarksStudio), { ssr: false });
 
-import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate } from "@/lib/utils";
+import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, calculateWeekOffsetForDate } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 
 const formatPunchTime = (timeStr?: string | null) => {
@@ -6717,22 +6717,26 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           });
 
           // Mentor's own subjects (from profile + timetable slots + mentor group)
-          const explicitMentorSubjects = Array.from(new Set([
+          const explicitMentorSubjects: string[] = Array.from(new Set([
             ...mentorSubjects,
-            ...(Array.isArray(currentMentor?.subjects) ? currentMentor.subjects : (currentMentor?.subjects ? currentMentor.subjects.split(/,|\n/).map((s: string) => s.trim()) : [])),
+            ...(Array.isArray(currentMentor?.subjects) ? currentMentor.subjects : (currentMentor?.subjects ? (currentMentor.subjects as string).split(/,|\n/).map((s: string) => s.trim()) : [])),
             ...mySlots.map(s => s.course?.trim())
-          ])).filter(Boolean);
+          ])).filter((s): s is string => Boolean(s));
 
           const mentorSubjectNames = new Set(explicitMentorSubjects.map(s => s.toLowerCase().trim()));
-          const mentorFilteredSubjectObjs = subjectObjs.filter(s => mentorSubjectNames.has(s.name.toLowerCase().trim()));
-          const mentorSkillSubjects = explicitMentorSubjects.filter(s => isSkillSubject(s));
 
-          // STRICT: ONLY show the mentor's own assigned subjects
-          const subjectOptions = mentorFilteredSubjectObjs.length > 0
+          // STRICT: ONLY show the mentor's own assigned SKILL subjects from Batch Creation
+          const mentorSkillSubjects: string[] = explicitMentorSubjects.filter((s: string) => {
+            const subObj = subjectsList.find(sub => sub.name.toLowerCase().trim() === s.toLowerCase().trim());
+            return isSkillSubject(subObj || s);
+          });
+          const mentorFilteredSubjectObjs = subjectObjs.filter(s => mentorSubjectNames.has(s.name.toLowerCase().trim()) && isSkillSubject(s));
+
+          const subjectOptions: string[] = mentorFilteredSubjectObjs.length > 0
             ? mentorFilteredSubjectObjs.map(s => s.name)
             : mentorSkillSubjects.length > 0
               ? mentorSkillSubjects
-              : (explicitMentorSubjects.length > 0 ? explicitMentorSubjects : ["Skill Development"]);
+              : [];
 
           const activeSubj = trackerSubject && subjectOptions.includes(trackerSubject)
             ? trackerSubject
@@ -6848,7 +6852,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         onChange={(e) => setTrackerSubject(e.target.value)}
                         className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
                       >
-                        {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                        {subjectOptions.map((s: string) => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
 
@@ -7451,7 +7455,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       onChange={(e) => setTrackerSubject(e.target.value)}
                                       className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-white text-slate-800 cursor-pointer truncate"
                                     >
-                                      {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                      {subjectOptions.map((s: string) => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                   </div>
                                   <div className="space-y-1">
@@ -7580,10 +7584,18 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
         {/* ── Tab: Academic Tracker (Date-Wise Period Topic, Unit, and Remarks Log) ── */}
         {activeTab === "academic_tracker" && (() => {
-          // Mentor's assigned academic (theory/practical) subjects
-          const mentorAcademicSubjects = mentorSubjects.filter(s => !isSkillSubject(s));
-          const availableAcadSubjects = mentorAcademicSubjects.length > 0 ? mentorAcademicSubjects : mentorSubjects;
-          const currentSelectedSubject = acadTrackerSubject || availableAcadSubjects[0] || "";
+          // Mentor's assigned academic subjects from Batch Creation (type "ACADEMIC" / non-skill)
+          const mentorAcademicSubjects = mentorSubjects.filter(s => {
+            const subObj = subjectsList.find(sub => sub.name.toLowerCase().trim() === s.toLowerCase().trim());
+            return isAcademicSubject(subObj || s);
+          });
+          const availableAcadSubjects = mentorAcademicSubjects.length > 0 ? mentorAcademicSubjects : mentorSubjects.filter(s => {
+            const subObj = subjectsList.find(sub => sub.name.toLowerCase().trim() === s.toLowerCase().trim());
+            return isAcademicSubject(subObj || s);
+          });
+          const currentSelectedSubject = acadTrackerSubject && availableAcadSubjects.includes(acadTrackerSubject)
+            ? acadTrackerSubject
+            : availableAcadSubjects[0] || "";
 
           // Mentor's class groups
           const mentorClassesList = Array.from(new Set([

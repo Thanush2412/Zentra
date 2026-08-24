@@ -18,7 +18,7 @@ import {
   AreaChart, Area, CartesianGrid
 } from "recharts";
 import dynamic from "next/dynamic";
-import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, mapDayOrderToDayName } from "../lib/utils";
+import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, mapDayOrderToDayName } from "../lib/utils";
 
 const InterviewModule = dynamic(() => import("./InterviewModule").then(mod => mod.InterviewModule), {
   ssr: false,
@@ -14223,22 +14223,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         new Set(
                           mentorCandidates.filter(s => {
                             if (!s) return false;
-                            if (mentorLogSubs.includes(s)) return true;
-                            return !isSkillSubject(s);
+                            const subObj = subjectsList.find(sub => sub.name.toLowerCase().trim() === s.toLowerCase().trim());
+                            return isAcademicSubject(subObj || s);
                           })
                         )
                       ).sort((a, b) => a.localeCompare(b));
                     } else {
-                      // All faculty scope — collect all campus academic subjects
+                      // All faculty scope — collect all campus academic subjects from Batch Creation
                       const subjectsFromList = (subjectsList || [])
-                        .filter(s => (!activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId))
+                        .filter(s => (!activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId) && isAcademicSubject(s))
                         .map(s => s.name?.trim())
                         .filter(Boolean);
 
                       const subjectsFromSlots = (slots || [])
                         .filter(s => (!activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId))
                         .map(s => s.course?.trim())
-                        .filter(Boolean);
+                        .filter(s => s && isAcademicSubject(s));
 
                       const subjectsFromFaculty = collegeMentors.flatMap(m => {
                         if (!m) return [];
@@ -14249,10 +14249,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           subs.push(...m.subjects.split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean));
                         }
                         if ((m as any).specialization) subs.push((m as any).specialization.trim());
-                        return subs;
+                        return subs.filter(s => isAcademicSubject(s));
                       });
 
-                      const subjectsFromLogs = campusLogs.map(l => l.subject?.trim()).filter(Boolean);
+                      const subjectsFromLogs = campusLogs.map(l => l.subject?.trim()).filter(s => s && isAcademicSubject(s));
 
                       const allSubjectCandidates = [
                         ...subjectsFromList,
@@ -14265,11 +14265,37 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         new Set(
                           allSubjectCandidates.filter(s => {
                             if (!s) return false;
-                            if (subjectsFromLogs.includes(s)) return true;
-                            return !isSkillSubject(s);
+                            const subObj = subjectsList.find(sub => sub.name.toLowerCase().trim() === s.toLowerCase().trim());
+                            return isAcademicSubject(subObj || s);
                           })
                         )
                       ).sort((a, b) => a.localeCompare(b));
+                    }
+
+                    // Scope subjects by selected department if filtered
+                    if (camAcadDeptFilter !== "all") {
+                      const courseObj = collegeCourses.find(c => c.name.trim().toLowerCase() === camAcadDeptFilter.toLowerCase().trim());
+                      availableSubjects = availableSubjects.filter(subName => {
+                        const subObj = subjectsList.find(s => s.name.toLowerCase().trim() === subName.toLowerCase().trim());
+                        if (subObj) {
+                          const sDept = (subObj.department || "").trim().toLowerCase();
+                          const cLower = camAcadDeptFilter.trim().toLowerCase();
+                          const cCodeLower = (courseObj?.code || "").trim().toLowerCase();
+                          return sDept === cLower || sDept.startsWith(cLower) || (cCodeLower && sDept === cCodeLower);
+                        }
+                        return true;
+                      });
+                    }
+
+                    // Scope subjects by selected semester if filtered
+                    if (camAcadSemFilter !== "all") {
+                      availableSubjects = availableSubjects.filter(subName => {
+                        const subObj = subjectsList.find(s => s.name.toLowerCase().trim() === subName.toLowerCase().trim());
+                        if (subObj && subObj.semester) {
+                          return subObj.semester.toLowerCase().trim() === camAcadSemFilter.toLowerCase().trim();
+                        }
+                        return true;
+                      });
                     }
 
                     // Filtered records

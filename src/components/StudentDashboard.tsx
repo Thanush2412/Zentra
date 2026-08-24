@@ -505,9 +505,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   };
 
   const studentClassDetails = getStudentClassDetails(currentStudent?.classGroup);
-  const studentSubjects = subjectsList.filter(
-    s => s.semester && s.semester.toLowerCase() === studentClassDetails.sem.toLowerCase()
-  );
+  const studentSubjects = subjectsList.filter(s => {
+    if (s.college_id && currentStudent?.college_id && s.college_id !== currentStudent.college_id) return false;
+    if (s.semester && studentClassDetails.sem && s.semester.toLowerCase().trim() !== studentClassDetails.sem.toLowerCase().trim()) return false;
+    if (!studentClassDetails.course) return true;
+    const sDept = (s.department || "").toLowerCase().trim();
+    const cLower = studentClassDetails.course.toLowerCase().trim();
+    return sDept === cLower || sDept.includes(cLower) || cLower.includes(sDept);
+  });
 
   // 1. Get all slots for student's class group — using robust fuzzy + cohort matching
   const myClassSlots = slots.filter((s) => {

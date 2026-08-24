@@ -1318,8 +1318,9 @@ export function isSkillSubject(subject: { name?: string; type?: string } | strin
   const n = name.toLowerCase().trim();
   const t = type.toLowerCase().trim();
 
-  // 1. Explicit type check
+  // 1. Explicit Batch Creation type check
   if (t === "skill" || t === "practical" || t === "lab" || t.includes("skill") || t.includes("practical")) return true;
+  if (t === "academic" || t === "theory") return false;
 
   // 2. Keyword checks on subject name
   if (
@@ -1331,7 +1332,6 @@ export function isSkillSubject(subject: { name?: string; type?: string } | strin
     n.includes("viva") ||
     n.includes("aptitude") ||
     n.includes("portfolio") ||
-    n.includes("project") ||
     n.includes("nan mudhalvan") ||
     n.includes("nmc") ||
     n.includes("sec") ||
@@ -1343,6 +1343,15 @@ export function isSkillSubject(subject: { name?: string; type?: string } | strin
   }
 
   return false;
+}
+
+export function isAcademicSubject(subject: { name?: string; type?: string } | string | null | undefined): boolean {
+  if (!subject) return false;
+  const type = typeof subject === "string" ? "" : (subject.type || "");
+  const t = type.toLowerCase().trim();
+  if (t === "academic" || t === "theory") return true;
+  if (t === "skill" || t === "practical" || t === "lab") return false;
+  return !isSkillSubject(subject);
 }
 
 /**
