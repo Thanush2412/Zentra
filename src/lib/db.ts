@@ -910,6 +910,7 @@ export function getDb(): Promise<TursoDbAdapter> {
       session_time TEXT NOT NULL,
       start_time TEXT,
       end_time TEXT,
+      day_order TEXT,
       hall_room TEXT,
       max_marks REAL DEFAULT 50,
       passing_marks REAL DEFAULT 20,
@@ -995,6 +996,9 @@ export function getDb(): Promise<TursoDbAdapter> {
 
     // Safe column additions for departments (unconditional)
     try { await dbInstance.exec(`ALTER TABLE departments ADD COLUMN shift_based INTEGER DEFAULT 0;`); } catch (_) { }
+
+    // Safe column additions for exam_schedules (unconditional)
+    try { await dbInstance.exec(`ALTER TABLE exam_schedules ADD COLUMN day_order TEXT;`); } catch (_) { }
 
     const versionRow = await dbInstance.get("SELECT version FROM schema_migrations LIMIT 1");
       const currentVersion = versionRow ? versionRow.version : 0;

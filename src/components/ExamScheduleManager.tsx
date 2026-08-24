@@ -38,6 +38,7 @@ interface ExamSchedule {
   session_time: string;
   start_time: string;
   end_time: string;
+  day_order?: string;
   hall_room: string;
   max_marks?: number;
   passing_marks?: number;
@@ -51,6 +52,7 @@ interface SubjectFormRow {
   subject_code?: string;
   included: boolean;
   exam_date: string;
+  day_order: string;
   session_type: "FN" | "AN" | "custom";
   start_time: string;
   end_time: string;
@@ -98,7 +100,10 @@ export const ExamScheduleManager: React.FC = () => {
   const [batchSem, setBatchSem] = useState("Semester 1");
   const [batchStartDate, setBatchStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [batchDefaultHall, setBatchDefaultHall] = useState("Main Examination Hall");
-  const [batchSessionTiming, setBatchSessionTiming] = useState<"FN" | "AN">("FN");
+  const [batchSessionTiming, setBatchSessionTiming] = useState<"FN" | "AN" | "custom">("FN");
+  const [batchDefaultDayOrder, setBatchDefaultDayOrder] = useState("Day 1");
+  const [batchCustomStartTime, setBatchCustomStartTime] = useState("10:00 AM");
+  const [batchCustomEndTime, setBatchCustomEndTime] = useState("01:00 PM");
 
   // Subject rows inside modal accordion
   const [subjectRows, setSubjectRows] = useState<SubjectFormRow[]>([]);
@@ -220,15 +225,23 @@ export const ExamScheduleManager: React.FC = () => {
       }
       const dStr = currentDate.toISOString().slice(0, 10);
       const isFn = batchSessionTiming === "FN";
+      const isAn = batchSessionTiming === "AN";
+      const startT = isFn ? "10:00 AM" : isAn ? "02:00 PM" : batchCustomStartTime;
+      const endT = isFn ? "01:00 PM" : isAn ? "05:00 PM" : batchCustomEndTime;
+
+      // Auto cycle Day 1 to Day 6
+      const orderNum = (idx % 6) + 1;
+      const dOrder = batchDefaultDayOrder !== "None" ? `Day ${orderNum}` : "None";
 
       return {
         subject_name: sub.name,
         subject_code: sub.code || undefined,
         included: true,
         exam_date: dStr,
+        day_order: dOrder,
         session_type: batchSessionTiming,
-        start_time: isFn ? "10:00 AM" : "02:00 PM",
-        end_time: isFn ? "01:00 PM" : "05:00 PM",
+        start_time: startT,
+        end_time: endT,
         hall_room: batchDefaultHall
       };
     });
@@ -244,24 +257,29 @@ export const ExamScheduleManager: React.FC = () => {
     }
 
     let currentDate = new Date(batchStartDate);
-    const updated = subjectRows.map((row, idx) => {
+    let seqIdx = 0;
+    const updated = subjectRows.map((row) => {
       if (!row.included) return row;
-      if (idx > 0) {
+      if (seqIdx > 0) {
         currentDate.setDate(currentDate.getDate() + 1);
         if (currentDate.getDay() === 0) {
           // Skip Sunday
           currentDate.setDate(currentDate.getDate() + 1);
         }
       }
+      const orderNum = (seqIdx % 6) + 1;
+      seqIdx++;
+
       return {
         ...row,
         exam_date: currentDate.toISOString().slice(0, 10),
+        day_order: batchDefaultDayOrder !== "None" ? `Day ${orderNum}` : "None",
         hall_room: batchDefaultHall
       };
     });
 
     setSubjectRows(updated);
-    toast("Auto-sequenced exam dates across all subjects (skipping Sundays)", "success");
+    toast("Auto-sequenced consecutive exam dates and Day Orders (skipping Sundays)", "success");
   };
 
   // Toggle single subject inclusion
@@ -301,9 +319,9 @@ export const ExamScheduleManager: React.FC = () => {
       const payloadSchedules = selectedToSchedule.map((row) => {
         const sessionTimeStr =
           row.session_type === "FN"
-            ? "10:00 AM - 01:00 PM (FN)"
+            ? `${row.start_time || "10:00 AM"} - ${row.end_time || "01:00 PM"} (FN)`
             : row.session_type === "AN"
-            ? "02:00 PM - 05:00 PM (AN)"
+            ? `${row.start_time || "02:00 PM"} - ${row.end_time || "05:00 PM"} (AN)`
             : `${row.start_time} - ${row.end_time}`;
 
         return {
@@ -315,6 +333,7 @@ export const ExamScheduleManager: React.FC = () => {
           subject_name: row.subject_name,
           subject_code: row.subject_code,
           exam_date: row.exam_date,
+          day_order: row.day_order || batchDefaultDayOrder || "Day 1",
           start_time: row.start_time,
           end_time: row.end_time,
           session_time: sessionTimeStr,
@@ -820,7 +839,7 @@ export const ExamScheduleManager: React.FC = () => {
                             <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase text-[9px]">
                               <th className="p-3.5 w-12 text-center">#</th>
                               <th className="p-3.5">Subject & Code</th>
-                              <th className="p-3.5">Exam Date</th>
+                              <th className="p-3.5">Exam Date & Day Order</th>
                               <th className="p-3.5">Timing & Session</th>
                               <th className="p-3.5">Hall / Room</th>
                               <th className="p-3.5">Max Marks</th>
@@ -841,15 +860,22 @@ export const ExamScheduleManager: React.FC = () => {
                                     )}
                                   </td>
                                   <td className="p-3.5 font-bold text-slate-800">
-                                    <div className="flex items-center gap-1.5">
-                                      <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                                      <span>{slot.exam_date}</span>
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-1.5">
+                                        <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                                        <span>{slot.exam_date}</span>
+                                      </div>
+                                      {slot.day_order && slot.day_order !== "None" ? (
+                                        <span className="inline-flex items-center w-max px-2 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-[9.5px] font-black uppercase">
+                                          {slot.day_order}
+                                        </span>
+                                      ) : null}
                                     </div>
                                   </td>
                                   <td className="p-3.5 text-slate-600">
                                     <div className="flex items-center gap-1.5">
                                       <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                                      <span>{slot.session_time || `${slot.start_time} - ${slot.end_time}`}</span>
+                                      <span className="font-semibold text-slate-800">{slot.session_time || `${slot.start_time} - ${slot.end_time}`}</span>
                                     </div>
                                   </td>
                                   <td className="p-3.5">
@@ -1191,8 +1217,8 @@ export const ExamScheduleManager: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 3. Global Batch Settings (Start Date & Default Hall) */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 3. Global Batch Settings (Start Date, Day Order, Timings & Default Hall) */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50/80 p-4 rounded-2xl border border-slate-150">
                   <div className="space-y-1.5">
                     <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
                       Starting Exam Date
@@ -1201,21 +1227,52 @@ export const ExamScheduleManager: React.FC = () => {
                       type="date"
                       value={batchStartDate}
                       onChange={(e) => setBatchStartDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
-                      Default Session
+                      Day Order Sequence
+                    </label>
+                    <select
+                      value={batchDefaultDayOrder}
+                      onChange={(e) => setBatchDefaultDayOrder(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="Day 1">Start at Day 1</option>
+                      <option value="Day 2">Start at Day 2</option>
+                      <option value="Day 3">Start at Day 3</option>
+                      <option value="Day 4">Start at Day 4</option>
+                      <option value="Day 5">Start at Day 5</option>
+                      <option value="Day 6">Start at Day 6</option>
+                      <option value="None">None / No Day Order</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
+                      Campus Timing
                     </label>
                     <select
                       value={batchSessionTiming}
-                      onChange={(e) => setBatchSessionTiming(e.target.value as "FN" | "AN")}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                      onChange={(e) => {
+                        const val = e.target.value as "FN" | "AN" | "custom";
+                        setBatchSessionTiming(val);
+                        const sT = val === "FN" ? "10:00 AM" : val === "AN" ? "02:00 PM" : batchCustomStartTime;
+                        const eT = val === "FN" ? "01:00 PM" : val === "AN" ? "05:00 PM" : batchCustomEndTime;
+                        setSubjectRows(prev => prev.map(r => ({
+                          ...r,
+                          session_type: val,
+                          start_time: sT,
+                          end_time: eT
+                        })));
+                      }}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                     >
                       <option value="FN">FN (10:00 AM - 01:00 PM)</option>
                       <option value="AN">AN (02:00 PM - 05:00 PM)</option>
+                      <option value="custom">Custom Timing Hours</option>
                     </select>
                   </div>
 
@@ -1228,9 +1285,40 @@ export const ExamScheduleManager: React.FC = () => {
                       placeholder="e.g. Main Hall 101"
                       value={batchDefaultHall}
                       onChange={(e) => setBatchDefaultHall(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
+
+                  {batchSessionTiming === "custom" && (
+                    <div className="sm:col-span-4 grid grid-cols-2 gap-3 pt-2 border-t border-slate-200">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">Start Time</label>
+                        <input
+                          type="text"
+                          value={batchCustomStartTime}
+                          placeholder="e.g. 09:30 AM"
+                          onChange={(e) => {
+                            setBatchCustomStartTime(e.target.value);
+                            setSubjectRows(prev => prev.map(r => ({ ...r, start_time: e.target.value })));
+                          }}
+                          className="w-full px-3 py-1.5 border border-slate-200 rounded-lg bg-white text-xs font-semibold"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">End Time</label>
+                        <input
+                          type="text"
+                          value={batchCustomEndTime}
+                          placeholder="e.g. 12:30 PM"
+                          onChange={(e) => {
+                            setBatchCustomEndTime(e.target.value);
+                            setSubjectRows(prev => prev.map(r => ({ ...r, end_time: e.target.value })));
+                          }}
+                          className="w-full px-3 py-1.5 border border-slate-200 rounded-lg bg-white text-xs font-semibold"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 4. Subject Accordion / Subject Matrix */}
@@ -1244,10 +1332,10 @@ export const ExamScheduleManager: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleAutoSequenceDates}
-                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-lg text-[10.5px] font-extrabold flex items-center gap-1 transition-all cursor-pointer"
+                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-lg text-[10.5px] font-extrabold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
                     >
                       <Sparkles className="h-3.5 w-3.5" />
-                      <span>Auto-Sequence Consecutive Dates</span>
+                      <span>Auto-Sequence Consecutive Dates & Day Orders</span>
                     </button>
                   </div>
 
@@ -1256,7 +1344,7 @@ export const ExamScheduleManager: React.FC = () => {
                       No subjects found for <strong>{batchDept}</strong>. Please ensure subjects are created in Curriculum & Academic Configuration.
                     </div>
                   ) : (
-                    <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+                    <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
                       {subjectRows.map((row, idx) => (
                         <div
                           key={`${row.subject_name}_${idx}`}
@@ -1266,7 +1354,7 @@ export const ExamScheduleManager: React.FC = () => {
                               : "bg-slate-50 border-slate-150 opacity-60"
                           }`}
                         >
-                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
                             {/* Checkbox & Subject Name */}
                             <div className="flex items-center gap-2.5 flex-1 min-w-[200px]">
                               <input
@@ -1283,32 +1371,73 @@ export const ExamScheduleManager: React.FC = () => {
                               </div>
                             </div>
 
-                            {/* Date, Session, Hall inputs */}
+                            {/* Date, Day Order, Session, Timing, Hall inputs */}
                             {row.included && (
-                              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                                <input
-                                  type="date"
-                                  required
-                                  value={row.exam_date}
-                                  onChange={(e) => updateSubjectRow(idx, { exam_date: e.target.value })}
-                                  className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold bg-slate-50 text-slate-800"
-                                />
+                              <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="date"
+                                    required
+                                    value={row.exam_date}
+                                    onChange={(e) => updateSubjectRow(idx, { exam_date: e.target.value })}
+                                    className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold bg-slate-50 text-slate-800"
+                                    title="Exam Date"
+                                  />
+                                </div>
+
+                                <select
+                                  value={row.day_order}
+                                  onChange={(e) => updateSubjectRow(idx, { day_order: e.target.value })}
+                                  className="px-2 py-1.5 border border-purple-200 rounded-lg text-xs font-bold bg-purple-50 text-purple-700 cursor-pointer"
+                                  title="Day Order"
+                                >
+                                  <option value="Day 1">Day 1</option>
+                                  <option value="Day 2">Day 2</option>
+                                  <option value="Day 3">Day 3</option>
+                                  <option value="Day 4">Day 4</option>
+                                  <option value="Day 5">Day 5</option>
+                                  <option value="Day 6">Day 6</option>
+                                  <option value="None">No Order</option>
+                                </select>
 
                                 <select
                                   value={row.session_type}
                                   onChange={(e) => {
-                                    const val = e.target.value as "FN" | "AN";
+                                    const val = e.target.value as "FN" | "AN" | "custom";
                                     updateSubjectRow(idx, {
                                       session_type: val,
-                                      start_time: val === "FN" ? "10:00 AM" : "02:00 PM",
-                                      end_time: val === "FN" ? "01:00 PM" : "05:00 PM"
+                                      start_time: val === "FN" ? "10:00 AM" : val === "AN" ? "02:00 PM" : row.start_time,
+                                      end_time: val === "FN" ? "01:00 PM" : val === "AN" ? "05:00 PM" : row.end_time
                                     });
                                   }}
                                   className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold bg-slate-50 text-slate-800 cursor-pointer"
                                 >
                                   <option value="FN">FN (10:00 - 01:00)</option>
                                   <option value="AN">AN (02:00 - 05:00)</option>
+                                  <option value="custom">Custom</option>
                                 </select>
+
+                                {row.session_type === "custom" && (
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="text"
+                                      placeholder="Start"
+                                      value={row.start_time}
+                                      onChange={(e) => updateSubjectRow(idx, { start_time: e.target.value })}
+                                      className="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium bg-slate-50 text-slate-800"
+                                      title="Start Time"
+                                    />
+                                    <span className="text-slate-400 text-xs">-</span>
+                                    <input
+                                      type="text"
+                                      placeholder="End"
+                                      value={row.end_time}
+                                      onChange={(e) => updateSubjectRow(idx, { end_time: e.target.value })}
+                                      className="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium bg-slate-50 text-slate-800"
+                                      title="End Time"
+                                    />
+                                  </div>
+                                )}
 
                                 <input
                                   type="text"
@@ -1316,6 +1445,7 @@ export const ExamScheduleManager: React.FC = () => {
                                   value={row.hall_room}
                                   onChange={(e) => updateSubjectRow(idx, { hall_room: e.target.value })}
                                   className="w-28 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-medium bg-slate-50 text-slate-800"
+                                  title="Hall / Room"
                                 />
                               </div>
                             )}

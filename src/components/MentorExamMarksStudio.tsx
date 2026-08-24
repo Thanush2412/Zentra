@@ -34,7 +34,10 @@ interface ExamItem {
   subject_name: string;
   subject_code?: string;
   exam_date: string;
+  day_order?: string;
   session_time: string;
+  start_time?: string;
+  end_time?: string;
   hall_room: string;
   max_marks: number;
   passing_marks: number;
@@ -74,8 +77,8 @@ export const MentorExamMarksStudio: React.FC = () => {
   const [loadingRoster, setLoadingRoster] = useState(false);
   const [isSavingMarks, setIsSavingMarks] = useState(false);
 
-  // Active marks editing state
-  const [marksState, setMarksState] = useState<Record<string, { marks: string; isAbsent: boolean; remarks: string }>>({});
+  // Active marks & attendance editing state
+  const [marksState, setMarksState] = useState<Record<string, { marks: string; isAbsent: boolean; isOD?: boolean; remarks: string }>>({});
   const [globalMaxMarks, setGlobalMaxMarks] = useState<number>(50);
   const [globalPassingMarks, setGlobalPassingMarks] = useState<number>(20);
 
@@ -307,7 +310,53 @@ export const MentorExamMarksStudio: React.FC = () => {
     };
   }, [roster, marksState, globalPassingMarks]);
 
-  // Handle Save Marks
+  // Batch mark all students attendance
+  const handleMarkAllStudents = (status: "present" | "absent" | "od") => {
+    if (!isExamOver) return;
+    setMarksState((prev) => {
+      const nextMap = { ...prev };
+      roster.forEach((st) => {
+        const cur = nextMap[st.student_id] || { marks: "", isAbsent: false, remarks: "" };
+        nextMap[st.student_id] = {
+          ...cur,
+          isAbsent: status === "absent",
+          isOD: status === "od",
+          marks: status === "absent" ? "" : cur.marks
+        };
+      });
+      return nextMap;
+    });
+    toast(`Marked all students as ${status.toUpperCase()}`, "info");
+  };
+
+  // Toggle single student attendance
+  const handleToggleStudentAttendance = (studentId: string) => {
+    if (!isExamOver) return;
+    setMarksState((prev) => {
+      const cur = prev[studentId] || { marks: "", isAbsent: false, remarks: "" };
+      let isAbsent = false;
+      let isOD = false;
+      if (!cur.isAbsent && !cur.isOD) {
+        isAbsent = true;
+      } else if (cur.isAbsent) {
+        isOD = true;
+      } else {
+        isAbsent = false;
+        isOD = false;
+      }
+      return {
+        ...prev,
+        [studentId]: {
+          ...cur,
+          isAbsent,
+          isOD,
+          marks: isAbsent ? "" : cur.marks
+        }
+      };
+    });
+  };
+
+  // Handle Save Attendance & Marks
   const handleSaveMarks = async () => {
     if (!selectedExam) return;
     setIsSavingMarks(true);
@@ -315,11 +364,15 @@ export const MentorExamMarksStudio: React.FC = () => {
     try {
       const payloadMarks = roster.map(st => {
         const state = marksState[st.student_id];
+        const isAbsent = Boolean(state?.isAbsent);
+        const isOD = Boolean(state?.isOD);
+        const status = isAbsent ? "absent" : isOD ? "od" : "present";
         return {
           student_id: st.student_id,
-          marks_obtained: state?.isAbsent || !state?.marks.trim() ? null : parseFloat(state.marks),
+          marks_obtained: isAbsent || !state?.marks.trim() ? null : parseFloat(state.marks),
           max_marks: globalMaxMarks,
-          is_absent: Boolean(state?.isAbsent),
+          is_absent: isAbsent,
+          status,
           remarks: state?.remarks || ""
         };
       });
@@ -336,7 +389,7 @@ export const MentorExamMarksStudio: React.FC = () => {
 
       const data = await res.json();
       if (data.success) {
-        toast(`Marks successfully published for ${roster.length} students!`, "success");
+        toast(`Attendance and Marks successfully published for ${roster.length} students!`, "success");
         await selectExamForGrading(selectedExam);
       } else {
         toast(data.message || "Failed to save marks", "error");
@@ -546,13 +599,20 @@ export const MentorExamMarksStudio: React.FC = () => {
                       </div>
 
                       <div className="space-y-1.5 pt-2 border-t border-slate-100 text-[11px] text-slate-600 font-medium">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                          <span>Date: <strong>{ex.exam_date}</strong></span>
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                            <span>Date: <strong>{ex.exam_date}</strong></span>
+                          </div>
+                          {ex.day_order && ex.day_order !== "None" && (
+                            <span className="px-2 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-[9.5px] font-black uppercase">
+                              {ex.day_order}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Clock className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                          <span>Session: <strong>{ex.session_time}</strong></span>
+                          <span>Timing: <strong>{ex.session_time || `${ex.start_time} - ${ex.end_time}`}</strong></span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Award className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
@@ -567,7 +627,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                       className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
                     >
                       <Edit3 className="h-4 w-4" />
-                      <span>{isPastOrToday ? "Enter & Grade Marks →" : "Preview Marksheet →"}</span>
+                      <span>{isPastOrToday ? "Mark Attendance & Enter Marks →" : "Preview Marksheet →"}</span>
                     </button>
                   </div>
                 );
@@ -599,12 +659,17 @@ export const MentorExamMarksStudio: React.FC = () => {
                     <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-black text-xs uppercase border border-indigo-200">
                       {selectedExam?.exam_type}
                     </span>
+                    {selectedExam?.day_order && selectedExam?.day_order !== "None" && (
+                      <span className="px-2.5 py-0.5 rounded-md bg-purple-50 text-purple-700 font-black text-xs uppercase border border-purple-200">
+                        {selectedExam.day_order}
+                      </span>
+                    )}
                     <h2 className="text-base font-black text-slate-900">
                       {selectedExam?.subject_name}
                     </h2>
                   </div>
                   <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                    {selectedExam?.department} • {selectedExam?.semester} • Date: {selectedExam?.exam_date} ({selectedExam?.session_time})
+                    {selectedExam?.department} • {selectedExam?.semester} • Date: <strong>{selectedExam?.exam_date}</strong> • Timing: <strong>{selectedExam?.session_time || `${selectedExam?.start_time} - ${selectedExam?.end_time}`}</strong> • Hall: <strong>{selectedExam?.hall_room}</strong>
                   </p>
                 </div>
               </div>
@@ -629,12 +694,12 @@ export const MentorExamMarksStudio: React.FC = () => {
                   {isSavingMarks ? (
                     <>
                       <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span>Publishing Marks...</span>
+                      <span>Publishing Marks & Attendance...</span>
                     </>
                   ) : (
                     <>
                       <Save className="h-4 w-4" />
-                      <span>Save & Publish Marks</span>
+                      <span>Save & Publish Attendance & Marks</span>
                     </>
                   )}
                 </button>
@@ -650,7 +715,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                     🔒 Examination in Progress / Scheduled
                   </div>
                   <p className="text-xs text-amber-700 mt-0.5">
-                    This examination concludes on <strong>{selectedExam?.exam_date}</strong> at <strong>{selectedExam?.session_time || "scheduled end time"}</strong>. You can preview the student roster, but marks entry will automatically unlock once the examination session is completed.
+                    This examination concludes on <strong>{selectedExam?.exam_date}</strong> at <strong>{selectedExam?.session_time || `${selectedExam?.start_time} - ${selectedExam?.end_time}`}</strong>. You can preview the student roster, but marks and attendance entry will automatically unlock once the examination session is completed.
                   </p>
                 </div>
               </div>
@@ -719,7 +784,7 @@ export const MentorExamMarksStudio: React.FC = () => {
               </div>
             </div>
 
-            {/* Roster Table Filter Controls */}
+            {/* Roster Table Filter & Batch Attendance Controls */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
               <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
                 <div className="relative w-full sm:w-60">
@@ -744,6 +809,33 @@ export const MentorExamMarksStudio: React.FC = () => {
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
+                )}
+
+                {/* Batch Attendance Buttons */}
+                {isExamOver && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleMarkAllStudents("present")}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors cursor-pointer shadow-2xs"
+                    >
+                      All Present
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMarkAllStudents("absent")}
+                      className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors cursor-pointer shadow-2xs"
+                    >
+                      All Absent
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMarkAllStudents("od")}
+                      className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-colors cursor-pointer shadow-2xs"
+                    >
+                      All OD
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -770,16 +862,16 @@ export const MentorExamMarksStudio: React.FC = () => {
           {/* Student Marks Evaluation Table */}
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <div className="overflow-x-auto max-h-[550px] scroll-touch">
-              <table className="w-full text-left text-xs border-collapse min-w-[800px]">
+              <table className="w-full text-left text-xs border-collapse min-w-[850px]">
                 <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
                   <tr>
                     <th className="p-3 text-center w-12">#</th>
                     <th className="p-3">Student Details</th>
                     <th className="p-3">Class / Cohort</th>
-                    <th className="p-3 w-48 text-center">Marks Obtained</th>
+                    <th className="p-3 text-center w-36">Exam Attendance</th>
+                    <th className="p-3 w-44 text-center">Marks Obtained</th>
                     <th className="p-3 text-center w-24">Scale</th>
                     <th className="p-3 text-center w-28">Grade</th>
-                    <th className="p-3 text-center w-24">Absent (AB)</th>
                     <th className="p-3">Remarks / Feedback</th>
                   </tr>
                 </thead>
@@ -816,6 +908,23 @@ export const MentorExamMarksStudio: React.FC = () => {
                           </td>
                           <td className="p-3">
                             <span className="font-semibold text-slate-700">{st.classGroup || st.department || "General"}</span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              disabled={!isExamOver}
+                              onClick={() => handleToggleStudentAttendance(st.student_id)}
+                              className={`px-3 py-1 rounded-full text-[11px] font-black uppercase transition-all cursor-pointer border shadow-2xs ${
+                                state.isAbsent
+                                  ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                                  : state.isOD
+                                  ? "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                              } disabled:opacity-60 disabled:cursor-not-allowed`}
+                              title="Click to toggle Present → Absent → OD"
+                            >
+                              {state.isAbsent ? "Absent (AB)" : state.isOD ? "On Duty (OD)" : "Present (P)"}
+                            </button>
                           </td>
                           <td className="p-3 text-center">
                             {!isExamOver ? (
@@ -878,51 +987,24 @@ export const MentorExamMarksStudio: React.FC = () => {
                                       }
                                     }));
                                   }}
-                                  className={`w-full py-1.5 px-3 text-center text-xs font-black rounded-xl border focus:outline-none transition-all ${
-                                    state.isAbsent
-                                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                                      : marksNum !== null && marksNum < globalPassingMarks
-                                      ? "bg-rose-50/80 text-rose-800 border-rose-300 focus:border-rose-500"
-                                      : "bg-white text-slate-900 border-slate-300 focus:border-indigo-600 shadow-2xs"
-                                  }`}
+                                  className="w-full text-center font-black text-sm text-slate-900 bg-slate-50 border border-slate-200 rounded-xl py-1.5 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
                                 />
                               </div>
                             )}
                           </td>
-                          <td className="p-3 text-center">
-                            <span className="font-mono font-bold text-slate-500 text-xs">
-                              / {globalMaxMarks}
-                            </span>
+                          <td className="p-3 text-center font-bold text-slate-500 font-mono text-[11px]">
+                            / {globalMaxMarks}
                           </td>
                           <td className="p-3 text-center">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${color}`}>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${color}`}>
                               {grade}
                             </span>
-                          </td>
-                          <td className="p-3 text-center">
-                            <input
-                              type="checkbox"
-                              checked={state.isAbsent}
-                              disabled={!isExamOver || isAlreadySubmitted}
-                              onChange={(e) => {
-                                const checked = e.target.checked;
-                                setMarksState(prev => ({
-                                  ...prev,
-                                  [st.student_id]: {
-                                    ...prev[st.student_id],
-                                    isAbsent: checked,
-                                    marks: checked ? "" : prev[st.student_id]?.marks || ""
-                                  }
-                                }));
-                              }}
-                              className="h-4 w-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer disabled:opacity-50"
-                            />
                           </td>
                           <td className="p-3">
                             <input
                               type="text"
-                              disabled={!isExamOver || isAlreadySubmitted}
-                              placeholder="Optional feedback..."
+                              disabled={!isExamOver}
+                              placeholder="Feedback / Remarks..."
                               value={state.remarks}
                               onChange={(e) => {
                                 const val = e.target.value;
@@ -934,7 +1016,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                                   }
                                 }));
                               }}
-                              className="w-full text-xs font-medium py-1 px-2 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
+                              className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:outline-none focus:border-indigo-500 disabled:bg-slate-100"
                             />
                           </td>
                         </tr>

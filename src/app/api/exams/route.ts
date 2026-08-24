@@ -68,6 +68,7 @@ export async function POST(request: Request) {
       const session_time = item.session_time || (item.start_time && item.end_time ? `${item.start_time} - ${item.end_time}` : "10:00 AM - 01:00 PM");
       const start_time = item.start_time || session_time.split("-")[0]?.trim() || "10:00 AM";
       const end_time = item.end_time || session_time.split("-")[1]?.trim() || "01:00 PM";
+      const day_order = item.day_order || "Day 1";
       const hall_room = item.hall_room || "Main Examination Hall";
       const max_marks = parseFloat(item.max_marks) || 50;
       const passing_marks = parseFloat(item.passing_marks) || (max_marks * 0.4);
@@ -77,9 +78,9 @@ export async function POST(request: Request) {
       await db.run(
         `INSERT INTO exam_schedules (
           id, college_id, department, semester, exam_type, subject_name,
-          subject_code, exam_date, session_time, start_time, end_time,
+          subject_code, exam_date, session_time, start_time, end_time, day_order,
           hall_room, max_marks, passing_marks, created_by, status, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
           department = excluded.department,
           semester = excluded.semester,
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
           session_time = excluded.session_time,
           start_time = excluded.start_time,
           end_time = excluded.end_time,
+          day_order = excluded.day_order,
           hall_room = excluded.hall_room,
           max_marks = excluded.max_marks,
           passing_marks = excluded.passing_marks,
@@ -97,30 +99,31 @@ export async function POST(request: Request) {
           updated_at = CURRENT_TIMESTAMP`,
         [
           id, college_id, department, semester, exam_type, subject_name,
-          subject_code, exam_date, session_time, start_time, end_time,
+          subject_code, exam_date, session_time, start_time, end_time, day_order,
           hall_room, max_marks, passing_marks, created_by, status
         ]
       );
 
-      // Auto-sync campus_daily_configs to recognize this date as an active exam day
+      // Auto-sync campus_daily_configs to recognize this date as an active exam day with the specified day_order
       try {
         const configId = `${college_id}_${exam_date}`;
         await db.run(
           `INSERT INTO campus_daily_configs (
             id, college_id, dateStr, day_type, day_order, notes, session_mode, updated_at
-          ) VALUES (?, ?, ?, 'exam_day', 'None', ?, 'Offline', CURRENT_TIMESTAMP)
+          ) VALUES (?, ?, ?, 'exam_day', ?, ?, 'Offline', CURRENT_TIMESTAMP)
           ON CONFLICT(id) DO UPDATE SET
             day_type = 'exam_day',
+            day_order = CASE WHEN excluded.day_order IS NOT NULL AND excluded.day_order != '' THEN excluded.day_order ELSE campus_daily_configs.day_order END,
             notes = excluded.notes,
             updated_at = CURRENT_TIMESTAMP
           WHERE campus_daily_configs.day_type != 'holiday'`,
-          [configId, college_id, exam_date, `${exam_type} Examination`]
+          [configId, college_id, exam_date, day_order, `${exam_type} Examination`]
         );
       } catch (cdcErr) {
         console.warn("Could not auto-sync campus_daily_configs for exam date:", cdcErr);
       }
 
-      inserted.push({ id, exam_type, subject_name, exam_date, session_time, department, semester });
+      inserted.push({ id, exam_type, subject_name, exam_date, session_time, start_time, end_time, day_order, department, semester });
     }
 
     return NextResponse.json({

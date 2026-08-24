@@ -170,9 +170,38 @@ export async function POST(request: Request) {
           updated_at = CURRENT_TIMESTAMP`,
         [id, exam_id, student_id, exam.college_id, marks_obtained, entryMaxMarks, is_absent, grade, remarks, evaluated_by || "Campus Manager"]
       );
+
+      // Also record attendance in student_attendance so it is immediately reflected in daily evaluations
+      try {
+        const attStatus = is_absent ? "absent" : (entry.status === "od" ? "od" : "present");
+        const attId = `att_exam_${exam_id}_${student_id}`;
+        const timestamp = new Date().toISOString();
+
+        // Delete any existing attendance for this exam slot & date
+        await db.run("DELETE FROM student_attendance WHERE slotId = ? AND dateStr = ? AND studentId = ?", [exam_id, exam.exam_date, student_id]);
+
+        await db.run(
+          `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp, type, mode, attendanceTypeSub)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            attId,
+            student_id,
+            exam_id,
+            exam.exam_date,
+            attStatus,
+            evaluated_by || "Faculty Mentor",
+            timestamp,
+            "Exam",
+            "Offline",
+            `Exam Attendance: ${exam.exam_type} - ${exam.subject_name}`
+          ]
+        );
+      } catch (attErr) {
+        console.warn("Could not sync student_attendance for exam mark:", attErr);
+      }
     }
 
-    return NextResponse.json({ success: true, message: `Successfully recorded marks for ${marks.length} students` });
+    return NextResponse.json({ success: true, message: `Successfully recorded marks and attendance for ${marks.length} students` });
   } catch (error: any) {
     console.error("Error recording marks:", error);
     return NextResponse.json({ success: false, message: error.message || "Failed to record marks" }, { status: 500 });

@@ -2637,7 +2637,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
                           <th className="p-3">Exam / Assessment</th>
                           <th className="p-3">Subject Name</th>
-                          <th className="p-3">Exam Date</th>
+                          <th className="p-3">Exam Date & Day Order</th>
                           <th className="p-3">Session & Timings</th>
                           <th className="p-3">Hall / Block</th>
                           <th className="p-3 text-center">Seat Number</th>
@@ -2668,15 +2668,22 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                 </td>
                                 <td className="p-3 font-extrabold text-slate-900 truncate max-w-[200px]">{ex.subject_name}</td>
                                 <td className="p-3 text-slate-700 font-bold">
-                                  <div className="flex items-center gap-1.5">
-                                    <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                                    <span>{ex.exam_date}</span>
+                                  <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                                      <span>{ex.exam_date}</span>
+                                    </div>
+                                    {ex.day_order && ex.day_order !== "None" ? (
+                                      <span className="inline-flex items-center w-max px-2 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-[9.5px] font-black uppercase">
+                                        {ex.day_order}
+                                      </span>
+                                    ) : null}
                                   </div>
                                 </td>
                                 <td className="p-3 text-slate-650">
                                   <div className="flex items-center gap-1.5 text-[10.5px]">
                                     <Clock className="h-3 w-3 text-slate-400 shrink-0" />
-                                    <span>{ex.session_time || `${ex.start_time} - ${ex.end_time}`}</span>
+                                    <span className="font-semibold text-slate-800">{ex.session_time || `${ex.start_time} - ${ex.end_time}`}</span>
                                   </div>
                                 </td>
                                 <td className="p-3">
