@@ -374,6 +374,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (date.trim() > todayStr) {
+      return NextResponse.json(
+        { success: false, message: "Future period conduction cannot be logged in advance." },
+        { status: 400 }
+      );
+    }
+
     const id = existingId || `acad_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const now = new Date().toISOString();
 
