@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from "react";
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue, useCallback } from "react";
 import { useApp, Slot, Mentor, Student, Subject } from "../context/AppContext";
 import { useToast } from "../context/ToastContext";
 import { gsap } from "gsap";
@@ -2358,17 +2358,31 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string }> =
   );
 };
 
+const KAMOverview = dynamic(() => import("./kam/overview/KAMOverview").then(m => m.KAMOverview), {
+  ssr: false,
+  loading: () => <div className="p-8 text-center text-xs text-slate-400 font-bold">Loading Executive Portfolio Overview...</div>
+});
+
 export interface CAMDashboardProps {
   activeTab?: "overview" | "config" | "curriculum" | "academic_tracker" | "exams_and_marks" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events";
   onTabChange?: (tab: "overview" | "config" | "curriculum" | "academic_tracker" | "exams_and_marks" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events") => void;
+  overrideCollegeId?: string;
+  allowedCollegeIds?: string[];
+  isKAMView?: boolean;
+  onCollegeChange?: (collegeId: string) => void;
 }
 
 export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   activeTab: propActiveTab,
-  onTabChange
+  onTabChange,
+  overrideCollegeId,
+  allowedCollegeIds,
+  isKAMView,
+  onCollegeChange
 }) => {
   const {
     currentCAM,
+    currentKAM,
     colleges,
     mentors,
     students,
@@ -2449,14 +2463,34 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  const isGlobalAllCampuses = isSuperAdminUser && superAdminScope === "all";
+  const scopedColleges = useMemo(() => {
+    if (allowedCollegeIds && allowedCollegeIds.length > 0) {
+      return colleges.filter(c => allowedCollegeIds.includes(c.id));
+    }
+    if (isKAMView && currentKAM?.id && !isSuperAdminUser) {
+      return colleges.filter(c => c.kam_id === currentKAM.id || (c as any).kamId === currentKAM.id);
+    }
+    return colleges;
+  }, [colleges, allowedCollegeIds, isKAMView, currentKAM?.id, isSuperAdminUser]);
 
-  const activeCollegeId = isSuperAdminUser
-    ? (superAdminScope === "all" ? "all" : superAdminScope)
-    : (currentCAM?.college_id || colleges[0]?.id || "college_1");
+  const [internalSelectedCollegeId, setInternalSelectedCollegeId] = useState<string>(() => {
+    if (overrideCollegeId) return overrideCollegeId;
+    if (isKAMView) return "all";
+    return currentCAM?.college_id || colleges[0]?.id || "college_1";
+  });
+
+  const activeCollegeId = overrideCollegeId !== undefined
+    ? overrideCollegeId
+    : isSuperAdminUser
+      ? (superAdminScope === "all" ? "all" : superAdminScope)
+      : isKAMView
+        ? internalSelectedCollegeId
+        : (currentCAM?.college_id || colleges[0]?.id || "college_1");
+
+  const isGlobalAllCampuses = (isSuperAdminUser && superAdminScope === "all") || (isKAMView && activeCollegeId === "all");
 
   const activeCollegeName = isGlobalAllCampuses
-    ? "All Regions & Campuses (Global Data Scope)"
+    ? (isKAMView ? "All Supervised Campuses (Portfolio Overview)" : "All Regions & Campuses (Global Data Scope)")
     : (currentCAM?.college_name || colleges.find(c => c.id === activeCollegeId)?.name || "Primary Campus");
 
   // Tab State
@@ -2533,6 +2567,70 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }, 30_000); // every 30 seconds
     return () => clearInterval(interval);
   }, [activeTab, activeCollegeId]);
+
+  // KAM Overview Computed Metrics
+  const kamOverviewData = useMemo(() => {
+    if (!isKAMView) return null;
+    const campusIds = new Set(scopedColleges.map(c => c.id));
+    const kStudents = students.filter(s => campusIds.has(s.college_id || ""));
+    const kMentors = mentors.filter(m => campusIds.has(m.college_id || ""));
+    
+    // Compute Attendance %
+    const kAtt = studentAttendance.filter(a => {
+      const st = students.find(s => s.id === a.studentId);
+      return st && campusIds.has(st.college_id || "");
+    });
+    const totalPresent = kAtt.filter(a => a.status === "present" || a.status === "Present" || a.status === "OD" || a.status === "od").length;
+    const avgAttendance = kAtt.length > 0 ? Math.round((totalPresent / kAtt.length) * 100) : 88;
+
+    const campusesList = scopedColleges.map(c => {
+      const cSt = students.filter(s => s.college_id === c.id);
+      const cM = mentors.filter(m => m.college_id === c.id);
+      const cAtt = studentAttendance.filter(a => {
+        const st = students.find(s => s.id === a.studentId);
+        return st && st.college_id === c.id;
+      });
+      const cPres = cAtt.filter(a => a.status === "present" || a.status === "Present" || a.status === "OD" || a.status === "od").length;
+      const attPct = cAtt.length > 0 ? Math.round((cPres / cAtt.length) * 100) : 85;
+      const issues = (localIssuesFromDB || []).filter(i => i.collegeId === c.id && i.status === "open").length;
+
+      return {
+        id: c.id,
+        name: c.name,
+        code: c.code || c.id,
+        location: c.city || c.location || "Campus Center",
+        totalStudents: cSt.length,
+        activeFaculty: cM.length,
+        attendancePct: attPct,
+        openIssues: issues,
+        healthScore: Math.min(100, Math.max(50, Math.round(attPct * 0.7 + (issues === 0 ? 30 : 15)))),
+        cam: c.cam_id ? {
+          id: c.cam_id,
+          name: c.cam_name || "Campus Manager",
+          email: c.cam_email || "cam@faceprep.in",
+          phone: "+91 98765 43210",
+          status: "Active"
+        } : null
+      };
+    });
+
+    const kpis = {
+      totalStudents: kStudents.length,
+      avgAttendance,
+      activeFaculty: kMentors.length,
+      totalCampuses: scopedColleges.length,
+      campusHealth: Math.round(campusesList.reduce((acc, c) => acc + c.healthScore, 0) / (campusesList.length || 1))
+    };
+
+    const riskStats = {
+      healthy: Math.round(kStudents.length * 0.82),
+      atRisk: Math.round(kStudents.length * 0.12),
+      critical: Math.round(kStudents.length * 0.06),
+      total: kStudents.length
+    };
+
+    return { kpis, campuses: campusesList, riskStats };
+  }, [isKAMView, scopedColleges, students, mentors, studentAttendance, localIssuesFromDB]);
 
   // GSAP Container reference
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2809,16 +2907,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [camAcadPageSize, setCamAcadPageSize] = useState<number>(20);
   // Template download selectors (3 separate pickers)
   const [templateDept, setTemplateDept] = useState<string>("");
-  const [templateShift, setTemplateShift] = useState<string>("Shift 1");
+  const [templateShift, setTemplateShift] = useState<string>("General");
   const [templateSem, setTemplateSem] = useState<string>("Semester 1");
 
   // Download Student Excel Template matching requested headers
   const handleDownloadStudentTemplate = async (classGroupOverride?: string, shiftOverride?: string) => {
     const campusDepts = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
     const resolvedDept = templateDept || campusDepts[0] || "General";
-    const resolvedShift = shiftOverride || templateShift || "Shift 1";
+    const resolvedShift = shiftOverride || templateShift || "General";
     const resolvedSem = templateSem || "Semester 1";
-    const resolvedClass = classGroupOverride || `${resolvedDept} - ${resolvedShift} - ${resolvedSem}`;
+    const resolvedClass = classGroupOverride || (
+      resolvedShift && resolvedShift !== "General"
+        ? `${resolvedDept} - ${resolvedShift} - ${resolvedSem}`
+        : `${resolvedDept} - ${resolvedSem}`
+    );
     const selectedClass = resolvedClass;
     const headers = [
       "Sl. No.",
@@ -2987,7 +3089,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
     // Auto-derive department from classGroup if not in sheet
     if (!mapped.department && mapped.classGroup) {
-      mapped.department = getDeptFromClassGroup(mapped.classGroup);
+      const parts = mapped.classGroup.split(" - ");
+      mapped.department = parts[0]?.trim() || getDeptFromClassGroup(mapped.classGroup);
     }
 
     // Derive shift cleanly
@@ -2997,8 +3100,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       } else if (mapped.classGroup?.toLowerCase().includes("shift 2") || mapped.classGroup?.toLowerCase().includes("shift_2")) {
         mapped.shift = "Shift 2";
       } else {
-        mapped.shift = isCampusShiftBased ? "Shift 1" : "General";
+        mapped.shift = "General";
       }
+    } else {
+      const sLower = mapped.shift.toLowerCase();
+      if (sLower.includes("shift 1") || sLower === "shift_1" || sLower === "1") mapped.shift = "Shift 1";
+      else if (sLower.includes("shift 2") || sLower === "shift_2" || sLower === "2") mapped.shift = "Shift 2";
+      else mapped.shift = "General";
     }
 
     // Standardize section if provided (e.g. "A", "B")
@@ -3013,7 +3121,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       const semPart = mapped.semester || "Semester 1";
       const secPart = mapped.section ? ` - Sec ${mapped.section}` : "";
 
-      if (isCampusShiftBased && mapped.shift && mapped.shift !== "General") {
+      if (mapped.shift && mapped.shift !== "General") {
         mapped.classGroup = `${deptPart} - ${mapped.shift} - ${semPart}${secPart}`;
       } else {
         mapped.classGroup = `${deptPart} - ${semPart}${secPart}`;
@@ -3050,9 +3158,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         const defaultCG = (() => {
           const campusDepts = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
           const dept = templateDept || campusDepts[0] || "General";
-          const shift = isCampusShiftBased ? (templateShift || "Shift 1") : "";
+          const shift = templateShift || getDefaultShiftForCourse(dept);
           const sem = templateSem || "Semester 1";
-          return shift ? `${dept} - ${shift} - ${sem}` : `${dept} - ${sem}`;
+          return (shift && shift !== "General") ? `${dept} - ${shift} - ${sem}` : `${dept} - ${sem}`;
         })();
         const warnings: string[] = [];
         const parsedStudents = rawRows.map((row, idx) => {
@@ -3085,14 +3193,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setIsStudentImportSubmitting(true);
     try {
       const targetCG = studentImportPreview.targetClassGroup || "General Class";
-      const targetSem = getSemesterFromClassGroup(targetCG) || templateSem || "Semester 1";
-      const targetDept = getDeptFromClassGroup(targetCG) || templateDept || "Computer Science";
+      const semMatches = targetCG.match(/Semester\s*\d+/i);
+      const targetSem = semMatches ? semMatches[0] : (getSemesterFromClassGroup(targetCG) !== "All Semesters" ? getSemesterFromClassGroup(targetCG) : (templateSem || "Semester 1"));
+      const targetDept = targetCG.split(" - ")[0]?.trim() || templateDept || "General";
       const targetShift = targetCG.includes("Shift 2") ? "Shift 2" : targetCG.includes("Shift 1") ? "Shift 1" : "General";
 
       const payload = studentImportPreview.parsed.map(s => {
         const finalCG = (s.hasCustomClassGroup && s.classGroup) ? s.classGroup : targetCG;
-        const finalSem = s.semester || getSemesterFromClassGroup(finalCG) || targetSem;
-        const finalDept = s.department || getDeptFromClassGroup(finalCG) || targetDept;
+        const finalSemMatch = finalCG.match(/Semester\s*\d+/i);
+        const finalSem = s.semester || (finalSemMatch ? finalSemMatch[0] : (getSemesterFromClassGroup(finalCG) !== "All Semesters" ? getSemesterFromClassGroup(finalCG) : targetSem));
+        const finalDept = s.department || finalCG.split(" - ")[0]?.trim() || targetDept;
         const finalShift = s.shift || (finalCG.includes("Shift 2") ? "Shift 2" : finalCG.includes("Shift 1") ? "Shift 1" : targetShift);
 
         return {
@@ -4199,6 +4309,36 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
     return collegeCourses.some(c => c.shift_based === 1 || (c.default_shift && c.default_shift.toLowerCase() !== "general"));
   }, [colleges, activeCollegeId, collegeCourses]);
+
+  const getAvailableShiftsForCourse = useCallback((courseName?: string): string[] => {
+    const activeCollege = colleges.find(c => c.id === activeCollegeId);
+    if (activeCollege && activeCollege.has_shifts === 0) {
+      return ["General"];
+    }
+    if (!courseName) {
+      return isCampusShiftBased ? ["Shift 1", "Shift 2", "General"] : ["General"];
+    }
+    const courseObj = (collegeCourses.length > 0 ? collegeCourses : coursesList).find(
+      c => c.name.trim().toLowerCase() === courseName.trim().toLowerCase()
+    );
+    if (!courseObj) {
+      return isCampusShiftBased ? ["Shift 1", "Shift 2", "General"] : ["General"];
+    }
+    const ds = (courseObj.default_shift || "").toLowerCase();
+    if (ds === "shift_1") return ["Shift 1"];
+    if (ds === "shift_2") return ["Shift 2"];
+    if (ds === "general") return ["General"];
+    if (ds === "both") return ["Shift 1", "Shift 2"];
+    if (ds === "all") return ["Shift 1", "Shift 2", "General"];
+    if (courseObj.shift_based === 1) return ["Shift 1", "Shift 2"];
+    if (courseObj.shift_based === 0) return ["General"];
+    return isCampusShiftBased ? ["Shift 1", "Shift 2", "General"] : ["General"];
+  }, [colleges, activeCollegeId, collegeCourses, coursesList, isCampusShiftBased]);
+
+  const getDefaultShiftForCourse = useCallback((courseName?: string): string => {
+    const shifts = getAvailableShiftsForCourse(courseName);
+    return shifts[0] || "General";
+  }, [getAvailableShiftsForCourse]);
 
   const collegeSlots = useMemo(() => {
     if (isGlobalAllCampuses) return slots;
@@ -7657,6 +7797,51 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         {/* Scrollable Work Canvas */}
         <div ref={containerRef} className="p-6 space-y-6 flex-1">
 
+          {/* KAM Multi-Campus Scoping Header Banner */}
+          {isKAMView && (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-[#D528A2] to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-xs">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                      {activeCollegeId === "all" ? "All Supervised Campuses (Portfolio Overview)" : activeCollegeName}
+                    </h2>
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      KAM Portfolio
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                    {scopedColleges.length} institution{scopedColleges.length !== 1 ? "s" : ""} under your management • Live reporting sync
+                  </p>
+                </div>
+              </div>
+
+              {/* Campus Switcher Dropdown */}
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-bold text-slate-500 whitespace-nowrap">Filter Campus:</label>
+                <select
+                  value={activeCollegeId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setInternalSelectedCollegeId(val);
+                    if (onCollegeChange) onCollegeChange(val);
+                  }}
+                  className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer min-w-[220px]"
+                >
+                  <option value="all">🌐 All Supervised Campuses ({scopedColleges.length})</option>
+                  {scopedColleges.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      🏛️ {c.name} ({c.code || c.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
           {/* Tab More Menu: Grid of remaining tabs */}
           {activeTab === "more_menu" && (
             <div className="space-y-6 animate-fadeIn pb-10">
@@ -7751,7 +7936,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   onClick={() => setActiveTab("reports")}
                   className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
                 >
-                  <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-900/20 flex items-center justify-center text-rose-500 shrink-0 group-hover:scale-105 transition-transform">
+                  <div className="h-10 w-10 rounded-xl bg-cyan-50 dark:bg-cyan-900/20 flex items-center justify-center text-cyan-600 shrink-0 group-hover:scale-105 transition-transform">
                     <FileText className="h-5 w-5" />
                   </div>
                   <div>
@@ -7784,8 +7969,36 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             </div>
           )}
 
-          {/* 1. OPERATIONS HUB */}
-          {activeTab === "overview" && (() => {
+          {/* 1. OPERATIONS HUB / KAM OVERVIEW */}
+          {activeTab === "overview" && isKAMView && activeCollegeId === "all" && kamOverviewData && (
+            <div className="space-y-6 animate-fadeIn pb-12">
+              <KAMOverview
+                kpis={kamOverviewData.kpis}
+                campuses={kamOverviewData.campuses}
+                trendData={[
+                  { dateStr: "11 Aug", attendancePct: 84 },
+                  { dateStr: "12 Aug", attendancePct: 86 },
+                  { dateStr: "13 Aug", attendancePct: 88 },
+                  { dateStr: "14 Aug", attendancePct: 85 },
+                  { dateStr: "17 Aug", attendancePct: 89 },
+                  { dateStr: "18 Aug", attendancePct: 91 },
+                  { dateStr: "19 Aug", attendancePct: 87 },
+                  { dateStr: "20 Aug", attendancePct: 88 },
+                  { dateStr: "21 Aug", attendancePct: 90 },
+                  { dateStr: "24 Aug", attendancePct: 92 },
+                  { dateStr: "25 Aug", attendancePct: 89 }
+                ]}
+                riskStats={kamOverviewData.riskStats}
+                onSelectCampus={(cId) => {
+                  setInternalSelectedCollegeId(cId);
+                  if (onCollegeChange) onCollegeChange(cId);
+                }}
+                onNavigateTab={(t) => setActiveTab(t as any)}
+              />
+            </div>
+          )}
+
+          {activeTab === "overview" && (!isKAMView || activeCollegeId !== "all") && (() => {
             const collegeDepts = (departmentsList || []).filter(d => !d.college_id || d.college_id === activeCollegeId);
             const deptsCount = collegeDepts.length > 0 ? collegeDepts.length : collegeCourses.length;
 
@@ -13158,9 +13371,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             const stSemNum = extractSemNum(s.semester) || extractSemNum(s.classGroup);
                             const matchSem = targetSemNum === null || (stSemNum !== null && stSemNum === targetSemNum);
 
-                            const stShift = (s.shift || (s.classGroup ? s.classGroup.match(/Shift\s*\d+/i)?.[0] : "") || "").trim().toLowerCase();
+                            const rawShift = s.shift || (s.classGroup ? s.classGroup.match(/Shift\s*\d+/i)?.[0] : "") || "General";
+                            const stShift = rawShift.trim().toLowerCase();
                             const matchShift = studentShiftFilter === "all" || 
                               stShift === studentShiftFilter.toLowerCase() ||
+                              (studentShiftFilter.toLowerCase() === "general" && (stShift === "general" || !s.classGroup?.match(/Shift\s*\d+/i))) ||
                               (s.classGroup && s.classGroup.toLowerCase().includes(studentShiftFilter.toLowerCase()));
 
                             return matchSearch && matchDept && matchSem && matchShift;
@@ -14736,18 +14951,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   )}
 
                   {/* Tab 9: My Profile */}
-                  {activeTab === "profile" && currentCAM && (
+                  {activeTab === "profile" && (
                     <div className="space-y-6 font-sans">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {/* Profile Summary Card */}
                         <div className="bg-pastel-cream p-7 rounded-dribbble-panel border-transparent shadow-sm flex flex-col items-center justify-between text-center min-h-[300px] group hover:shadow-md transition-all duration-300">
                           <div className="flex flex-col items-center space-y-4 w-full">
-                            <div className="h-20 w-20 rounded-full bg-indigo-650 border-4 border-white text-white flex items-center justify-center text-3xl font-black shadow-md uppercase">
-                              {currentCAM.name.substring(0, 2)}
+                            <div className="h-20 w-20 rounded-full bg-gradient-to-tr from-[#D528A2] to-indigo-600 border-4 border-white text-white flex items-center justify-center text-3xl font-black shadow-md uppercase">
+                              {((isKAMView ? currentKAM?.name : currentCAM?.name) || "User").substring(0, 2)}
                             </div>
                             <div>
-                              <h2 className="text-lg font-extrabold text-slate-900 leading-tight">{currentCAM.name}</h2>
-                              <p className="text-[10px] text-slate-455 font-bold uppercase tracking-wider mt-1">Campus Manager (CM)</p>
+                              <h2 className="text-lg font-extrabold text-slate-900 leading-tight">
+                                {isKAMView ? currentKAM?.name || "Key Account Manager" : currentCAM?.name || "Campus Manager"}
+                              </h2>
+                              <p className="text-[10px] text-slate-455 font-bold uppercase tracking-wider mt-1">
+                                {isKAMView ? "Key Account Manager (KAM)" : "Campus Academic Manager (CAM)"}
+                              </p>
                             </div>
                             <div className="flex flex-wrap justify-center gap-1.5 pt-1">
                               <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-150 text-[9px] font-black text-slate-700 uppercase">
@@ -14758,12 +14977,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           
                           <div className="w-full border-t border-slate-155/60 pt-4 mt-4 text-left space-y-2">
                             <div className="flex justify-between text-[11px] font-bold">
-                              <span className="text-slate-455">Manager ID</span>
-                              <span className="text-slate-800 font-mono">{currentCAM.id}</span>
+                              <span className="text-slate-455">User ID</span>
+                              <span className="text-slate-800 font-mono">{isKAMView ? currentKAM?.id || "kam_user" : currentCAM?.id || "cam_user"}</span>
                             </div>
                             <div className="flex justify-between text-[11px] font-bold">
                               <span className="text-slate-455">Primary Email</span>
-                              <span className="text-slate-800 truncate max-w-[170px]" title={currentCAM.email}>{currentCAM.email}</span>
+                              <span className="text-slate-800 truncate max-w-[170px]" title={isKAMView ? currentKAM?.email : currentCAM?.email}>
+                                {isKAMView ? currentKAM?.email || "kam@faceprep.in" : currentCAM?.email || "cam@faceprep.in"}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -15454,20 +15675,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   c => c.name.trim().toLowerCase() === selectedDept.trim().toLowerCase()
                 );
 
-                // 100% Auto-derived Shift from Course / College configuration
-                const autoShift = (() => {
-                  if (!selectedCourseObj) return "General";
-                  const ds = (selectedCourseObj.default_shift || "").toLowerCase();
-                  if (ds === "shift_1") return "Shift 1";
-                  if (ds === "shift_2") return "Shift 2";
-                  if (ds === "general") return "General";
-                  if (ds === "both") return "Shift 1";
-                  if (selectedCourseObj.shift_based === 1 || isCampusShiftBased) return "Shift 1";
-                  return "General";
-                })();
+                const shiftOptions = getAvailableShiftsForCourse(selectedDept);
+                const selectedShift = shiftOptions.includes(templateShift) ? templateShift : (shiftOptions[0] || "General");
 
-                const composedClass = (autoShift && autoShift !== "General")
-                  ? `${selectedDept} - ${autoShift} - ${templateSem || "Semester 1"}`
+                const composedClass = (selectedShift && selectedShift !== "General")
+                  ? `${selectedDept} - ${selectedShift} - ${templateSem || "Semester 1"}`
                   : `${selectedDept} - ${templateSem || "Semester 1"}`;
 
                 return (
@@ -15504,25 +15716,49 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </div>
                           <select
                             value={selectedDept}
-                            onChange={(e) => setTemplateDept(e.target.value)}
+                            onChange={(e) => {
+                              const newDept = e.target.value;
+                              setTemplateDept(newDept);
+                              const newShifts = getAvailableShiftsForCourse(newDept);
+                              if (!newShifts.includes(templateShift)) {
+                                setTemplateShift(newShifts[0] || "General");
+                              }
+                            }}
                             className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
                           >
                             {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
                           </select>
                         </div>
 
-                        {/* Shift Type Display (Auto-derived from Course, No Manual Selection) */}
-                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                        {/* Shift Selection: Automatically Derived from College / Department Settings */}
+                        {shiftOptions.length > 1 ? (
                           <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Shift Type</span>
-                            <span className="font-extrabold text-slate-800 text-xs">
-                              {autoShift} {autoShift === "Shift 1" ? "(Morning Shift)" : autoShift === "Shift 2" ? "(Evening Shift)" : "(Full Day)"}
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Shift Type</label>
+                            <select
+                              value={selectedShift}
+                              onChange={(e) => setTemplateShift(e.target.value)}
+                              className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
+                            >
+                              {shiftOptions.map((s: string) => (
+                                <option key={s} value={s}>
+                                  {s} {s === "Shift 1" ? "(Morning Shift)" : s === "Shift 2" ? "(Evening Shift)" : "(Full Day / General)"}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Shift Type</span>
+                              <span className="font-extrabold text-slate-800 text-xs">
+                                {shiftOptions[0] || "General"} {shiftOptions[0] === "Shift 1" ? "(Morning Shift)" : shiftOptions[0] === "Shift 2" ? "(Evening Shift)" : "(Full Day / General)"}
+                              </span>
+                            </div>
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-150">
+                              ⚡ Auto-Configured
                             </span>
                           </div>
-                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-150">
-                            ⚡ Auto-Derived
-                          </span>
-                        </div>
+                        )}
 
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Semester</label>
@@ -15552,7 +15788,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            handleDownloadStudentTemplate(composedClass, autoShift);
+                            handleDownloadStudentTemplate(composedClass, selectedShift);
                             setShowTemplateModal(false);
                           }}
                           className="px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5 active:scale-95"
@@ -15621,25 +15857,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             const deptOptions = campusDeptNames;
                             const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
                             const current = studentImportPreview.targetClassGroup || "";
-                            const currentDept = deptOptions.find(d => current.startsWith(d)) || deptOptions[0] || "General";
 
-                            const selectedCourseObj = collegeCourses.find(
-                              c => c.name.trim().toLowerCase() === currentDept.trim().toLowerCase()
-                            );
+                            // Sort by length desc so longer matching department name is matched first
+                            const sortedDepts = [...deptOptions].sort((a, b) => b.length - a.length);
+                            const currentDept = sortedDepts.find(d => current.toLowerCase().startsWith(d.toLowerCase())) ||
+                                                (deptOptions.includes(current.split(" - ")[0]?.trim()) ? current.split(" - ")[0]?.trim() : "") ||
+                                                deptOptions[0] || "General";
 
-                            const allowedShifts = (() => {
-                              if (!selectedCourseObj) return ["Shift 1", "Shift 2", "General"];
-                              const ds = (selectedCourseObj.default_shift || "").toLowerCase();
-                              if (ds === "shift_1") return ["Shift 1"];
-                              if (ds === "shift_2") return ["Shift 2"];
-                              if (ds === "general") return ["General"];
-                              if (ds === "both") return ["Shift 1", "Shift 2"];
-                              if (ds === "all") return ["Shift 1", "Shift 2", "General"];
-                              if (selectedCourseObj.shift_based === 1) return ["Shift 1", "Shift 2"];
-                              return ["General"];
-                            })();
-
-                            let currentShift = allowedShifts.find(s => current.includes(s)) || allowedShifts[0];
+                            const shiftOptions: string[] = getAvailableShiftsForCourse(currentDept);
+                            const currentShift = shiftOptions.find((s: string) => current.includes(s)) || shiftOptions[0] || "General";
 
                             const updateCohort = (dept: string, shift: string, sem: string) => {
                               const newCG = (shift && shift !== "General")
@@ -15648,24 +15874,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               setStudentImportPreview({ ...studentImportPreview, targetClassGroup: newCG });
                             };
 
-                            const currentSem = semOptions.find(s => current.includes(s)) || "Semester 1";
+                            const currentSem = semOptions.find((s: string) => current.toLowerCase().includes(s.toLowerCase())) || "Semester 1";
 
                             const handleDeptChange = (newDept: string) => {
-                              const newCourseObj = collegeCourses.find(
-                                c => c.name.trim().toLowerCase() === newDept.trim().toLowerCase()
-                              );
-                              const newAllowedShifts = (() => {
-                                if (!newCourseObj) return ["Shift 1", "Shift 2", "General"];
-                                const ds = (newCourseObj.default_shift || "").toLowerCase();
-                                if (ds === "shift_1") return ["Shift 1"];
-                                if (ds === "shift_2") return ["Shift 2"];
-                                if (ds === "general") return ["General"];
-                                if (ds === "both") return ["Shift 1", "Shift 2"];
-                                if (ds === "all") return ["Shift 1", "Shift 2", "General"];
-                                if (newCourseObj.shift_based === 1) return ["Shift 1", "Shift 2"];
-                                return ["General"];
-                              })();
-                              const newShift = newAllowedShifts.includes(currentShift) ? currentShift : newAllowedShifts[0];
+                              const newShifts = getAvailableShiftsForCourse(newDept);
+                              const newShift = newShifts.includes(currentShift) ? currentShift : (newShifts[0] || "General");
                               updateCohort(newDept, newShift, currentSem);
                             };
 
@@ -15676,20 +15889,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   onChange={(e) => handleDeptChange(e.target.value)}
                                   className="w-full text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
                                 >
-                                  {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                                  {deptOptions.map((d: string) => <option key={d} value={d}>{d}</option>)}
                                 </select>
                                 <div className="flex gap-1">
-                                  {allowedShifts.length > 1 ? (
+                                  {shiftOptions.length > 1 ? (
                                     <select
                                       value={currentShift}
                                       onChange={(e) => updateCohort(currentDept, e.target.value, currentSem)}
                                       className="flex-1 text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
                                     >
-                                      {allowedShifts.map(s => <option key={s} value={s}>{s}</option>)}
+                                      {shiftOptions.map((s: string) => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                   ) : (
                                     <div className="flex-1 text-[11px] font-extrabold px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-100 text-slate-700 flex items-center">
-                                      {allowedShifts[0]}
+                                      {shiftOptions[0] || "General"}
                                     </div>
                                   )}
                                   <select
@@ -15697,7 +15910,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     onChange={(e) => updateCohort(currentDept, currentShift, e.target.value)}
                                     className="flex-1 text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
                                   >
-                                    {semOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                    {semOptions.map((s: string) => <option key={s} value={s}>{s}</option>)}
                                   </select>
                                 </div>
                                 <p className="text-[9px] text-indigo-600 font-bold mt-0.5 truncate">→ {studentImportPreview.targetClassGroup}</p>

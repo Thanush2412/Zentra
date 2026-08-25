@@ -75,8 +75,16 @@ export interface AdminUser {
 export interface College {
   id: string;
   name: string;
+  code?: string;
   address?: string;
+  city?: string;
+  location?: string;
   kam_id: string;
+  cam_id?: string;
+  cam_name?: string;
+  cam_email?: string;
+  academic_year?: string;
+  manager?: string;
   has_shifts?: number;
   dept_count?: number;
   mentor_count?: number;
