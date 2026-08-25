@@ -776,6 +776,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setHolidays(data.holidays || []);
         setWeeklyTasks(data.weeklyTasks || []);
         setStudentTracker(data.studentTracker || []);
+        setWeeklyAcademicTasks(data.weeklyAcademicTasks || []);
+        setStudentAcademicTracker(data.studentAcademicTracker || []);
         setAcademicTracker(data.academicTracker || []);
         setInterviews(data.interviews || []);
         setInterviewEvaluations(data.interviewEvaluations || []);

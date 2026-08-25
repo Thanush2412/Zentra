@@ -6815,10 +6815,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const activeClassGroup = `${activeDept} - ${activeSem}`;
 
           const currentTask = weeklyTasks.find(
-            t => t.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim() &&
+            t => (isSubjectNameMatch(t.subject, activeSubj) || t.subject.toLowerCase().trim() === activeSubj.toLowerCase().trim()) &&
               t.week_number === trackerWeek &&
               (isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) ||
-                t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim()))
+                t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim()) ||
+                activeClassGroup.toLowerCase().includes(t.class_group.toLowerCase().trim()))
           );
 
           const classStudents = memoizedTrackerClassStudents;
@@ -8330,10 +8331,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                 // Current task
                 const currentWeeklyTask = (weeklyAcademicTasks || []).find(
-                  t => t.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                  t => (isSubjectNameMatch(t.subject, activeWeeklySubj) || t.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim()) &&
                     t.week_number === acadWeeklyWeek &&
                     (isCohortMatching(t.class_group, activeWeeklyClassGroup, coursesList, subjectsList) ||
-                      t.class_group.toLowerCase().includes(activeWeeklyDept.toLowerCase().trim()))
+                      t.class_group.toLowerCase().includes(activeWeeklyDept.toLowerCase().trim()) ||
+                      activeWeeklyClassGroup.toLowerCase().includes(t.class_group.toLowerCase().trim()))
                 );
 
                 // Students belonging to this cohort

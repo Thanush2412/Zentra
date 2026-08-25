@@ -178,7 +178,9 @@ export async function GET(request: Request) {
       approvals,
       leaveBalances,
       departmentsData,
-      academicTracker
+      academicTracker,
+      weeklyAcademicTasks,
+      studentAcademicTracker
     ] = await Promise.all([
       db.all(mentorSql, ...mentorParams),
       db.all(slotSql, ...slotParams),
@@ -211,12 +213,16 @@ export async function GET(request: Request) {
       db.all(holidaySql, ...holidayParams).catch(() => []),
       isAdmin ? db.all("SELECT id, user_id, login_time, logout_time, ip, device FROM login_history ORDER BY login_time DESC LIMIT 30").catch(() => []) : Promise.resolve([]),
       isAdmin ? db.all("SELECT id, email, role, reference_id, status, plain_password, must_change_password, last_login, created_at, updated_at FROM users").catch(() => []) : Promise.resolve([]),
-      collegeId && (isCAM || isMentor)
-        ? db.all("SELECT * FROM weekly_tasks WHERE mentor_id IN (SELECT id FROM mentors WHERE college_id = ?) LIMIT 100", collegeId).catch(() => [])
-        : (!isStudent ? db.all("SELECT * FROM weekly_tasks LIMIT 100").catch(() => []) : Promise.resolve([])),
-      collegeId && (isCAM || isMentor)
-        ? db.all("SELECT * FROM student_tracker WHERE student_id IN (SELECT id FROM students WHERE college_id = ?) ORDER BY updated_at DESC LIMIT 100", collegeId).catch(() => [])
-        : (!isStudent ? db.all("SELECT * FROM student_tracker ORDER BY updated_at DESC LIMIT 100").catch(() => []) : Promise.resolve([])),
+      isStudent && collegeId
+        ? db.all("SELECT * FROM weekly_tasks WHERE mentor_id IN (SELECT id FROM mentors WHERE college_id = ?) OR class_group IN (SELECT DISTINCT classGroup FROM students WHERE college_id = ?) ORDER BY week_number ASC LIMIT 200", collegeId, collegeId).catch(() => [])
+        : collegeId && (isCAM || isMentor)
+          ? db.all("SELECT * FROM weekly_tasks WHERE mentor_id = ? OR mentor_id IN (SELECT id FROM mentors WHERE college_id = ?) OR class_group IN (SELECT DISTINCT classGroup FROM students WHERE college_id = ?) ORDER BY week_number ASC LIMIT 200", userId || "", collegeId, collegeId).catch(() => [])
+          : db.all("SELECT * FROM weekly_tasks ORDER BY week_number ASC LIMIT 200").catch(() => []),
+      isStudent && userId
+        ? db.all("SELECT * FROM student_tracker WHERE student_id = ? OR student_id IN (SELECT id FROM students WHERE id = ? OR email = ?) ORDER BY updated_at DESC LIMIT 500", userId, userId, userId).catch(() => [])
+        : collegeId && (isCAM || isMentor)
+          ? db.all("SELECT * FROM student_tracker WHERE student_id IN (SELECT id FROM students WHERE college_id = ?) OR graded_by = ? ORDER BY updated_at DESC LIMIT 500", collegeId, userId || "").catch(() => [])
+          : db.all("SELECT * FROM student_tracker ORDER BY updated_at DESC LIMIT 500").catch(() => []),
       isAdminOrKAM ? db.all("SELECT * FROM sme_users").catch(() => []) : Promise.resolve([]),
       isAdminOrKAM ? db.all("SELECT * FROM demo_sessions ORDER BY created_at DESC LIMIT 50").catch(() => []) : Promise.resolve([]),
       !isStudent ? db.all("SELECT * FROM subject_groups ORDER BY name ASC").catch(() => []) : Promise.resolve([]),
@@ -238,7 +244,17 @@ export async function GET(request: Request) {
       db.all(departmentSql, ...departmentParams).catch(() => []),
       collegeId && (isCAM || isMentor)
         ? db.all("SELECT * FROM academic_tracker WHERE college_id = ? OR mentor_id IN (SELECT id FROM mentors WHERE college_id = ?) ORDER BY date DESC, period_slot ASC LIMIT 200", collegeId, collegeId).catch(() => [])
-        : (!isStudent ? db.all("SELECT * FROM academic_tracker ORDER BY date DESC, period_slot ASC LIMIT 200").catch(() => []) : Promise.resolve([]))
+        : (!isStudent ? db.all("SELECT * FROM academic_tracker ORDER BY date DESC, period_slot ASC LIMIT 200").catch(() => []) : Promise.resolve([])),
+      isStudent && collegeId
+        ? db.all("SELECT * FROM weekly_academic_tasks WHERE mentor_id IN (SELECT id FROM mentors WHERE college_id = ?) OR class_group IN (SELECT DISTINCT classGroup FROM students WHERE college_id = ?) ORDER BY week_number ASC LIMIT 200", collegeId, collegeId).catch(() => [])
+        : collegeId && (isCAM || isMentor)
+          ? db.all("SELECT * FROM weekly_academic_tasks WHERE mentor_id = ? OR mentor_id IN (SELECT id FROM mentors WHERE college_id = ?) OR class_group IN (SELECT DISTINCT classGroup FROM students WHERE college_id = ?) ORDER BY week_number ASC LIMIT 200", userId || "", collegeId, collegeId).catch(() => [])
+          : db.all("SELECT * FROM weekly_academic_tasks ORDER BY week_number ASC LIMIT 200").catch(() => []),
+      isStudent && userId
+        ? db.all("SELECT * FROM student_academic_tracker WHERE student_id = ? OR student_email IN (SELECT email FROM students WHERE id = ? OR email = ?) ORDER BY updated_at DESC LIMIT 500", userId, userId, userId).catch(() => [])
+        : collegeId && (isCAM || isMentor)
+          ? db.all("SELECT * FROM student_academic_tracker WHERE student_id IN (SELECT id FROM students WHERE college_id = ?) OR student_email IN (SELECT email FROM students WHERE college_id = ?) OR graded_by = ? ORDER BY updated_at DESC LIMIT 500", collegeId, collegeId, userId || "").catch(() => [])
+          : db.all("SELECT * FROM student_academic_tracker ORDER BY updated_at DESC LIMIT 500").catch(() => [])
     ]);
 
     let filteredColleges = colleges;
@@ -255,15 +271,22 @@ export async function GET(request: Request) {
     let filteredAnnouncements = announcements;
     let filteredWeeklyTasks = weeklyTasks;
     let filteredStudentTracker = studentTracker;
+    let filteredWeeklyAcademicTasks = weeklyAcademicTasks || [];
+    let filteredStudentAcademicTracker = studentAcademicTracker || [];
 
-    if (collegeId) {
+    if (collegeId && !isStudent) {
       const mentorIds = new Set(filteredMentors.map((m: any) => m.id));
+      if (userId) mentorIds.add(userId);
       const studentIds = new Set(filteredStudents.map((s: any) => s.id));
+      const studentEmails = new Set(filteredStudents.map((s: any) => s.email?.toLowerCase().trim()).filter(Boolean));
+      const studentCohortNames = new Set(filteredStudents.map((s: any) => s.classGroup?.toLowerCase().trim()).filter(Boolean));
 
       filteredStudentAttendance = studentAttendance.filter((sa: any) => studentIds.has(sa.studentId));
       filteredLeaveRequests = leaveRequests.filter((lr: any) => studentIds.has(lr.studentId));
-      filteredWeeklyTasks = weeklyTasks.filter((t: any) => mentorIds.has(t.mentor_id));
-      filteredStudentTracker = studentTracker.filter((e: any) => studentIds.has(e.student_id));
+      filteredWeeklyTasks = weeklyTasks.filter((t: any) => mentorIds.has(t.mentor_id) || studentCohortNames.has(t.class_group?.toLowerCase().trim()) || (t.mentor_id && t.mentor_id === userId));
+      filteredStudentTracker = studentTracker.filter((e: any) => studentIds.has(e.student_id) || (e.graded_by && e.graded_by === userId));
+      filteredWeeklyAcademicTasks = (weeklyAcademicTasks || []).filter((t: any) => mentorIds.has(t.mentor_id) || studentCohortNames.has(t.class_group?.toLowerCase().trim()) || (t.mentor_id && t.mentor_id === userId));
+      filteredStudentAcademicTracker = (studentAcademicTracker || []).filter((e: any) => studentIds.has(e.student_id) || studentEmails.has(e.student_email?.toLowerCase().trim()) || (e.graded_by && e.graded_by === userId));
       filteredRequests = requests.filter((r: any) => mentorIds.has(r.requestorId) || mentorIds.has(r.targetStaffId));
       filteredApprovedHandovers = approvedHandovers.filter((h: any) => mentorIds.has(h.originalMentorId) || mentorIds.has(h.coverStaffId));
     }
@@ -310,6 +333,8 @@ export async function GET(request: Request) {
       users,
       weeklyTasks: filteredWeeklyTasks,
       studentTracker: filteredStudentTracker,
+      weeklyAcademicTasks: filteredWeeklyAcademicTasks,
+      studentAcademicTracker: filteredStudentAcademicTracker,
       smes,
       demoSessions,
       subjectGroups,
