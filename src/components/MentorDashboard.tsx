@@ -2224,23 +2224,64 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     return new Date(year, month, day, hours, minutes, 0);
   };
 
+  const parseSlotEndTimeForDate = (timeStr: string, dateStr: string): Date | null => {
+    const regex = /(\d{1,2})[.:]\s*(\d{2})\s*(A\.?M\.?|P\.?M\.?)?/gi;
+    const matches = Array.from(timeStr.matchAll(regex));
+    if (!matches || matches.length === 0) return null;
+
+    const targetMatch = matches.length >= 2 ? matches[1] : matches[0];
+    let hours = parseInt(targetMatch[1], 10);
+    const minutes = parseInt(targetMatch[2], 10);
+    const periodStr = targetMatch[3] || (matches.length >= 2 && matches[0][3] ? matches[0][3] : "");
+    const period = periodStr ? periodStr.replace(/\./g, "").toUpperCase() : "";
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+
+    let year = new Date().getFullYear();
+    let month = new Date().getMonth();
+    let day = new Date().getDate();
+
+    if (dateStr.includes("-")) {
+      const parts = dateStr.split("-");
+      if (parts.length === 3) {
+        year = parseInt(parts[0], 10);
+        month = parseInt(parts[1], 10) - 1;
+        day = parseInt(parts[2], 10);
+      }
+    } else {
+      const parts = dateStr.split(" ");
+      if (parts.length >= 2) {
+        day = parseInt(parts[0], 10);
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const mName = parts[1].substring(0, 3);
+        const mIdx = monthNames.findIndex(m => m.toLowerCase() === mName.toLowerCase());
+        if (mIdx !== -1) month = mIdx;
+        if (parts.length >= 3) year = parseInt(parts[2], 10);
+      }
+    }
+
+    const parsedDate = new Date(year, month, day, hours, minutes, 0);
+    if (matches.length === 1) {
+      return new Date(parsedDate.getTime() + 55 * 60 * 1000);
+    }
+    return parsedDate;
+  };
+
   const checkAttendanceWindow = (dateStr: string, timeStr: string) => {
     const startTime = parseSlotStartTimeForDate(timeStr, dateStr);
-    if (!startTime) return { open: true };
+    const endTime = parseSlotEndTimeForDate(timeStr, dateStr);
+    if (!startTime || !endTime) return { open: true };
 
     const now = new Date();
     if (now < startTime) {
       return { open: false, reason: "future", message: "Class has not started yet." };
     }
 
-    const durationLimit = 12 * 60 * 60 * 1000;
-    const endTime = new Date(startTime.getTime() + durationLimit);
-
     if (now > endTime) {
       return {
         open: false,
         reason: "expired",
-        message: `Attendance window is closed. It locked on ${endTime.toLocaleDateString("en-GB", { day: 'numeric', month: 'short' })} at ${endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (12 hours after class start).`
+        message: `This period ended at ${endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Direct marking is closed; please request CAM approval with a reason to mark attendance.`
       };
     }
 
@@ -5837,7 +5878,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const prevAbsent = existingAttendance.filter(a => a.status === "absent").length;
 
           const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
-          const isLocked = !windowCheck.open && windowCheck.reason === "expired";
+          const camKey = `${selectedCell.slot.id}|${selectedCell.dateStr}`;
+          const hasCAMApproval = lateAttendanceCamApprovedSet.has(camKey);
+          const pendingLateCamReq = lateAttendanceCamPendingSet.has(camKey);
+          const isLocked = !windowCheck.open && windowCheck.reason === "expired" && !hasCAMApproval;
           const approvedReq = approvedHandovers.find(h => h.slotId === selectedCell.slot!.id && h.dateStr === selectedCell.dateStr);
 
           return (
@@ -5885,10 +5929,30 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                 {/* Locked Window / Handed Over Notifications */}
                 {isLocked ? (
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-center text-xs text-red-800 space-y-2 mb-2">
-                    <Lock className="h-6 w-6 mx-auto text-red-500" />
-                    <p className="font-bold">Attendance Window Closed</p>
-                    <p className="text-slate-500">{windowCheck.message}</p>
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center text-xs text-amber-900 space-y-3 mb-2">
+                    <Lock className="h-6 w-6 mx-auto text-amber-600" />
+                    <div>
+                      <p className="font-bold text-sm text-slate-900">Period Ended — Attendance Locked</p>
+                      <p className="text-slate-500 mt-1">{windowCheck.message}</p>
+                    </div>
+                    {pendingLateCamReq ? (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 font-bold text-xs">
+                        <Clock className="w-4 h-4 animate-pulse" /> Request Pending CAM Approval
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsModalOpen(false);
+                          setIsCamEditRequestModalOpen(true);
+                          setCamRequestReason("");
+                          setFormError("");
+                        }}
+                        className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Send className="w-3.5 h-3.5" /> Request CAM Approval to Mark Attendance
+                      </button>
+                    )}
                   </div>
                 ) : selectedCell.type === "own" && approvedReq ? (
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-800 space-y-2 mb-2">
