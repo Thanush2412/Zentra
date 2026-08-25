@@ -2414,6 +2414,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     weeklyTasks,
     studentTracker,
     academicTracker,
+    weeklyAcademicTasks,
+    studentAcademicTracker,
     createMentor,
     bulkImportMentors,
     updateMentor,
@@ -2717,15 +2719,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   useEffect(() => {
     if (["overview"].includes(activeTab)) {
       setExpandedGroups({ dashboard: true });
-    } else if (["config", "curriculum", "academic_tracker"].includes(activeTab)) {
+    } else if (["config", "curriculum", "exams_and_marks", "academic_tracker"].includes(activeTab)) {
       setExpandedGroups({ academics: true });
     } else if (["faculty", "handovers"].includes(activeTab)) {
       setExpandedGroups({ faculty: true });
-    } else if (["timetable", "monitoring"].includes(activeTab)) {
+    } else if (["timetable", "monitoring", "interviews"].includes(activeTab)) {
       setExpandedGroups({ schedules: true });
-    } else if (["tracker", "fees", "students_list"].includes(activeTab)) {
+    } else if (["tracker", "students_list"].includes(activeTab)) {
       setExpandedGroups({ students: true });
-    } else if (["reports", "tasks", "profile"].includes(activeTab)) {
+    } else if (["fees"].includes(activeTab)) {
+      setExpandedGroups({ fees: true });
+    } else if (["reports"].includes(activeTab)) {
+      setExpandedGroups({ reports: true });
+    } else if (["events"].includes(activeTab)) {
+      setExpandedGroups({ events: true });
+    } else if (["tasks", "profile"].includes(activeTab)) {
       setExpandedGroups({ management: true });
     }
   }, [activeTab]);
@@ -2905,6 +2913,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [camAcadSearch, setCamAcadSearch] = useState<string>("");
   const [camAcadPage, setCamAcadPage] = useState<number>(1);
   const [camAcadPageSize, setCamAcadPageSize] = useState<number>(20);
+  const [camAcadSubTab, setCamAcadSubTab] = useState<"weekly_tasks" | "lesson_conduction">("weekly_tasks");
+  const [camAcadWeeklyDept, setCamAcadWeeklyDept] = useState<string>("");
+  const [camAcadWeeklySem, setCamAcadWeeklySem] = useState<string>("");
+  const [camAcadWeeklySubj, setCamAcadWeeklySubj] = useState<string>("");
+  const [camAcadWeeklyWeek, setCamAcadWeeklyWeek] = useState<number>(1);
   // Template download selectors (3 separate pickers)
   const [templateDept, setTemplateDept] = useState<string>("");
   const [templateShift, setTemplateShift] = useState<string>("General");
@@ -7544,17 +7557,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   },
                   {
                     id: "students",
-                    title: "Students Directory",
+                    title: "Students",
                     icon: GraduationCap,
                     items: [
-                      { id: "students_list", label: "Students Directory", icon: Users }
-                    ]
-                  },
-                  {
-                    id: "tracker",
-                    title: "Skill Development Tracker",
-                    icon: GraduationCap,
-                    items: [
+                      { id: "students_list", label: "Students Directory", icon: Users },
                       { id: "tracker", label: "Skill Development Tracker", icon: GraduationCap }
                     ]
                   },
@@ -7900,6 +7906,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div>
                     <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Attendance Monitoring</span>
                     <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Class attendance tracking</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("academic_tracker")}
+                  className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                >
+                  <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-indigo-600 shrink-0 group-hover:scale-105 transition-transform">
+                    <BookOpen className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Student Academic Tracker</span>
+                    <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Curriculum logs &amp; weekly marks ledger</span>
                   </div>
                 </button>
 
@@ -12517,6 +12537,522 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   {activeTab === "mentor_attendance" && (
                     <CAMMentorAttendanceTab collegeId={activeCollegeId} camName={currentCAM?.name || "Campus Manager"} />
                   )}
+
+                  {/* Academic Tracker & Tasks Management Tab for CAM */}
+                  {activeTab === "academic_tracker" && (() => {
+                    const matchesCollege = (id?: string | null) => !id || id === activeCollegeId;
+
+                    const acadCourses = Array.from(
+                      new Set(
+                        (collegeCourses.length > 0
+                          ? collegeCourses
+                          : departmentsList.filter(d => matchesCollege(d.college_id))
+                        )
+                          .map(c => c.name.trim())
+                          .filter(Boolean)
+                      )
+                    ).sort();
+
+                    const activeDept = (camAcadWeeklyDept && acadCourses.includes(camAcadWeeklyDept))
+                      ? camAcadWeeklyDept
+                      : acadCourses[0] || "";
+
+                    const selectedCourseObj = collegeCourses.find(c => c.name.trim().toLowerCase() === activeDept.trim().toLowerCase());
+
+                    const matchesCourseName = (studentDeptOrClass: string, courseName: string, courseCode?: string) => {
+                      if (!studentDeptOrClass || !courseName) return false;
+                      const s = studentDeptOrClass.trim().toLowerCase();
+                      const c = courseName.trim().toLowerCase();
+                      const code = (courseCode || "").trim().toLowerCase();
+                      return s === c || s.replace(/^[ivx]+\s+/i, "") === c || s.startsWith(c) || s.includes(c) || (code && (s === code || s.includes(code)));
+                    };
+
+                    const courseYears = selectedCourseObj?.years || 3;
+                    const standardSemesters = Array.from({ length: courseYears * 2 }, (_, i) => `Semester ${i + 1}`);
+
+                    const acadSemesters = Array.from(new Set([
+                      ...standardSemesters,
+                      ...subjectsList
+                        .filter(s => matchesCollege(s.college_id) && matchesCourseName(s.department || "", activeDept, selectedCourseObj?.code))
+                        .map(s => s.semester)
+                        .filter(Boolean)
+                    ])).sort((a, b) => {
+                      const na = parseInt((a || "").replace(/\D/g, "") || "0");
+                      const nb = parseInt((b || "").replace(/\D/g, "") || "0");
+                      return na - nb;
+                    });
+
+                    const finalSemesters = acadSemesters.length > 0 ? acadSemesters : standardSemesters;
+                    const activeSemester = (camAcadWeeklySem && finalSemesters.includes(camAcadWeeklySem))
+                      ? camAcadWeeklySem
+                      : finalSemesters[0] || "Semester 1";
+
+                    const allDeptSemSubjects = subjectsList.filter(
+                      s => matchesCollege(s.college_id) &&
+                           matchesCourseName(s.department || "", activeDept, selectedCourseObj?.code) &&
+                           (s.semester?.trim().toLowerCase() === activeSemester.trim().toLowerCase() || !s.semester) &&
+                           !isSkillSubject(s)
+                    );
+                    const acadSubjectObjs = allDeptSemSubjects.length > 0 ? allDeptSemSubjects : subjectsList.filter(s => matchesCollege(s.college_id) && !isSkillSubject(s));
+
+                    const subjectOptions = acadSubjectObjs.map(s => s.name);
+                    const activeSubject = (camAcadWeeklySubj && subjectOptions.includes(camAcadWeeklySubj))
+                      ? camAcadWeeklySubj
+                      : subjectOptions[0] || "";
+
+                    const activeClassGroup = `${activeDept} - ${activeSemester}`;
+                    const activeWeek = camAcadWeeklyWeek || 1;
+
+                    // Unified student matcher for selected course and semester
+                    const cohortStudents = students.filter(s => {
+                      if (s.college_id && activeCollegeId && s.college_id !== activeCollegeId) return false;
+                      return isCohortMatching(s.classGroup, activeClassGroup, coursesList, subjectsList) ||
+                        (s.department && s.department.toLowerCase().trim() === activeDept.toLowerCase().trim() && (!s.semester || s.semester.toLowerCase().includes(activeSemester.toLowerCase().trim())));
+                    });
+
+                    // Active Weekly Task
+                    const currentWeeklyTask = (weeklyAcademicTasks || []).find(
+                      t => (isSubjectNameMatch(t.subject, activeSubject) || t.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
+                        t.week_number === activeWeek &&
+                        (isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) ||
+                          t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim()) ||
+                          activeClassGroup.toLowerCase().includes(t.class_group.toLowerCase().trim()))
+                    );
+
+                    // Conduction logs filtered for CAM
+                    const campusMentors = mentors.filter(m => matchesCollege(m.college_id));
+                    const campusMentorIds = new Set(campusMentors.map(m => m.id));
+                    const campusLogs = (academicTracker || []).filter(l =>
+                      matchesCollege(l.college_id) || campusMentorIds.has(l.mentor_id) || campusMentors.some(m => m.name.toLowerCase().trim() === (l.mentor_name || "").toLowerCase().trim())
+                    );
+
+                    const filteredCampusLogs = campusLogs.filter(l => {
+                      if (camAcadMentorFilter !== "all" && l.mentor_id !== camAcadMentorFilter) return false;
+                      if (camAcadSubjectFilter !== "all" && !isSubjectNameMatch(l.subject, camAcadSubjectFilter)) return false;
+                      if (camAcadUnitFilter !== "all" && !l.unit?.toLowerCase().includes(camAcadUnitFilter.toLowerCase().trim())) return false;
+                      if (camAcadStartDate && l.date < camAcadStartDate) return false;
+                      if (camAcadEndDate && l.date > camAcadEndDate) return false;
+                      if (camAcadSearch.trim()) {
+                        const q = camAcadSearch.toLowerCase().trim();
+                        return (l.topic || "").toLowerCase().includes(q) || (l.comments || "").toLowerCase().includes(q) || (l.class_group || "").toLowerCase().includes(q) || (l.mentor_name || "").toLowerCase().includes(q);
+                      }
+                      return true;
+                    }).sort((a, b) => b.date.localeCompare(a.date));
+
+                    const exportCamAcademicLedger = async () => {
+                      try {
+                        const XLSX = await import("xlsx");
+                        const headers = [
+                          "S.No", "Student Email", "Student ID", "Student Name", "Register No", "Class Group", "Subject", "Week", "Attendance", "Quiz (0-10)", "Assessment (0-10)", "Assignment (0-10)", "Total (0-30)", "Feedback / Remarks"
+                        ];
+                        const rows = cohortStudents.map((s, idx) => {
+                          const entry = (studentAcademicTracker || []).find(
+                            e => e.student_email.toLowerCase().trim() === s.email.toLowerCase().trim() &&
+                              isSubjectNameMatch(e.subject, activeSubject) &&
+                              e.week_number === activeWeek
+                          );
+                          return [
+                            idx + 1,
+                            s.email,
+                            s.id,
+                            s.name,
+                            s.register_number || "—",
+                            s.classGroup || activeClassGroup,
+                            activeSubject,
+                            activeWeek,
+                            entry?.attendance_status || "Present",
+                            entry?.quiz_marks ?? "—",
+                            entry?.assessment_marks ?? "—",
+                            entry?.assignment_marks ?? "—",
+                            entry?.total_marks ?? "—",
+                            entry?.feedback || ""
+                          ];
+                        });
+
+                        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                        const wb = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb, ws, "Academic_Marks");
+                        XLSX.writeFile(wb, `CAM_Academic_Marks_${activeDept}_Sem${activeSemester}_W${activeWeek}.xlsx`);
+                        toast("Academic marks exported to Excel!", "success");
+                      } catch (err: any) {
+                        toast("Export failed: " + err.message, "error");
+                      }
+                    };
+
+                    return (
+                      <div className="space-y-6 animate-fadeIn pb-12 font-sans">
+                        {/* Top Header Banner */}
+                        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-1">
+                              <BookOpen className="w-3.5 h-3.5" />
+                              <span>Academic Curriculum &amp; Evaluation Oversight</span>
+                            </div>
+                            <h2 className="text-base font-black text-slate-900">Student Academic Tracker &amp; Evaluation Studio</h2>
+                            <p className="text-xs text-slate-500 font-medium mt-0.5">
+                              Monitor faculty syllabus coverage, 3-component weekly student academic evaluations (Quiz, Assessment, Assignment), and marks ledgers.
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+                            {camAcadSubTab === "weekly_tasks" && (
+                              <button
+                                type="button"
+                                onClick={exportCamAcademicLedger}
+                                disabled={cohortStudents.length === 0}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-extrabold transition-all cursor-pointer shadow-2xs disabled:opacity-40"
+                              >
+                                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Export Marks (.xlsx)</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Sub-Tabs Switcher */}
+                        <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-xl border border-slate-200/80 w-fit">
+                          <button
+                            type="button"
+                            onClick={() => setCamAcadSubTab("weekly_tasks")}
+                            className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                              camAcadSubTab === "weekly_tasks"
+                                ? "bg-white text-indigo-650 shadow-xs"
+                                : "text-slate-500 hover:text-slate-800"
+                            }`}
+                          >
+                            <Layers className="h-4 w-4 text-indigo-600" />
+                            <span>Weekly Tasks &amp; Marks Ledger</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCamAcadSubTab("lesson_conduction")}
+                            className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                              camAcadSubTab === "lesson_conduction"
+                                ? "bg-white text-slate-900 shadow-xs"
+                                : "text-slate-500 hover:text-slate-800"
+                            }`}
+                          >
+                            <BookOpen className="h-4 w-4 text-indigo-600" />
+                            <span>Faculty Lesson Conduction Ledger</span>
+                          </button>
+                        </div>
+
+                        {/* SUB-VIEW 1: WEEKLY TASKS & MARKS */}
+                        {camAcadSubTab === "weekly_tasks" && (
+                          <div className="space-y-5">
+                            {/* Cascading Filter Bar */}
+                            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs grid grid-cols-2 sm:grid-cols-4 gap-4 items-end">
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Department</label>
+                                <select
+                                  value={activeDept}
+                                  onChange={(e) => {
+                                    setCamAcadWeeklyDept(e.target.value);
+                                    setCamAcadWeeklySem("");
+                                    setCamAcadWeeklySubj("");
+                                  }}
+                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                                >
+                                  {acadCourses.map(d => <option key={d} value={d}>{d}</option>)}
+                                  {acadCourses.length === 0 && <option value="">No departments</option>}
+                                </select>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Semester</label>
+                                <select
+                                  value={activeSemester}
+                                  onChange={(e) => {
+                                    setCamAcadWeeklySem(e.target.value);
+                                    setCamAcadWeeklySubj("");
+                                  }}
+                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                                >
+                                  {finalSemesters.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Academic Subject</label>
+                                <select
+                                  value={activeSubject}
+                                  onChange={(e) => setCamAcadWeeklySubj(e.target.value)}
+                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white font-sans"
+                                >
+                                  {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                  {subjectOptions.length === 0 && <option value="">No academic subjects</option>}
+                                </select>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Week Number</label>
+                                <select
+                                  value={activeWeek}
+                                  onChange={(e) => setCamAcadWeeklyWeek(parseInt(e.target.value, 10))}
+                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                                >
+                                  {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
+                                    <option key={wk} value={wk}>Week {wk}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Task Guidelines Card */}
+                            {currentWeeklyTask ? (
+                              <div className="bg-gradient-to-r from-indigo-500/5 via-teal-500/5 to-transparent border border-indigo-100 rounded-xl p-5 shadow-xs space-y-3">
+                                <div className="flex items-center justify-between gap-4 flex-wrap">
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="h-7 w-7 rounded-lg bg-indigo-100 text-indigo-700 font-extrabold text-xs flex items-center justify-center">
+                                      W{activeWeek}
+                                    </span>
+                                    <div>
+                                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wide">
+                                        {currentWeeklyTask.task_name || `Week ${activeWeek} Evaluation Guidelines`}
+                                      </h3>
+                                      <span className="text-[10px] text-slate-400 font-semibold">
+                                        Assigned for {activeSubject} • Class: {activeClassGroup}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                  {currentWeeklyTask.quiz_topic && (
+                                    <span className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded-lg border border-amber-200 font-bold inline-flex items-center gap-1.5">
+                                      <span>Quiz (0–10)</span>
+                                      {currentWeeklyTask.quiz_topic.startsWith("http") && (
+                                        <a href={currentWeeklyTask.quiz_topic} target="_blank" rel="noreferrer" className="text-amber-900 hover:underline inline-flex items-center gap-0.5 text-[10px] bg-amber-100/80 px-1.5 py-0.2 rounded">
+                                          <span>Open Link</span>
+                                        </a>
+                                      )}
+                                    </span>
+                                  )}
+                                  {currentWeeklyTask.assessment_topic && (
+                                    <span className="bg-purple-50 text-purple-800 px-2.5 py-1 rounded-lg border border-purple-200 font-bold inline-flex items-center gap-1.5">
+                                      <span>Assessment (0–10)</span>
+                                      {currentWeeklyTask.assessment_topic.startsWith("http") && (
+                                        <a href={currentWeeklyTask.assessment_topic} target="_blank" rel="noreferrer" className="text-purple-900 hover:underline inline-flex items-center gap-0.5 text-[10px] bg-purple-100/80 px-1.5 py-0.2 rounded">
+                                          <span>Open Link</span>
+                                        </a>
+                                      )}
+                                    </span>
+                                  )}
+                                  {currentWeeklyTask.assignment_topic && (
+                                    <span className="bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold inline-flex items-center gap-1.5">
+                                      <span>Assignment (0–10)</span>
+                                      {currentWeeklyTask.assignment_topic.startsWith("http") && (
+                                        <a href={currentWeeklyTask.assignment_topic} target="_blank" rel="noreferrer" className="text-emerald-900 hover:underline inline-flex items-center gap-0.5 text-[10px] bg-emerald-100/80 px-1.5 py-0.2 rounded">
+                                          <span>Open Link</span>
+                                        </a>
+                                      )}
+                                    </span>
+                                  )}
+                                  {currentWeeklyTask.task_pdf_url && (
+                                    <a href={currentWeeklyTask.task_pdf_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-150 px-3 py-1 rounded-lg hover:bg-indigo-100">
+                                      <FileText className="h-3.5 w-3.5 text-indigo-600" />
+                                      <span>Reference Doc</span>
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-center py-6 bg-white border border-dashed border-slate-200 rounded-xl">
+                                <p className="text-xs text-slate-455 italic">No specific task guidelines assigned for Week {activeWeek} in {activeSubject}.</p>
+                              </div>
+                            )}
+
+                            {/* Student Marks Table */}
+                            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+                              <div className="flex items-center justify-between gap-4">
+                                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
+                                  Enrolled Students &amp; Evaluation Marks ({cohortStudents.length} Students)
+                                </h3>
+                              </div>
+
+                              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white scroll-touch">
+                                <table className="w-full border-collapse text-left text-xs font-semibold min-w-[950px]">
+                                  <thead>
+                                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[9.5px] whitespace-nowrap">
+                                      <th className="p-3.5 w-12 text-center border-r border-slate-100">#</th>
+                                      <th className="p-3.5 border-r border-slate-100 min-w-[180px]">Student Name &amp; Email</th>
+                                      <th className="p-3.5 border-r border-slate-100 w-[110px] text-center">Attendance</th>
+                                      <th className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-amber-50/40 text-amber-900">Quiz (10)</th>
+                                      <th className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-purple-50/40 text-purple-900">Assessment (10)</th>
+                                      <th className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-emerald-50/40 text-emerald-900">Assignment (10)</th>
+                                      <th className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-indigo-50/40 text-indigo-900">Total (30)</th>
+                                      <th className="p-3.5 min-w-[180px]">Feedback / Remarks</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                                    {cohortStudents.length === 0 ? (
+                                      <tr>
+                                        <td colSpan={8} className="p-8 text-center text-xs text-slate-400 italic">
+                                          No students registered in {activeClassGroup}.
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      cohortStudents.map((student, idx) => {
+                                        const entry = (studentAcademicTracker || []).find(
+                                          e => e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim() &&
+                                            isSubjectNameMatch(e.subject, activeSubject) &&
+                                            e.week_number === activeWeek
+                                        );
+                                        const qm = entry?.quiz_marks !== undefined && entry?.quiz_marks !== null ? entry.quiz_marks : "—";
+                                        const asm = entry?.assessment_marks !== undefined && entry?.assessment_marks !== null ? entry.assessment_marks : "—";
+                                        const agm = entry?.assignment_marks !== undefined && entry?.assignment_marks !== null ? entry.assignment_marks : "—";
+                                        const total = entry?.total_marks !== undefined && entry?.total_marks !== null ? entry.total_marks : "—";
+
+                                        return (
+                                          <tr key={`${student.id}_wk${activeWeek}`} className="hover:bg-slate-50/60 transition-colors">
+                                            <td className="p-3 text-center font-bold text-slate-400 border-r border-slate-100">{idx + 1}</td>
+                                            <td className="p-3 border-r border-slate-100">
+                                              <div className="font-bold text-slate-900">{student.name}</div>
+                                              <div className="text-[10px] text-indigo-650 font-mono font-bold mt-0.5">{student.email}</div>
+                                              <div className="text-[9px] text-slate-400 font-mono">ID: {student.id} {student.register_number ? `• Reg: ${student.register_number}` : ""}</div>
+                                            </td>
+                                            <td className="p-3 text-center border-r border-slate-100">
+                                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                (entry?.attendance_status || "Present") === "Absent" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"
+                                              }`}>
+                                                {entry?.attendance_status || "Present"}
+                                              </span>
+                                            </td>
+                                            <td className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-amber-50/10">{qm}</td>
+                                            <td className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-purple-50/10">{asm}</td>
+                                            <td className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-emerald-50/10">{agm}</td>
+                                            <td className="p-3 text-center border-r border-slate-100 font-black text-indigo-900 bg-indigo-50/20">{total !== "—" ? `${total} / 30` : "—"}</td>
+                                            <td className="p-3 text-slate-600 text-xs">{entry?.feedback || "—"}</td>
+                                          </tr>
+                                        );
+                                      })
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* SUB-VIEW 2: FACULTY LESSON CONDUCTION LEDGER */}
+                        {camAcadSubTab === "lesson_conduction" && (
+                          <div className="space-y-5">
+                            {/* Filter Bar */}
+                            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs grid grid-cols-1 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                              <div>
+                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Faculty / Mentor</label>
+                                <select
+                                  value={camAcadMentorFilter}
+                                  onChange={(e) => setCamAcadMentorFilter(e.target.value)}
+                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                                >
+                                  <option value="all">All Faculty ({campusMentors.length})</option>
+                                  {campusMentors.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Subject</label>
+                                <select
+                                  value={camAcadSubjectFilter}
+                                  onChange={(e) => setCamAcadSubjectFilter(e.target.value)}
+                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                                >
+                                  <option value="all">All Academic Subjects</option>
+                                  {Array.from(new Set(campusLogs.map(l => l.subject).filter(Boolean))).map(subj => (
+                                    <option key={subj} value={subj}>{subj}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">From Date</label>
+                                <input
+                                  type="date"
+                                  value={camAcadStartDate}
+                                  onChange={(e) => setCamAcadStartDate(e.target.value)}
+                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">To Date</label>
+                                <input
+                                  type="date"
+                                  value={camAcadEndDate}
+                                  onChange={(e) => setCamAcadEndDate(e.target.value)}
+                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Search Topic / Class</label>
+                                <input
+                                  type="text"
+                                  value={camAcadSearch}
+                                  onChange={(e) => setCamAcadSearch(e.target.value)}
+                                  placeholder="Keyword search..."
+                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Conduction Log Table */}
+                            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-xs scroll-touch">
+                              <table className="w-full border-collapse text-left text-xs font-semibold min-w-[950px]">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[9.5px] whitespace-nowrap">
+                                    <th className="p-3.5 w-12 text-center border-r border-slate-100">#</th>
+                                    <th className="p-3.5 border-r border-slate-100 w-[110px]">Date</th>
+                                    <th className="p-3.5 border-r border-slate-100 w-[140px]">Period Slot</th>
+                                    <th className="p-3.5 border-r border-slate-100 min-w-[140px]">Faculty</th>
+                                    <th className="p-3.5 border-r border-slate-100 min-w-[140px]">Class &amp; Subject</th>
+                                    <th className="p-3.5 border-r border-slate-100 w-[90px] text-center">Unit</th>
+                                    <th className="p-3.5 border-r border-slate-100 min-w-[220px]">Topic Covered</th>
+                                    <th className="p-3.5 w-[100px] text-center">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                                  {filteredCampusLogs.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={8} className="p-8 text-center text-xs text-slate-400 italic">
+                                        No teaching periods logged matching the current filter.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    filteredCampusLogs.map((log, idx) => (
+                                      <tr key={log.id || idx} className="hover:bg-slate-50/60 transition-colors">
+                                        <td className="p-3 text-center font-bold text-slate-400 border-r border-slate-100">{idx + 1}</td>
+                                        <td className="p-3 border-r border-slate-100 font-mono font-bold text-slate-800">{log.date}</td>
+                                        <td className="p-3 border-r border-slate-100 text-slate-600 text-[11px]">{log.period_slot}</td>
+                                        <td className="p-3 border-r border-slate-100 font-bold text-slate-900">{log.mentor_name || campusMentors.find(m => m.id === log.mentor_id)?.name || "Faculty"}</td>
+                                        <td className="p-3 border-r border-slate-100">
+                                          <div className="font-bold text-slate-900">{log.subject}</div>
+                                          <div className="text-[10px] text-slate-400 font-semibold">{log.class_group}</div>
+                                        </td>
+                                        <td className="p-3 text-center border-r border-slate-100">
+                                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-extrabold rounded text-[10px]">{log.unit}</span>
+                                        </td>
+                                        <td className="p-3 border-r border-slate-100">
+                                          <div className="font-bold text-slate-800">{log.topic}</div>
+                                          {log.comments && <div className="text-[10px] text-slate-400 italic mt-0.5">{log.comments}</div>}
+                                        </td>
+                                        <td className="p-3 text-center">
+                                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-bold text-[10px]">
+                                            {log.status || "Delivered"}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Student Tracker Audit Tab */}
                   {activeTab === "tracker" && (() => {

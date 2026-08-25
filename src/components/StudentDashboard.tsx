@@ -3390,13 +3390,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           >
                             <BookOpen className={`h-3.5 w-3.5 ${isSelected ? "text-white" : "text-slate-400"}`} />
                             <span>{sub.name}</span>
-                            {stats.avgPct !== null && (
-                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold ${
-                                isSelected ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
-                              }`}>
-                                {stats.avgPct}%
-                              </span>
-                            )}
                           </button>
                         );
                       })}
@@ -3503,7 +3496,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                         ? "bg-amber-50 border-amber-200 text-amber-800"
                                         : "bg-rose-50 border-rose-200 text-rose-800"
                                   }`}>
-                                    Total Score: {totalMarks} / 30 ({Math.round((totalMarks! / 30) * 100)}%)
+                                    Total Score: {totalMarks} / 30
                                   </span>
                                 </div>
                               ) : isSubmitted ? (

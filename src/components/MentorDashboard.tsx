@@ -48,7 +48,8 @@ import {
   FileSpreadsheet,
   Edit2,
   Layers,
-  ArrowUpRight
+  ArrowUpRight,
+  Save
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -1943,6 +1944,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [trackerPage, setTrackerPage] = useState<number>(1);
   const [trackerPageSize, setTrackerPageSize] = useState<number>(10);
   const [saveStatusMap, setSaveStatusMap] = useState<Record<string, "idle" | "saving" | "saved" | "error">>({});
+  const [skillMarksDraft, setSkillMarksDraft] = useState<Record<string, string>>({});
+  const [isSavingAllSkillMarks, setIsSavingAllSkillMarks] = useState(false);
+  const [acadMarksDraft, setAcadMarksDraft] = useState<Record<string, { quiz?: string; assessment?: string; assignment?: string; feedback?: string }>>({});
+  const [isSavingAllAcadMarks, setIsSavingAllAcadMarks] = useState(false);
 
   useEffect(() => {
     setTrackerPage(1);
@@ -7202,6 +7207,48 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     ? filteredClassStudents
                     : filteredClassStudents.slice((validPage - 1) * trackerPageSize, validPage * trackerPageSize);
 
+                  // Helper: Save all Skill Dev marks
+                  const handleSaveAllSkillMarks = async () => {
+                    const studentKeys = Object.keys(skillMarksDraft);
+                    if (studentKeys.length === 0) {
+                      toast("All marks are already up to date.", "info");
+                      return;
+                    }
+                    setIsSavingAllSkillMarks(true);
+                    let successCount = 0;
+                    try {
+                      for (const sId of studentKeys) {
+                        const val = skillMarksDraft[sId];
+                        const sObj = classStudents.find(s => s.id === sId);
+                        if (!sObj) continue;
+                        setSaveStatusMap(prev => ({ ...prev, [sId]: "saving" }));
+                        const res = await gradeStudentTask({
+                          studentId: sId,
+                          classGroup: sObj.classGroup || activeClassGroup,
+                          subject: activeSubj,
+                          weekNumber: trackerWeek,
+                          marks: val !== "" && val !== undefined ? parseFloat(val) : null as any,
+                          gradedBy: currentMentor?.id || ""
+                        });
+                        if (res.success) {
+                          successCount++;
+                          setSaveStatusMap(prev => ({ ...prev, [sId]: "saved" }));
+                        } else {
+                          setSaveStatusMap(prev => ({ ...prev, [sId]: "error" }));
+                        }
+                      }
+                      setSkillMarksDraft({});
+                      toast(`Saved marks for ${successCount} student(s) successfully!`, "success");
+                    } catch (err: any) {
+                      toast("Failed to save marks: " + err.message, "error");
+                    } finally {
+                      setIsSavingAllSkillMarks(false);
+                      setTimeout(() => {
+                        setSaveStatusMap({});
+                      }, 2500);
+                    }
+                  };
+
                   return (
                     <div className="space-y-4">
                       {/* Filters Header Bar */}
@@ -7227,8 +7274,29 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           </select>
                         </div>
 
-                        <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">
-                          Showing {paginatedStudents.length} of {filteredClassStudents.length} Filtered ({classStudents.length} Total)
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={handleSaveAllSkillMarks}
+                            disabled={isSavingAllSkillMarks}
+                            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                          >
+                            {isSavingAllSkillMarks ? (
+                              <>
+                                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                <span>Saving All Marks...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Save className="w-4 h-4" />
+                                <span>Save All Marks (Week {trackerWeek})</span>
+                              </>
+                            )}
+                          </button>
+
+                          <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">
+                            Showing {paginatedStudents.length} of {filteredClassStudents.length} Filtered ({classStudents.length} Total)
+                          </div>
                         </div>
                       </div>
 
@@ -7378,7 +7446,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       min="0"
                                       max="10"
                                       step="0.5"
-                                      defaultValue={currentMarks}
+                                      value={skillMarksDraft[student.id] !== undefined ? skillMarksDraft[student.id] : (currentMarks !== "" ? String(currentMarks) : "")}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSkillMarksDraft(prev => ({ ...prev, [student.id]: val }));
+                                      }}
                                       onBlur={async (e) => {
                                         const val = e.target.value;
                                         if (val === String(currentMarks)) return;
@@ -7665,9 +7737,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             const subObj = subjectsList.find(sub => sub.name.toLowerCase().trim() === s.toLowerCase().trim());
             return isAcademicSubject(subObj || s);
           });
-          const currentSelectedSubject = acadTrackerSubject && availableAcadSubjects.includes(acadTrackerSubject)
+          const currentSelectedSubject = acadTrackerSubject && acadTrackerSubject !== "all"
             ? acadTrackerSubject
-            : availableAcadSubjects[0] || "";
+            : "";
 
           // Mentor's class groups
           const mentorClassesList = Array.from(new Set([
@@ -7676,12 +7748,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           ]));
 
           // Mentor's academic tracker records
-          const myLogs = (academicTracker || []).filter(log => log.mentor_id === currentMentor.id);
+          const myLogs = (academicTracker || []).filter(log =>
+            log.mentor_id === currentMentor.id ||
+            (currentMentor.email && log.mentor_id?.toLowerCase().trim() === currentMentor.email.toLowerCase().trim()) ||
+            (log.mentor_name && log.mentor_name?.toLowerCase().trim() === currentMentor.name?.toLowerCase().trim())
+          );
           
           // Filtered logs
           const filteredLogs = myLogs.filter(log => {
             if (currentSelectedSubject && currentSelectedSubject !== "all") {
-              if (log.subject.toLowerCase().trim() !== currentSelectedSubject.toLowerCase().trim()) return false;
+              if (!isSubjectNameMatch(log.subject, currentSelectedSubject) && log.subject.toLowerCase().trim() !== currentSelectedSubject.toLowerCase().trim()) return false;
             }
             if (acadTrackerUnitFilter && acadTrackerUnitFilter !== "all") {
               if (!log.unit.toLowerCase().includes(acadTrackerUnitFilter.toLowerCase().trim())) return false;
@@ -8901,6 +8977,94 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             </span>
                           </div>
                         </div>
+
+                        {/* Save All Academic Marks Button */}
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const emails = Object.keys(acadMarksDraft);
+                              if (emails.length === 0) {
+                                toast("All marks are already up to date.", "info");
+                                return;
+                              }
+                              setIsSavingAllAcadMarks(true);
+                              let savedCount = 0;
+                              try {
+                                const targetTaskDate = currentWeeklyTask?.task_date || currentWeeklyTask?.created_at?.slice(0, 10);
+                                for (const email of emails) {
+                                  const draft = acadMarksDraft[email] || {};
+                                  const student = cohortStudents.find(s => s.email.toLowerCase().trim() === email.toLowerCase().trim());
+                                  if (!student) continue;
+
+                                  const existingEntry = (studentAcademicTracker || []).find(
+                                    e => e.student_email.toLowerCase().trim() === email.toLowerCase().trim() &&
+                                      e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                                      e.week_number === acadWeeklyWeek
+                                  );
+
+                                  let currentAttStatus = existingEntry?.attendance_status || "Present";
+                                  if (currentWeeklyTask) {
+                                    const attLogs = studentAttendance.filter(a => a.studentId === student.id && (!activeWeeklySubj || isSubjectNameMatch(a.coveredSubject || "", activeWeeklySubj)));
+                                    const exactDateLog = targetTaskDate ? attLogs.find(a => a.dateStr === targetTaskDate) : null;
+                                    const effectiveLog = exactDateLog || [...attLogs].sort((a, b) => (b.dateStr || "").localeCompare(a.dateStr || ""))[0];
+                                    if (effectiveLog) {
+                                      const st = (effectiveLog.status || "").toLowerCase();
+                                      currentAttStatus = st === "absent" ? "Absent" : st === "od" ? "OD" : "Present";
+                                    }
+                                  }
+
+                                  const qmVal = draft.quiz !== undefined ? draft.quiz : (existingEntry?.quiz_marks !== undefined && existingEntry?.quiz_marks !== null ? String(existingEntry.quiz_marks) : "");
+                                  const asmVal = draft.assessment !== undefined ? draft.assessment : (existingEntry?.assessment_marks !== undefined && existingEntry?.assessment_marks !== null ? String(existingEntry.assessment_marks) : "");
+                                  const agmVal = draft.assignment !== undefined ? draft.assignment : (existingEntry?.assignment_marks !== undefined && existingEntry?.assignment_marks !== null ? String(existingEntry.assignment_marks) : "");
+                                  const fbVal = draft.feedback !== undefined ? draft.feedback : (existingEntry?.feedback || "");
+
+                                  setAcadSaveStatusMap(prev => ({ ...prev, [email]: "saving" }));
+                                  const res = await gradeStudentAcademicTask({
+                                    studentEmail: email,
+                                    studentId: student.id,
+                                    classGroup: student.classGroup || activeWeeklyClassGroup,
+                                    subject: activeWeeklySubj,
+                                    weekNumber: acadWeeklyWeek,
+                                    quizMarks: qmVal !== "" ? parseFloat(qmVal) : null,
+                                    assessmentMarks: asmVal !== "" ? parseFloat(asmVal) : null,
+                                    assignmentMarks: agmVal !== "" ? parseFloat(agmVal) : null,
+                                    attendanceStatus: currentAttStatus,
+                                    feedback: fbVal,
+                                    gradedBy: currentMentor.id
+                                  });
+                                  if (res.success) {
+                                    savedCount++;
+                                    setAcadSaveStatusMap(prev => ({ ...prev, [email]: "saved" }));
+                                  } else {
+                                    setAcadSaveStatusMap(prev => ({ ...prev, [email]: "error" }));
+                                  }
+                                }
+                                setAcadMarksDraft({});
+                                toast(`Saved academic marks for ${savedCount} student(s) successfully!`, "success");
+                              } catch (err: any) {
+                                toast("Error saving marks: " + err.message, "error");
+                              } finally {
+                                setIsSavingAllAcadMarks(false);
+                                setTimeout(() => setAcadSaveStatusMap({}), 2500);
+                              }
+                            }}
+                            disabled={isSavingAllAcadMarks}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                          >
+                            {isSavingAllAcadMarks ? (
+                              <>
+                                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                <span>Saving All Marks...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Save className="w-4 h-4" />
+                                <span>Save All Marks (Week {acadWeeklyWeek})</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
 
                       {/* Filter Bar */}
@@ -9039,7 +9203,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         min="0"
                                         max="10"
                                         step="0.5"
-                                        defaultValue={qm}
+                                        value={acadMarksDraft[student.email]?.quiz !== undefined ? acadMarksDraft[student.email].quiz : (qm !== "" ? String(qm) : "")}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setAcadMarksDraft(prev => ({
+                                            ...prev,
+                                            [student.email]: { ...(prev[student.email] || {}), quiz: val }
+                                          }));
+                                        }}
                                         onBlur={async (e) => {
                                           const val = e.target.value;
                                           if (val === String(qm)) return;
@@ -9077,7 +9248,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         min="0"
                                         max="10"
                                         step="0.5"
-                                        defaultValue={asm}
+                                        value={acadMarksDraft[student.email]?.assessment !== undefined ? acadMarksDraft[student.email].assessment : (asm !== "" ? String(asm) : "")}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setAcadMarksDraft(prev => ({
+                                            ...prev,
+                                            [student.email]: { ...(prev[student.email] || {}), assessment: val }
+                                          }));
+                                        }}
                                         onBlur={async (e) => {
                                           const val = e.target.value;
                                           if (val === String(asm)) return;
@@ -9115,7 +9293,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         min="0"
                                         max="10"
                                         step="0.5"
-                                        defaultValue={agm}
+                                        value={acadMarksDraft[student.email]?.assignment !== undefined ? acadMarksDraft[student.email].assignment : (agm !== "" ? String(agm) : "")}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setAcadMarksDraft(prev => ({
+                                            ...prev,
+                                            [student.email]: { ...(prev[student.email] || {}), assignment: val }
+                                          }));
+                                        }}
                                         onBlur={async (e) => {
                                           const val = e.target.value;
                                           if (val === String(agm)) return;
@@ -9152,9 +9337,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         <div>
                                           <span className="text-xs font-black text-indigo-900 block">
                                             {totalScore} / 30
-                                          </span>
-                                          <span className="text-[9.5px] font-extrabold text-indigo-600">
-                                            ({Math.round((totalScore / 30) * 100)}%)
                                           </span>
                                         </div>
                                       ) : (

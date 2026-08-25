@@ -318,7 +318,11 @@ export async function POST(request: Request) {
           quiz_marks = CASE WHEN excluded.quiz_marks IS NOT NULL THEN excluded.quiz_marks ELSE student_academic_tracker.quiz_marks END,
           assessment_marks = CASE WHEN excluded.assessment_marks IS NOT NULL THEN excluded.assessment_marks ELSE student_academic_tracker.assessment_marks END,
           assignment_marks = CASE WHEN excluded.assignment_marks IS NOT NULL THEN excluded.assignment_marks ELSE student_academic_tracker.assignment_marks END,
-          total_marks = CASE WHEN excluded.total_marks IS NOT NULL THEN excluded.total_marks ELSE student_academic_tracker.total_marks END,
+          total_marks = (
+            COALESCE(CASE WHEN excluded.quiz_marks IS NOT NULL THEN excluded.quiz_marks ELSE student_academic_tracker.quiz_marks END, 0) +
+            COALESCE(CASE WHEN excluded.assessment_marks IS NOT NULL THEN excluded.assessment_marks ELSE student_academic_tracker.assessment_marks END, 0) +
+            COALESCE(CASE WHEN excluded.assignment_marks IS NOT NULL THEN excluded.assignment_marks ELSE student_academic_tracker.assignment_marks END, 0)
+          ),
           feedback = CASE WHEN excluded.feedback IS NOT NULL THEN excluded.feedback ELSE student_academic_tracker.feedback END,
           graded_by = CASE WHEN excluded.graded_by IS NOT NULL THEN excluded.graded_by ELSE student_academic_tracker.graded_by END,
           updated_at = excluded.updated_at`,
