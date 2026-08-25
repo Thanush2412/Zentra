@@ -52,6 +52,9 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: false, message: "Student not found." }, { status: 404 });
     }
 
+    const currentShift = body.shift || currentStudent.shift || (classGroup?.includes("Shift 2") ? "Shift 2" : classGroup?.includes("Shift 1") ? "Shift 1" : "General");
+    const currentSem = body.semester || currentStudent.semester || "Semester 1";
+
     // Update students table
     await db.run(
       `UPDATE students SET 
@@ -63,6 +66,8 @@ export async function PUT(request: Request) {
         college_id = ?, 
         register_number = ?, 
         roll_number = ?, 
+        semester = ?,
+        shift = ?,
         hire_score = ?,
         efset_score = ?,
         mother_name = ?,
@@ -94,6 +99,8 @@ export async function PUT(request: Request) {
       college_id || currentStudent.college_id || null,
       register_number || null,
       roll_number || null,
+      currentSem,
+      currentShift,
       hire_score || null,
       efset_score || null,
       mother_name || null,

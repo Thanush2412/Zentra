@@ -3035,116 +3035,96 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     XLSX.writeFile(wb, `Student_Template_${safeClassName}.xlsx`);
   };
 
-  // Helper to map spreadsheet row headers to DB student model fields
+  // Helper to map spreadsheet row headers directly to DB student model fields exactly as defined in template
   const mapRowToStudentObject = (row: Record<string, any>, defaultCG: string, activeCollegeId: string) => {
-    let mapped: Record<string, any> = {};
+    const mapped: Record<string, any> = {};
 
     Object.keys(row).forEach((colHeader) => {
-      const norm = colHeader.toString().toLowerCase().replace(/[^a-z0-9]/g, "");
+      const rawHeader = colHeader.toString().trim();
+      const norm = rawHeader.toLowerCase().replace(/[^a-z0-9]/g, "");
       const val = row[colHeader] !== undefined && row[colHeader] !== null ? row[colHeader].toString().trim() : "";
       if (!val) return;
 
       if (norm === "slno" || norm === "sno" || norm === "serialnumber") return;
-      if (norm === "rollno" || norm === "rollnumber" || norm === "regno" || norm === "registernumber" || norm === "registrationnumber") mapped.roll_number = val;
+      if (norm === "rollno" || norm === "rollnumber" || norm === "regno" || norm === "registernumber" || norm === "registrationnumber" || norm === "id") {
+        mapped.roll_number = val;
+        mapped.id = val;
+      }
       else if (norm === "name" || norm === "studentname" || norm === "fullname") mapped.name = val;
+      else if (norm === "department" || norm === "dept" || norm === "course" || norm === "stream") mapped.department = val;
+      else if (norm === "shift") mapped.shift = val;
+      else if (norm === "section" || norm === "sec" || norm === "classsection") mapped.section = val;
+      else if (norm === "semester" || norm === "sem") mapped.semester = val;
       else if (norm.includes("hire") || norm.includes("placement") || norm === "hirescore") mapped.hire_score = val;
       else if (norm.includes("efset") || norm.includes("efscore") || norm.includes("englishscore")) mapped.efset_score = val;
       else if (norm.includes("mother")) mapped.mother_name = val;
       else if (norm.includes("father")) mapped.father_name = val;
-      else if (norm.includes("pan") || norm === "pancard") mapped.pan_number = val;
       else if (norm.includes("10th") || norm.includes("tenth") || norm === "xmark" || norm === "xmarks" || norm === "sslc") mapped.tenth_mark = val;
       else if (norm.includes("11th") || norm.includes("eleventh") || norm === "ximark" || norm === "ximarks") mapped.eleventh_mark = val;
       else if (norm.includes("12th") || norm.includes("twelfth") || norm === "xiimark" || norm === "xiimarks" || norm === "hsc") mapped.twelfth_mark = val;
+      else if (norm === "group" || norm.includes("academicgroup")) mapped.academic_group = val;
+      else if (norm === "medium") mapped.medium = val;
       else if (norm.includes("blood") || norm === "bg") mapped.blood_group = val;
       else if (norm.includes("dob") || norm.includes("birth") || norm.includes("dateofbirth")) mapped.dob = parseDateToYMD(val);
+      else if (norm.includes("studentphone") || norm.includes("studentmobile") || norm === "phone" || norm === "mobile" || norm === "contact" || norm === "phonenumber") mapped.phone = val;
       else if (norm.includes("parent") || norm.includes("whatsapp") || norm.includes("guardian")) mapped.parent_phone = val;
       else if (norm.includes("aadhar") || norm.includes("adhaar") || norm.includes("aadhaar")) mapped.aadhar_number = val;
+      else if (norm.includes("pan") || norm === "pancard") mapped.pan_number = val;
       else if (norm.includes("email") || norm.includes("mail")) mapped.email = val;
-      else if (norm.includes("studentphone") || norm.includes("studentmobile") || norm === "phone" || norm === "mobile" || norm === "contact" || norm === "phonenumber") mapped.phone = val;
-      else if (norm.includes("group") || norm.includes("academicgroup")) mapped.academic_group = val;
-      else if (norm.includes("medium")) mapped.medium = val;
       else if (norm.includes("linkedin")) mapped.linkedin_link = val;
       else if (norm.includes("github") || norm.includes("git")) mapped.github_id = val;
-      else if (norm.includes("drive") || norm.includes("projectlink") || norm.includes("portfolio")) mapped.project_drive_link = val;
       else if (norm.includes("hackerrank") || norm.includes("hrank")) mapped.hackerrank_link = val;
       else if (norm.includes("leetcode") || norm.includes("lcode")) mapped.leetcode_link = val;
       else if (norm.includes("figma")) mapped.figma_link = val;
-      else if (norm === "department" || norm === "dept" || norm === "course" || norm === "stream") mapped.department = val;
-      else if (norm === "shift") mapped.shift = val;
-      else if (norm === "section" || norm === "sec" || norm === "classsection") mapped.section = val;
-      else if (norm === "semester" || norm === "sem" || norm.includes("semester") || norm.includes("sem")) mapped.semester = val;
+      else if (norm.includes("drive") || norm.includes("projectlink") || norm.includes("portfolio")) mapped.project_drive_link = val;
       else if (norm === "classgroup" || norm === "class" || norm === "cohort") mapped.classGroup = val;
     });
 
-    // Extract semester cleanly
-    if (!mapped.semester && mapped.classGroup) {
-      mapped.semester = getSemesterFromClassGroup(mapped.classGroup);
-    }
-    if (!mapped.semester && defaultCG) {
-      mapped.semester = getSemesterFromClassGroup(defaultCG) || templateSem || "Semester 1";
-    }
+    // 1. Resolve Department
+    const finalDept = mapped.department || templateDept || (defaultCG ? defaultCG.split(" - ")[0]?.trim() : "General");
+    mapped.department = finalDept;
 
-    // Standardize semester name (e.g. "Semester 5")
-    if (mapped.semester) {
-      const romanMap: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8 };
-      const numMatch = mapped.semester.match(/\d+/);
-      if (numMatch) {
-        mapped.semester = `Semester ${numMatch[0]}`;
-      } else {
-        const lower = mapped.semester.toLowerCase().replace(/[^a-z]/g, "");
-        const semNum = romanMap[lower];
-        if (semNum) mapped.semester = `Semester ${semNum}`;
-        else mapped.semester = "Semester 1";
-      }
+    // 2. Resolve Shift — exactly as in row, or defaultCG / templateShift
+    let rawShift = mapped.shift;
+    if (!rawShift) {
+      if (defaultCG?.toLowerCase().includes("shift 1")) rawShift = "Shift 1";
+      else if (defaultCG?.toLowerCase().includes("shift 2")) rawShift = "Shift 2";
+      else if (templateShift && templateShift !== "General") rawShift = templateShift;
+      else rawShift = "General";
     } else {
-      mapped.semester = templateSem || "Semester 1";
+      const sLower = rawShift.toLowerCase();
+      if (sLower.includes("shift 1") || sLower === "shift_1" || sLower === "1") rawShift = "Shift 1";
+      else if (sLower.includes("shift 2") || sLower === "shift_2" || sLower === "2") rawShift = "Shift 2";
+      else rawShift = "General";
     }
+    mapped.shift = rawShift;
 
-    // Auto-derive department from classGroup if not in sheet
-    if (!mapped.department && mapped.classGroup) {
-      const parts = mapped.classGroup.split(" - ");
-      mapped.department = parts[0]?.trim() || getDeptFromClassGroup(mapped.classGroup);
-    }
-
-    // Derive shift cleanly
-    if (!mapped.shift) {
-      if (mapped.classGroup?.toLowerCase().includes("shift 1") || mapped.classGroup?.toLowerCase().includes("shift_1")) {
-        mapped.shift = "Shift 1";
-      } else if (mapped.classGroup?.toLowerCase().includes("shift 2") || mapped.classGroup?.toLowerCase().includes("shift_2")) {
-        mapped.shift = "Shift 2";
-      } else {
-        mapped.shift = "General";
-      }
+    // 3. Resolve Semester
+    let rawSem = mapped.semester;
+    if (!rawSem) {
+      const semMatches = defaultCG ? defaultCG.match(/Semester\s*\d+/i) : null;
+      rawSem = semMatches ? semMatches[0] : (templateSem || "Semester 1");
     } else {
-      const sLower = mapped.shift.toLowerCase();
-      if (sLower.includes("shift 1") || sLower === "shift_1" || sLower === "1") mapped.shift = "Shift 1";
-      else if (sLower.includes("shift 2") || sLower === "shift_2" || sLower === "2") mapped.shift = "Shift 2";
-      else mapped.shift = "General";
+      const numMatch = rawSem.match(/\d+/);
+      rawSem = numMatch ? `Semester ${numMatch[0]}` : rawSem;
     }
+    mapped.semester = rawSem;
 
-    // Standardize section if provided (e.g. "A", "B")
+    // 4. Resolve Section
     if (mapped.section) {
-      const cleanSec = mapped.section.toString().replace(/^sec(tion)?\s*/i, "").trim().toUpperCase();
-      mapped.section = cleanSec;
+      mapped.section = mapped.section.toString().replace(/^sec(tion)?\s*/i, "").trim().toUpperCase();
     }
 
-    // Derive classGroup cleanly with section support
-    if (!mapped.classGroup || mapped.classGroup === defaultCG) {
-      const deptPart = mapped.department || (defaultCG.includes(" - ") ? defaultCG.split(" - ")[0] : "General");
-      const semPart = mapped.semester || "Semester 1";
-      const secPart = mapped.section ? ` - Sec ${mapped.section}` : "";
-
-      if (mapped.shift && mapped.shift !== "General") {
-        mapped.classGroup = `${deptPart} - ${mapped.shift} - ${semPart}${secPart}`;
-      } else {
-        mapped.classGroup = `${deptPart} - ${semPart}${secPart}`;
-      }
-    } else if (mapped.section) {
-      const cleanSec = mapped.section;
-      if (!mapped.classGroup.toUpperCase().includes(`SEC ${cleanSec}`) && !mapped.classGroup.toUpperCase().endsWith(` ${cleanSec}`)) {
-        mapped.classGroup = `${mapped.classGroup} - Sec ${cleanSec}`;
-      }
+    // 5. Construct Class Group directly from row components
+    const secPart = mapped.section ? ` - Sec ${mapped.section}` : "";
+    if (mapped.shift && mapped.shift !== "General") {
+      mapped.classGroup = `${mapped.department} - ${mapped.shift} - ${mapped.semester}${secPart}`;
+    } else {
+      mapped.classGroup = `${mapped.department} - ${mapped.semester}${secPart}`;
     }
+
+    // Set college ID
+    mapped.college_id = activeCollegeId;
 
     return mapped;
   };
@@ -3205,29 +3185,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     if (!studentImportPreview || studentImportPreview.parsed.length === 0) return;
     setIsStudentImportSubmitting(true);
     try {
-      const targetCG = studentImportPreview.targetClassGroup || "General Class";
-      const semMatches = targetCG.match(/Semester\s*\d+/i);
-      const targetSem = semMatches ? semMatches[0] : (getSemesterFromClassGroup(targetCG) !== "All Semesters" ? getSemesterFromClassGroup(targetCG) : (templateSem || "Semester 1"));
-      const targetDept = targetCG.split(" - ")[0]?.trim() || templateDept || "General";
-      const targetShift = targetCG.includes("Shift 2") ? "Shift 2" : targetCG.includes("Shift 1") ? "Shift 1" : "General";
-
-      const payload = studentImportPreview.parsed.map(s => {
-        const finalCG = (s.hasCustomClassGroup && s.classGroup) ? s.classGroup : targetCG;
-        const finalSemMatch = finalCG.match(/Semester\s*\d+/i);
-        const finalSem = s.semester || (finalSemMatch ? finalSemMatch[0] : (getSemesterFromClassGroup(finalCG) !== "All Semesters" ? getSemesterFromClassGroup(finalCG) : targetSem));
-        const finalDept = s.department || finalCG.split(" - ")[0]?.trim() || targetDept;
-        const finalShift = s.shift || (finalCG.includes("Shift 2") ? "Shift 2" : finalCG.includes("Shift 1") ? "Shift 1" : targetShift);
-
-        return {
-          ...s,
-          classGroup: finalCG,
-          section: s.section || null,
-          semester: finalSem,
-          department: finalDept,
-          shift: finalShift,
-          college_id: activeCollegeId
-        };
-      });
+      const payload = studentImportPreview.parsed.map(s => ({
+        ...s,
+        college_id: activeCollegeId
+      }));
 
       const res = await fetch("/api/students", {
         method: "POST",
@@ -3236,7 +3197,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       });
       const data = await res.json();
       if (data.success) {
-        toast(`Successfully imported ${payload.length} students into ${targetCG}!`, "success");
+        toast(`Successfully imported ${payload.length} students directly from template!`, "success");
         setShowStudentImportModal(false);
         setStudentImportPreview(null);
         await refreshData();
@@ -16407,7 +16368,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               const newCG = (shift && shift !== "General")
                                 ? `${dept} - ${shift} - ${sem}`
                                 : `${dept} - ${sem}`;
-                              setStudentImportPreview({ ...studentImportPreview, targetClassGroup: newCG });
+                              const updatedParsed = (studentImportPreview.parsed || []).map(st => ({
+                                ...st,
+                                department: dept,
+                                shift: shift,
+                                semester: sem,
+                                classGroup: (shift && shift !== "General")
+                                  ? `${dept} - ${shift} - ${sem}${st.section ? ` - Sec ${st.section}` : ""}`
+                                  : `${dept} - ${sem}${st.section ? ` - Sec ${st.section}` : ""}`
+                              }));
+                              setStudentImportPreview({
+                                ...studentImportPreview,
+                                targetClassGroup: newCG,
+                                parsed: updatedParsed
+                              });
                             };
 
                             const currentSem = semOptions.find((s: string) => current.toLowerCase().includes(s.toLowerCase())) || "Semester 1";
