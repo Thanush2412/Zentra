@@ -1,11 +1,14 @@
 import { createClient, type Client } from "@libsql/client";
+import pg from "pg";
+
+const { Pool } = pg;
 
 export interface TursoDbAdapter {
   get: (sql: string, ...params: any[]) => Promise<any>;
   all: (sql: string, ...params: any[]) => Promise<any[]>;
   run: (sql: string, ...params: any[]) => Promise<{ lastID?: number; changes: number }>;
   exec: (sql: string) => Promise<void>;
-  client: Client;
+  client?: any;
 }
 
 function normalizeParams(params: any[]): any[] {
@@ -14,6 +17,58 @@ function normalizeParams(params: any[]): any[] {
     args = params[0];
   }
   return args.map(arg => (arg === undefined ? null : arg));
+}
+
+function convertSqliteToPg(sql: string): string {
+  let paramIdx = 1;
+  let converted = sql.replace(/\?/g, () => `$${paramIdx++}`);
+
+  // Convert SQLite clauses to PostgreSQL
+  converted = converted
+    .replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, "INSERT INTO")
+    .replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, "INSERT INTO");
+
+  // If query had INSERT OR IGNORE or INSERT OR REPLACE, append ON CONFLICT DO NOTHING if missing
+  if (/INSERT\s+INTO/i.test(converted) && !/ON\s+CONFLICT/i.test(converted) && /OR\s+(IGNORE|REPLACE)/i.test(sql)) {
+    converted = converted.trim().replace(/;?$/, " ON CONFLICT DO NOTHING;");
+  }
+
+  return converted;
+}
+
+function createPgDbAdapter(pool: pg.Pool): TursoDbAdapter {
+  return {
+    client: pool,
+    async get(sql: string, ...params: any[]) {
+      const args = normalizeParams(params);
+      const pgSql = convertSqliteToPg(sql);
+      const res = await pool.query(pgSql, args);
+      return res.rows[0] ? { ...res.rows[0] } : undefined;
+    },
+    async all(sql: string, ...params: any[]) {
+      const args = normalizeParams(params);
+      const pgSql = convertSqliteToPg(sql);
+      const res = await pool.query(pgSql, args);
+      return res.rows.map(row => ({ ...row }));
+    },
+    async run(sql: string, ...params: any[]) {
+      const args = normalizeParams(params);
+      const pgSql = convertSqliteToPg(sql);
+      const res = await pool.query(pgSql, args);
+      return {
+        changes: res.rowCount || 0
+      };
+    },
+    async exec(sql: string) {
+      const statements = sql.split(";").map(s => s.trim()).filter(Boolean);
+      for (const s of statements) {
+        if (s.toLowerCase().startsWith("pragma")) continue;
+        try {
+          await pool.query(convertSqliteToPg(s));
+        } catch (_) {}
+      }
+    }
+  };
 }
 
 async function executeWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 250): Promise<T> {
@@ -75,24 +130,31 @@ export function getDb(): Promise<TursoDbAdapter> {
   if (dbInstance) return Promise.resolve(dbInstance);
   if (!dbPromise) {
     dbPromise = (async () => {
+      const dbUrl = process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
+      const isPostgres = dbUrl?.startsWith("postgresql://") || dbUrl?.startsWith("postgres://");
       const useLocal = process.env.USE_LOCAL_DB === "true" || process.env.USE_LOCAL_DB === "1";
-      const url = useLocal ? "file:database.sqlite" : (process.env.TURSO_DATABASE_URL || "file:database.sqlite");
-      const authToken = useLocal ? undefined : process.env.TURSO_AUTH_TOKEN;
 
-      let client: Client;
-      try {
-        if (useLocal) {
-          console.log("⚡ [Database] Using local SQLite database (database.sqlite).");
-        }
-        client = createClient({
-          url,
-          authToken,
+      if (isPostgres || process.env.NODE_ENV === "production") {
+        console.log("⚡ [Database] Connected exclusively to Neon PostgreSQL Serverless Database!");
+        const pool = new Pool({
+          connectionString: dbUrl || "postgresql://neondb_owner:npg_IkKoaDCO5Vx8@ep-nameless-poetry-ayhrtv95.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require",
+          ssl: { rejectUnauthorized: false },
+          max: 25,
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 5000,
         });
-      } catch (err) {
-        console.warn("[DB Warning] Failed to initialize Turso Cloud client. Falling back to local SQLite database.");
-        client = createClient({ url: "file:database.sqlite" });
+        dbInstance = createPgDbAdapter(pool);
+        return dbInstance;
       }
 
+      if (useLocal) {
+        console.log("⚡ [Database] Using local SQLite database (database.sqlite).");
+        const client = createClient({ url: "file:database.sqlite" });
+        dbInstance = createDbAdapter(client);
+        return dbInstance;
+      }
+
+      let client = createClient({ url: "file:database.sqlite" });
       dbInstance = createDbAdapter(client);
 
       // Enable foreign keys for references
