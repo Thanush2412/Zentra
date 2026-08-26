@@ -125,7 +125,7 @@ export default function Home() {
         const target = "/" + (data.role === "fee_manager" ? "fee-manager" : data.role);
         router.push(target);
       } else {
-        setLoginError(data.message || "Login failed. Please check your credentials.");
+        setLoginError(data.message || data.error || "Login failed. Please check your credentials.");
       }
     } catch {
       setLoginError("Network error. Could not connect to the server.");
