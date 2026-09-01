@@ -19,9 +19,46 @@ function normalizeParams(params: any[]): any[] {
   return args.map(arg => (arg === undefined ? null : arg));
 }
 
+function normalizeRowKeys(row: any): any {
+  if (!row || typeof row !== "object") return row;
+  const normalized = { ...row };
+
+  const keyMap: Record<string, string> = {
+    studentid: "studentId",
+    slotid: "slotId",
+    datestr: "dateStr",
+    classgroup: "classGroup",
+    markedby: "markedBy",
+    requestid: "requestId",
+    requestorid: "requestorId",
+    targetstaffid: "targetStaffId",
+    actorname: "actorName",
+    actorrole: "actorRole",
+    admissiondate: "admissionDate",
+    guardianname: "guardianName",
+    guardianphone: "guardianPhone",
+    parentphone: "parentPhone",
+    aadharnumber: "aadharNumber",
+    attendancetypesub: "attendanceTypeSub"
+  };
+
+  for (const [k, v] of Object.entries(row)) {
+    const lower = k.toLowerCase();
+    if (keyMap[lower] && !(keyMap[lower] in normalized)) {
+      normalized[keyMap[lower]] = v;
+    }
+  }
+
+  return normalized;
+}
+
 function convertSqliteToPg(sql: string): string {
   let paramIdx = 1;
   let converted = sql.replace(/\?/g, () => `$${paramIdx++}`);
+
+  // Convert SQLite strftime to PostgreSQL date extract
+  converted = converted.replace(/strftime\s*\(\s*'%w'\s*,\s*([^)]+)\s*\)/gi, "EXTRACT(DOW FROM CAST($1 AS DATE))::text");
+  converted = converted.replace(/strftime\s*\(\s*'%Y-%m-%d'\s*,\s*([^)]+)\s*\)/gi, "TO_CHAR(CAST($1 AS DATE), 'YYYY-MM-DD')");
 
   // Convert SQLite clauses to PostgreSQL
   converted = converted
@@ -43,13 +80,13 @@ function createPgDbAdapter(pool: pg.Pool): TursoDbAdapter {
       const args = normalizeParams(params);
       const pgSql = convertSqliteToPg(sql);
       const res = await pool.query(pgSql, args);
-      return res.rows[0] ? { ...res.rows[0] } : undefined;
+      return res.rows[0] ? normalizeRowKeys({ ...res.rows[0] }) : undefined;
     },
     async all(sql: string, ...params: any[]) {
       const args = normalizeParams(params);
       const pgSql = convertSqliteToPg(sql);
       const res = await pool.query(pgSql, args);
-      return res.rows.map(row => ({ ...row }));
+      return res.rows.map(row => normalizeRowKeys({ ...row }));
     },
     async run(sql: string, ...params: any[]) {
       const args = normalizeParams(params);
