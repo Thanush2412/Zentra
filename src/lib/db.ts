@@ -246,37 +246,54 @@ export function getDb(): Promise<TursoDbAdapter> {
         process.env.USE_LOCAL_DB !== "1";
 
       if (isPostgres && postgresUrl) {
-        let finalConnectionString = postgresUrl;
+        let poolConfig: any;
         try {
           const parsed = new URL(postgresUrl);
           const supabaseMatch = parsed.hostname.match(/^db\.([a-z0-9_-]+)\.supabase\.co$/i);
+          let host = parsed.hostname;
+          let port = parsed.port ? parseInt(parsed.port, 10) : 5432;
+          let user = decodeURIComponent(parsed.username || "postgres");
+          const password = decodeURIComponent(parsed.password || "");
+          const database = parsed.pathname.replace(/^\//, "") || "postgres";
+
           if (supabaseMatch) {
             const projectRef = supabaseMatch[1];
-            // If user is just 'postgres', pooler requires 'postgres.<projectRef>'
-            if (parsed.username === "postgres") {
-              parsed.username = `postgres.${projectRef}`;
+            if (user === "postgres") {
+              user = `postgres.${projectRef}`;
             }
-            // Switch to Supabase's official IPv4-enabled AWS pooler
-            parsed.hostname = "aws-0-ap-south-1.pooler.supabase.com";
-            // Default to transaction/session pooler port if direct 5432 was given
-            parsed.port = parsed.port === "5432" || !parsed.port ? "6543" : parsed.port;
-            finalConnectionString = parsed.toString();
-            console.log(`🐘 [Database] Auto-routed direct Supabase IPv6 host (${supabaseMatch[0]}) to IPv4 Pooler (${parsed.hostname}:${parsed.port})`);
+            host = "aws-0-ap-south-1.pooler.supabase.com";
+            port = port === 5432 || !parsed.port ? 6543 : port;
+            console.log(`🐘 [Database] Auto-routed direct Supabase IPv6 host (${supabaseMatch[0]}) to IPv4 Pooler (${host}:${port})`);
           }
-        } catch (urlErr) {
-          // If URL parsing fails, continue with original postgresUrl
+
+          const isLocalHost = host.includes("localhost") || host.includes("127.0.0.1");
+          console.log(`🐘 [Database] Connecting to PostgreSQL (${isLocalHost ? "Localhost" : "Cloud/Supabase/Neon"})...`);
+
+          poolConfig = {
+            host,
+            port,
+            user,
+            password,
+            database,
+            ssl: !isLocalHost ? { rejectUnauthorized: false } : false,
+            max: 20,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 10000,
+            statement_timeout: 60000
+          };
+        } catch (_) {
+          const isLocalHost = postgresUrl.includes("localhost") || postgresUrl.includes("127.0.0.1");
+          poolConfig = {
+            connectionString: postgresUrl,
+            ssl: !isLocalHost ? { rejectUnauthorized: false } : false,
+            max: 20,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 10000,
+            statement_timeout: 60000
+          };
         }
 
-        const isLocalHost = finalConnectionString.includes("localhost") || finalConnectionString.includes("127.0.0.1");
-        console.log(`🐘 [Database] Connecting to PostgreSQL (${isLocalHost ? "Localhost" : "Cloud/Supabase/Neon"})...`);
-        const pool = new Pool({
-          connectionString: finalConnectionString,
-          ssl: !isLocalHost ? { rejectUnauthorized: false } : undefined,
-          max: 20,
-          idleTimeoutMillis: 30000,
-          connectionTimeoutMillis: 10000,
-          statement_timeout: 60000
-        });
+        const pool = new Pool(poolConfig);
 
         try {
           // Verify live connectivity before assigning adapter
