@@ -350,6 +350,145 @@ export function getDb(): Promise<TursoDbAdapter> {
   return dbPromise;
 }
 
+export async function resolveClassGroupDetails(db: any, classGroup: string): Promise<{ department: string; semester: string; year: string }> {
+  const cleanCG = (classGroup || "").trim();
+  const strippedCG = cleanCG.replace(/\s*\([^)]*\)/g, "").trim();
+  const cgLower = cleanCG.toLowerCase();
+
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const cgNorm = normalize(cleanCG);
+  const strippedNorm = normalize(strippedCG);
+
+  // 1. Fetch available subjects and courses/departments from DB for accurate matching
+  let allCourseNames: string[] = [];
+  let subjectMetadata: any[] = [];
+  try {
+    const courses = await db.all("SELECT name FROM courses");
+    const departments = await db.all("SELECT name FROM departments");
+    allCourseNames = Array.from(new Set([...courses.map((c: any) => c.name), ...departments.map((d: any) => d.name)])).filter(Boolean);
+    subjectMetadata = await db.all("SELECT name, semester, year FROM subjects");
+  } catch (_) {}
+
+  // A. Determine Department / Course
+  let resolvedDept = "";
+  for (const deptName of allCourseNames) {
+    const dNorm = normalize(deptName);
+    if (cgNorm.startsWith(dNorm) || strippedNorm.startsWith(dNorm) || cgNorm === dNorm || strippedNorm === dNorm) {
+      if (!resolvedDept || deptName.length > resolvedDept.length) {
+        resolvedDept = deptName;
+      }
+    }
+  }
+
+  if (!resolvedDept) {
+    for (const deptName of allCourseNames) {
+      const dNorm = normalize(deptName);
+      if (cgNorm.includes(dNorm) || strippedNorm.includes(dNorm)) {
+        if (!resolvedDept || deptName.length > resolvedDept.length) {
+          resolvedDept = deptName;
+        }
+      }
+    }
+  }
+
+  if (!resolvedDept) {
+    for (const deptName of allCourseNames) {
+      const abbreviation = deptName
+        .replace(/with|and|for/gi, "")
+        .split(/\s+/)
+        .map((w: string) => w.replace(/[^a-zA-Z]/g, "")[0])
+        .filter(Boolean)
+        .join("")
+        .toLowerCase();
+
+      if (abbreviation && (cgNorm.includes(abbreviation) || strippedNorm.includes(abbreviation))) {
+        resolvedDept = deptName;
+        break;
+      }
+    }
+  }
+
+  if (!resolvedDept) {
+    resolvedDept = strippedCG.split("-")[0].split("(")[0].trim() || cleanCG.split("-")[0].split("(")[0].trim();
+  }
+
+  // B. Determine Semester
+  let resolvedSemester = "";
+  const romanMap: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8 };
+
+  const semMatch = cgLower.match(/sem(?:ester)?[\s\-_]*([ivxldc\d]+)/i);
+  if (semMatch) {
+    const semVal = semMatch[1].toLowerCase();
+    const semNum = parseInt(semVal, 10) || romanMap[semVal];
+    if (semNum) {
+      const dbSem = subjectMetadata.find((s: any) => s.semester && s.semester.toLowerCase().includes(String(semNum)));
+      if (dbSem) {
+        resolvedSemester = dbSem.semester;
+      } else {
+        resolvedSemester = `Semester ${semNum}`;
+      }
+    }
+  }
+
+  if (!resolvedSemester) {
+    for (const sMeta of subjectMetadata) {
+      if (sMeta.semester) {
+        const sNorm = normalize(sMeta.semester);
+        if (cgNorm.includes(sNorm)) {
+          resolvedSemester = sMeta.semester;
+          break;
+        }
+      }
+    }
+  }
+
+  let resolvedYear = "";
+  if (!resolvedSemester) {
+    const yearMatch = cgLower.match(/year[\s\-_]*([ivxldc\d]+)/i) || cgLower.match(/([1234])(?:st|nd|rd|th)?[\s\-_]*year/i);
+    if (yearMatch) {
+      const yrVal = yearMatch[1].toLowerCase();
+      const yrNum = parseInt(yrVal, 10) || romanMap[yrVal];
+      if (yrNum) {
+        resolvedYear = `Year ${yrNum}`;
+        const defaultSemNum = yrNum * 2 - 1;
+        const dbSem = subjectMetadata.find((s: any) => s.semester && s.semester.toLowerCase().includes(String(defaultSemNum)));
+        if (dbSem) {
+          resolvedSemester = dbSem.semester;
+        } else {
+          resolvedSemester = `Semester ${defaultSemNum}`;
+        }
+      }
+    }
+  }
+
+  if (!resolvedSemester) {
+    resolvedSemester = "Semester 1";
+  }
+
+  // C. Determine Year
+  if (!resolvedYear) {
+    const dbMatch = subjectMetadata.find((s: any) => s.semester && s.semester.toLowerCase() === resolvedSemester.toLowerCase());
+    if (dbMatch && dbMatch.year) {
+      resolvedYear = dbMatch.year;
+    } else {
+      const numMatch = resolvedSemester.match(/\d+/);
+      if (numMatch) {
+        const semNum = parseInt(numMatch[0], 10);
+        const yrNum = Math.ceil(semNum / 2);
+        resolvedYear = `Year ${yrNum}`;
+      } else {
+        resolvedYear = "Year 1";
+      }
+    }
+  }
+
+  return {
+    department: resolvedDept,
+    semester: resolvedSemester,
+    year: resolvedYear
+  };
+}
+
 export function parseClassGroup(classGroup: string) {
   const match = classGroup.match(/^([A-Za-z0-9\s/&.-]+?)(?:\s*-\s*|\s+)(Shift\s+\d+|General)?(?:\s*-\s*|\s+)?(SEM\s+[IVX0-9]+|Semester\s+\d+)?(?:\s*-\s*|\s+)?(?:\((\d{4}-\d{4})\)|\((\d{4})\))?$/i);
   
