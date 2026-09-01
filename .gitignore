@@ -132,3 +132,4 @@ docs/generate_manuals.js
 docs/CAM_Dashboard_Module_Guide.md
 docs/Mentor_Dashboard_Module_Guide.md
 local_backup.sql
+.env.updated
