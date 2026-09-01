@@ -7,6 +7,7 @@ export interface TursoDbAdapter {
   all: (sql: string, ...params: any[]) => Promise<any[]>;
   run: (sql: string, ...params: any[]) => Promise<{ lastID?: number; changes: number }>;
   exec: (sql: string) => Promise<void>;
+  multiQuery: (queries: { sql: string; params?: any[] }[]) => Promise<any[][]>;
   client: any;
 }
 
@@ -199,6 +200,23 @@ function createPostgresAdapter(pool: pg.Pool): TursoDbAdapter {
     },
     async exec(sql: string) {
       await executeWithRetry(() => pool.query(sql));
+    },
+    async multiQuery(queries: { sql: string; params?: any[] }[]): Promise<any[][]> {
+      if (!queries || queries.length === 0) return [];
+      const hasParams = queries.some(q => q.params && q.params.length > 0);
+      if (!hasParams) {
+        const combinedSql = queries.map(q => adaptQueryForPostgres(q.sql, []).sql.trim().replace(/;+$/, '') + ';').join('\n');
+        const res = await executeWithRetry(() => pool.query(combinedSql));
+        if (Array.isArray(res)) {
+          return res.map(r => (r.rows || []).map(normalizePgRow));
+        }
+        return [(res.rows || []).map(normalizePgRow)];
+      }
+
+      return await Promise.all(queries.map(q => {
+        const adapted = adaptQueryForPostgres(q.sql, q.params || []);
+        return executeWithRetry(() => pool.query(adapted.sql, adapted.params)).then(r => r.rows.map(normalizePgRow)).catch(() => []);
+      }));
     }
   };
 }
@@ -246,20 +264,22 @@ export function getDb(): Promise<TursoDbAdapter> {
           password,
           database,
           ssl: !isLocalHost ? { rejectUnauthorized: false } : false,
-          max: 20,
-          idleTimeoutMillis: 30000,
+          max: 50,
+          idleTimeoutMillis: 120000,
           connectionTimeoutMillis: 10000,
-          statement_timeout: 60000
+          statement_timeout: 60000,
+          keepAlive: true
         };
       } catch (_) {
         const isLocalHost = postgresUrl.includes("localhost") || postgresUrl.includes("127.0.0.1");
         poolConfig = {
           connectionString: postgresUrl,
           ssl: !isLocalHost ? { rejectUnauthorized: false } : false,
-          max: 20,
-          idleTimeoutMillis: 30000,
+          max: 50,
+          idleTimeoutMillis: 120000,
           connectionTimeoutMillis: 10000,
-          statement_timeout: 60000
+          statement_timeout: 60000,
+          keepAlive: true
         };
       }
 
