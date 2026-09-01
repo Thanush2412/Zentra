@@ -18,9 +18,6 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "50mb",
     },
   },
-  // Next.js 15+ API route body limit
-  // @ts-ignore — valid in Next 16
-  middlewareClientMaxBodySize: "50mb",
 };
 
 export default nextConfig;

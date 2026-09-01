@@ -39,8 +39,20 @@ Naveen htmls/
 backups/
 /backups/
 *.sql
+!postgres_schema.sql
 *.sql.bak
 local_backup.sql
+
+# Temporary Test, Debug, Benchmark & Scratch Scripts
+test-*.js
+test-*.mjs
+test-*.ts
+benchmark-*.js
+benchmark-*.ts
+compare-*.js
+compare-*.ts
+old_db.*
+run-schema-migrations.*
 
 # Scripts & Launchers
 *.ps1
