@@ -230,8 +230,8 @@ export function getDb(): Promise<TursoDbAdapter> {
           if (user === "postgres") {
             user = `postgres.${projectRef}`;
           }
-          // Route to Supabase IPv4 AWS Pooler
-          host = "aws-0-ap-south-1.pooler.supabase.com";
+          // Route to Supabase IPv4 AWS Pooler (Sydney ap-southeast-2)
+          host = "aws-0-ap-southeast-2.pooler.supabase.com";
           port = port === 5432 || !parsed.port ? 6543 : port;
           console.log(`🐘 [Database] Auto-routed Supabase host (${supabaseMatch[0]}) to IPv4 Pooler (${host}:${port})`);
         }
