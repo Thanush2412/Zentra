@@ -857,7 +857,15 @@ button, input, select, textarea { font-family: inherit; }
 
     <!-- NEW: Certificates & documents grid — click a card to preview inline, nothing downloads or opens a new tab -->
     <div class="panel" style="margin-bottom:16px;">
-      <div class="panel-head"><h2>Certificates &amp; Documents</h2><span>Click a card to preview</span></div>
+      <div class="panel-head">
+        <div>
+          <h2>Certificates &amp; Documents</h2>
+          <span>Click a card to preview</span>
+        </div>
+        <button style="background:var(--fpc-olive-deep);color:#fff;border:none;padding:7px 16px;border-radius:100px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;" onclick="fpcOpenModal(fpcCurrentProfileRegNo, true)">
+          <span>📤</span> Upload / Update Certificate
+        </button>
+      </div>
       <div class="cert-grid" id="fpcPCertGrid"></div>
     </div>
   </div>
@@ -873,43 +881,84 @@ button, input, select, textarea { font-family: inherit; }
           <div><h3 id="fpcModalName">—</h3><div class="modal-sub" id="fpcModalSub">—</div></div>
         </div>
         <div class="modal-head-actions">
-          <button class="btn btn-edit" id="fpcBtnEdit" onclick="fpcEnterEditMode()">Edit</button>
-          <button class="btn btn-save" id="fpcBtnSave" onclick="fpcSaveEdit()">Save changes</button>
+          <button class="btn btn-edit" id="fpcBtnEdit" onclick="fpcEnterEditMode()">📤 Upload / Edit Certificates</button>
+          <button class="btn btn-save" id="fpcBtnSave" onclick="fpcSaveEdit()">Save Certificates</button>
           <button class="btn btn-cancel" id="fpcBtnCancel" onclick="fpcCancelEdit()">Cancel</button>
           <button id="fpcModalClose" onclick="fpcCloseModal()">✕</button>
         </div>
       </div>
 
       <div class="modal-body">
-        <div class="modal-section">
-          <div class="modal-section-label">Profile</div>
-          <div class="modal-grid">
-            <div class="modal-field"><div class="f-label">Full name</div><div class="f-value" id="fpc_mName">—</div><input type="text" id="fpc_eName"></div>
-            <div class="modal-field"><div class="f-label">Department</div><div class="f-value" id="fpc_mDept">—</div><input type="text" id="fpc_eDept"></div>
-            <div class="modal-field"><div class="f-label">Email ID</div><div class="f-value mono" id="fpc_mEmail">—</div><input type="text" id="fpc_eEmail"></div>
-            <div class="modal-field"><div class="f-label">Registration number</div><div class="f-value mono" id="fpc_mRegNo">—</div></div>
-          </div>
+        <!-- Notice banner explaining restricted editing -->
+        <div style="background:#F7F9EC;border:1px solid #E8ECD6;border-radius:12px;padding:10px 14px;font-size:12px;color:#3B4522;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:15px;">🔒</span>
+          <span><b>Student Record Lock:</b> Academic details, HIRE readiness scores, and NQT assessment results are official records and cannot be edited. Students may upload and update their certificates and document links below.</span>
         </div>
+
         <div class="modal-section">
-          <div class="modal-section-label">Eligibility &amp; academics</div>
-          <div class="modal-grid">
-            <div class="modal-field"><div class="f-label">Eligibility status</div><div class="f-value" id="fpc_mEligibility">—</div>
-              <select id="fpc_eEligibility"><option value="">Pending / not set</option><option value="Eligible">Eligible</option></select></div>
-            <div class="modal-field"><div class="f-label">Communication level</div><div class="f-value" id="fpc_mCommLevel">—</div><input type="text" id="fpc_eCommLevel" placeholder="e.g. B1(Intermediate)"></div>
-            <div class="modal-field"><div class="f-label">Current arrears</div><div class="f-value" id="fpc_mCurrentArrears">—</div><input type="number" id="fpc_eCurrentArrears" min="0" step="1"></div>
-            <div class="modal-field"><div class="f-label">History of arrears</div><div class="f-value" id="fpc_mHistoryArrears">—</div><input type="number" id="fpc_eHistoryArrears" min="0" step="1"></div>
-            <div class="modal-field"><div class="f-label">10th mark</div><div class="f-value" id="fpc_mTenth">—</div><input type="number" id="fpc_eTenth" min="0" max="100" step="0.01"></div>
-            <div class="modal-field"><div class="f-label">12th mark</div><div class="f-value" id="fpc_mTwelfth">—</div><input type="number" id="fpc_eTwelfth" min="0" max="100" step="0.01"></div>
-            <div class="modal-field"><div class="f-label">UG degree %</div><div class="f-value" id="fpc_mUg">—</div><input type="number" id="fpc_eUg" min="0" max="100" step="0.01"></div>
-            <div class="modal-field"><div class="f-label">PG degree %</div><div class="f-value" id="fpc_mPg">—</div><input type="number" id="fpc_ePg" min="0" max="100" step="0.01"></div>
-            <div class="modal-field"><div class="f-label">1st Preference</div><div class="f-value" id="fpc_mPref1">—</div><input type="text" id="fpc_ePref1"></div>
-            <div class="modal-field"><div class="f-label">2nd Preference</div><div class="f-value" id="fpc_mPref2">—</div><input type="text" id="fpc_ePref2"></div>
-            <div class="modal-field"><div class="f-label">3rd Preference</div><div class="f-value" id="fpc_mPref3">—</div><input type="text" id="fpc_ePref3"></div>
+          <div class="modal-section-label">Certificates &amp; Profile Documents <span style="font-size:10px;color:#2E5B2C;background:#D9ECD7;padding:2px 8px;border-radius:100px;text-transform:none;font-weight:700;margin-left:6px;">Editable / Uploadable</span></div>
+          <div class="modal-links" id="fpc_mLinks"></div>
+          <div class="modal-grid" style="margin-top:14px;gap:14px 20px;">
+            <div class="modal-field full" style="grid-column:1/-1;">
+              <div class="f-label" style="font-weight:700;color:#1C2116;display:flex;justify-content:space-between;align-items:center;">
+                <span>EF SET Certificate (Upload file or enter URL)</span>
+                <span id="fpc_efsetFileStatus" style="font-size:11px;color:#5C6B32;font-weight:600;"></span>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap;">
+                <input type="text" id="fpc_eEfset" placeholder="https://… or select file to upload" style="flex:1;min-width:200px;">
+                <label style="background:#E8ECD6;border:1px solid #D5DDBE;color:#3B4522;padding:8px 14px;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;">
+                  📁 Browse File <input type="file" id="fpc_eEfsetFile" accept=".pdf,.png,.jpg,.jpeg,.webp" style="display:none;" onchange="fpcHandleDocFileUpload(this, 'fpc_eEfset', 'fpc_efsetFileStatus')">
+                </label>
+              </div>
+            </div>
+
+            <div class="modal-field full" style="grid-column:1/-1;">
+              <div class="f-label" style="font-weight:700;color:#1C2116;display:flex;justify-content:space-between;align-items:center;">
+                <span>Resume Document (Upload file or enter URL)</span>
+                <span id="fpc_resumeFileStatus" style="font-size:11px;color:#5C6B32;font-weight:600;"></span>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap;">
+                <input type="text" id="fpc_eResume" placeholder="https://… or select file to upload" style="flex:1;min-width:200px;">
+                <label style="background:#E8ECD6;border:1px solid #D5DDBE;color:#3B4522;padding:8px 14px;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;">
+                  📁 Browse File <input type="file" id="fpc_eResumeFile" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" style="display:none;" onchange="fpcHandleDocFileUpload(this, 'fpc_eResume', 'fpc_resumeFileStatus')">
+                </label>
+              </div>
+            </div>
+
+            <div class="modal-field"><div class="f-label">LinkedIn Profile URL</div><input type="text" id="fpc_eLinkedin" placeholder="https://linkedin.com/in/…"></div>
+            <div class="modal-field"><div class="f-label">GitHub Profile URL</div><input type="text" id="fpc_eGithub" placeholder="https://github.com/…"></div>
           </div>
         </div>
 
         <div class="modal-section">
-          <div class="modal-section-label">HIRE Score (Marks) <span class="link-tag" style="margin-left:8px;">Live from HIRE API — not editable here</span></div>
+          <div class="modal-section-label">Profile <span class="link-tag" style="margin-left:6px;">Read-only</span></div>
+          <div class="modal-grid">
+            <div class="modal-field locked"><div class="f-label">Full name</div><div class="f-value" id="fpc_mName">—</div></div>
+            <div class="modal-field locked"><div class="f-label">Department</div><div class="f-value" id="fpc_mDept">—</div></div>
+            <div class="modal-field locked"><div class="f-label">Email ID</div><div class="f-value mono" id="fpc_mEmail">—</div></div>
+            <div class="modal-field locked"><div class="f-label">Registration number</div><div class="f-value mono" id="fpc_mRegNo">—</div></div>
+          </div>
+        </div>
+
+        <div class="modal-section">
+          <div class="modal-section-label">Eligibility &amp; academics <span class="link-tag" style="margin-left:6px;">Read-only</span></div>
+          <div class="modal-grid">
+            <div class="modal-field locked"><div class="f-label">Eligibility status</div><div class="f-value" id="fpc_mEligibility">—</div></div>
+            <div class="modal-field locked"><div class="f-label">Communication level</div><div class="f-value" id="fpc_mCommLevel">—</div></div>
+            <div class="modal-field locked"><div class="f-label">Current arrears</div><div class="f-value" id="fpc_mCurrentArrears">—</div></div>
+            <div class="modal-field locked"><div class="f-label">History of arrears</div><div class="f-value" id="fpc_mHistoryArrears">—</div></div>
+            <div class="modal-field locked"><div class="f-label">10th mark</div><div class="f-value" id="fpc_mTenth">—</div></div>
+            <div class="modal-field locked"><div class="f-label">12th mark</div><div class="f-value" id="fpc_mTwelfth">—</div></div>
+            <div class="modal-field locked"><div class="f-label">UG degree %</div><div class="f-value" id="fpc_mUg">—</div></div>
+            <div class="modal-field locked"><div class="f-label">PG degree %</div><div class="f-value" id="fpc_mPg">—</div></div>
+            <div class="modal-field locked"><div class="f-label">1st Preference</div><div class="f-value" id="fpc_mPref1">—</div></div>
+            <div class="modal-field locked"><div class="f-label">2nd Preference</div><div class="f-value" id="fpc_mPref2">—</div></div>
+            <div class="modal-field locked"><div class="f-label">3rd Preference</div><div class="f-value" id="fpc_mPref3">—</div></div>
+          </div>
+        </div>
+
+        <div class="modal-section">
+          <div class="modal-section-label">HIRE Score (Marks) <span class="link-tag" style="margin-left:8px;">Live from HIRE API — Read-only</span></div>
           <div class="modal-grid cols-3">
             <div class="modal-field locked"><div class="f-label">FOP</div><div class="f-value" id="fpc_mFop">—</div></div>
             <div class="modal-field locked"><div class="f-label">DSA</div><div class="f-value" id="fpc_mDsa">—</div></div>
@@ -919,29 +968,18 @@ button, input, select, textarea { font-family: inherit; }
         </div>
 
         <div class="modal-section">
-          <div class="modal-section-label">FPC NQT Assessment</div>
+          <div class="modal-section-label">FPC NQT Assessment <span class="link-tag" style="margin-left:6px;">Official assessment — Read-only</span></div>
           <div class="modal-grid cols-3">
-            <div class="modal-field"><div class="f-label">Assessments conducted</div><div class="f-value" id="fpc_mNqtCount">—</div><input type="number" id="fpc_eNqtCount" min="0" step="1"></div>
-            <div class="modal-field"><div class="f-label">Verbal ability</div><div class="f-value" id="fpc_mVerbal">—</div><input type="number" id="fpc_eVerbal" min="0" max="100" step="0.01"></div>
-            <div class="modal-field"><div class="f-label">Numerical ability</div><div class="f-value" id="fpc_mNumerical">—</div><input type="number" id="fpc_eNumerical" min="0" max="100" step="0.01"></div>
-            <div class="modal-field"><div class="f-label">Reasoning ability</div><div class="f-value" id="fpc_mReasoning">—</div><input type="number" id="fpc_eReasoning" min="0" max="100" step="0.01"></div>
-            <div class="modal-field"><div class="f-label">Adv. quant reasoning</div><div class="f-value" id="fpc_mAdvQuant">—</div><input type="number" id="fpc_eAdvQuant" min="0" max="100" step="0.01"></div>
-            <div class="modal-field"><div class="f-label">Coding</div><div class="f-value" id="fpc_mCoding">—</div><input type="number" id="fpc_eCoding" min="0" max="100" step="0.01"></div>
-            <div class="modal-field"><div class="f-label">Overall</div><div class="f-value" id="fpc_mNqtOverall">—</div><input type="number" id="fpc_eNqtOverall" min="0" max="100" step="0.01"></div>
-          </div>
-        </div>
-        <div class="modal-section">
-          <div class="modal-section-label">Profile links</div>
-          <div class="modal-links" id="fpc_mLinks"></div>
-          <div class="modal-grid" style="margin-top:12px;">
-            <div class="modal-field"><div class="f-label">LinkedIn URL</div><input type="text" id="fpc_eLinkedin" placeholder="https://…"></div>
-            <div class="modal-field"><div class="f-label">Resume URL</div><input type="text" id="fpc_eResume" placeholder="https://…"></div>
-            <div class="modal-field"><div class="f-label">GitHub URL</div><input type="text" id="fpc_eGithub" placeholder="https://…"></div>
-            <div class="modal-field"><div class="f-label">EF SET certificate URL</div><input type="text" id="fpc_eEfset" placeholder="https://…"></div>
+            <div class="modal-field locked"><div class="f-label">Assessments conducted</div><div class="f-value" id="fpc_mNqtCount">—</div></div>
+            <div class="modal-field locked"><div class="f-label">Verbal ability</div><div class="f-value" id="fpc_mVerbal">—</div></div>
+            <div class="modal-field locked"><div class="f-label">Numerical ability</div><div class="f-value" id="fpc_mNumerical">—</div></div>
+            <div class="modal-field locked"><div class="f-label">Reasoning ability</div><div class="f-value" id="fpc_mReasoning">—</div></div>
+            <div class="modal-field locked"><div class="f-label">Adv. quant reasoning</div><div class="f-value" id="fpc_mAdvQuant">—</div></div>
+            <div class="modal-field locked"><div class="f-label">Coding</div><div class="f-value" id="fpc_mCoding">—</div></div>
+            <div class="modal-field locked"><div class="f-label">Overall</div><div class="f-value" id="fpc_mNqtOverall">—</div></div>
           </div>
         </div>
         <div class="modal-save-error" id="fpcModalSaveError"></div>
-      </div>
     </div>
   </div>
 
@@ -1542,7 +1580,7 @@ function fpcStudentCardHtml(s){
         <button class="fcc-menu-btn" onclick="event.stopPropagation(); this.nextElementSibling.classList.toggle('open')">⋮</button>
         <div class="fcc-dropdown">
           <button onclick="event.stopPropagation(); fpcViewProfile('${regNoSafe}')">View profile</button>
-          <button onclick="event.stopPropagation(); fpcOpenModal('${regNoSafe}', true)">Edit details</button>
+          <button onclick="event.stopPropagation(); fpcOpenModal('${regNoSafe}', true)">📤 Upload Certificate</button>
         </div>
       </div>
     </div>
@@ -1767,6 +1805,25 @@ function fpcLinkRow(tag, url, mode){
 }
 function fpcSetInputVal(id, v){ document.getElementById(id).value = (v===null || v===undefined) ? '' : v; }
 
+function fpcHandleDocFileUpload(inputEl, targetInputId, statusId){
+  const file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById(statusId);
+  if(statusEl) statusEl.textContent = `Reading ${file.name}…`;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const dataUrl = e.target.result;
+    document.getElementById(targetInputId).value = dataUrl;
+    if(statusEl) statusEl.textContent = `✓ ${file.name} (${Math.round(file.size/1024)} KB) attached`;
+    fpcShowToast(`Document "${file.name}" attached. Click "Save Certificates" to save.`, false);
+  };
+  reader.onerror = function(){
+    if(statusEl) statusEl.textContent = 'Failed to read file';
+    fpcShowToast('Could not read the uploaded file.', true);
+  };
+  reader.readAsDataURL(file);
+}
+
 function fpcOpenModal(regNo, startInEdit){
   const s = FPC_STUDENTS.find(x => x.registration_number === regNo);
   if(!s) return;
@@ -1801,16 +1858,23 @@ function fpcOpenModal(regNo, startInEdit){
   document.getElementById('fpc_mAdvQuant').textContent = fpcPctText(s.nqt_advanced_quant_reasoning);
   document.getElementById('fpc_mCoding').textContent = fpcPctText(s.nqt_coding);
   document.getElementById('fpc_mNqtOverall').textContent = fpcPctText(s.nqt_overall);
-document.getElementById('fpc_mLinks').innerHTML = fpcLinkRow('LinkedIn', s.linkedin_url) + fpcLinkRow('Resume', s.resume_url, 'doc') + fpcLinkRow('GitHub', s.github_url);
-  fpcSetInputVal('fpc_eName', s.student_name); fpcSetInputVal('fpc_eDept', s.department); fpcSetInputVal('fpc_eEmail', s.email);
-  fpcSetInputVal('fpc_eEligibility', isEligible ? 'Eligible' : '');
-  fpcSetInputVal('fpc_eCommLevel', s.communication_skill_level);
-  fpcSetInputVal('fpc_eCurrentArrears', s.current_arrears ?? 0); fpcSetInputVal('fpc_eHistoryArrears', s.history_of_arrears ?? 0);
-  fpcSetInputVal('fpc_eTenth', s.tenth_mark); fpcSetInputVal('fpc_eTwelfth', s.twelfth_mark); fpcSetInputVal('fpc_eUg', s.ug_percentage); fpcSetInputVal('fpc_ePg', s.pg_percentage);
-  fpcSetInputVal('fpc_ePref1', s.preference_1); fpcSetInputVal('fpc_ePref2', s.preference_2); fpcSetInputVal('fpc_ePref3', s.preference_3);
-  fpcSetInputVal('fpc_eNqtCount', s.nqt_assessment_count); fpcSetInputVal('fpc_eVerbal', s.nqt_verbal_ability); fpcSetInputVal('fpc_eNumerical', s.nqt_numerical_ability);
-  fpcSetInputVal('fpc_eReasoning', s.nqt_reasoning_ability); fpcSetInputVal('fpc_eAdvQuant', s.nqt_advanced_quant_reasoning); fpcSetInputVal('fpc_eCoding', s.nqt_coding); fpcSetInputVal('fpc_eNqtOverall', s.nqt_overall);
-  fpcSetInputVal('fpc_eLinkedin', s.linkedin_url); fpcSetInputVal('fpc_eResume', s.resume_url); fpcSetInputVal('fpc_eGithub', s.github_url); fpcSetInputVal('fpc_eEfset', s.efset_certificate_url);
+  document.getElementById('fpc_mLinks').innerHTML = fpcLinkRow('LinkedIn', s.linkedin_url) + fpcLinkRow('Resume', s.resume_url, 'doc') + fpcLinkRow('GitHub', s.github_url) + fpcLinkRow('EF SET', s.efset_certificate_url, 'doc');
+
+  fpcSetInputVal('fpc_eLinkedin', s.linkedin_url);
+  fpcSetInputVal('fpc_eResume', s.resume_url);
+  fpcSetInputVal('fpc_eGithub', s.github_url);
+  fpcSetInputVal('fpc_eEfset', s.efset_certificate_url);
+
+  const efsetFileIn = document.getElementById('fpc_eEfsetFile');
+  if(efsetFileIn) efsetFileIn.value = '';
+  const efsetStatus = document.getElementById('fpc_efsetFileStatus');
+  if(efsetStatus) efsetStatus.textContent = s.efset_certificate_url ? '✓ Document on file' : '';
+
+  const resumeFileIn = document.getElementById('fpc_eResumeFile');
+  if(resumeFileIn) resumeFileIn.value = '';
+  const resumeStatus = document.getElementById('fpc_resumeFileStatus');
+  if(resumeStatus) resumeStatus.textContent = s.resume_url ? '✓ Resume on file' : '';
+
   document.getElementById('fpcModalSaveError').classList.remove('open');
   document.getElementById('fpcModalCard').classList.toggle('editing', !!startInEdit);
   document.getElementById('fpcModalOverlay').classList.add('open');
@@ -1822,71 +1886,48 @@ function fpcCloseModal(){
 }
 function fpcEnterEditMode(){ document.getElementById('fpcModalCard').classList.add('editing'); }
 function fpcCancelEdit(){ const regNo = fpcCurrentEditRegNo; document.getElementById('fpcModalCard').classList.remove('editing'); fpcOpenModal(regNo, false); }
-function fpcNumVal(id){ const raw = document.getElementById(id).value; return raw === '' ? null : Number(raw); }
-function fpcIntVal(id){ const raw = document.getElementById(id).value; return raw === '' ? 0 : parseInt(raw, 10); }
-function fpcTextVal(id){ const raw = document.getElementById(id).value.trim(); return raw === '' ? null : raw; }
+function fpcNumVal(id){ const el = document.getElementById(id); if(!el) return null; const raw = el.value; return raw === '' ? null : Number(raw); }
+function fpcIntVal(id){ const el = document.getElementById(id); if(!el) return 0; const raw = el.value; return raw === '' ? 0 : parseInt(raw, 10); }
+function fpcTextVal(id){ const el = document.getElementById(id); if(!el) return null; const raw = el.value.trim(); return raw === '' ? null : raw; }
 
 async function fpcSaveEdit(){
   const isNew = !fpcCurrentEditRegNo;
   let s = isNew ? null : FPC_STUDENTS.find(x => x.registration_number === fpcCurrentEditRegNo);
   if(!isNew && !s) return;
 
-  const regNoInput = document.getElementById('fpc_eRegNoNew');
-  const newRegNo = isNew ? (regNoInput ? regNoInput.value.trim() : '') : null;
-  if(isNew && !newRegNo){
-    document.getElementById('fpcModalSaveError').textContent = 'Registration number is required.';
-    document.getElementById('fpcModalSaveError').classList.add('open');
-    return;
-  }
-
   const btn = document.getElementById('fpcBtnSave');
   const errBox = document.getElementById('fpcModalSaveError');
   errBox.classList.remove('open');
   btn.disabled = true; btn.textContent = 'Saving…';
-  fpcShowGlobalLoader('Saving student…');
+  fpcShowGlobalLoader('Saving certificates…');
   try{
-    const college = fpcSelectedCollege;
+    // For students, ONLY certificates and profile document links are updated
     const studentsPayload = {
-      registration_number: isNew ? newRegNo : (s.registration_number),
-      college: isNew ? college : undefined,
-      student_name: fpcTextVal('fpc_eName') || (isNew ? newRegNo : s.student_name), department: fpcTextVal('fpc_eDept'), email: fpcTextVal('fpc_eEmail'),
-      eligibility_status: fpcTextVal('fpc_eEligibility'), communication_skill_level: fpcTextVal('fpc_eCommLevel'),
-      current_arrears: fpcIntVal('fpc_eCurrentArrears'), history_of_arrears: fpcIntVal('fpc_eHistoryArrears'),
-      tenth_mark: fpcNumVal('fpc_eTenth'), twelfth_mark: fpcNumVal('fpc_eTwelfth'), ug_percentage: fpcNumVal('fpc_eUg'), pg_percentage: fpcNumVal('fpc_ePg'),
-      preference_1: fpcTextVal('fpc_ePref1'), preference_2: fpcTextVal('fpc_ePref2'), preference_3: fpcTextVal('fpc_ePref3'),
-      linkedin_url: fpcTextVal('fpc_eLinkedin'), resume_url: fpcTextVal('fpc_eResume'), github_url: fpcTextVal('fpc_eGithub'), efset_certificate_url: fpcTextVal('fpc_eEfset')
+      efset_certificate_url: fpcTextVal('fpc_eEfset'),
+      resume_url: fpcTextVal('fpc_eResume'),
+      linkedin_url: fpcTextVal('fpc_eLinkedin'),
+      github_url: fpcTextVal('fpc_eGithub')
     };
-    Object.keys(studentsPayload).forEach(k => studentsPayload[k] === undefined && delete studentsPayload[k]);
 
-    const url = isNew
-      ? `${FPC_SUPABASE_URL}/rest/v1/students?on_conflict=registration_number`
-      : `${FPC_SUPABASE_URL}/rest/v1/students?id=eq.${s.id}`;
-    const method = isNew ? 'POST' : 'PATCH';
-    const prefer = isNew ? 'resolution=merge-duplicates,return=representation' : 'return=representation';
-    const r1 = await fetch(url, { method, headers: fpcSbHeaders(prefer), body: JSON.stringify(studentsPayload) });
-    if(!r1.ok) throw new Error(`students save failed (${r1.status}): ${await r1.text()}`);
-    const savedStudent = (await r1.json())[0];
-    const studentId = savedStudent.id;
-
-    const nqtPayload = { student_id: s ? s.id : studentId, assessment_count: fpcNumVal('fpc_eNqtCount'), verbal_ability: fpcNumVal('fpc_eVerbal'), numerical_ability: fpcNumVal('fpc_eNumerical'),
-      reasoning_ability: fpcNumVal('fpc_eReasoning'), advanced_quant_reasoning: fpcNumVal('fpc_eAdvQuant'), coding: fpcNumVal('fpc_eCoding'), overall: fpcNumVal('fpc_eNqtOverall') };
-    nqtPayload.student_id = studentId;
-    const r3 = await fetch(`${FPC_SUPABASE_URL}/rest/v1/fpc_nqt_assessment?on_conflict=student_id`, { method: 'POST', headers: fpcSbHeaders('resolution=merge-duplicates,return=representation'), body: JSON.stringify(nqtPayload) });
-    if(!r3.ok) throw new Error(`fpc_nqt_assessment update failed (${r3.status}): ${await r3.text()}`);
+    const url = `${FPC_SUPABASE_URL}/rest/v1/students?id=eq.${s.id}`;
+    const r1 = await fetch(url, {
+      method: 'PATCH',
+      headers: fpcSbHeaders('return=representation'),
+      body: JSON.stringify(studentsPayload)
+    });
+    if(!r1.ok) throw new Error(`Certificate save failed (${r1.status}): ${await r1.text()}`);
 
     await fpcLoadStudents();
     fpcCloseModal();
-    if(!isNew){
-      const wasProfileView = document.getElementById('fpcViewProfile').classList.contains('active');
-      if(wasProfileView && fpcCurrentProfileRegNo) fpcViewProfile(fpcCurrentProfileRegNo);
-    }
-    fpcShowToast(isNew ? 'Student added.' : 'Saved — dashboard updated.', false);
+    const wasProfileView = document.getElementById('fpcViewProfile').classList.contains('active');
+    if(wasProfileView && fpcCurrentProfileRegNo) fpcViewProfile(fpcCurrentProfileRegNo);
+    fpcShowToast('Certificates & documents updated successfully.', false);
   }catch(e){
-    errBox.textContent = e.message + ' — if this mentions row-level security / permission denied, the anon key isn\'t allowed to write.';
+    errBox.textContent = e.message;
     errBox.classList.add('open');
     fpcShowToast('Save failed. See details in the panel.', true);
   }finally{
-    btn.disabled = false; btn.textContent = 'Save changes';
+    btn.disabled = false; btn.textContent = 'Save Certificates';
     fpcHideGlobalLoader();
   }
 }

@@ -117,6 +117,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     slots,
     auditLogs,
     subjectsList,
+    studentAttendance,
+    setStudentAttendance,
     createCollege,
     updateCollege,
     deleteCollege,
@@ -291,7 +293,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (data.success) {
         toast(`Cleared ${data.deletedCount ?? 0} attendance record(s) from ${clearAttStartDate} to ${clearAttEndDate}.`, "success");
         setClearAttPreviewCount(null);
-        refreshData();
+        // Surgical update: remove attendance records that fall within the cleared date range and scope
+        setStudentAttendance(prev => prev.filter(a => {
+          const recDate = a.dateStr || (a as any).date;
+          if (!recDate || recDate < clearAttStartDate || recDate > clearAttEndDate) return true;
+          if (clearAttCollegeId !== "all" || clearAttDept !== "all" || clearAttClassGroup !== "all") {
+            const student = students.find(s => s.id === a.studentId);
+            if (student) {
+              if (clearAttCollegeId !== "all" && student.college_id !== clearAttCollegeId) return true;
+              if (clearAttDept !== "all" && student.department !== clearAttDept) return true;
+              if (clearAttClassGroup !== "all" && student.classGroup !== clearAttClassGroup && (student as any).class_group !== clearAttClassGroup) return true;
+            }
+          }
+          return false;
+        }));
       } else {
         toast(data.message || "Failed to clear attendance.", "error");
       }
@@ -507,7 +522,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         toast(res.message || `Successfully imported ${res.count} faculty members.`, "success");
         setShowFacultyImportModal(false);
         setFacultyImportPreview(null);
-        refreshData();
+        // bulkImportMentors already surgically updates mentors state — no refreshData needed
       } else {
         toast(res.message || "Failed to import faculty.", "error");
       }
@@ -819,17 +834,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const fetchAdminDetails = async () => {
     try {
       setIsDataLoading(true);
-      const res = await fetch("/api/colleges");
-      const data = await res.json();
-      if (data.success) {
-        setCamList(data.campusManagers || []);
-        setKamList(data.kamUsers || []);
-      }
-
-      // Load all additional relational tables from centralized api/data
       const dataRes = await fetch("/api/data");
       const dataJson = await dataRes.json();
       if (dataJson.success) {
+        setCamList(dataJson.campusManagers || []);
+        setKamList(dataJson.kamUsers || []);
         setAnnouncements(dataJson.announcements || []);
         setHolidays(dataJson.holidays || []);
         setLoginHistory(dataJson.loginHistory || []);
@@ -1113,7 +1122,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Fetch campus draft and system settings from database on mount
   useEffect(() => {
-    refreshData();
     fetchAdminDetails();
     fetchSystemSettings();
     fetchCampusDraftFromDb();
@@ -2530,7 +2538,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (res.success) {
         setShowDeptModal(false);
         toast("Course & Batch saved successfully.", "success");
-        await refreshData();
+        // createCourse/updateCourse already surgically update departmentsList — no refreshData needed
       } else {
         setModalError(res.message || "Failed to save course.");
       }

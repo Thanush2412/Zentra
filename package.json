@@ -7,10 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "db:sync": "node scripts/sync_db.mjs"
+    "db:sync": "node scripts/sync_db.mjs",
+    "db:migrate:postgres": "node scripts/migrate_sqlite_to_postgres.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",
+    "@neondatabase/serverless": "^1.1.0",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.23.1",
     "clsx": "^2.1.1",

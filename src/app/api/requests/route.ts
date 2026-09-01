@@ -42,11 +42,84 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { mentorId, slotId, dateStr, dateFormatted, targetStaffId, reason, subjectName } = body;
+    const { mentorId, slotId, dateStr, dateFormatted, targetStaffId, reason, subjectName, course, classGroup, targetStaffName } = body;
 
     if (!mentorId || !slotId || !dateStr || !dateFormatted || !targetStaffId || !reason) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
+
+    // ─── Meta-Request Fast Path ───────────────────────────────────────────────
+    // Handles synthetic slot IDs (mentor_daily_punch_, acad_log_edit_) with
+    // targetStaffId="cam_approval". These bypass the normal slot/coverStaff
+    // lookup and are stored directly as pending_cam requests for CAM review.
+    const isMetaRequest =
+      targetStaffId === "cam_approval" ||
+      slotId.startsWith("mentor_daily_punch_") ||
+      slotId.startsWith("acad_log_edit_");
+
+    if (isMetaRequest) {
+      const requestor = await db.get("SELECT * FROM mentors WHERE id = ?", mentorId);
+      if (!requestor) {
+        return NextResponse.json({ success: false, message: "Mentor not found." }, { status: 404 });
+      }
+
+      const newId = "r_" + Date.now();
+      const metaCourse = course || subjectName || slotId;
+      const metaClassGroup = classGroup || requestor.department || "Faculty";
+      const metaTargetStaffName = targetStaffName || "CAM Approval";
+
+      await db.run(
+        `INSERT INTO handover_requests (
+           id, requestorId, requestorName, slotId, course, day, time,
+           dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?)`,
+        newId,
+        mentorId,
+        requestor.name,
+        slotId,
+        metaCourse,
+        "",
+        "",
+        dateStr,
+        dateFormatted,
+        targetStaffId,
+        metaTargetStaffName,
+        reason,
+        new Date().toISOString(),
+        metaClassGroup
+      );
+
+      // Audit log
+      await db.run(
+        "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'meta_request', ?, ?, 'Mentor', ?)",
+        "l_" + Date.now(),
+        `${requestor.name} submitted meta-request: ${reason.slice(0, 100)}`,
+        requestor.name,
+        new Date().toISOString()
+      );
+
+      return NextResponse.json({
+        success: true,
+        request: {
+          id: newId,
+          requestorId: mentorId,
+          requestorName: requestor.name,
+          slotId,
+          course: metaCourse,
+          day: "",
+          time: "",
+          dateStr,
+          dateFormatted,
+          targetStaffId,
+          targetStaffName: metaTargetStaffName,
+          reason,
+          status: "pending_cam",
+          timestamp: new Date().toISOString(),
+          classGroup: metaClassGroup
+        }
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     const [requestor, slot, coverStaff] = await Promise.all([
       db.get("SELECT * FROM mentors WHERE id = ?", mentorId),

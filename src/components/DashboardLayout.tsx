@@ -85,7 +85,6 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const isAuthorized = isLoggedInClient && (isSuperAdminEmail || currentRole === requiredRole || storedRoleClient === requiredRole);
 
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-  const [showDashboardSwitch, setShowDashboardSwitch] = useState(false);
 
   /* ─── Notifications Bell ─── */
   const [showNotifications, setShowNotifications] = useState(false);
@@ -588,83 +587,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
             </span>
           </button>
 
-          {/* Master Multi-Role Switcher (Restricted to thanush@faceprep.in) */}
-          {isSuperAdminEmail && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowDashboardSwitch(prev => !prev)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 via-purple-600 to-[#D528A2] text-white font-extrabold text-xs shadow-sm hover:shadow-md transition-all cursor-pointer"
-                title="Switch Workspace (Thanush Master Access)"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-amber-300 animate-pulse" />
-                <span className="hidden sm:inline">Switch Workspace</span>
-                <ChevronDown className={`h-3.5 w-3.5 opacity-80 transition-transform ${showDashboardSwitch ? "rotate-180" : ""}`} />
-              </button>
 
-              {showDashboardSwitch && (
-                <div className="absolute right-0 mt-2.5 w-64 bg-white border border-slate-200 rounded-xl shadow-2xl p-2 z-50 animate-fadeIn space-y-1">
-                  <div className="px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-indigo-600 border-b border-slate-100 flex items-center justify-between">
-                    <span>Master Role Launcher</span>
-                    <span className="text-[8px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-bold">Thanush</span>
-                  </div>
-                  {[
-                    { id: "admin", label: "Super Admin Console", path: "/admin", icon: ShieldCheck, color: "text-[#D528A2]" },
-                    { id: "cam", label: "CM Operations Hub", path: "/cam", icon: Building2, color: "text-indigo-600" },
-                    { id: "mentor", label: "Faculty Workspace", path: "/mentor", icon: GraduationCap, color: "text-emerald-600" },
-                    { id: "kam", label: "Key Account Manager", path: "/kam", icon: Layers, color: "text-purple-600" },
-                    { id: "student", label: "Student Portal", path: "/student", icon: User, color: "text-blue-600" },
-                    { id: "hr", label: "HR Audit Portal", path: "/hr", icon: ClipboardList, color: "text-orange-600" },
-                    { id: "fee_manager", label: "Fee Collections", path: "/fee-manager", icon: IndianRupee, color: "text-teal-600" },
-                    { id: "sme", label: "SME Evaluation Hub", path: "/sme", icon: Award, color: "text-rose-600" },
-                    { id: "allocator", label: "Demo Scheduler Portal", path: "/allocator", icon: Calendar, color: "text-amber-600" },
-                  ].map(item => {
-                    const Icon = item.icon;
-                    const isCurrent = currentRole === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setShowDashboardSwitch(false);
-                          localStorage.setItem("fp_current_role", item.id);
-                          localStorage.setItem("fp_logged_in", "true");
-                          localStorage.setItem("fp_user_email", "thanush@faceprep.in");
-
-                          if (item.id === "mentor") {
-                            localStorage.setItem("fp_superadmin_campus_scope", "college_sdnb");
-                            setSelectedCampusScope("college_sdnb");
-                            setRole("mentor", "mentor_thanush");
-                          } else if (item.id === "admin") {
-                            localStorage.setItem("fp_superadmin_campus_scope", "all");
-                            setSelectedCampusScope("all");
-                            setRole("admin", "admin_thanush");
-                          } else {
-                            localStorage.setItem("fp_superadmin_campus_scope", "all");
-                            setSelectedCampusScope("all");
-                            setRole(item.id as any);
-                          }
-
-                          router.push(item.path);
-                        }}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-left ${
-                          isCurrent
-                            ? "bg-indigo-50 text-indigo-700 font-extrabold border border-indigo-200 shadow-xs"
-                            : "text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Icon className={`h-4 w-4 ${item.color}`} />
-                          <span>{item.label}</span>
-                        </div>
-                        {isCurrent && <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Master Global Region / Campus Scope Switcher (Restricted to thanush@faceprep.in) */}
           {isSuperAdminEmail && (
@@ -752,7 +675,6 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
               onClick={() => {
                 setShowNotifications((p) => !p);
                 setShowProfileDropdown(false);
-                setShowDashboardSwitch(false);
                 setShowCampusDropdown && setShowCampusDropdown(false);
                 if (!showNotifications) {
                   fetchNotifications(true);

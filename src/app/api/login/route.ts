@@ -56,66 +56,46 @@ export async function POST(request: Request) {
     } else {
       // Auto-provision user record if present in role tables but missing from centralized users table
       if (!user) {
-        let foundRole: string | null = null;
-        let refId: string | null = null;
         let resolvedEmail = lowerEmail.includes("@") ? lowerEmail : `${lowerEmail}@university.edu`;
 
-        const cam = await db.get(
-          "SELECT id, email FROM campus_managers WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ? OR LOWER(email) LIKE ? OR LOWER(name) LIKE ?",
-          [lowerEmail, lowerEmail, lowerEmail, `${lowerEmail}@%`, `%${lowerEmail}%`]
-        );
-        if (cam) {
-          foundRole = "cam";
-          refId = cam.id;
-          if (cam.email) resolvedEmail = cam.email.toLowerCase();
-        }
-
-        if (!foundRole) {
-          const mentor = await db.get(
+        // ── Parallel role lookup — all 5 tables queried in one round-trip ──
+        const [cam, mentor, student, kam, sme] = await Promise.all([
+          db.get(
+            "SELECT id, email FROM campus_managers WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ? OR LOWER(email) LIKE ? OR LOWER(name) LIKE ?",
+            [lowerEmail, lowerEmail, lowerEmail, `${lowerEmail}@%`, `%${lowerEmail}%`]
+          ),
+          db.get(
             "SELECT id, email FROM mentors WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ? OR LOWER(email) LIKE ? OR LOWER(name) LIKE ?",
             [lowerEmail, lowerEmail, lowerEmail, `${lowerEmail}@%`, `%${lowerEmail}%`]
-          );
-          if (mentor) {
-            foundRole = "mentor";
-            refId = mentor.id;
-            if (mentor.email) resolvedEmail = mentor.email.toLowerCase();
-          }
-        }
-
-        if (!foundRole) {
-          const student = await db.get(
+          ),
+          db.get(
             "SELECT id, email FROM students WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(roll_number) = ? OR LOWER(register_number) = ?",
             [lowerEmail, lowerEmail, lowerEmail, lowerEmail]
-          );
-          if (student) {
-            foundRole = "student";
-            refId = student.id;
-            if (student.email) resolvedEmail = student.email.toLowerCase();
-          }
-        }
-
-        if (!foundRole) {
-          const kam = await db.get(
+          ),
+          db.get(
             "SELECT id, email FROM kam_users WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ?",
             [lowerEmail, lowerEmail, lowerEmail]
-          );
-          if (kam) {
-            foundRole = "kam";
-            refId = kam.id;
-            if (kam.email) resolvedEmail = kam.email.toLowerCase();
-          }
-        }
-
-        if (!foundRole) {
-          const sme = await db.get(
+          ),
+          db.get(
             "SELECT id, email FROM sme_users WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ?",
             [lowerEmail, lowerEmail, lowerEmail]
-          );
-          if (sme) {
-            foundRole = "sme";
-            refId = sme.id;
-            if (sme.email) resolvedEmail = sme.email.toLowerCase();
-          }
+          )
+        ]);
+
+        // Priority: CAM > Mentor > Student > KAM > SME
+        const resolved = cam     ? { role: "cam",     record: cam }
+                       : mentor  ? { role: "mentor",  record: mentor }
+                       : student ? { role: "student", record: student }
+                       : kam     ? { role: "kam",     record: kam }
+                       : sme     ? { role: "sme",     record: sme }
+                       : null;
+
+        let foundRole: string | null = null;
+        let refId: string | null = null;
+        if (resolved) {
+          foundRole = resolved.role;
+          refId = resolved.record.id;
+          if (resolved.record.email) resolvedEmail = resolved.record.email.toLowerCase();
         }
 
         if (foundRole && refId) {

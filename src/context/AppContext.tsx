@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { resolveClassGroupDetailsFromState } from "@/lib/utils";
 import { useToast } from "@/context/ToastContext";
 
@@ -354,12 +354,15 @@ interface AppContextProps {
   mentors: Mentor[];
   slots: Slot[];
   requests: HandoverRequest[];
+  setRequests: React.Dispatch<React.SetStateAction<HandoverRequest[]>>;
   approvedHandovers: ApprovedHandover[];
   auditLogs: AuditLog[];
   subjectsList: Subject[];
   colleges: College[];
   smes: any[];
+  smeAvailability: any[];
   demoSessions: any[];
+  setDemoSessions: React.Dispatch<React.SetStateAction<any[]>>;
   demoRules: any[];
   demoSwapRequests: any[];
   currentRole: Role;
@@ -430,6 +433,8 @@ interface AppContextProps {
   deleteDemoSession: (sessionId: string) => Promise<{ success: boolean; message: string }>;
   requestDemoSwap: (payload: any) => Promise<{ success: boolean; message: string }>;
   resolveDemoSwap: (requestId: string, status: "approved" | "rejected" | "pending_sme") => Promise<{ success: boolean; message: string }>;
+  saveSmeAvailability: (smeId: string, windows: any[], day?: string) => Promise<{ success: boolean; error?: string }>;
+  deleteSmeAvailabilityWindow: (id: string) => Promise<{ success: boolean; error?: string }>;
   createDemoRule: (subject: string, week: number, target: number) => Promise<{ success: boolean; message: string }>;
   deleteDemoRule: (id: string) => Promise<{ success: boolean; message: string }>;
   generateTimetable: (
@@ -655,6 +660,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [approvals, setApprovals] = useState<any[]>([]);
   const [leaveBalances, setLeaveBalances] = useState<any[]>([]);
   const [smes, setSmes] = useState<any[]>([]);
+  const [smeAvailability, setSmeAvailability] = useState<any[]>([]);
   const [demoSessions, setDemoSessions] = useState<any[]>([]);
   const [demoRules, setDemoRules] = useState<any[]>([]);
   const [demoSwapRequests, setDemoSwapRequests] = useState<any[]>([]);
@@ -747,13 +753,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       startLoading("Fetching live database data…");
     }
     try {
-      const role = localStorage.getItem("fp_current_role") || "";
+      let role = (typeof window !== "undefined" ? localStorage.getItem("fp_current_role") : null) || currentRole || "admin";
+      if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) {
+        role = "admin";
+      }
       let userId = "";
-      if (role === "admin") userId = localStorage.getItem("fp_admin_id") || "";
-      else if (role === "kam") userId = localStorage.getItem("fp_kam_id") || "";
-      else if (role === "cam") userId = localStorage.getItem("fp_cam_id") || "";
-      else if (role === "mentor") userId = localStorage.getItem("fp_mentor_id") || "";
-      else if (role === "student") userId = localStorage.getItem("fp_student_id") || "";
+      if (role === "admin") userId = (typeof window !== "undefined" ? localStorage.getItem("fp_admin_id") : "") || "admin_1";
+      else if (role === "kam") userId = (typeof window !== "undefined" ? localStorage.getItem("fp_kam_id") : "") || "";
+      else if (role === "cam") userId = (typeof window !== "undefined" ? localStorage.getItem("fp_cam_id") : "") || "";
+      else if (role === "mentor") userId = (typeof window !== "undefined" ? localStorage.getItem("fp_mentor_id") : "") || "";
+      else if (role === "student") userId = (typeof window !== "undefined" ? localStorage.getItem("fp_student_id") : "") || "";
 
       const res = await fetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}&_t=${Date.now()}`, {
         cache: "no-store",
@@ -788,6 +797,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSubjectGroups(data.subjectGroups || []);
         setDemoRules(data.demoRules || []);
         setSignupRequests(data.signupRequests || []);
+        if (data.smeAvailability) setSmeAvailability(data.smeAvailability);
 
         if (data.demoSwapRequests) setDemoSwapRequests(data.demoSwapRequests);
         if (data.kamTasks) setKamTasks(data.kamTasks);
@@ -1137,14 +1147,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const assignSlot = async (mentorId: string, day: string, time: string, course: string, location: string, classGroup?: string) => {
     const actorName = currentCAM?.name || currentKAM?.name || "System";
     const actorRole = currentRole === "cam" ? "Campus Manager" : "Key Account Manager";
+    const cleanLocation = location.trim();
+    const cleanClassGroup = classGroup ? classGroup.trim() : "General";
     const res = await fetch("/api/slots", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mentorId, day, time, course, location, actorName, actorRole, shift: currentShift, classGroup })
+      body: JSON.stringify({ mentorId, day, time, course, location: cleanLocation, actorName, actorRole, shift: currentShift, classGroup: cleanClassGroup })
     });
     const data = await res.json();
     if (data.success) {
-      await refreshData();
+      const newSlot: Slot = {
+        id: data.slot?.id || `s_${Date.now()}`,
+        mentorId,
+        day,
+        time,
+        course,
+        location: cleanLocation,
+        shift: currentShift,
+        classGroup: cleanClassGroup,
+        college_id: currentCAM?.college_id || colleges[0]?.id || "college_1"
+      };
+      setSlots(prev => [...prev, newSlot]);
     } else {
       throw new Error(data.message || "Failed to assign slot");
     }
@@ -1158,7 +1181,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     const data = await res.json();
     if (data.success) {
-      await refreshData();
+      setSlots(prev => prev.filter(s => s.id !== slotId));
     } else {
       throw new Error(data.message || "Failed to delete slot");
     }
@@ -1175,14 +1198,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): Promise<{ success: boolean; message?: string }> => {
     const actorName = currentCAM?.name || currentKAM?.name || currentMentor?.name || "System";
     const actorRole = currentRole === "cam" ? "Campus Manager" : currentRole === "kam" ? "Key Account Manager" : "Mentor";
+    const cleanLocation = location.trim();
     const res = await fetch("/api/slots", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: slotId, mentorId, day, time, course, location, actorName, actorRole, shift: currentShift, classGroup })
+      body: JSON.stringify({ id: slotId, mentorId, day, time, course, location: cleanLocation, actorName, actorRole, shift: currentShift, classGroup: classGroup ? classGroup.trim() : undefined })
     });
     const data = await res.json();
     if (data.success) {
-      await refreshData();
+      setSlots(prev => prev.map(s => s.id === slotId ? { ...s, mentorId, day, time, course, location: cleanLocation, classGroup: classGroup ? classGroup.trim() : s.classGroup } : s));
       return { success: true };
     } else {
       return { success: false, message: data.message || "Failed to update slot" };
@@ -1304,7 +1328,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     const data = await res.json();
     if (data.success) {
-      await refreshData();
+      const newSession = data.session || {
+        id: `demo_${Date.now()}`,
+        mentor_id: mentorId,
+        mentor_name: mentorName,
+        sme_id: smeId,
+        sme_name: smeName,
+        date_str: dateStr,
+        time_slot: timeSlot,
+        subject,
+        stream,
+        week_number: week,
+        status: "booked",
+        created_at: new Date().toISOString()
+      };
+      setDemoSessions(prev => [newSession, ...prev]);
       return { success: true, message: data.message || "Demo allocated successfully!" };
     } else {
       return { success: false, message: data.message || "Failed to allocate demo." };
@@ -1326,7 +1364,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     const data = await res.json();
     if (data.success) {
-      await refreshData();
+      setDemoSessions(prev => prev.map(s => s.id === sessionId ? { ...s, marks, comments, status: "evaluated" } : s));
       return { success: true, message: data.message || "Evaluation saved successfully!" };
     } else {
       return { success: false, message: data.message || "Failed to save evaluation." };
@@ -1342,7 +1380,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        if (data.sessions && Array.isArray(data.sessions)) {
+          setDemoSessions(prev => [...data.sessions, ...prev]);
+        }
         return { success: true, message: data.message || "Bulk demos allocated successfully!" };
       }
       return { success: false, message: data.message || "Failed to allocate bulk demos." };
@@ -1360,7 +1400,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setDemoSessions(prev => prev.map(s => s.id === sessionId ? { ...s, date_str: dateStr, time_slot: timeSlot, sme_id: smeId, sme_name: smeName } : s));
         return { success: true, message: data.message || "Demo session updated successfully." };
       }
       return { success: false, message: data.message || "Failed to update demo session." };
@@ -1378,7 +1418,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setDemoSessions(prev => {
+          const s1 = prev.find(s => s.id === session1Id);
+          const s2 = prev.find(s => s.id === session2Id);
+          if (!s1 || !s2) return prev;
+          return prev.map(s => {
+            if (s.id === session1Id) return { ...s, date_str: s2.date_str, time_slot: s2.time_slot, sme_id: s2.sme_id, sme_name: s2.sme_name };
+            if (s.id === session2Id) return { ...s, date_str: s1.date_str, time_slot: s1.time_slot, sme_id: s1.sme_id, sme_name: s1.sme_name };
+            return s;
+          });
+        });
         return { success: true, message: data.message || "Demo sessions swapped successfully." };
       }
       return { success: false, message: data.message || "Failed to swap demo sessions." };
@@ -1396,7 +1445,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        if (data.request) {
+          setDemoSwapRequests(prev => [data.request, ...prev]);
+        }
         return { success: true, message: data.message || "Demo swap requested successfully." };
       }
       return { success: false, message: data.message || "Failed to request demo swap." };
@@ -1414,7 +1465,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setDemoSwapRequests(prev => prev.map(r => r.id === requestId ? { ...r, status } : r));
         return { success: true, message: data.message || `Demo swap request ${status} successfully.` };
       }
       return { success: false, message: data.message || "Failed to resolve swap request." };
@@ -1430,7 +1481,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setDemoSessions(prev => prev.filter(s => s.id !== sessionId));
         return { success: true, message: data.message || "Demo session deleted successfully." };
       }
       return { success: false, message: data.message || "Failed to delete demo session." };
@@ -1448,7 +1499,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        if (data.rule) {
+          setDemoRules(prev => [data.rule, ...prev]);
+        } else {
+          setDemoRules(prev => [{ id: `dr_${Date.now()}`, subject, week_number: week, target_demos: target }, ...prev]);
+        }
         return { success: true, message: data.message || "Rule created successfully!" };
       }
       return { success: false, message: data.message || "Failed to create rule." };
@@ -1466,7 +1521,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setDemoRules(prev => prev.filter(r => r.id !== id));
         return { success: true, message: data.message || "Rule deleted successfully." };
       }
       return { success: false, message: data.message || "Failed to delete rule." };
@@ -1484,7 +1539,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        if (data.group) {
+          setSubjectGroups(prev => [...prev, data.group]);
+        } else {
+          setSubjectGroups(prev => [...prev, { id: `sg_${Date.now()}`, name, description, lead_sme_id, lead_sme_name }]);
+        }
         return { success: true, message: data.message };
       }
       return { success: false, message: data.message || "Failed to create subject group." };
@@ -1502,7 +1561,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setSubjectGroups(prev => prev.map(g => g.id === id ? { ...g, name, description, lead_sme_id, lead_sme_name } : g));
         return { success: true, message: data.message };
       }
       return { success: false, message: data.message || "Failed to update subject group." };
@@ -1518,7 +1577,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setSubjectGroups(prev => prev.filter(g => g.id !== id));
         return { success: true, message: data.message };
       }
       return { success: false, message: data.message || "Failed to delete subject group." };
@@ -1536,7 +1595,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setSmes(prev => prev.map(s => s.id === id ? { ...s, subject } : s));
         return { success: true, message: data.message };
       }
       return { success: false, message: data.message || "Failed to update SME subject group." };
@@ -1554,7 +1613,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setSmes(prev => [...prev, { id, name, email, subject: subject || null }]);
         return { success: true, message: data.message };
       }
       return { success: false, message: data.message || "Failed to create SME." };
@@ -1572,7 +1631,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setSmes(prev => prev.map(s => s.id === id ? { ...s, name, email, subject: subject || s.subject } : s));
         return { success: true, message: data.message };
       }
       return { success: false, message: data.message || "Failed to update SME." };
@@ -1588,7 +1647,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setSmes(prev => prev.filter(s => s.id !== id));
         return { success: true, message: data.message };
       }
       return { success: false, message: data.message || "Failed to delete SME." };
@@ -1846,7 +1905,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setStudentAttendance(prev => {
+          const idx = prev.findIndex(a => a.studentId === studentId && a.slotId === slotId && a.dateStr === dateStr);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], status: newStatus as any };
+            return updated;
+          }
+          return [...prev, {
+            id: `att_${Date.now()}_${studentId}`,
+            studentId,
+            slotId,
+            dateStr,
+            status: newStatus as any,
+            timestamp: new Date().toISOString()
+          }];
+        });
         return { success: true, message: data.message };
       } else {
         return { success: false, message: data.message || "Failed to correct attendance." };
@@ -1873,7 +1947,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        const newReq = {
+          id: data.requestId || `lr_${Date.now()}`,
+          studentId: currentStudent.id,
+          studentName: currentStudent.name,
+          classGroup: currentStudent.classGroup,
+          type,
+          dateStr,
+          reason,
+          status: "pending",
+          timestamp: new Date().toISOString()
+        };
+        setLeaveRequests(prev => [newReq, ...prev]);
         return { success: true };
       } else {
         return { success: false, message: data.message || "Failed to submit leave request" };
@@ -1898,7 +1983,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setLeaveRequests(prev => prev.map(r => r.id === requestId ? { ...r, status, approvedBy: actorName } : r));
         return { success: true };
       } else {
         return { success: false, message: data.message || "Failed to resolve leave request" };
@@ -1925,8 +2010,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-
-
   const createMentor = async (mentorData: Omit<Mentor, "role">) => {
     try {
       const res = await fetch("/api/mentors", {
@@ -1936,7 +2019,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        const newM: Mentor = {
+          ...mentorData,
+          id: data.mentor?.id || mentorData.id || `m_${Date.now()}`,
+          role: "mentor",
+          avatar: mentorData.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${mentorData.name}`
+        };
+        setMentors(prev => [...prev, newM]);
       }
       return data;
     } catch (e: any) {
@@ -1953,7 +2042,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        if (data.mentors && Array.isArray(data.mentors)) {
+          setMentors(prev => [...prev, ...data.mentors]);
+        }
       }
       return data;
     } catch (e: any) {
@@ -1970,7 +2061,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setMentors(prev => prev.map(m => m.id === mentorData.id ? { ...m, ...mentorData } : m));
       }
       return data;
     } catch (e: any) {
@@ -1985,7 +2076,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setMentors(prev => prev.filter(m => m.id !== id));
       }
       return data;
     } catch (e: any) {
@@ -2261,7 +2352,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setSlots(prev => {
+          const filtered = prev.filter(s => !(s.classGroup && s.classGroup.toLowerCase() === classGroup.toLowerCase() && (!targetCollegeId || s.college_id === targetCollegeId)));
+          const newSlots = generatedSlots.map((s, idx) => ({
+            ...s,
+            id: s.id || `gen_s_${Date.now()}_${idx}`,
+            college_id: targetCollegeId
+          }));
+          return [...filtered, ...newSlots];
+        });
         return { success: true, message: data.message || "Timetable generated successfully.", count: generatedSlots.length, unscheduled };
       } else {
         return { success: false, message: data.message || "Bulk import failed." };
@@ -2282,7 +2381,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setSlots(prev => prev.filter(s => !(s.classGroup && s.classGroup.toLowerCase() === classGroup.toLowerCase() && (!targetCollegeId || s.college_id === targetCollegeId))));
         return { success: true, message: data.message || `Timetable for ${classGroup} cleared successfully.` };
       } else {
         return { success: false, message: data.message || "Failed to clear timetable." };
@@ -2307,7 +2406,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else if (data.subject) {
           setSubjectsList(prev => [...prev, data.subject]);
         }
-        await refreshData();
       }
       return data;
     } catch (e: any) {
@@ -2325,7 +2423,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success) {
         setSubjectsList(prev => prev.map(s => s.id === subjectData.id ? { ...s, ...subjectData } : s));
-        await refreshData();
       }
       return data;
     } catch (e: any) {
@@ -2341,7 +2438,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success) {
         setSubjectsList(prev => prev.filter(s => s.id !== id));
-        await refreshData();
       }
       return data;
     } catch (e: any) {
@@ -2358,7 +2454,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        if (data.college) {
+          setColleges(prev => [...prev, data.college]);
+        }
       }
       return data;
     } catch (e: any) {
@@ -2375,7 +2473,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setColleges(prev => prev.map(c => c.id === collegeData.id ? { ...c, ...collegeData } : c));
       }
       return data;
     } catch (e: any) {
@@ -2390,7 +2488,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setColleges(prev => prev.filter(c => c.id !== id));
       }
       return data;
     } catch (e: any) {
@@ -2406,9 +2504,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify(kamData)
       });
       const data = await res.json();
-      if (data.success) {
-        await refreshData();
-      }
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -2423,9 +2518,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify(kamData)
       });
       const data = await res.json();
-      if (data.success) {
-        await refreshData();
-      }
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -2438,9 +2530,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: "DELETE"
       });
       const data = await res.json();
-      if (data.success) {
-        await refreshData();
-      }
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -2455,8 +2544,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify(camData)
       });
       const data = await res.json();
-      if (data.success) {
-        await refreshData();
+      if (data.success && camData.college_id) {
+        setColleges(prev => prev.map(c => c.id === camData.college_id ? { ...c, cam_id: camData.id, cam_name: camData.name, cam_email: camData.email } : c));
       }
       return data;
     } catch (e: any) {
@@ -2472,8 +2561,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify(camData)
       });
       const data = await res.json();
-      if (data.success) {
-        await refreshData();
+      if (data.success && camData.college_id) {
+        setColleges(prev => prev.map(c => c.id === camData.college_id ? { ...c, cam_id: camData.id, cam_name: camData.name, cam_email: camData.email } : c));
       }
       return data;
     } catch (e: any) {
@@ -2487,9 +2576,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: "DELETE"
       });
       const data = await res.json();
-      if (data.success) {
-        await refreshData();
-      }
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -2515,7 +2601,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return [...prev, data.course];
           });
         }
-        await refreshData();
       }
       return data;
     } catch (e: any) {
@@ -2537,7 +2622,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.success) {
         const updatedCourse = data.course || course;
         setDepartmentsList(prev => prev.map(d => (d.id === course.id || d.name.toLowerCase() === course.name.toLowerCase()) ? { ...d, ...updatedCourse } : d));
-        await refreshData();
       }
       return data;
     } catch (e: any) {
@@ -2557,7 +2641,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setStudents(prev => prev.map(s => s.id === student.id ? { ...s, ...student } : s));
       }
       return data;
     } catch (e: any) {
@@ -2575,7 +2659,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setStudents(prev => prev.filter(s => s.id !== id));
       }
       return data;
     } catch (e: any) {
@@ -2596,7 +2680,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        const idSet = new Set(ids);
+        setStudents(prev => prev.filter(s => !idSet.has(s.id)));
       }
       return data;
     } catch (e: any) {
@@ -2615,7 +2700,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success) {
         setDepartmentsList(prev => prev.filter(d => d.id !== id && d.name !== id));
-        await refreshData();
       }
       return data;
     } catch (e: any) {
@@ -2991,7 +3075,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        if (data.task) {
+          setKamTasks(prev => {
+            const exists = prev.some(t => t.id === data.task.id);
+            if (exists) {
+              return prev.map(t => t.id === data.task.id ? data.task : t);
+            }
+            return [data.task, ...prev];
+          });
+        }
         return { success: true, task: data.task };
       }
       return { success: false, message: data.message || "Failed to save task" };
@@ -3005,7 +3097,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await fetch(`/api/tasks?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setKamTasks(prev => prev.filter(t => t.id !== id));
         return { success: true };
       }
       return { success: false, message: data.message || "Failed to delete task" };
@@ -3023,7 +3115,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        if (data.issue) {
+          setCampusIssues(prev => {
+            const exists = prev.some(i => i.id === data.issue.id);
+            if (exists) {
+              return prev.map(i => i.id === data.issue.id ? data.issue : i);
+            }
+            return [data.issue, ...prev];
+          });
+        }
         return { success: true, issue: data.issue };
       }
       return { success: false, message: data.message || "Failed to save issue" };
@@ -3041,7 +3141,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setCampusIssues(prev => prev.map(i => i.id === id ? { ...i, ...(status ? { status } : {}), ...(resolvedAt !== undefined ? { resolved_at: resolvedAt } : {}), ...(escalated !== undefined ? { escalated: escalated ? 1 : 0 } : {}), ...(escalatedAt !== undefined ? { escalated_at: escalatedAt } : {}) } : i));
         return { success: true };
       }
       return { success: false, message: data.message || "Failed to update issue status" };
@@ -3055,7 +3155,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await fetch(`/api/issues?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setCampusIssues(prev => prev.filter(i => i.id !== id));
         return { success: true };
       }
       return { success: false, message: data.message || "Failed to delete issue" };
@@ -3073,7 +3173,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setAcademicYears(prev => prev.includes(yearName) ? prev : [...prev, yearName]);
         return { success: true };
       }
       return { success: false, message: data.message || "Failed to save year" };
@@ -3087,7 +3187,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await fetch(`/api/academic-calendar?type=year&value=${encodeURIComponent(yearName)}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setAcademicYears(prev => prev.filter(y => y !== yearName));
         return { success: true };
       }
       return { success: false, message: data.message || "Failed to delete year" };
@@ -3105,8 +3205,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
-        return { success: true, event: data.event };
+        const savedEvent = data.event || event;
+        setAcademicEvents(prev => {
+          const exists = prev.some(e => e.id === savedEvent.id);
+          if (exists) {
+            return prev.map(e => e.id === savedEvent.id ? savedEvent : e);
+          }
+          return [...prev, savedEvent];
+        });
+        return { success: true, event: savedEvent };
       }
       return { success: false, message: data.message || "Failed to save event" };
     } catch (e: any) {
@@ -3119,7 +3226,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await fetch(`/api/academic-calendar?type=event&value=${encodeURIComponent(id)}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setAcademicEvents(prev => prev.filter(e => e.id !== id));
         return { success: true };
       }
       return { success: false, message: data.message || "Failed to delete event" };
@@ -3137,7 +3244,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setFacultyWorkloadLimits(prev => ({ ...prev, [mentorId]: maxHours }));
+        if (shift) {
+          setFacultyShifts(prev => ({ ...prev, [mentorId]: shift }));
+        }
         return { success: true };
       }
       return { success: false, message: data.message || "Failed to save config" };
@@ -3155,7 +3265,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
         return { success: true, message: data.message };
       }
       return { success: false, message: data.message || "Failed to submit signup request" };
@@ -3173,7 +3282,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setSignupRequests(prev => prev.map(r => r.id === id ? { ...r, status: "approved" } : r));
         return { success: true, message: data.message };
       }
       return { success: false, message: data.message || "Failed to approve request" };
@@ -3191,7 +3300,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setSignupRequests(prev => prev.map(r => r.id === id ? { ...r, status: "rejected" } : r));
         return { success: true, message: data.message };
       }
       return { success: false, message: data.message || "Failed to reject request" };
@@ -3207,7 +3316,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        await refreshData();
+        setSignupRequests(prev => prev.filter(r => r.id !== id));
         return { success: true, message: data.message };
       }
       return { success: false, message: data.message || "Failed to delete request" };
@@ -3216,175 +3325,268 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const saveSmeAvailabilityHandler = async (smeId: string, windows: any[], day?: string) => {
+    try {
+      const res = await fetch("/api/sme-availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ smeId, windows, day })
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.availability) {
+          setSmeAvailability(data.availability);
+        }
+        return { success: true };
+      }
+      return { success: false, error: data.error };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  };
+
+  const deleteSmeAvailabilityWindowHandler = async (id: string) => {
+    try {
+      const res = await fetch(`/api/sme-availability?id=${encodeURIComponent(id)}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSmeAvailability(prev => prev.filter(a => a.id !== id));
+        return { success: true };
+      }
+      return { success: false, error: data.error };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  };
+
+  const resolveApprovalHandler = async (approvalId: string, status: "approved" | "rejected", remarks = "") => {
+    try {
+      const res = await fetch("/api/approvals", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          approval_id: approvalId,
+          status,
+          approver_id: "cm_curr",
+          approver_name: "Campus Manager",
+          remarks,
+          rejection_reason: remarks
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setApprovals(prev => prev.map(a => a.id === approvalId ? { ...a, current_status: status, remarks } : a));
+        return { success: true, message: data.message };
+      }
+      return { success: false, message: data.message || "Failed to resolve approval" };
+    } catch (err: any) {
+      return { success: false, message: err.message || "Network error" };
+    }
+  };
+
+  const contextValue = useMemo(() => ({
+    mentors,
+    slots,
+    requests,
+    approvedHandovers,
+    auditLogs,
+    subjectsList,
+    colleges,
+    smes,
+    demoSessions,
+    demoRules,
+    demoSwapRequests,
+    currentRole,
+    currentMentor,
+    currentHR,
+    currentCAM,
+    currentKAM,
+    currentAdmin,
+    currentSME,
+    timeSlots: customShiftTimeSlots[currentShift] || [],
+    daysOfWeek: DAYS_OF_WEEK,
+    weekDates,
+    weekOffset,
+    setWeekOffset,
+    isLoading,
+    isDataLoading,
+    currentShift,
+    setCurrentShift,
+    shiftTimeSlots: customShiftTimeSlots,
+    getTimeSlots,
+    setRole,
+    assignSlot,
+    deleteSlot,
+    updateSlot,
+    requestHandover,
+    requestSwapCompensate,
+    requestBooking,
+    handleRequest,
+    cancelRequest,
+    setRequests,
+    importCSV,
+    clearAllData,
+    createMentor,
+    bulkImportMentors,
+    updateMentor,
+    deleteMentor,
+    bookDemoSession,
+    evaluateDemoSession,
+    correctStudentAttendance,
+    bulkBookDemoSessions,
+    updateDemoSession,
+    swapDemoSessions,
+    deleteDemoSession,
+    setDemoSessions,
+    requestDemoSwap,
+    resolveDemoSwap,
+    generateTimetable,
+    clearTimetable,
+    createSubject,
+    updateSubject,
+    deleteSubject,
+    createCollege,
+    updateCollege,
+    deleteCollege,
+    createKAM,
+    updateKAM,
+    deleteKAM,
+    createCAM,
+    updateCAM,
+    deleteCAM,
+    departmentsList,
+    coursesList,
+    createDepartment,
+    createCourse,
+    updateDepartment,
+    updateCourse,
+    deleteDepartment,
+    deleteCourse,
+    refreshData,
+    refreshAttendance,
+    students,
+    updateStudent,
+    deleteStudent,
+    bulkDeleteStudents,
+    studentAttendance,
+    setStudentAttendance,
+    currentStudent,
+    markAttendance,
+    leaveRequests,
+    holidays,
+    requestLeave,
+    handleLeaveRequest,
+    weeklyTasks,
+    studentTracker,
+    academicTracker,
+    saveAcademicTrackerEntry,
+    deleteAcademicTrackerEntry,
+    interviews,
+    interviewEvaluations,
+    approvals,
+    leaveBalances,
+    resolveApproval: resolveApprovalHandler,
+    addInterview,
+    deleteInterview,
+    assignWeeklyTask,
+    gradeStudentTask,
+    deleteWeeklyTask,
+    weeklyAcademicTasks,
+    studentAcademicTracker,
+    assignWeeklyAcademicTask,
+    gradeStudentAcademicTask,
+    bulkUploadAcademicMarks,
+    deleteWeeklyAcademicTask,
+    subjectGroups,
+    createSubjectGroup,
+    updateSubjectGroup,
+    deleteSubjectGroup,
+    updateSmeSubjectGroup,
+    createSmeUser,
+    updateSmeUser,
+    deleteSmeUser,
+    createDemoRule,
+    deleteDemoRule,
+    smeAvailability,
+    saveSmeAvailability: saveSmeAvailabilityHandler,
+    deleteSmeAvailabilityWindow: deleteSmeAvailabilityWindowHandler,
+    kamTasks,
+    campusIssues,
+    academicYears,
+    academicEvents,
+    facultyWorkloadLimits,
+    facultyShifts,
+    saveKamTask,
+    deleteKamTask,
+    saveCampusIssue,
+    updateCampusIssueStatus,
+    deleteCampusIssue,
+    saveAcademicYear,
+    deleteAcademicYear,
+    saveAcademicEvent,
+    deleteAcademicEvent,
+    saveFacultyConfig,
+    signupRequests,
+    submitSignupRequest,
+    approveSignupRequest,
+    rejectSignupRequest,
+    deleteSignupRequest
+  }), [
+    mentors,
+    slots,
+    requests,
+    approvedHandovers,
+    auditLogs,
+    subjectsList,
+    colleges,
+    smes,
+    demoSessions,
+    demoRules,
+    demoSwapRequests,
+    currentRole,
+    currentMentor,
+    currentHR,
+    currentCAM,
+    currentKAM,
+    currentAdmin,
+    currentSME,
+    customShiftTimeSlots,
+    currentShift,
+    weekDates,
+    weekOffset,
+    isLoading,
+    isDataLoading,
+    departmentsList,
+    coursesList,
+    students,
+    studentAttendance,
+    currentStudent,
+    leaveRequests,
+    holidays,
+    weeklyTasks,
+    studentTracker,
+    academicTracker,
+    interviews,
+    interviewEvaluations,
+    approvals,
+    leaveBalances,
+    weeklyAcademicTasks,
+    studentAcademicTracker,
+    subjectGroups,
+    smeAvailability,
+    kamTasks,
+    campusIssues,
+    academicYears,
+    academicEvents,
+    facultyWorkloadLimits,
+    facultyShifts,
+    signupRequests
+  ]);
+
   return (
-    <AppContext.Provider
-      value={{
-        mentors,
-        slots,
-        requests,
-        approvedHandovers,
-        auditLogs,
-        subjectsList,
-        colleges,
-        smes,
-        demoSessions,
-        demoRules,
-        demoSwapRequests,
-        currentRole,
-        currentMentor,
-        currentHR,
-        currentCAM,
-        currentKAM,
-        currentAdmin,
-        currentSME,
-        timeSlots: customShiftTimeSlots[currentShift],
-        daysOfWeek: DAYS_OF_WEEK,
-        weekDates,
-        weekOffset,
-        setWeekOffset,
-        isLoading,
-        isDataLoading,
-        currentShift,
-        setCurrentShift,
-        shiftTimeSlots: customShiftTimeSlots,
-        getTimeSlots,
-        setRole,
-        assignSlot,
-        deleteSlot,
-        updateSlot,
-        requestHandover,
-        requestSwapCompensate,
-        requestBooking,
-        handleRequest,
-        cancelRequest,
-        importCSV,
-        clearAllData,
-        createMentor,
-        bulkImportMentors,
-        updateMentor,
-        deleteMentor,
-        bookDemoSession,
-        evaluateDemoSession,
-        correctStudentAttendance,
-        bulkBookDemoSessions,
-        updateDemoSession,
-        swapDemoSessions,
-        deleteDemoSession,
-        requestDemoSwap,
-        resolveDemoSwap,
-        generateTimetable,
-        clearTimetable,
-        createSubject,
-        updateSubject,
-        deleteSubject,
-        createCollege,
-        updateCollege,
-        deleteCollege,
-        createKAM,
-        updateKAM,
-        deleteKAM,
-        createCAM,
-        updateCAM,
-        deleteCAM,
-        departmentsList,
-        coursesList,
-        createDepartment,
-        createCourse,
-        updateDepartment,
-        updateCourse,
-        deleteDepartment,
-        deleteCourse,
-        refreshData,
-        refreshAttendance,
-        students,
-        updateStudent,
-        deleteStudent,
-        bulkDeleteStudents,
-        studentAttendance,
-        setStudentAttendance,
-        currentStudent,
-        markAttendance,
-        leaveRequests,
-        holidays,
-        requestLeave,
-        handleLeaveRequest,
-        weeklyTasks,
-        studentTracker,
-        academicTracker,
-        saveAcademicTrackerEntry,
-        deleteAcademicTrackerEntry,
-        interviews,
-        interviewEvaluations,
-        approvals,
-        leaveBalances,
-        resolveApproval: async (approvalId: string, status: "approved" | "rejected", remarks = "") => {
-          try {
-            const res = await fetch("/api/approvals", {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                approval_id: approvalId,
-                status,
-                approver_id: "cm_curr",
-                approver_name: "Campus Manager",
-                remarks,
-                rejection_reason: remarks
-              })
-            });
-            const data = await res.json();
-            if (data.success) {
-              setApprovals(prev => prev.map(a => a.id === approvalId ? { ...a, current_status: status, remarks } : a));
-              return { success: true, message: data.message };
-            }
-            return { success: false, message: data.message || "Failed to resolve approval" };
-          } catch (err: any) {
-            return { success: false, message: err.message || "Network error" };
-          }
-        },
-        addInterview,
-        deleteInterview,
-        assignWeeklyTask,
-        gradeStudentTask,
-        deleteWeeklyTask,
-        weeklyAcademicTasks,
-        studentAcademicTracker,
-        assignWeeklyAcademicTask,
-        gradeStudentAcademicTask,
-        bulkUploadAcademicMarks,
-        deleteWeeklyAcademicTask,
-        subjectGroups,
-        createSubjectGroup,
-        updateSubjectGroup,
-        deleteSubjectGroup,
-        updateSmeSubjectGroup,
-        createSmeUser,
-        updateSmeUser,
-        deleteSmeUser,
-        createDemoRule,
-        deleteDemoRule,
-        kamTasks,
-        campusIssues,
-        academicYears,
-        academicEvents,
-        facultyWorkloadLimits,
-        facultyShifts,
-        saveKamTask,
-        deleteKamTask,
-        saveCampusIssue,
-        updateCampusIssueStatus,
-        deleteCampusIssue,
-        saveAcademicYear,
-        deleteAcademicYear,
-        saveAcademicEvent,
-        deleteAcademicEvent,
-        saveFacultyConfig,
-        signupRequests,
-        submitSignupRequest,
-        approveSignupRequest,
-        rejectSignupRequest,
-        deleteSignupRequest
-      }}
-    >
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   );

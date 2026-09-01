@@ -948,6 +948,18 @@ export async function seedDatabase() {
       head_subject_group TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS sme_availability (
+      id TEXT PRIMARY KEY,
+      sme_id TEXT NOT NULL,
+      day_of_week TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (sme_id) REFERENCES sme_users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS demo_sessions (
       id TEXT PRIMARY KEY,
       mentorId TEXT NOT NULL,
@@ -1059,7 +1071,20 @@ export async function seedDatabase() {
     ["sme_3", "Mr. Tharun Balaji", "tharun.sme@zentra.edu", "Technical"]
   );
 
-  // No default mock subject_groups seeded
+  // Seed default availability windows for active SMEs if empty
+  const weekDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+  const allSmes = await db.all("SELECT id FROM sme_users");
+  for (const s of allSmes) {
+    const existing = await db.get("SELECT COUNT(*) as count FROM sme_availability WHERE sme_id = ?", s.id);
+    if (!existing || existing.count === 0) {
+      for (const d of weekDays) {
+        await db.run(
+          "INSERT OR IGNORE INTO sme_availability (id, sme_id, day_of_week, start_time, end_time, is_active) VALUES (?, ?, ?, ?, ?, 1)",
+          [`sme_avail_${s.id}_${d.toLowerCase()}_1`, s.id, d, "09:00 AM", "05:30 PM"]
+        );
+      }
+    }
+  }
 
 
 

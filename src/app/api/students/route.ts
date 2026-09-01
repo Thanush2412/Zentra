@@ -4,6 +4,7 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { hashPassword } from "@/lib/auth";
 
 export async function PUT(request: Request) {
   try {
@@ -141,52 +142,23 @@ export async function POST(request: Request) {
     const students = Array.isArray(body) ? body : [body];
     const nowStr = new Date().toISOString();
 
+    // Normalize all student records first
+    const normalizedStudents: any[] = [];
     for (const student of students) {
       const {
-        id: rawId,
-        name,
-        email,
-        classGroup,
-        section,
-        department,
-        college_id,
-        register_number,
-        roll_number,
-        hire_score,
-        efset_score,
-        mother_name,
-        father_name,
-        pan_number,
-        tenth_mark,
-        eleventh_mark,
-        twelfth_mark,
-        academic_group,
-        medium,
-        blood_group,
-        dob,
-        phone,
-        parent_phone,
-        aadhar_number,
-        linkedin_link,
-        github_id,
-        project_drive_link,
-        hackerrank_link,
-        leetcode_link,
-        figma_link,
-        semester,
-        shift
+        id: rawId, name, email, classGroup, section, department, college_id,
+        register_number, roll_number, hire_score, efset_score,
+        mother_name, father_name, pan_number, tenth_mark, eleventh_mark, twelfth_mark,
+        academic_group, medium, blood_group, dob, phone, parent_phone, aadhar_number,
+        linkedin_link, github_id, project_drive_link, hackerrank_link, leetcode_link,
+        figma_link, semester, shift
       } = student;
 
       const stName = (name || "").toString().trim();
+      if (!stName) continue;
+
       let stId = (rawId || roll_number || register_number || (email ? email.split("@")[0] : "")).toString().trim();
-
-      if (!stName) {
-        continue;
-      }
-
-      if (!stId) {
-        stId = "STU_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
-      }
+      if (!stId) stId = "STU_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
 
       const stEmail = (email || `${stId.toLowerCase()}@university.edu`).toString().trim();
       const emailPrefix = stEmail.split("@")[0].toLowerCase();
@@ -194,14 +166,75 @@ export async function POST(request: Request) {
       if (stRoll.toLowerCase() === emailPrefix) stRoll = "";
       let stReg = register_number ? String(register_number).trim() : "";
       if (stReg.toLowerCase() === emailPrefix) stReg = "";
-
-      // Fallback if neither exists: keep clean reg/roll or use raw ID only if valid alphanumeric reg format
       if (!stReg && stRoll) stReg = stRoll;
       if (!stRoll && stReg) stRoll = stReg;
 
-      await db.run(
-        `INSERT OR REPLACE INTO students (
-          id, name, email, classGroup, section, department, college_id, 
+      normalizedStudents.push({
+        stId, stName, stEmail, stReg, stRoll,
+        classGroup: classGroup || "General Class",
+        section: section || null,
+        department: department || "General",
+        college_id: college_id || null,
+        semester: semester || "Semester 1",
+        shift: shift || "General",
+        hire_score: hire_score ? hire_score.toString() : null,
+        efset_score: efset_score ? efset_score.toString() : null,
+        mother_name: mother_name ? mother_name.toString() : null,
+        father_name: father_name ? father_name.toString() : null,
+        pan_number: pan_number ? pan_number.toString() : null,
+        tenth_mark: tenth_mark ? tenth_mark.toString() : null,
+        eleventh_mark: eleventh_mark ? eleventh_mark.toString() : null,
+        twelfth_mark: twelfth_mark ? twelfth_mark.toString() : null,
+        academic_group: academic_group ? academic_group.toString() : null,
+        medium: medium ? medium.toString() : null,
+        blood_group: blood_group ? blood_group.toString() : null,
+        dob: dob ? dob.toString() : null,
+        phone: phone ? phone.toString() : null,
+        parent_phone: parent_phone ? parent_phone.toString() : null,
+        aadhar_number: aadhar_number ? aadhar_number.toString() : null,
+        linkedin_link: linkedin_link ? linkedin_link.toString() : null,
+        github_id: github_id ? github_id.toString() : null,
+        project_drive_link: project_drive_link ? project_drive_link.toString() : null,
+        hackerrank_link: hackerrank_link ? hackerrank_link.toString() : null,
+        leetcode_link: leetcode_link ? leetcode_link.toString() : null,
+        figma_link: figma_link ? figma_link.toString() : null,
+      });
+    }
+
+    if (normalizedStudents.length === 0) {
+      return NextResponse.json({ success: true, message: "No valid students to create." });
+    }
+
+    // ── Batched write: chunk at 30 students to stay under SQLite param limits ──
+    // 30 students × 36 params = 1080 per chunk (safe under 32766 limit)
+    const CHUNK = 30;
+    const batchStatements: { sql: string; args: any[] }[] = [];
+    // Hash the default password once per batch (not per student, for performance)
+    const defaultPasswordHash = hashPassword("password123");
+
+    for (let i = 0; i < normalizedStudents.length; i += CHUNK) {
+      const chunk = normalizedStudents.slice(i, i + CHUNK);
+
+      // Students INSERT — 36 params per row (hashed password)
+      const stPlaceholders = chunk.map(() =>
+        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, ?, ?)"
+      ).join(", ");
+      const stArgs: any[] = [];
+      chunk.forEach(s => {
+        stArgs.push(
+          s.stId, s.stName, s.stEmail, s.classGroup, s.section, s.department, s.college_id,
+          s.stReg, s.stRoll, s.semester, s.shift,
+          s.hire_score, s.efset_score, s.mother_name, s.father_name, s.pan_number,
+          s.tenth_mark, s.eleventh_mark, s.twelfth_mark, s.academic_group,
+          s.medium, s.blood_group, s.dob, s.phone, s.parent_phone, s.aadhar_number,
+          s.linkedin_link, s.github_id, s.project_drive_link, s.hackerrank_link,
+          s.leetcode_link, s.figma_link,
+          defaultPasswordHash, nowStr, nowStr
+        );
+      });
+      batchStatements.push({
+        sql: `INSERT OR REPLACE INTO students (
+          id, name, email, classGroup, section, department, college_id,
           register_number, roll_number, semester, shift,
           hire_score, efset_score, mother_name, father_name, pan_number,
           tenth_mark, eleventh_mark, twelfth_mark, academic_group,
@@ -209,61 +242,25 @@ export async function POST(request: Request) {
           linkedin_link, github_id, project_drive_link, hackerrank_link,
           leetcode_link, figma_link,
           status, password_hash, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', 'password123', ?, ?)`,
-        [
-          stId,
-          stName,
-          stEmail,
-          classGroup || "General Class",
-          section || null,
-          department || "General",
-          college_id || null,
-          stReg,
-          stRoll,
-          semester || "Semester 1",
-          shift || "General",
-          hire_score ? hire_score.toString() : null,
-          efset_score ? efset_score.toString() : null,
-          mother_name ? mother_name.toString() : null,
-          father_name ? father_name.toString() : null,
-          pan_number ? pan_number.toString() : null,
-          tenth_mark ? tenth_mark.toString() : null,
-          eleventh_mark ? eleventh_mark.toString() : null,
-          twelfth_mark ? twelfth_mark.toString() : null,
-          academic_group ? academic_group.toString() : null,
-          medium ? medium.toString() : null,
-          blood_group ? blood_group.toString() : null,
-          dob ? dob.toString() : null,
-          phone ? phone.toString() : null,
-          parent_phone ? parent_phone.toString() : null,
-          aadhar_number ? aadhar_number.toString() : null,
-          linkedin_link ? linkedin_link.toString() : null,
-          github_id ? github_id.toString() : null,
-          project_drive_link ? project_drive_link.toString() : null,
-          hackerrank_link ? hackerrank_link.toString() : null,
-          leetcode_link ? leetcode_link.toString() : null,
-          figma_link ? figma_link.toString() : null,
-          nowStr,
-          nowStr
-        ]
-      );
+        ) VALUES ${stPlaceholders}`,
+        args: stArgs
+      });
 
-      // Also register credential in users table
-      await db.run(
-        `INSERT OR REPLACE INTO users (
-          id, email, password_hash, role, reference_id, created_at, updated_at
-        ) VALUES (?, ?, 'password123', 'student', ?, ?, ?)`,
-        [
-          stId,
-          stEmail,
-          stId,
-          nowStr,
-          nowStr
-        ]
-      );
+      // Users INSERT — 5 params per row (hashed password)
+      const uPlaceholders = chunk.map(() => "(?, ?, ?, 'student', ?, ?, ?)").join(", ");
+      const uArgs: any[] = [];
+      chunk.forEach(s => { uArgs.push(s.stId, s.stEmail, defaultPasswordHash, s.stId, nowStr, nowStr); });
+      batchStatements.push({
+        sql: `INSERT OR REPLACE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at)
+              VALUES ${uPlaceholders}`,
+        args: uArgs
+      });
     }
 
-    return NextResponse.json({ success: true, message: "Students created successfully." });
+    // Execute all inserts as a single atomic batch
+    await db.client.batch(batchStatements, "write");
+
+    return NextResponse.json({ success: true, message: `${normalizedStudents.length} students created successfully.` });
   } catch (error: any) {
     console.error("API POST Students error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
@@ -303,20 +300,29 @@ export async function DELETE(request: Request) {
 
     const placeholders = cleanIds.map(() => "?").join(",");
 
-    // Delete from students table
-    await db.run(`DELETE FROM students WHERE id IN (${placeholders})`, cleanIds);
-
-    // Delete associated student users from users table
-    await db.run(`DELETE FROM users WHERE role = 'student' AND (id IN (${placeholders}) OR reference_id IN (${placeholders}))`, [...cleanIds, ...cleanIds]);
-
-    // Cleanup linked attendance, leave requests, and tracker records
-    try {
-      await db.run(`DELETE FROM student_attendance WHERE studentId IN (${placeholders})`, cleanIds);
-      await db.run(`DELETE FROM leave_requests WHERE studentId IN (${placeholders})`, cleanIds);
-      await db.run(`DELETE FROM student_tracker WHERE studentId IN (${placeholders})`, cleanIds);
-    } catch (err) {
-      console.warn("Minor warning cleaning associated student logs:", err);
-    }
+    // Atomic batch delete — all 5 deletes succeed together or all rollback (no orphaned rows)
+    await db.client.batch([
+      {
+        sql: `DELETE FROM students WHERE id IN (${placeholders})`,
+        args: cleanIds
+      },
+      {
+        sql: `DELETE FROM users WHERE role = 'student' AND (id IN (${placeholders}) OR reference_id IN (${placeholders}))`,
+        args: [...cleanIds, ...cleanIds]
+      },
+      {
+        sql: `DELETE FROM student_attendance WHERE studentId IN (${placeholders})`,
+        args: cleanIds
+      },
+      {
+        sql: `DELETE FROM leave_requests WHERE studentId IN (${placeholders})`,
+        args: cleanIds
+      },
+      {
+        sql: `DELETE FROM student_tracker WHERE student_id IN (${placeholders})`,
+        args: cleanIds
+      }
+    ], "write");
 
     return NextResponse.json({
       success: true,

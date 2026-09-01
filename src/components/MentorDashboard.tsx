@@ -79,7 +79,7 @@ const formatPunchTime = (timeStr?: string | null) => {
 /* ─── Mentor Daily Attendance Punch Widget ─── */
 const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   const { toast } = useToast();
-  const { requests, refreshData, colleges } = useApp();
+  const { requests, setRequests, refreshData, colleges } = useApp();
   const [loading, setLoading] = useState(true);
   const [punchStatus, setPunchStatus] = useState<string>("Not Punched");
   const [punchTime, setPunchTime] = useState<string | null>(null);
@@ -350,7 +350,10 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
                   const json = await res.json();
                   if (json.success) {
                     toast("Late Punch request sent to CAM for approval!", "success");
-                    await refreshData();
+                    // Surgical update: prepend the new request to state without a full reload
+                    if (json.request) {
+                      setRequests(prev => [json.request, ...prev]);
+                    }
                   } else {
                     toast(json.message || "Failed to submit request", "error");
                   }
@@ -1390,8 +1393,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       const data = await res.json();
       if (data.success) {
         toast(`Student request ${status} successfully!`, "success");
-        await fetchStudentLeaveRequests();
-        refreshData();
+        setStudentLeaveRequests(prev => prev.map(r => r.id === requestId ? { ...r, status, approvedBy: currentMentor?.name || "Class Teacher" } : r));
       } else {
         toast(data.message || "Failed to update request.", "error");
       }
@@ -1443,10 +1445,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   };
 
   useEffect(() => {
-    if ((!leaveRequests || leaveRequests.length === 0) && currentMentor?.college_id) {
+    if (currentMentor?.college_id) {
       fetchStudentLeaveRequests();
     }
-  }, [currentMentor?.college_id, leaveRequests]);
+  }, [currentMentor?.college_id]);
 
   // Reset week offset on mount
   useEffect(() => {

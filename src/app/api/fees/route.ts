@@ -34,11 +34,14 @@ export async function GET(request: Request) {
     }
 
     if (role === "fee_manager") {
-      const colleges = await db.all("SELECT * FROM colleges ORDER BY name");
-      const students = await db.all("SELECT id, name, email, classGroup, department, college_id, register_number, phone, batch_start_year, batch_end_year, semester, year FROM students ORDER BY name");
-      const fees = await db.all(`SELECT * FROM student_fees WHERE 1=1 ${dateFilterFees} ORDER BY created_at DESC`, ...dateParams);
-      const payments = await db.all(`SELECT * FROM fee_payments WHERE 1=1 ${dateFilterPayments} ORDER BY payment_date DESC`, ...dateParams);
-      const cams = await db.all("SELECT cm.*, c.name as college_name FROM campus_managers cm JOIN colleges c ON cm.college_id = c.id");
+      // Parallel fetch + LIMIT guard to prevent unbounded memory load
+      const [colleges, students, fees, payments, cams] = await Promise.all([
+        db.all("SELECT * FROM colleges ORDER BY name"),
+        db.all("SELECT id, name, email, classGroup, department, college_id, register_number, phone, batch_start_year, batch_end_year, semester, year FROM students ORDER BY name LIMIT 500"),
+        db.all(`SELECT * FROM student_fees WHERE 1=1 ${dateFilterFees} ORDER BY created_at DESC`, ...dateParams),
+        db.all(`SELECT * FROM fee_payments WHERE 1=1 ${dateFilterPayments} ORDER BY payment_date DESC`, ...dateParams),
+        db.all("SELECT cm.*, c.name as college_name FROM campus_managers cm JOIN colleges c ON cm.college_id = c.id")
+      ]);
 
       const totalFees = fees.reduce((s: number, f: any) => s + f.amount, 0);
       const totalPaid = fees.reduce((s: number, f: any) => s + f.paid_amount, 0);

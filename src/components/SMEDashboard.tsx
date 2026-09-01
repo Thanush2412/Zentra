@@ -31,7 +31,12 @@ import {
   ChevronsRight,
   ChevronRight,
   Activity,
-  UserCheck
+  UserCheck,
+  Plus,
+  Trash2,
+  Save,
+  SlidersHorizontal,
+  CheckSquare
 } from "lucide-react";
 
 type TabKey = "overview" | "demo_list" | "availability" | "reallocation" | "history" | "calendar" | "reallocation_hub";
@@ -84,7 +89,10 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
     demoSwapRequests,
     resolveDemoSwap,
     refreshData,
-    subjectGroups
+    subjectGroups,
+    smeAvailability,
+    saveSmeAvailability,
+    deleteSmeAvailabilityWindow
   } = useApp();
 
   const { toast } = useToast();
@@ -146,6 +154,137 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
   const [swapStep, setSwapStep] = useState<number>(1);
   const [selectedProposedMentor, setSelectedProposedMentor] = useState<any | null>(null);
   const [selectedProposedTime, setSelectedProposedTime] = useState<any | null>(null);
+
+  // Dynamic Availability Editor state
+  const [showAvailModal, setShowAvailModal] = useState(false);
+  const [selectedAvailDay, setSelectedAvailDay] = useState<string>("ALL");
+  const [dayWindows, setDayWindows] = useState<Array<{ id?: string; startTime: string; endTime: string; slotType: "demo" | "training" }>>([
+    { startTime: "09:00 AM", endTime: "05:30 PM", slotType: "demo" }
+  ]);
+  const [isSavingAvail, setIsSavingAvail] = useState(false);
+
+  // Time format conversion helpers
+  const to24Hour = (time12: string) => {
+    if (!time12) return "09:00";
+    const match = time12.match(/^(\d+)(?:\.(\d+)|:(\d+))?\s*(AM|PM)/i);
+    if (!match) return time12.length === 5 ? time12 : "09:00";
+    let hr = parseInt(match[1]);
+    const min = match[2] ? match[2] : (match[3] ? match[3] : "00");
+    const isPm = match[4].toUpperCase() === "PM";
+    if (isPm && hr < 12) hr += 12;
+    if (!isPm && hr === 12) hr = 0;
+    return `${String(hr).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+  };
+
+  const to12Hour = (time24: string) => {
+    if (!time24) return "09:00 AM";
+    const parts = time24.split(":");
+    if (parts.length < 2) return time24;
+    let hr = parseInt(parts[0]);
+    const min = parts[1];
+    const isPm = hr >= 12;
+    if (hr > 12) hr -= 12;
+    if (hr === 0) hr = 12;
+    return `${String(hr).padStart(2, "0")}:${min} ${isPm ? "PM" : "AM"}`;
+  };
+
+  // Helper to parse time string to minutes
+  const parseTimeToMin = (t: string) => {
+    if (!t) return 9999;
+    const str = t.trim();
+    const match = str.match(/^(\d{1,2})(?:[:.](\d{2}))?\s*(AM|PM)?/i);
+    if (!match) return 9999;
+    let hr = parseInt(match[1], 10);
+    const min = match[2] ? parseInt(match[2], 10) : 0;
+    const ampm = match[3] ? match[3].toUpperCase() : null;
+    if (ampm === "PM" && hr < 12) hr += 12;
+    if (ampm === "AM" && hr === 12) hr = 0;
+    return hr * 60 + min;
+  };
+
+  // Auto-prompt availability setup modal on SME login session
+  useEffect(() => {
+    if (!currentSME) return;
+    try {
+      const sessionPromptKey = `fp_sme_prompt_${currentSME.id}`;
+      const alreadyPrompted = sessionStorage.getItem(sessionPromptKey);
+      if (!alreadyPrompted) {
+        setShowAvailModal(true);
+        sessionStorage.setItem(sessionPromptKey, "true");
+      }
+    } catch (_) {}
+  }, [currentSME]);
+
+  // Sync dayWindows whenever selectedAvailDay or smeAvailability changes
+  useEffect(() => {
+    if (!currentSME) return;
+    const targetDay = selectedAvailDay === "ALL" ? "Monday" : selectedAvailDay;
+    const currentSmeWindows = (smeAvailability || [])
+      .filter((a: any) => a.sme_id === currentSME.id && a.day_of_week?.toLowerCase().trim() === targetDay.toLowerCase().trim() && a.is_active !== 0)
+      .map((a: any) => ({
+        id: a.id,
+        startTime: a.start_time || "09:00 AM",
+        endTime: a.end_time || "05:30 PM",
+        slotType: (a.slot_type === "training" ? "training" : "demo") as "demo" | "training"
+      }));
+
+    if (currentSmeWindows.length > 0) {
+      setDayWindows(currentSmeWindows);
+    } else {
+      setDayWindows([{ startTime: "09:00 AM", endTime: "05:30 PM", slotType: "demo" }]);
+    }
+  }, [selectedAvailDay, smeAvailability, currentSME]);
+
+  // Dynamic matrix rows starting strictly from SME's configured earliest start time
+  const matrixTimeSlots = useMemo(() => {
+    const currentSmeWindows = (smeAvailability || []).filter(
+      (a: any) => a.sme_id === currentSME?.id && a.is_active !== 0
+    );
+
+    if (currentSmeWindows.length === 0) {
+      return ["09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "01:30 PM", "02:30 PM", "03:30 PM", "04:30 PM"];
+    }
+
+    // Find min start and max end in minutes across all active windows for this SME
+    let minStart = 9999;
+    let maxEnd = 0;
+    currentSmeWindows.forEach((w: any) => {
+      const s = parseTimeToMin(w.start_time);
+      const e = parseTimeToMin(w.end_time);
+      if (s < minStart) minStart = s;
+      if (e > maxEnd) maxEnd = e;
+    });
+
+    if (minStart >= 9999) minStart = 540; // 09:00 AM
+    if (maxEnd <= 0) maxEnd = 1050; // 05:30 PM
+
+    const slots: string[] = [];
+    for (let m = minStart; m < maxEnd; m += 60) {
+      const nextM = Math.min(m + 60, maxEnd);
+
+      const formatMin = (val: number) => {
+        let hr = Math.floor(val / 60);
+        const min = val % 60;
+        const isPm = hr >= 12;
+        let displayHr = hr > 12 ? hr - 12 : hr;
+        if (displayHr === 0) displayHr = 12;
+        return `${String(displayHr).padStart(2, "0")}:${String(min).padStart(2, "0")} ${isPm ? "PM" : "AM"}`;
+      };
+
+      slots.push(`${formatMin(m)} - ${formatMin(nextM)}`);
+    }
+
+    return slots.length > 0 ? slots : [
+      "09:00 AM - 10:00 AM",
+      "10:00 AM - 11:00 AM",
+      "11:00 AM - 12:00 PM",
+      "12:00 PM - 01:00 PM",
+      "01:30 PM - 02:30 PM",
+      "02:30 PM - 03:30 PM",
+      "03:30 PM - 04:30 PM",
+      "04:30 PM - 05:30 PM"
+    ];
+  }, [smeAvailability, currentSME]);
 
   // Demo List Filters
   const [filterCollege, setFilterCollege] = useState<string>("All");
@@ -311,7 +450,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `SME_Demos_${currentSME.name.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0,10)}.csv`);
+    link.setAttribute("download", `SME_Demos_${currentSME.name.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -501,22 +640,19 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                   type="button"
                   onClick={() => handleTabChange(item.id as any)}
                   title={isCollapsed ? item.label : undefined}
-                  className={`w-full flex items-center transition-all duration-150 cursor-pointer rounded-xl font-bold ${
-                    isCollapsed ? "justify-center px-0 py-3" : "justify-between px-3.5 py-2.5 text-xs"
-                  } ${
-                    isActive
+                  className={`w-full flex items-center transition-all duration-150 cursor-pointer rounded-xl font-bold ${isCollapsed ? "justify-center px-0 py-3" : "justify-between px-3.5 py-2.5 text-xs"
+                    } ${isActive
                       ? "bg-gradient-to-r from-pink-600 to-violet-600 text-white shadow-sm"
                       : "text-slate-600 hover:text-pink-600 hover:bg-pink-50/80 dark:text-slate-400 dark:hover:text-pink-300 dark:hover:bg-white/5"
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-white" : "text-slate-400 dark:text-slate-500"}`} />
                     {!isCollapsed && <span className="truncate">{item.label}</span>}
                   </div>
                   {item.count > 0 && (
-                    <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
-                      isActive ? "bg-white/25 text-white" : "bg-pink-600 text-white"
-                    }`}>
+                    <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${isActive ? "bg-white/25 text-white" : "bg-pink-600 text-white"
+                      }`}>
                       {item.count}
                     </span>
                   )}
@@ -564,7 +700,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                 </p>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={handleExportCSV}
@@ -614,18 +750,16 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                 key={tab.id}
                 type="button"
                 onClick={() => handleTabChange(tab.id as any)}
-                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
-                  activeTab === tab.id
+                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${activeTab === tab.id
                     ? "bg-slate-900 text-white dark:bg-pink-600 dark:text-white shadow-xs"
                     : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-                }`}
+                  }`}
               >
                 <tab.icon className="h-4 w-4" />
                 {tab.label}
                 {tab.count > 0 && (
-                  <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[9px] font-black ${
-                    activeTab === tab.id ? "bg-white/20 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
-                  }`}>
+                  <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[9px] font-black ${activeTab === tab.id ? "bg-white/20 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                    }`}>
                     {tab.count}
                   </span>
                 )}
@@ -636,33 +770,43 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
           {/* ═══════════════ TAB 0: DASHBOARD (DAILY OVERVIEW) ═══════════════ */}
           {activeTab === "overview" && (
             <div className="space-y-6">
-              {/* Daily Overview KPI Cards */}
+              {/* Daily Overview KPI Cards with Interactive Tab Drill-Down */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                <Card
-                  label="Today's Demos"
-                  value={todayDemos.length}
-                  icon={<Calendar className="h-4 w-4 text-blue-600" />}
-                />
-                <Card
-                  label="Upcoming Confirmed"
-                  value={confirmedCount}
-                  icon={<CheckCircle className="h-4 w-4 text-emerald-600" />}
-                />
-                <Card
-                  label="Pending Requests"
-                  value={pendingInboundRequests.length}
-                  icon={<Clock className="h-4 w-4 text-violet-600" />}
-                />
-                <Card
-                  label="Reallocation Required"
-                  value={affectedCount}
-                  icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}
-                />
-                <Card
-                  label="Completed (Avg)"
-                  value={completedCount > 0 ? `${completedCount} (${avgScore}%)` : "0"}
-                  icon={<Award className="h-4 w-4 text-pink-600" />}
-                />
+                <div onClick={() => { setFilterStatus("All"); handleTabChange("demo_list"); }} className="cursor-pointer hover:scale-[1.02] transition-transform">
+                  <Card
+                    label="Today's Demos"
+                    value={todayDemos.length}
+                    icon={<Calendar className="h-4 w-4 text-blue-600" />}
+                  />
+                </div>
+                <div onClick={() => { setFilterStatus("Confirmed"); handleTabChange("demo_list"); }} className="cursor-pointer hover:scale-[1.02] transition-transform">
+                  <Card
+                    label="Upcoming Confirmed"
+                    value={confirmedCount}
+                    icon={<CheckCircle className="h-4 w-4 text-emerald-600" />}
+                  />
+                </div>
+                <div onClick={() => handleTabChange("reallocation")} className="cursor-pointer hover:scale-[1.02] transition-transform">
+                  <Card
+                    label="Pending Requests"
+                    value={pendingInboundRequests.length}
+                    icon={<Clock className="h-4 w-4 text-violet-600" />}
+                  />
+                </div>
+                <div onClick={() => handleTabChange("reallocation")} className="cursor-pointer hover:scale-[1.02] transition-transform">
+                  <Card
+                    label="Reallocation Required"
+                    value={affectedCount}
+                    icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}
+                  />
+                </div>
+                <div onClick={() => handleTabChange("history")} className="cursor-pointer hover:scale-[1.02] transition-transform">
+                  <Card
+                    label="Completed (Avg)"
+                    value={completedCount > 0 ? `${completedCount} (${avgScore}%)` : "0"}
+                    icon={<Award className="h-4 w-4 text-pink-600" />}
+                  />
+                </div>
               </div>
 
               {/* Action Required Banner if pending requests or affected demos exist */}
@@ -712,9 +856,13 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           {renderStatusBadge(demo.status)}
-                          {demo.status === "confirmed" && (
-                            <button onClick={() => handleOpenEvaluate(demo)} className="px-3 py-1.5 bg-pink-600 text-white rounded-lg text-[10px] font-extrabold hover:bg-pink-700 cursor-pointer shadow-2xs">
-                              Evaluate
+                          {demo.status === "completed" ? (
+                            <button onClick={() => setViewEvalSession(demo)} className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-extrabold hover:bg-emerald-100 cursor-pointer flex items-center gap-1">
+                              <Award className="h-3 w-3" /> View Score
+                            </button>
+                          ) : (
+                            <button onClick={() => handleOpenEvaluate(demo)} className="px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-[10px] font-extrabold cursor-pointer shadow-2xs flex items-center gap-1">
+                              <CheckSquare className="h-3 w-3" /> Evaluate Demo
                             </button>
                           )}
                         </div>
@@ -750,11 +898,10 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                       key={tab.value}
                       type="button"
                       onClick={() => { setFilterStatus(tab.value); setPage(1); }}
-                      className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
-                        filterStatus === tab.value
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer whitespace-nowrap ${filterStatus === tab.value
                           ? "bg-pink-600 text-white shadow-2xs"
                           : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
-                      }`}
+                        }`}
                     >
                       {tab.label}
                     </button>
@@ -820,21 +967,30 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                           </div>
                         </div>
 
-                        {/* Card Action Row */}
-                        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                        {/* Card Action Row with unified buttons & Timetable shortcut */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-extrabold uppercase text-slate-400">Status:</span>
                             {renderStatusBadge(demo.status)}
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleTabChange("availability")}
+                              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-200/80 dark:border-slate-700 transition-all cursor-pointer flex items-center gap-1"
+                              title="Show on Availability Calendar"
+                            >
+                              <Calendar className="h-3.5 w-3.5" /> Timetable
+                            </button>
+
                             {demo.status === "completed" ? (
                               <button onClick={() => setViewEvalSession(demo)} className="px-3.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-extrabold flex items-center gap-1 hover:bg-emerald-100 transition-all cursor-pointer">
-                                <Eye className="h-3.5 w-3.5" /> View Score ({demo.marks}/100)
+                                <Award className="h-3.5 w-3.5" /> View Scorecard ({demo.marks}/100)
                               </button>
                             ) : demo.status === "confirmed" ? (
                               <>
-                                <button onClick={() => handleOpenEvaluate(demo)} className="px-3.5 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-xs font-extrabold transition-all cursor-pointer shadow-2xs">
-                                  View Demo / Evaluate
+                                <button onClick={() => handleOpenEvaluate(demo)} className="px-3.5 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-xs font-extrabold transition-all cursor-pointer shadow-2xs flex items-center gap-1">
+                                  <CheckSquare className="h-3.5 w-3.5" /> Evaluate Demo
                                 </button>
                                 <button onClick={() => handleOpenSwapModal(demo)} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center gap-1">
                                   <RefreshCw className="h-3.5 w-3.5" /> Reallocate
@@ -842,7 +998,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                               </>
                             ) : (
                               <button onClick={() => handleOpenSwapModal(demo)} className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold transition-all cursor-pointer shadow-2xs flex items-center gap-1">
-                                <RefreshCw className="h-3.5 w-3.5" /> Reallocate Demo
+                                <RefreshCw className="h-3.5 w-3.5" /> Reallocate Slot
                               </button>
                             )}
                           </div>
@@ -874,84 +1030,173 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
 
           {/* ═══════════════ TAB 2: AVAILABILITY ═══════════════ */}
           {activeTab === "availability" && (
-            <Panel
-              title="SME AVAILABILITY TIMETABLE"
-              subtitle="Central timetable grid displaying Free, Confirmed Demo, Class/Busy, and Leave schedules"
-            >
-              <div className="space-y-6">
-                {/* Legend Bar */}
-                <div className="flex flex-wrap items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs font-bold">
-                  <span className="text-[10px] font-black uppercase text-slate-400">Legend:</span>
-                  <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-[10px]">Free Slot</span>
-                  <span className="px-2.5 py-1 bg-pink-100 text-pink-800 border border-pink-200 rounded-md text-[10px]">Confirmed Demo (Blocked)</span>
-                  <span className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-[10px]">Class / Busy</span>
-                  <span className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-md text-[10px]">Leave</span>
-                </div>
+            <div className="space-y-6">
+              {/* Top Banner Card: Clean Summary */}
+              <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <SlidersHorizontal className="h-5 w-5 text-[#D528A2]" />
+                    SME Working Windows & Schedule Settings
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium max-w-2xl">
+                    Configure your dedicated Demo Evaluation windows vs Faculty Training hours. The Timetable Allocator strictly matches mentor demos only during your Demo Time slots.
+                  </p>
 
-                {/* Time-Slot Availability Matrix Grid */}
-                <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 shadow-xs">
-                  <table className="w-full text-center text-xs min-w-[650px]">
-                    <thead>
-                      <tr className="bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                        <th className="p-3 text-left">Time Slot</th>
-                        {weekDates.map(w => (
-                          <th key={w.dateStr} className="p-3">{w.day} ({w.dateStr?.split(" ").slice(0, 2).join(" ")})</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-bold">
-                      {["9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "2:00 PM", "3:00 PM"].map(time => (
-                        <tr key={time} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                          <td className="p-3 text-left font-mono text-[11px] font-extrabold text-slate-700 dark:text-slate-300 bg-slate-50/30 dark:bg-slate-900/50">{time}</td>
-                          {weekDates.map(w => {
-                            const demoOnSlot = myDemos.find(d => d.dateStr === w.dateStr && d.timeSlot?.toLowerCase().includes(time.toLowerCase().split(":")[0]) && d.status === "confirmed");
-                            const slotOnSlot = slots.find(s => (s as any).smeId === currentSME.id && s.day === w.day && s.time?.toLowerCase().includes(time.toLowerCase().split(":")[0]));
-                            const isLeave = leaveRequests?.some((l: any) => l.smeId === currentSME.id && l.dateStr === w.dateStr && l.status === "approved");
+                  {/* Configured Days Badges Preview */}
+                  <div className="flex flex-wrap items-center gap-2 pt-2">
+                    {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].map(d => {
+                      const wins = (smeAvailability || []).filter(
+                        (a: any) => a.sme_id === currentSME?.id && a.day_of_week?.toLowerCase().trim() === d.toLowerCase().trim() && a.is_active !== 0
+                      );
+                      const hasTraining = wins.some((w: any) => (w.slot_type || w.slotType) === "training");
+                      const hasDemo = wins.some((w: any) => (w.slot_type || w.slotType) !== "training");
 
-                            if (isLeave) {
-                              return (
-                                <td key={w.dateStr} className="p-2">
-                                  <span className="px-2.5 py-1.5 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded-lg text-[10px] font-black block">
-                                    Leave
-                                  </span>
-                                </td>
-                              );
-                            } else if (demoOnSlot) {
-                              return (
-                                <td key={w.dateStr} className="p-2">
-                                  <span
-                                    onClick={() => handleOpenEvaluate(demoOnSlot)}
-                                    className="px-2.5 py-1.5 bg-pink-100 text-pink-800 dark:bg-pink-950/40 dark:text-pink-300 border border-pink-200 dark:border-pink-800 rounded-lg text-[10px] font-black block cursor-pointer hover:scale-[1.02] transition-transform"
-                                  >
-                                    Demo ({demoOnSlot.mentorName?.split(" ")[0]})
-                                  </span>
-                                </td>
-                              );
-                            } else if (slotOnSlot) {
-                              return (
-                                <td key={w.dateStr} className="p-2">
-                                  <span className="px-2.5 py-1.5 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-extrabold block">
-                                    Class ({slotOnSlot.course})
-                                  </span>
-                                </td>
-                              );
-                            } else {
-                              return (
-                                <td key={w.dateStr} className="p-2">
-                                  <span className="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[10px] font-black block">
-                                    Free
-                                  </span>
-                                </td>
-                              );
-                            }
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      return (
+                        <div
+                          key={d}
+                          onClick={() => { setSelectedAvailDay(d); setShowAvailModal(true); }}
+                          className="px-2.5 py-1 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-slate-200/80 dark:border-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 cursor-pointer transition-all"
+                          title="Click to configure this day"
+                        >
+                          <span className="font-extrabold text-[#D528A2]">{d.slice(0, 3)}:</span>
+                          {wins.length === 0 ? (
+                            <span className="text-slate-400">9–5:30 (Default)</span>
+                          ) : (
+                            <span>
+                              {wins.length} {wins.length === 1 ? "window" : "windows"}
+                              {hasDemo && hasTraining ? " (Demo + Train)" : hasDemo ? " (Demo)" : " (Train)"}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            </Panel>
+
+              {/* Central Dynamic Matrix Grid */}
+              <Panel
+                title="SME AVAILABILITY & TIMETABLE MATRIX"
+                subtitle="Live central calendar displaying Demo Evaluation slots, Training slots, Confirmed Bookings, and Leaves"
+              >
+                <div className="space-y-6">
+                  {/* Legend & Action Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs font-bold">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="text-[10px] font-black uppercase text-slate-400">Legend:</span>
+                      <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-md text-[10px] font-bold">Free Demo Slot</span>
+                      <span className="px-2.5 py-1 bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 border border-violet-200 dark:border-violet-800 rounded-md text-[10px] font-bold">Training / Workshop Time</span>
+                      <span className="px-2.5 py-1 bg-pink-100 text-pink-800 dark:bg-pink-950/40 dark:text-pink-300 border border-pink-200 dark:border-pink-800 rounded-md text-[10px] font-bold">Confirmed Demo (Booked)</span>
+                      <span className="px-2.5 py-1 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-md text-[10px] font-bold">Class / Duty</span>
+                      <span className="px-2.5 py-1 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-md text-[10px] font-bold">Leave</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowAvailModal(true)}
+                      className="px-3.5 py-1.5 rounded-lg text-xs font-black bg-[#D528A2] text-white hover:bg-[#b81d89] shadow-xs flex items-center gap-2 cursor-pointer transition-all shrink-0 ml-auto"
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      Edit My Timings & Windows
+                    </button>
+                  </div>
+
+                  {/* Time-Slot Availability Matrix Grid */}
+                  <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 shadow-xs">
+                    <table className="w-full text-center text-xs min-w-[650px]">
+                      <thead>
+                        <tr className="bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                          <th className="p-3 text-left">Time Slot</th>
+                          {weekDates.map(w => (
+                            <th key={w.dateStr} className="p-3">{w.day} ({w.dateStr?.split(" ").slice(0, 2).join(" ")})</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-bold">
+                        {matrixTimeSlots.map(timeRange => (
+                          <tr key={timeRange} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                            <td className="p-3 text-left font-mono text-[10.5px] font-black text-slate-700 dark:text-slate-300 bg-slate-50/30 dark:bg-slate-900/50 whitespace-nowrap">{timeRange}</td>
+                            {weekDates.map(w => {
+                              const startTimePart = timeRange.split("-")[0]?.trim() || timeRange;
+                              const slotMin = parseTimeToMin(startTimePart);
+                              const dayWins = (smeAvailability || []).filter(
+                                (a: any) => a.sme_id === currentSME?.id && a.day_of_week?.toLowerCase().trim() === w.day?.toLowerCase().trim() && a.is_active !== 0
+                              );
+                              const matchingWin = dayWins.find((win: any) => {
+                                const wStart = parseTimeToMin(win.start_time);
+                                const wEnd = parseTimeToMin(win.end_time);
+                                return slotMin >= wStart && slotMin < wEnd;
+                              });
+
+                              const demoOnSlot = myDemos.find(d => {
+                                if (d.dateStr !== w.dateStr || d.status !== "confirmed") return false;
+                                const demoMin = parseTimeToMin(d.timeSlot);
+                                return demoMin >= slotMin && demoMin < slotMin + 60;
+                              });
+                              const slotOnSlot = slots.find(s => (s as any).smeId === currentSME?.id && s.day === w.day && parseTimeToMin(s.time) >= slotMin && parseTimeToMin(s.time) < slotMin + 60);
+                              const isLeave = leaveRequests?.some((l: any) => l.smeId === currentSME?.id && l.dateStr === w.dateStr && l.status === "approved");
+
+                              if (isLeave) {
+                                return (
+                                  <td key={w.dateStr} className="p-2">
+                                    <span className="px-2.5 py-1.5 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded-lg text-[10px] font-black block">
+                                      Leave
+                                    </span>
+                                  </td>
+                                );
+                              } else if (demoOnSlot) {
+                                return (
+                                  <td key={w.dateStr} className="p-2">
+                                    <span
+                                      onClick={() => handleOpenEvaluate(demoOnSlot)}
+                                      className="px-2.5 py-1.5 bg-pink-100 text-pink-800 dark:bg-pink-950/40 dark:text-pink-300 border border-pink-200 dark:border-pink-800 rounded-lg text-[10px] font-black block cursor-pointer hover:scale-[1.02] transition-transform"
+                                    >
+                                      Demo ({demoOnSlot.mentorName?.split(" ")[0]})
+                                    </span>
+                                  </td>
+                                );
+                              } else if (slotOnSlot) {
+                                return (
+                                  <td key={w.dateStr} className="p-2">
+                                    <span className="px-2.5 py-1.5 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-extrabold block">
+                                      Class ({slotOnSlot.course})
+                                    </span>
+                                  </td>
+                                );
+                              } else if (matchingWin && (matchingWin.slot_type === "training" || matchingWin.slotType === "training")) {
+                                return (
+                                  <td key={w.dateStr} className="p-2">
+                                    <span className="px-2.5 py-1.5 bg-violet-50 text-violet-700 dark:bg-violet-950/30 dark:text-violet-300 border border-violet-200 dark:border-violet-800 rounded-lg text-[10px] font-bold block">
+                                      Training Time
+                                    </span>
+                                  </td>
+                                );
+                              } else if (matchingWin) {
+                                return (
+                                  <td key={w.dateStr} className="p-2">
+                                    <span className="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[10px] font-black block">
+                                      Free Demo Slot
+                                    </span>
+                                  </td>
+                                );
+                              } else {
+                                return (
+                                  <td key={w.dateStr} className="p-2">
+                                    <span className="px-2.5 py-1.5 bg-slate-50 text-slate-400 dark:bg-slate-800/30 dark:text-slate-500 rounded-lg text-[10px] font-medium block">
+                                      Off-Duty
+                                    </span>
+                                  </td>
+                                );
+                              }
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </Panel>
+            </div>
           )}
 
           {/* ═══════════════ TAB 3: REALLOCATION ═══════════════ */}
@@ -961,6 +1206,22 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
               subtitle="Review leave-affected demo proposals and process SME reallocations"
             >
               <div className="space-y-6">
+                {/* Quick Action Bar to initiate swap */}
+                {confirmedDemos.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                    <div className="text-xs text-slate-600 dark:text-slate-300 font-bold">
+                      Need to reschedule an upcoming demo due to emergency or clash?
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSwapModal(confirmedDemos[0])}
+                      className="px-3.5 py-1.5 rounded-lg text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" /> Reallocate an Upcoming Demo
+                    </button>
+                  </div>
+                )}
+
                 {/* Section 1: Inbound Pending Reallocation Requests */}
                 <div className="space-y-3">
                   <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
@@ -1066,47 +1327,49 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
               subtitle="Completed demo evaluations, 100-mark scorecards, and recorded feedback"
             >
               <div className="space-y-4">
-                <div className="relative">
-                  <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input type="text" placeholder="Search evaluations by mentor, subject, or date..." value={historySearch} onChange={e => { setHistorySearch(e.target.value); setHistoryPage(1); }}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-pink-500" />
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="relative flex-1 w-full">
+                    <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input type="text" placeholder="Search evaluations by mentor, subject, or date..." value={historySearch} onChange={e => { setHistorySearch(e.target.value); setHistoryPage(1); }}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-pink-500" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleExportCSV}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-black border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                  >
+                    <Download className="h-3.5 w-3.5" /> Export CSV
+                  </button>
                 </div>
 
                 <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900">
                   {paginatedHistory.length > 0 ? (
                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
                       {paginatedHistory.map(demo => (
-                        <div key={demo.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors">
-                          <div
-                            onClick={() => setExpandedHistoryId(expandedHistoryId === demo.id ? null : demo.id)}
-                            className="p-4 flex items-center justify-between cursor-pointer"
-                          >
-                            <div className="flex items-center gap-4">
-                              <div className="h-10 w-10 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 border border-emerald-100">
-                                <CheckCircle className="h-5 w-5" />
-                              </div>
-                              <div>
-                                <h3 className="text-xs font-extrabold text-slate-900 dark:text-white">{demo.mentorName}</h3>
-                                <p className="text-[9.5px] text-slate-400 font-semibold">{demo.dateStr} • {demo.subject}</p>
-                                <p className="text-[9px] text-indigo-600 font-bold uppercase">{getMentorCollege(demo.mentorId)}</p>
-                              </div>
+                        <div key={demo.id} className="p-4 flex items-center justify-between gap-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 border border-emerald-100">
+                              <Award className="h-5 w-5" />
                             </div>
-                            <div className="flex items-center gap-3">
-                              <div className="text-right">
-                                <span className="text-[8px] font-black uppercase text-slate-400 block">Score</span>
-                                <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">{demo.marks} / 100</span>
-                              </div>
-                              {expandedHistoryId === demo.id ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                            <div className="min-w-0">
+                              <h3 className="text-xs font-extrabold text-slate-900 dark:text-white truncate">{demo.mentorName}</h3>
+                              <p className="text-[9.5px] text-slate-400 font-semibold">{demo.dateStr} • {demo.subject}</p>
+                              <p className="text-[9px] text-indigo-600 dark:text-indigo-400 font-bold uppercase">{getMentorCollege(demo.mentorId)}</p>
                             </div>
                           </div>
-                          {expandedHistoryId === demo.id && (
-                            <div className="px-4 pb-4 animate-in slide-in-from-top-1 duration-200">
-                              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200/80 dark:border-slate-800">
-                                <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Feedback Comments</span>
-                                <p className="text-xs text-slate-600 dark:text-slate-300 italic">&quot;{demo.comments || "No comments provided."}&quot;</p>
-                              </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="text-right">
+                              <span className="text-[8px] font-black uppercase text-slate-400 block">Score</span>
+                              <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">{demo.marks} / 100</span>
                             </div>
-                          )}
+                            <button
+                              type="button"
+                              onClick={() => setViewEvalSession(demo)}
+                              className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-extrabold flex items-center gap-1 transition-all cursor-pointer"
+                            >
+                              <Eye className="h-3.5 w-3.5" /> View Scorecard
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1331,10 +1594,312 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                   </div>
                 </div>
 
-                <button type="button" onClick={() => setViewEvalSession(null)}
-                  className="w-full px-4 py-2.5 text-xs font-extrabold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setViewEvalSession(null)}
+                  className="w-full px-4 py-2.5 text-xs font-extrabold text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer mt-4"
+                >
                   Close
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════ AVAILABILITY CONFIGURATION MODAL ═══════════════ */}
+          {showAvailModal && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150">
+              <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-2xl overflow-hidden my-8">
+                {/* Modal Header */}
+                <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-[#D528A2]/10 text-[#D528A2] rounded-xl">
+                      <SlidersHorizontal className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-slate-900 dark:text-white">
+                        Configure Working Windows & Slot Timings
+                      </h3>
+                      <p className="text-xs text-slate-500 font-medium">
+                        Set your dedicated Demo Evaluation windows and Faculty Training hours for each weekday
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAvailModal(false)}
+                    className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+                  {/* Day Picker Pills with All Weekdays Default Option */}
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Schedule Scope:</span>
+                    <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAvailDay("ALL")}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                          selectedAvailDay === "ALL"
+                            ? "bg-[#D528A2] text-white shadow-xs"
+                            : "text-slate-700 dark:text-slate-300 hover:text-[#D528A2]"
+                        }`}
+                      >
+                        All Weekdays (Mon - Fri)
+                      </button>
+
+                      <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1 hidden sm:block" />
+
+                      {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].map(d => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setSelectedAvailDay(d)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            selectedAvailDay === d
+                              ? "bg-white dark:bg-slate-900 text-[#D528A2] shadow-xs font-black"
+                              : "text-slate-500 dark:text-slate-400 hover:text-slate-900"
+                          }`}
+                        >
+                          {d.slice(0, 3)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Context Help Banner */}
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs flex items-center justify-between gap-2">
+                    <span className="text-slate-600 dark:text-slate-300 font-bold">
+                      {selectedAvailDay === "ALL" ? (
+                        <span>Standard Schedule Mode: Setting once applies to <strong>all 5 weekdays (Monday – Friday)</strong>.</span>
+                      ) : (
+                        <span>Single-Day Override: Editing <strong>{selectedAvailDay} only</strong> (Will not affect the other 4 days).</span>
+                      )}
+                    </span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                      {selectedAvailDay === "ALL" ? "5 Days" : "1 Day"}
+                    </span>
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-extrabold text-slate-600 dark:text-slate-300">Quick Schedule Presets:</span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setDayWindows([{ startTime: "09:00 AM", endTime: "05:30 PM", slotType: "demo" }])}
+                        className="px-2.5 py-1 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
+                      >
+                        Full Day Demo (09:00 - 17:30)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDayWindows([
+                          { startTime: "09:00 AM", endTime: "12:30 PM", slotType: "demo" },
+                          { startTime: "01:30 PM", endTime: "05:30 PM", slotType: "training" }
+                        ])}
+                        className="px-2.5 py-1 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
+                      >
+                        Demo + Training Split
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDayWindows([{ startTime: "08:30 AM", endTime: "01:00 PM", slotType: "demo" }])}
+                        className="px-2.5 py-1 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
+                      >
+                        Morning Demo Only
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Window Cards List */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                        Configured Windows for {selectedAvailDay}:
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-medium">
+                        {dayWindows.length} {dayWindows.length === 1 ? "window" : "windows"}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {dayWindows.map((win, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-4 rounded-2xl border ${
+                            win.slotType === "training"
+                              ? "bg-violet-50/60 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800/80"
+                              : "bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/80"
+                          } flex flex-col sm:flex-row sm:items-center justify-between gap-3`}
+                        >
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <div>
+                              <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Window Purpose</span>
+                              <select
+                                value={win.slotType}
+                                onChange={(e) => {
+                                  const copy = [...dayWindows];
+                                  copy[idx].slotType = e.target.value as any;
+                                  setDayWindows(copy);
+                                }}
+                                className="text-xs font-extrabold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 cursor-pointer shadow-xs"
+                              >
+                                <option value="demo">Demo Evaluation Slot (For Timetable)</option>
+                                <option value="training">Faculty Training / Workshop (Excluded from Demos)</option>
+                              </select>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <div>
+                                <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Start Time</span>
+                                <input
+                                  type="time"
+                                  value={to24Hour(win.startTime)}
+                                  onChange={(e) => {
+                                    const copy = [...dayWindows];
+                                    copy[idx].startTime = to12Hour(e.target.value);
+                                    setDayWindows(copy);
+                                  }}
+                                  className="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 shadow-xs focus:ring-2 focus:ring-[#D528A2] cursor-pointer"
+                                />
+                              </div>
+                              <span className="text-slate-400 font-black mt-4">→</span>
+                              <div>
+                                <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">End Time</span>
+                                <input
+                                  type="time"
+                                  value={to24Hour(win.endTime)}
+                                  onChange={(e) => {
+                                    const copy = [...dayWindows];
+                                    copy[idx].endTime = to12Hour(e.target.value);
+                                    setDayWindows(copy);
+                                  }}
+                                  className="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 shadow-xs focus:ring-2 focus:ring-[#D528A2] cursor-pointer"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {dayWindows.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDayWindows(dayWindows.filter((_, i) => i !== idx));
+                              }}
+                              className="p-2 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950/40 rounded-xl cursor-pointer transition-colors self-end sm:self-center"
+                              title="Delete window"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Add Window Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDayWindows([...dayWindows, { startTime: "01:30 PM", endTime: "05:30 PM", slotType: "training" }]);
+                        }}
+                        className="w-full p-3.5 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-[#D528A2] text-slate-600 dark:text-slate-400 hover:text-[#D528A2] flex items-center justify-center gap-2 text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add Another Time Window
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex flex-wrap items-center justify-between gap-3">
+                  {selectedAvailDay !== "ALL" ? (
+                    <button
+                      type="button"
+                      disabled={isSavingAvail}
+                      onClick={async () => {
+                        if (!currentSME) return;
+                        setIsSavingAvail(true);
+                        const allDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+                        const bulkWindows: any[] = [];
+                        allDays.forEach(d => {
+                          dayWindows.forEach(w => {
+                            bulkWindows.push({ day: d, startTime: w.startTime, endTime: w.endTime, slotType: w.slotType });
+                          });
+                        });
+                        const res = await saveSmeAvailability(currentSME.id, bulkWindows);
+                        setIsSavingAvail(false);
+                        if (res.success) {
+                          toast(`Applied ${selectedAvailDay}'s schedule to All Weekdays (Mon – Fri)!`, "success");
+                          setShowAvailModal(false);
+                        } else {
+                          toast(res.error || "Failed to save", "error");
+                        }
+                      }}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                    >
+                      Apply {selectedAvailDay} to All Weekdays
+                    </button>
+                  ) : <div />}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAvailModal(false)}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isSavingAvail}
+                      onClick={async () => {
+                        if (!currentSME) return;
+                        setIsSavingAvail(true);
+
+                        if (selectedAvailDay === "ALL") {
+                          const allDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+                          const bulkWindows: any[] = [];
+                          allDays.forEach(d => {
+                            dayWindows.forEach(w => {
+                              bulkWindows.push({ day: d, startTime: w.startTime, endTime: w.endTime, slotType: w.slotType });
+                            });
+                          });
+                          const res = await saveSmeAvailability(currentSME.id, bulkWindows);
+                          setIsSavingAvail(false);
+                          if (res.success) {
+                            toast("Saved standard schedule for All Weekdays (Mon – Fri) successfully!", "success");
+                            setShowAvailModal(false);
+                          } else {
+                            toast(res.error || "Failed to save", "error");
+                          }
+                        } else {
+                          // Save strictly this individual day alone
+                          const res = await saveSmeAvailability(currentSME.id, dayWindows, selectedAvailDay);
+                          setIsSavingAvail(false);
+                          if (res.success) {
+                            toast(`Saved availability for ${selectedAvailDay} only!`, "success");
+                            setShowAvailModal(false);
+                          } else {
+                            toast(res.error || "Failed to save", "error");
+                          }
+                        }
+                      }}
+                      className="px-6 py-2.5 rounded-xl text-xs font-black bg-[#D528A2] text-white hover:bg-[#b81d89] shadow-md flex items-center gap-2 transition-all cursor-pointer"
+                    >
+                      <Save className="h-4 w-4" />
+                      {isSavingAvail
+                        ? "Saving..."
+                        : selectedAvailDay === "ALL"
+                          ? "Save for All Weekdays (Mon - Fri)"
+                          : `Save ${selectedAvailDay} Only`}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

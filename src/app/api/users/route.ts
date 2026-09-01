@@ -98,7 +98,7 @@ export async function POST(request: Request) {
         if (!validCol) safeColId = null;
       }
       if (!safeColId) {
-        const firstCol = await db.get("SELECT id FROM colleges ORDER BY rowid ASC LIMIT 1");
+        const firstCol = await db.get("SELECT id FROM colleges ORDER BY id ASC LIMIT 1");
         safeColId = firstCol ? firstCol.id : null;
       }
 
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
         if (!validKam) safeKamId = null;
       }
       if (!safeKamId) {
-        const firstKam = await db.get("SELECT id FROM kam_users ORDER BY rowid ASC LIMIT 1");
+        const firstKam = await db.get("SELECT id FROM kam_users ORDER BY id ASC LIMIT 1");
         safeKamId = firstKam ? firstKam.id : null;
       }
 

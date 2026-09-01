@@ -8,7 +8,7 @@ export interface TursoDbAdapter {
   all: (sql: string, ...params: any[]) => Promise<any[]>;
   run: (sql: string, ...params: any[]) => Promise<{ lastID?: number; changes: number }>;
   exec: (sql: string) => Promise<void>;
-  client?: any;
+  client: any;
 }
 
 function normalizeParams(params: any[]): any[] {
@@ -19,93 +19,59 @@ function normalizeParams(params: any[]): any[] {
   return args.map(arg => (arg === undefined ? null : arg));
 }
 
-function normalizeRowKeys(row: any): any {
-  if (!row || typeof row !== "object") return row;
-  const normalized = { ...row };
+const TABLE_PK_MAP: Record<string, string> = {
+  system_settings: "key",
+  academic_years: "year_name",
+  faculty_configs: "mentor_id",
+  schema_migrations: "version"
+};
 
-  const keyMap: Record<string, string> = {
-    studentid: "studentId",
-    slotid: "slotId",
-    datestr: "dateStr",
-    classgroup: "classGroup",
-    markedby: "markedBy",
-    requestid: "requestId",
-    requestorid: "requestorId",
-    targetstaffid: "targetStaffId",
-    actorname: "actorName",
-    actorrole: "actorRole",
-    admissiondate: "admissionDate",
-    guardianname: "guardianName",
-    guardianphone: "guardianPhone",
-    parentphone: "parentPhone",
-    aadharnumber: "aadharNumber",
-    attendancetypesub: "attendanceTypeSub"
-  };
+function adaptQueryForPostgres(sql: string, params: any[]): { sql: string; params: any[] } {
+  let pIdx = 0;
+  let convertedSql = sql.replace(/\?/g, () => {
+    pIdx++;
+    return `$${pIdx}`;
+  });
 
-  for (const [k, v] of Object.entries(row)) {
-    const lower = k.toLowerCase();
-    if (keyMap[lower] && !(keyMap[lower] in normalized)) {
-      normalized[keyMap[lower]] = v;
+  // Handle INSERT OR IGNORE INTO with standard INSERT INTO ON CONFLICT DO NOTHING
+  if (/INSERT\s+OR\s+IGNORE\s+INTO/i.test(convertedSql)) {
+    convertedSql = convertedSql.replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, "INSERT INTO");
+    if (!/ON\s+CONFLICT/i.test(convertedSql)) {
+      convertedSql += " ON CONFLICT DO NOTHING";
     }
   }
 
-  return normalized;
-}
-
-function convertSqliteToPg(sql: string): string {
-  let paramIdx = 1;
-  let converted = sql.replace(/\?/g, () => `$${paramIdx++}`);
-
-  // Convert SQLite strftime to PostgreSQL date extract
-  converted = converted.replace(/strftime\s*\(\s*'%w'\s*,\s*([^)]+)\s*\)/gi, "EXTRACT(DOW FROM CAST($1 AS DATE))::text");
-  converted = converted.replace(/strftime\s*\(\s*'%Y-%m-%d'\s*,\s*([^)]+)\s*\)/gi, "TO_CHAR(CAST($1 AS DATE), 'YYYY-MM-DD')");
-
-  // Convert SQLite clauses to PostgreSQL
-  converted = converted
-    .replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, "INSERT INTO")
-    .replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, "INSERT INTO");
-
-  // If query had INSERT OR IGNORE or INSERT OR REPLACE, append ON CONFLICT DO NOTHING if missing
-  if (/INSERT\s+INTO/i.test(converted) && !/ON\s+CONFLICT/i.test(converted) && /OR\s+(IGNORE|REPLACE)/i.test(sql)) {
-    converted = converted.trim().replace(/;?$/, " ON CONFLICT DO NOTHING;");
-  }
-
-  return converted;
-}
-
-function createPgDbAdapter(pool: pg.Pool): TursoDbAdapter {
-  return {
-    client: pool,
-    async get(sql: string, ...params: any[]) {
-      const args = normalizeParams(params);
-      const pgSql = convertSqliteToPg(sql);
-      const res = await pool.query(pgSql, args);
-      return res.rows[0] ? normalizeRowKeys({ ...res.rows[0] }) : undefined;
-    },
-    async all(sql: string, ...params: any[]) {
-      const args = normalizeParams(params);
-      const pgSql = convertSqliteToPg(sql);
-      const res = await pool.query(pgSql, args);
-      return res.rows.map(row => normalizeRowKeys({ ...row }));
-    },
-    async run(sql: string, ...params: any[]) {
-      const args = normalizeParams(params);
-      const pgSql = convertSqliteToPg(sql);
-      const res = await pool.query(pgSql, args);
-      return {
-        changes: res.rowCount || 0
-      };
-    },
-    async exec(sql: string) {
-      const statements = sql.split(";").map(s => s.trim()).filter(Boolean);
-      for (const s of statements) {
-        if (s.toLowerCase().startsWith("pragma")) continue;
-        try {
-          await pool.query(convertSqliteToPg(s));
-        } catch (_) {}
+  // Replace INSERT OR REPLACE INTO with standard INSERT INTO ON CONFLICT
+  if (/INSERT\s+OR\s+REPLACE\s+INTO/i.test(convertedSql)) {
+    convertedSql = convertedSql.replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, "INSERT INTO");
+    if (!/ON\s+CONFLICT/i.test(convertedSql)) {
+      const match = convertedSql.match(/INSERT\s+INTO\s+([^\s(]+)\s*\(([^)]+)\)/i);
+      if (match) {
+        const rawTableName = match[1].replace(/["`]/g, "").trim().toLowerCase();
+        const pkCol = TABLE_PK_MAP[rawTableName] || "id";
+        const cols = match[2].split(",").map(c => c.trim().replace(/["`]/g, ""));
+        const updateSets = cols
+          .filter(c => c.toLowerCase() !== pkCol.toLowerCase())
+          .map(c => `"${c.toLowerCase()}" = EXCLUDED."${c.toLowerCase()}"`)
+          .join(", ");
+        if (updateSets) {
+          convertedSql += ` ON CONFLICT ("${pkCol}") DO UPDATE SET ${updateSets}`;
+        } else {
+          convertedSql += ` ON CONFLICT DO NOTHING`;
+        }
       }
     }
-  };
+  }
+
+  // Replace SQLite datetime('now') with PostgreSQL NOW()::text
+  convertedSql = convertedSql.replace(/datetime\(['"]now['"]\)/gi, "NOW()::text");
+
+  // Bypass SQLite specific PRAGMA
+  if (/PRAGMA\s+foreign_keys/i.test(convertedSql)) {
+    convertedSql = "SELECT 1";
+  }
+
+  return { sql: convertedSql, params: normalizeParams(params) };
 }
 
 async function executeWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 250): Promise<T> {
@@ -131,6 +97,111 @@ async function executeWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 25
     }
   }
   throw new Error("DB operation failed after maximum retries");
+}
+
+const POSTGRES_CAMEL_MAP = new Map<string, string>([
+  ["slotid", "slotId"],
+  ["studentid", "studentId"],
+  ["datestr", "dateStr"],
+  ["markedby", "markedBy"],
+  ["classgroup", "classGroup"],
+  ["mentorid", "mentorId"],
+  ["requestorid", "requestorId"],
+  ["requestorname", "requestorName"],
+  ["targetstaffid", "targetStaffId"],
+  ["targetstaffname", "targetStaffName"],
+  ["coverstaffid", "coverStaffId"],
+  ["coverstaffname", "coverStaffName"],
+  ["originalmentorid", "originalMentorId"],
+  ["requestid", "requestId"],
+  ["dateformatted", "dateFormatted"],
+  ["headerreason", "headerReason"],
+  ["approvedby", "approvedBy"],
+  ["attendancetypesub", "attendanceTypeSub"],
+  ["sessionid", "sessionId"],
+  ["mentorname", "mentorName"],
+  ["smeid", "smeId"],
+  ["smename", "smeName"],
+  ["timeslot", "timeSlot"],
+  ["swaptype", "swapType"],
+  ["proposedmentorid", "proposedMentorId"],
+  ["proposedmentorname", "proposedMentorName"],
+  ["proposedsmeid", "proposedSmeId"],
+  ["proposedsmename", "proposedSmeName"],
+  ["proposeddatestr", "proposedDateStr"],
+  ["proposedtimeslot", "proposedTimeSlot"],
+  ["isread", "isRead"],
+  ["userid", "userId"],
+  ["taskname", "taskName"],
+  ["taskpdfurl", "taskPdfUrl"],
+  ["submissionurl", "submissionUrl"],
+  ["vivaassessment", "vivaAssessment"],
+  ["collegeid", "collegeId"],
+  ["collegename", "collegeName"],
+  ["camid", "camId"],
+  ["camname", "camName"],
+  ["studentname", "studentName"]
+]);
+
+function normalizePgRow(row: any): any {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+  const out: any = { ...row };
+  for (const key of Object.keys(row)) {
+    const camel = POSTGRES_CAMEL_MAP.get(key.toLowerCase());
+    if (camel && out[camel] === undefined) {
+      out[camel] = row[key];
+    }
+  }
+  return out;
+}
+
+function createPostgresAdapter(pool: pg.Pool): TursoDbAdapter {
+  return {
+    client: {
+      async batch(statements: { sql: string; args?: any[] }[], mode?: string) {
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          for (const stmt of statements) {
+            const adapted = adaptQueryForPostgres(stmt.sql, stmt.args || []);
+            await client.query(adapted.sql, adapted.params);
+          }
+          await client.query("COMMIT");
+        } catch (err) {
+          await client.query("ROLLBACK");
+          throw err;
+        } finally {
+          client.release();
+        }
+      },
+      async execute(stmt: { sql: string; args?: any[] }) {
+        const adapted = adaptQueryForPostgres(stmt.sql, stmt.args || []);
+        const res = await pool.query(adapted.sql, adapted.params);
+        return { rows: res.rows.map(normalizePgRow), rowsAffected: res.rowCount || 0 };
+      }
+    },
+    async get(sql: string, ...params: any[]) {
+      const adapted = adaptQueryForPostgres(sql, params);
+      const res = await executeWithRetry(() => pool.query(adapted.sql, adapted.params));
+      return res.rows[0] ? normalizePgRow(res.rows[0]) : undefined;
+    },
+    async all(sql: string, ...params: any[]) {
+      const adapted = adaptQueryForPostgres(sql, params);
+      const res = await executeWithRetry(() => pool.query(adapted.sql, adapted.params));
+      return res.rows.map(normalizePgRow);
+    },
+    async run(sql: string, ...params: any[]) {
+      const adapted = adaptQueryForPostgres(sql, params);
+      const res = await executeWithRetry(() => pool.query(adapted.sql, adapted.params));
+      return {
+        lastID: undefined,
+        changes: res.rowCount || 0
+      };
+    },
+    async exec(sql: string) {
+      await executeWithRetry(() => pool.query(sql));
+    }
+  };
 }
 
 function createDbAdapter(client: Client): TursoDbAdapter {
@@ -167,31 +238,148 @@ export function getDb(): Promise<TursoDbAdapter> {
   if (dbInstance) return Promise.resolve(dbInstance);
   if (!dbPromise) {
     dbPromise = (async () => {
-      const dbUrl = process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
-      const isPostgres = dbUrl?.startsWith("postgresql://") || dbUrl?.startsWith("postgres://");
-      const useLocal = process.env.USE_LOCAL_DB === "true" || process.env.USE_LOCAL_DB === "1";
+      const postgresUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+      const isPostgres =
+        Boolean(postgresUrl) &&
+        (postgresUrl!.startsWith("postgres://") || postgresUrl!.startsWith("postgresql://")) &&
+        process.env.USE_LOCAL_DB !== "true" &&
+        process.env.USE_LOCAL_DB !== "1";
 
-      if (isPostgres || process.env.NODE_ENV === "production") {
-        console.log("⚡ [Database] Connected exclusively to Neon PostgreSQL Serverless Database!");
+      if (isPostgres && postgresUrl) {
+        let finalConnectionString = postgresUrl;
+        try {
+          const parsed = new URL(postgresUrl);
+          const supabaseMatch = parsed.hostname.match(/^db\.([a-z0-9_-]+)\.supabase\.co$/i);
+          if (supabaseMatch) {
+            const projectRef = supabaseMatch[1];
+            // If user is just 'postgres', pooler requires 'postgres.<projectRef>'
+            if (parsed.username === "postgres") {
+              parsed.username = `postgres.${projectRef}`;
+            }
+            // Switch to Supabase's official IPv4-enabled AWS pooler
+            parsed.hostname = "aws-0-ap-south-1.pooler.supabase.com";
+            // Default to transaction/session pooler port if direct 5432 was given
+            parsed.port = parsed.port === "5432" || !parsed.port ? "6543" : parsed.port;
+            finalConnectionString = parsed.toString();
+            console.log(`🐘 [Database] Auto-routed direct Supabase IPv6 host (${supabaseMatch[0]}) to IPv4 Pooler (${parsed.hostname}:${parsed.port})`);
+          }
+        } catch (urlErr) {
+          // If URL parsing fails, continue with original postgresUrl
+        }
+
+        const isLocalHost = finalConnectionString.includes("localhost") || finalConnectionString.includes("127.0.0.1");
+        console.log(`🐘 [Database] Connecting to PostgreSQL (${isLocalHost ? "Localhost" : "Cloud/Supabase/Neon"})...`);
         const pool = new Pool({
-          connectionString: dbUrl || "postgresql://neondb_owner:npg_IkKoaDCO5Vx8@ep-nameless-poetry-ayhrtv95.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require",
-          ssl: { rejectUnauthorized: false },
-          max: 25,
+          connectionString: finalConnectionString,
+          ssl: !isLocalHost ? { rejectUnauthorized: false } : undefined,
+          max: 20,
           idleTimeoutMillis: 30000,
-          connectionTimeoutMillis: 5000,
+          connectionTimeoutMillis: 10000,
+          statement_timeout: 60000
         });
-        dbInstance = createPgDbAdapter(pool);
-        return dbInstance;
+
+        try {
+          // Verify live connectivity before assigning adapter
+          await pool.query("SELECT 1");
+
+          // Ensure compatibility functions exist in PostgreSQL
+          try {
+            await pool.query(`
+              CREATE OR REPLACE FUNCTION strftime(format text, date_val text) 
+              RETURNS text AS $$
+              BEGIN
+                IF format = '%w' THEN
+                  BEGIN
+                    RETURN EXTRACT(DOW FROM date_val::date)::text;
+                  EXCEPTION WHEN OTHERS THEN
+                    RETURN '1';
+                  END;
+                ELSE
+                  RETURN date_val;
+                END IF;
+              END;
+              $$ LANGUAGE plpgsql IMMUTABLE;
+
+              CREATE OR REPLACE FUNCTION date(base_val text, offset_val text)
+              RETURNS text AS $$
+              DECLARE
+                clean_offset text;
+              BEGIN
+                IF offset_val LIKE '-%' THEN
+                  RETURN (CURRENT_DATE - SUBSTRING(offset_val FROM 2)::interval)::date::text;
+                ELSIF offset_val LIKE '+%' THEN
+                  RETURN (CURRENT_DATE + SUBSTRING(offset_val FROM 2)::interval)::date::text;
+                ELSE
+                  RETURN (CURRENT_DATE + offset_val::interval)::date::text;
+                END IF;
+              EXCEPTION WHEN OTHERS THEN
+                RETURN CURRENT_DATE::text;
+              END;
+              $$ LANGUAGE plpgsql IMMUTABLE;
+
+              CREATE OR REPLACE FUNCTION date(base_val text)
+              RETURNS text AS $$
+              BEGIN
+                IF base_val = 'now' THEN
+                  RETURN CURRENT_DATE::text;
+                ELSE
+                  RETURN base_val::date::text;
+                END IF;
+              EXCEPTION WHEN OTHERS THEN
+                RETURN CURRENT_DATE::text;
+              END;
+              $$ LANGUAGE plpgsql IMMUTABLE;
+            `);
+          } catch (_) {}
+
+          // Ensure core tables exist in PostgreSQL if connected to a fresh database
+          try {
+            const tableCheck = await pool.query(
+              "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users'"
+            );
+            if (tableCheck.rowCount === 0) {
+              console.log("🐘 [Database] PostgreSQL tables not found. Initializing schema...");
+              const fs = await import("fs");
+              const path = await import("path");
+              const schemaPath = path.resolve(process.cwd(), "postgres_schema.sql");
+              if (fs.existsSync(schemaPath)) {
+                const schemaSql = fs.readFileSync(schemaPath, "utf8");
+                await pool.query(schemaSql);
+                console.log("🐘 [Database] PostgreSQL schema initialized successfully.");
+              }
+            }
+          } catch (schemaErr: any) {
+            console.warn("🐘 [Database] Schema check/bootstrap warning:", schemaErr?.message);
+          }
+
+          dbInstance = createPostgresAdapter(pool);
+          return dbInstance;
+        } catch (pgConnErr: any) {
+          console.warn(`\n⚠️  [Database Warning] PostgreSQL connection failed (${pgConnErr?.message || pgConnErr}).`);
+          console.warn(`💡 Note: If using Supabase free tier, your project (scuvqabxqqtvibjutoyj) may be paused. Visit https://supabase.com/dashboard to unpause it.`);
+          console.warn(`🔄 Falling back to local SQLite database (database.sqlite) to keep the application running smoothly.\n`);
+          try { await pool.end(); } catch (_) {}
+        }
       }
 
-      if (useLocal) {
-        console.log("⚡ [Database] Using local SQLite database (database.sqlite).");
-        const client = createClient({ url: "file:database.sqlite" });
-        dbInstance = createDbAdapter(client);
-        return dbInstance;
+      const useLocal = process.env.USE_LOCAL_DB === "true" || process.env.USE_LOCAL_DB === "1";
+      const url = useLocal ? "file:database.sqlite" : (process.env.TURSO_DATABASE_URL || "file:database.sqlite");
+      const authToken = useLocal ? undefined : process.env.TURSO_AUTH_TOKEN;
+
+      let client: Client;
+      try {
+        if (useLocal) {
+          console.log("⚡ [Database] Using local SQLite database (database.sqlite).");
+        }
+        client = createClient({
+          url,
+          authToken,
+        });
+      } catch (err) {
+        console.warn("[DB Warning] Failed to initialize Turso Cloud client. Falling back to local SQLite database.");
+        client = createClient({ url: "file:database.sqlite" });
       }
 
-      let client = createClient({ url: "file:database.sqlite" });
       dbInstance = createDbAdapter(client);
 
       // Enable foreign keys for references
@@ -783,6 +971,19 @@ export function getDb(): Promise<TursoDbAdapter> {
       head_subject_group TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS sme_availability (
+      id TEXT PRIMARY KEY,
+      sme_id TEXT NOT NULL,
+      day_of_week TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      slot_type TEXT DEFAULT 'demo',
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (sme_id) REFERENCES sme_users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS demo_sessions (
       id TEXT PRIMARY KEY,
       mentorId TEXT NOT NULL,
@@ -915,21 +1116,6 @@ export function getDb(): Promise<TursoDbAdapter> {
       college_id TEXT,
       notes TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS faculty_leave_requests (
-      id TEXT PRIMARY KEY,
-      mentor_id TEXT NOT NULL,
-      college_id TEXT,
-      request_type TEXT NOT NULL,
-      leave_category TEXT,
-      start_date TEXT NOT NULL,
-      end_date TEXT NOT NULL,
-      reason TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (mentor_id) REFERENCES mentors(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS mentor_attendance (
@@ -1324,6 +1510,18 @@ export function getDb(): Promise<TursoDbAdapter> {
           await dbInstance.exec(`UPDATE slots SET college_id = 'college_1' WHERE college_id IS NULL;`);
         } catch (_) { }
 
+        try { await dbInstance.exec(`ALTER TABLE demo_sessions ADD COLUMN start_time TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE demo_sessions ADD COLUMN end_time TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE demo_sessions ADD COLUMN college_id TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE demo_swap_requests ADD COLUMN requestType TEXT DEFAULT 'reschedule';`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE demo_swap_requests ADD COLUMN requestorRole TEXT DEFAULT 'sme';`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE demo_swap_requests ADD COLUMN requestorId TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE demo_swap_requests ADD COLUMN proposedStartTime TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE demo_swap_requests ADD COLUMN proposedEndTime TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE demo_swap_requests ADD COLUMN reviewedBy TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE demo_swap_requests ADD COLUMN reviewedAt TEXT;`); } catch (_) { }
+        try { await dbInstance.exec(`ALTER TABLE sme_availability ADD COLUMN slot_type TEXT DEFAULT 'demo';`); } catch (_) { }
+
         try {
           // Clean any invalid Sunday attendance records from DB
           await dbInstance.exec(`DELETE FROM student_attendance WHERE strftime('%w', dateStr) = '0';`);
@@ -1338,6 +1536,50 @@ export function getDb(): Promise<TursoDbAdapter> {
         }
 
         await dbInstance.run("INSERT OR REPLACE INTO schema_migrations (version) VALUES (6);");
+      }
+
+      // ── Performance Indexes (safe to re-run — CREATE IF NOT EXISTS) ───────
+      try {
+        await dbInstance.exec(`
+          CREATE INDEX IF NOT EXISTS idx_sa_student      ON student_attendance (studentId);
+          CREATE INDEX IF NOT EXISTS idx_sa_slot_date    ON student_attendance (slotId, dateStr);
+          CREATE INDEX IF NOT EXISTS idx_sa_date         ON student_attendance (dateStr);
+          CREATE INDEX IF NOT EXISTS idx_sa_student_date ON student_attendance (studentId, dateStr);
+
+          CREATE INDEX IF NOT EXISTS idx_slots_mentor    ON slots (mentorId, day, time);
+          CREATE INDEX IF NOT EXISTS idx_slots_college   ON slots (college_id);
+          CREATE INDEX IF NOT EXISTS idx_slots_class     ON slots (classGroup, day, time);
+          CREATE INDEX IF NOT EXISTS idx_slots_location  ON slots (location, day, time, shift);
+
+          CREATE INDEX IF NOT EXISTS idx_stu_college     ON students (college_id);
+          CREATE INDEX IF NOT EXISTS idx_stu_class       ON students (classGroup, college_id);
+          CREATE INDEX IF NOT EXISTS idx_stu_roll        ON students (roll_number);
+          CREATE INDEX IF NOT EXISTS idx_stu_reg         ON students (register_number);
+          CREATE INDEX IF NOT EXISTS idx_stu_email       ON students (email);
+
+          CREATE INDEX IF NOT EXISTS idx_users_email     ON users (email);
+          CREATE INDEX IF NOT EXISTS idx_users_ref       ON users (reference_id);
+          CREATE INDEX IF NOT EXISTS idx_users_role      ON users (role);
+
+          CREATE INDEX IF NOT EXISTS idx_notifs_user     ON notifications (user_id, is_read);
+          CREATE INDEX IF NOT EXISTS idx_audit_ts        ON audit_logs (timestamp);
+
+          CREATE INDEX IF NOT EXISTS idx_at_mentor_date  ON academic_tracker (mentor_id, date);
+          CREATE INDEX IF NOT EXISTS idx_at_class        ON academic_tracker (class_group, subject);
+
+          CREATE INDEX IF NOT EXISTS idx_fees_student    ON student_fees (student_id, college_id);
+          CREATE INDEX IF NOT EXISTS idx_fees_college    ON student_fees (college_id, status);
+
+          CREATE INDEX IF NOT EXISTS idx_interviews_col  ON student_interviews (college_id, status);
+          CREATE INDEX IF NOT EXISTS idx_allocs          ON interview_allocations (interview_id);
+
+          CREATE INDEX IF NOT EXISTS idx_dconfig         ON campus_daily_configs (college_id, dateStr);
+          CREATE INDEX IF NOT EXISTS idx_handover_slot   ON approved_handovers (slotId, dateStr);
+          CREATE INDEX IF NOT EXISTS idx_handover_req    ON handover_requests (requestorId, status);
+        `);
+        console.log("[DB] Performance indexes ensured.");
+      } catch (idxErr: any) {
+        console.warn("[DB] Index creation warning (non-fatal):", idxErr?.message);
       }
 
       return dbInstance;
@@ -1372,12 +1614,15 @@ export async function resolveClassGroupDetails(db: any, classGroup: string) {
 
   // Normalize text for matching
   const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  // Strip leading Roman numerals / year prefixes (e.g. "III BCA" -> "BCA", "I BBA DM" -> "BBA DM")
+  const strippedCG = cleanCG.replace(/^(?:[ivxldc]+|\d+(?:st|nd|rd|th)?)\s+(?:year\s+)?/i, "").trim();
   const cgNorm = normalize(cgLower);
+  const strippedNorm = normalize(strippedCG);
 
   // Try to match with exact name
   for (const deptName of allCourseNames) {
     const deptNorm = normalize(deptName);
-    if (cgNorm.includes(deptNorm)) {
+    if (cgNorm.includes(deptNorm) || strippedNorm.includes(deptNorm) || deptNorm.includes(strippedNorm)) {
       if (deptNorm.length > bestDeptMatchScore) {
         resolvedDept = deptName;
         bestDeptMatchScore = deptNorm.length;
@@ -1394,7 +1639,7 @@ export async function resolveClassGroupDetails(db: any, classGroup: string) {
 
     for (const code of codes) {
       const codeNorm = normalize(code);
-      if (cgNorm.includes(codeNorm)) {
+      if (cgNorm.includes(codeNorm) || strippedNorm.includes(codeNorm)) {
         const matchedCourse = courses.find((c: any) => c.code === code) || depts.find((d: any) => d.code === code);
         if (matchedCourse) {
           resolvedDept = matchedCourse.name;
@@ -1415,16 +1660,16 @@ export async function resolveClassGroupDetails(db: any, classGroup: string) {
         .join("")
         .toLowerCase();
 
-      if (abbreviation && cgNorm.includes(abbreviation)) {
+      if (abbreviation && (cgNorm.includes(abbreviation) || strippedNorm.includes(abbreviation))) {
         resolvedDept = deptName;
         break;
       }
     }
   }
 
-  // Fallback to splitting
+  // Fallback to cleaned prefix
   if (!resolvedDept) {
-    resolvedDept = cleanCG.split("-")[0].split("(")[0].trim();
+    resolvedDept = strippedCG.split("-")[0].split("(")[0].trim() || cleanCG.split("-")[0].split("(")[0].trim();
   }
 
   // B. Determine Semester
@@ -1541,6 +1786,7 @@ export function parseClassGroupDetails(classGroup: string) {
 export async function syncMentorSubjectGroups(db: any) {
   // 1. Fetch all configured subject groups
   const groupRows = await db.all("SELECT * FROM subject_groups");
+  if (!groupRows || groupRows.length === 0) return;
   const groupNames = groupRows.map((g: any) => g.name);
 
   // 2. Fetch all subjects
@@ -1552,7 +1798,7 @@ export async function syncMentorSubjectGroups(db: any) {
     if (!matchedGroup || matchedGroup.toLowerCase() === "general") {
       const subNameLower = (sub.name || "").toLowerCase();
 
-      // Check direct group name match
+      // Check direct group name match against EXPLICIT configured group names
       for (const gName of groupNames) {
         if (subNameLower.includes(gName.toLowerCase())) {
           matchedGroup = gName;
@@ -1560,27 +1806,7 @@ export async function syncMentorSubjectGroups(db: any) {
         }
       }
 
-      // Keyword fallback matching
-      if (!matchedGroup || matchedGroup.toLowerCase() === "general") {
-        if (subNameLower.includes("english") || subNameLower.includes("verbal") || subNameLower.includes("communi")) {
-          matchedGroup = groupNames.find((g: string) => g.toLowerCase().includes("english")) || "English";
-        } else if (subNameLower.includes("aptitude") || subNameLower.includes("quant") || subNameLower.includes("reasoning") || subNameLower.includes("math")) {
-          matchedGroup = groupNames.find((g: string) => g.toLowerCase().includes("aptitude") || g.toLowerCase().includes("quant")) || "Aptitude";
-        } else if (subNameLower.includes("python") || subNameLower.includes("java") || subNameLower.includes("c++") || subNameLower.includes("code") || subNameLower.includes("tech") || subNameLower.includes("data structure") || subNameLower.includes("algorithm")) {
-          matchedGroup = groupNames.find((g: string) => g.toLowerCase().includes("technical") || g.toLowerCase().includes("tech")) || "Technical";
-        } else if (subNameLower.includes("soft skill") || subNameLower.includes("personality") || subNameLower.includes("interview")) {
-          matchedGroup = groupNames.find((g: string) => g.toLowerCase().includes("soft")) || "Soft Skills";
-        }
-      }
-
       if (matchedGroup) {
-        // Ensure the subject_group exists in subject_groups table
-        const groupExists = groupRows.some((g: any) => g.name.toLowerCase() === matchedGroup!.toLowerCase());
-        if (!groupExists) {
-          const newGroupId = "g_" + matchedGroup.toLowerCase().replace(/[^a-z0-9]/g, "");
-          await db.run("INSERT OR IGNORE INTO subject_groups (id, name, description) VALUES (?, ?, ?)", [newGroupId, matchedGroup, `${matchedGroup} Group`]);
-        }
-
         await db.run(
           "UPDATE subjects SET subject_group = ?, mentor_group = ? WHERE id = ?",
           [matchedGroup, matchedGroup, sub.id]
@@ -1618,6 +1844,30 @@ export async function syncMentorSubjectGroups(db: any) {
       await db.run("UPDATE mentors SET mentor_group = ?, subject_group = ? WHERE id = ? AND (mentor_group IS NULL OR mentor_group = '' OR mentor_group = 'General')", [matchedGroup, matchedGroup, mentor.id]);
     }
   }
+}
+
+export async function consolidateSubjectGroups(db: any) {
+  // Merge duplicate/fragmented groups into canonical definitions:
+  // 1. English (g1) -> English / Communication
+  await db.run("UPDATE mentors SET mentor_group = 'English / Communication', subject_group = 'English / Communication' WHERE mentor_group = 'English' OR subject_group = 'English'");
+  await db.run("UPDATE subjects SET mentor_group = 'English / Communication', subject_group = 'English / Communication' WHERE mentor_group = 'English' OR subject_group = 'English'");
+  await db.run("DELETE FROM subject_groups WHERE id = 'g1'");
+
+  // 2. Aptitude (g2) & Mathematics (sg_math) -> Maths / Aptitude
+  await db.run("UPDATE mentors SET mentor_group = 'Maths / Aptitude', subject_group = 'Maths / Aptitude' WHERE mentor_group IN ('Aptitude', 'Mathematics') OR subject_group IN ('Aptitude', 'Mathematics')");
+  await db.run("UPDATE subjects SET mentor_group = 'Maths / Aptitude', subject_group = 'Maths / Aptitude' WHERE mentor_group IN ('Aptitude', 'Mathematics') OR subject_group IN ('Aptitude', 'Mathematics')");
+  await db.run("DELETE FROM subject_groups WHERE id IN ('g2', 'sg_math')");
+
+  // 3. Technical & Computer Applications -> Computer Science
+  await db.run("UPDATE mentors SET mentor_group = 'Computer Science', subject_group = 'Computer Science' WHERE mentor_group IN ('Technical', 'Computer Applications') OR subject_group IN ('Technical', 'Computer Applications')");
+  await db.run("UPDATE subjects SET mentor_group = 'Computer Science', subject_group = 'Computer Science' WHERE mentor_group IN ('Technical', 'Computer Applications') OR subject_group IN ('Technical', 'Computer Applications')");
+  await db.run("DELETE FROM subject_groups WHERE id = 'g4'");
+
+  // 4. Clean up phantom General group if not needed, or normalize id
+  await db.run("DELETE FROM subject_groups WHERE id = 'g5' AND NOT EXISTS (SELECT 1 FROM mentors WHERE mentor_group = 'General' OR subject_group = 'General')");
+
+  // Re-sync mappings strictly
+  await syncMentorSubjectGroups(db);
 }
 
 export async function syncMentorSubjectsAndClasses(db: TursoDbAdapter, mentorId: string, course?: string, classGroup?: string) {

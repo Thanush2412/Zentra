@@ -3,11 +3,15 @@ export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb, syncMentorSubjectGroups } from "@/lib/db";
+import { getDb, syncMentorSubjectGroups, consolidateSubjectGroups } from "@/lib/db";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    if (searchParams.get("action") === "consolidate") {
+      await consolidateSubjectGroups(db);
+    }
     const groups = await db.all("SELECT * FROM subject_groups ORDER BY name ASC");
     return NextResponse.json({ success: true, groups });
   } catch (error: any) {

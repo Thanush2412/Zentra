@@ -456,32 +456,37 @@ export async function POST(request: Request) {
         );
       }
 
-      // Insert new records
+      // ── Batch insert all attendance rows in one multi-row INSERT ──────────
+      // Filter out "not_marked" — those are just absences from the delete above.
+      const validItems = attendance.filter((a: any) => a.status && a.status !== "not_marked");
       const timestamp = new Date().toISOString();
       let insertedCount = 0;
-      for (const item of attendance) {
-        const { studentId, status } = item;
-        if (status === "not_marked") {
-          continue;
-        }
-        const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+      if (validItems.length > 0) {
+        const placeholders = validItems.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+        const params: any[] = [];
+        validItems.forEach((item: any) => {
+          const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          params.push(
+            recordId, item.studentId, slotId, dateStr, item.status,
+            markedBy || "System", timestamp,
+            type || "Regular", mode || "Offline", attendanceTypeSub || null
+          );
+        });
         await db.run(
-          `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp, type, mode, attendanceTypeSub)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            recordId,
-            studentId,
-            slotId,
-            dateStr,
-            status,
-            markedBy || "System",
-            timestamp,
-            type || "Regular",
-            mode || "Offline",
-            attendanceTypeSub || null
-          ]
+          `INSERT INTO student_attendance
+           (id, studentId, slotId, dateStr, status, markedBy, timestamp, type, mode, attendanceTypeSub)
+           VALUES ${placeholders}
+           ON CONFLICT(studentId, slotId, dateStr) DO UPDATE SET
+             status = excluded.status,
+             markedBy = excluded.markedBy,
+             timestamp = excluded.timestamp,
+             type = excluded.type,
+             mode = excluded.mode,
+             attendanceTypeSub = excluded.attendanceTypeSub`,
+          params
         );
-        insertedCount++;
+        insertedCount = validItems.length;
       }
 
       const presentCount = attendance.filter((a: any) => a.status === "present").length;

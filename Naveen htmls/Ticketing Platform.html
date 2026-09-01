@@ -1791,7 +1791,7 @@ body[data-theme="dark"] .dlog-topbar {
     <div class="authv2-formzone">
       <div class="authv2-forminner">
         <div class="authv2-logo-wrap">
-          <img class="authv2-logo" src="Face prep logo3.png" alt="FACE Prep Campus" />
+          <img class="authv2-logo" src="Face prep logo3.png" alt="FACE Prep Campus" onerror="this.onerror=null;this.src='https://rysajbwcuieovbsllaas.supabase.co/storage/v1/object/public/classroom-snaps/St.%20Agnes%20College%20(Autonomous)/ticket%20logo.jpg';" />
         </div>
 
         <div class="authv2-header">
@@ -1914,7 +1914,7 @@ body[data-theme="dark"] .dlog-topbar {
           </div>
         </div>
         <h3>E Audit</h3>
-        <p>Coming soon.</p>
+        <p>Intra-KAM peer audit rotation, evidence review &amp; verification.</p>
       </button>
     </div>
    <div class="platform-streak hidden" id="platform-streak">
@@ -2496,7 +2496,7 @@ body[data-theme="dark"] .dlog-topbar {
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-top">
         <div class="brand">
-          <img class="brand-logo-img" src="Face prep logo3.png" alt="FACE Prep Campus" />
+          <img class="brand-logo-img" src="Face prep logo3.png" alt="FACE Prep Campus" onerror="this.onerror=null;this.src='https://rysajbwcuieovbsllaas.supabase.co/storage/v1/object/public/classroom-snaps/St.%20Agnes%20College%20(Autonomous)/ticket%20logo.jpg';" />
         </div>
         <button class="collapse-btn" onclick="toggleSidebar()" title="Collapse sidebar" aria-label="Collapse sidebar">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>
@@ -3462,10 +3462,6 @@ function initPlatformCardTilt(){
   });
 }
 function selectPlatform(which){
-  if(which === 'eaudit'){
-    showToast('E Audit is coming soon!');
-    return;
-  }
   if(which === 'classroomsnap' && !isClassroomSnapAllowedForSession()){
     showToast('Classroom Observation Log is not enabled for your account');
     return;
@@ -3480,6 +3476,12 @@ function selectPlatform(which){
     enterClassroomSnap();
   } else if(which === 'reportmonitor'){
     enterReportMonitor();
+  } else if(which === 'eaudit'){
+    const params = new URLSearchParams();
+    if(sessionRole) params.set('role', sessionRole);
+    if(sessionCollege) params.set('college', sessionCollege);
+    if(sessionKamName) params.set('kam', sessionKamName);
+    window.location.href = `Campus E Audit.html?${params.toString()}`;
   }
 }  
 

@@ -345,7 +345,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [studentInterviews, setStudentInterviews] = useState<any[]>([]);
 
   useEffect(() => {
-    if (currentStudent?.id) {
+    if (currentStudent?.id && (activeTab === "interviews" || studentInterviews.length === 0)) {
       fetch(`/api/interviews?role=student&studentId=${currentStudent.id}&classGroup=${encodeURIComponent(currentStudent.classGroup || "")}&collegeId=${currentStudent.college_id || ""}`)
         .then((res) => res.json())
         .then((data) => {
@@ -358,11 +358,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   }, [currentStudent?.id, currentStudent?.classGroup, currentStudent?.college_id, activeTab]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("fp_allowed_profile_edit_classes");
-    if (saved) {
-      setAllowedProfileEditClasses(JSON.parse(saved));
-    }
-  }, [activeTab]);
+    try {
+      const saved = localStorage.getItem("fp_allowed_profile_edit_classes");
+      if (saved) {
+        setAllowedProfileEditClasses(JSON.parse(saved));
+      }
+    } catch (_) {}
+  }, []);
 
   useEffect(() => {
     if (currentStudent) {

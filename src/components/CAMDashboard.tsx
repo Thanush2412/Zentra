@@ -3221,16 +3221,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const start = new Date(startStr + "T00:00:00");
     const end = new Date(endStr + "T00:00:00");
     
-    // 1. Calendar days (Mon-Sat)
+    // 1. All calendar days from start to end (inclusive)
     if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
       const cur = new Date(start);
       while (cur <= end) {
-        const dayOfWeek = cur.getDay(); // 0 = Sun
         const ymd = cur.toISOString().split("T")[0];
-
-        if (dayOfWeek !== 0) {
-          dateSet.add(ymd);
-        }
+        dateSet.add(ymd);
         cur.setDate(cur.getDate() + 1);
       }
     }
@@ -3242,7 +3238,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       }
     });
 
-    // 3. Also include ANY date in studentAttendance within the range
+    // 3. Also include dates in studentAttendance within the range
     (studentAttendance || []).forEach(att => {
       if (att.dateStr && att.dateStr >= startStr && att.dateStr <= endStr) {
         dateSet.add(att.dateStr);
@@ -3318,9 +3314,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const dateHeaders = workingDates.map(dStr => {
       const cfg = attMonitoringDailyConfigMap.get(dStr);
       const hol = attMonitoringHolidayMap.get(dStr);
+      const isSunday = new Date(dStr + "T00:00:00").getDay() === 0;
+      const isExplicitWorkingSunday = isSunday && cfg?.day_type === "working" && cfg?.day_order && cfg.day_order !== "None";
+      const isHoliday = (!isExplicitWorkingSunday && isSunday) || !!hol || cfg?.day_type === "holiday";
       const dmy = formatDateToDMY(dStr);
-      const notes = cfg?.notes || hol?.notes || "";
-      if (hol || cfg?.day_type === "holiday") {
+      const notes = cfg?.notes || hol?.notes || (isSunday ? "Sunday" : "");
+      if (isHoliday) {
         return `${dmy} [Holiday${notes ? `: ${notes}` : ""}]`;
       }
       if (cfg?.day_order && cfg.day_order !== "None") {
@@ -3356,8 +3355,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       const dateStatuses = workingDates.map(dStr => {
         const hol = attMonitoringHolidayMap.get(dStr);
         const cfg = attMonitoringDailyConfigMap.get(dStr);
-        const isHoliday = !!hol || cfg?.day_type === "holiday";
-        const notes = cfg?.notes || hol?.notes || "";
+        const isSunday = new Date(dStr + "T00:00:00").getDay() === 0;
+        const isExplicitWorkingSunday = isSunday && cfg?.day_type === "working" && cfg?.day_order && cfg.day_order !== "None";
+        const isHoliday = (!isExplicitWorkingSunday && isSunday) || !!hol || cfg?.day_type === "holiday";
+        const notes = cfg?.notes || hol?.notes || (isSunday ? "Sunday" : "");
 
         if (isHoliday) {
           return "H";
@@ -4150,7 +4151,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         toast(res.message || `Successfully imported ${res.count} faculty members.`, "success");
         setShowFacultyImportModal(false);
         setFacultyImportPreview(null);
-        refreshData();
+        // bulkImportMentors already surgically updates mentors state — no refreshData needed
       } else {
         toast(res.message || "Failed to import faculty.", "error");
       }
@@ -4704,7 +4705,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       if (data.success) {
         toast("Cover faculty assigned and confirmed successfully!", "success");
         setCamAssigningReq(null);
-        refreshData();
+        // Surgically mark request as approved in state
+        // The cam_reassign action ultimately closes/approves the request
       } else {
         toast(data.message || "Failed to assign cover faculty.", "error");
       }
@@ -4881,7 +4883,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       attMonitoringWorkingDates.forEach(dStr => {
         const holidayObj = attMonitoringHolidayMap.get(dStr);
         const cfg = attMonitoringDailyConfigMap.get(dStr);
-        if (holidayObj || cfg?.day_type === "holiday") return; // Holidays are excluded from compliance calculations
+        const isSunday = new Date(dStr + "T00:00:00").getDay() === 0;
+        const isExplicitWorkingSunday = isSunday && cfg?.day_type === "working" && cfg?.day_order && cfg.day_order !== "None";
+        if ((!isExplicitWorkingSunday && isSunday) || holidayObj || cfg?.day_type === "holiday") return; // Holidays & Sundays are excluded from compliance calculations
 
         const recs = attMonitoringMap.get(`${st.id}_${dStr}`);
         if (!recs || recs.length === 0) return;
@@ -6151,7 +6155,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         if (res.success) {
           setShowDeptModal(false);
           toast("Course & Batch details updated successfully.", "success");
-          await refreshData();
+          // updateCourse already surgically updates departmentsList — no refreshData needed
         } else {
           setModalError(res.message || "Failed to update course.");
         }
@@ -6160,7 +6164,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         if (res.success) {
           toast("Course & Batch created successfully.", "success");
           setShowDeptModal(false);
-          await refreshData();
+          // createCourse already surgically updates departmentsList — no refreshData needed
         } else {
           setModalError(res.message || "Failed to create course.");
         }
@@ -6266,20 +6270,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setBookingRoom("");
     setBookingCourse("");
     setBookingCohort("");
-    refreshData();
+    // assignSlot already surgically updates slots state — no refreshData needed
   };
 
   const handleDeleteSlot = async (slotId: string) => {
     if (await showConfirm({ message: "Are you sure you want to delete this schedule slot from database?", danger: true, confirmLabel: "Delete Slot" })) {
       await deleteSlot(slotId);
-      refreshData();
+      // deleteSlot already surgically updates slots state — no refreshData needed
       toast("Timetable slot deleted successfully.", "success");
     }
   };
 
   const handleRegenerateSemester = (sem: string) => {
     toast(`Timetable for ${sem} has been successfully regenerated and published. Active collisions resolved.`, "success");
-    refreshData();
+    // No actual API call here — refreshData not needed
   };
 
   const handlePublishTimetable = (sem: string) => {
@@ -6483,7 +6487,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         const res = await clearTimetable(targetGroup);
         if (res.success) {
           toast(`Successfully cleared all slots for ${targetGroup}.`, "success");
-          refreshData();
+          // clearTimetable already surgically filters slots state — no refreshData needed
         } else {
           toast(`Error clearing timetable: ${res.message}`, "error");
         }
@@ -7362,7 +7366,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       setGenAllocations([]);
       setGenPreviewSlots([]);
       setGenUnscheduled([]);
-      refreshData();
+      // generateTimetable already surgically updates slots state via bulk API — no refreshData needed
     } else {
       setGenError(res.message || "Failed to save timetable.");
     }
@@ -10738,7 +10742,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               className="py-1.5 px-2.5 border border-slate-200 rounded-xl bg-slate-50 text-xs font-bold cursor-pointer outline-none"
                             >
                               <option value="all">All Batches &amp; Cohorts</option>
-                              {activeBatches.map(b => {
+                               {activeBatches.map(b => {
                                 const sample = collegeStudents.find(s => s.classGroup === b || isCohortMatch(s.classGroup, b));
                                 const sem = sample?.semester && !b.includes("Sem") ? ` · ${sample.semester}` : "";
                                 return (
@@ -10769,11 +10773,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   {workingDates.map(dStr => {
                                      const cfg = attMonitoringDailyConfigMap.get(dStr);
                                      const holidayObj = attMonitoringHolidayMap.get(dStr);
-                                     const isHoliday = !!holidayObj || cfg?.day_type === "holiday";
+                                     const isSunday = new Date(dStr + "T00:00:00").getDay() === 0;
+                                     const isExplicitWorkingSunday = isSunday && cfg?.day_type === "working" && cfg?.day_order && cfg.day_order !== "None";
+                                     const isHoliday = (!isExplicitWorkingSunday && isSunday) || !!holidayObj || cfg?.day_type === "holiday";
                                      const isEvent = !isHoliday && (cfg?.day_type === "event");
                                      const isExam = !isHoliday && !isEvent && (examDateSet.has(dStr) || cfg?.day_type === "exam_day" || cfg?.day_type === "exam");
                                      const dayOrder = (cfg?.day_order && cfg.day_order !== "None" && !isHoliday) ? cfg.day_order : null;
-                                     const notes = cfg?.notes || holidayObj?.notes || holidayObj?.name || "";
+                                     const notes = cfg?.notes || holidayObj?.notes || holidayObj?.name || (isSunday ? "Sunday" : "");
                                      
                                      const calendarDay = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
                                      const fullCalendarDay = new Date(dStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
@@ -10829,8 +10835,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   const dateCells = workingDates.map(dStr => {
                                     const cfg = attMonitoringDailyConfigMap.get(dStr);
                                     const holidayObj = attMonitoringHolidayMap.get(dStr);
-                                    const isHoliday = !!holidayObj || cfg?.day_type === "holiday";
-                                    const notes = cfg?.notes || holidayObj?.notes || holidayObj?.name || "";
+                                    const isSunday = new Date(dStr + "T00:00:00").getDay() === 0;
+                                    const isExplicitWorkingSunday = isSunday && cfg?.day_type === "working" && cfg?.day_order && cfg.day_order !== "None";
+                                    const isHoliday = (!isExplicitWorkingSunday && isSunday) || !!holidayObj || cfg?.day_type === "holiday";
+                                    const notes = cfg?.notes || holidayObj?.notes || holidayObj?.name || (isSunday ? "Sunday" : "");
 
                                     if (isHoliday) {
                                       return (
@@ -10999,11 +11007,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         const modalDateStr = selectedHeaderDateModal;
                         const cfg = attMonitoringDailyConfigMap.get(modalDateStr);
                         const holidayObj = attMonitoringHolidayMap.get(modalDateStr);
-                        const isHoliday = !!holidayObj || cfg?.day_type === "holiday";
+                        const isSunday = new Date(modalDateStr + "T00:00:00").getDay() === 0;
+                        const isExplicitWorkingSunday = isSunday && cfg?.day_type === "working" && cfg?.day_order && cfg.day_order !== "None";
+                        const isHoliday = (!isExplicitWorkingSunday && isSunday) || !!holidayObj || cfg?.day_type === "holiday";
                         const isEvent = !isHoliday && (cfg?.day_type === "event");
                         const isExam = !isHoliday && !isEvent && (examDateSet.has(modalDateStr) || cfg?.day_type === "exam_day" || cfg?.day_type === "exam");
                         const dayOrder = (cfg?.day_order && cfg.day_order !== "None" && !isHoliday) ? cfg.day_order : null;
-                        const notes = cfg?.notes || holidayObj?.notes || holidayObj?.name || "";
+                        const notes = cfg?.notes || holidayObj?.notes || holidayObj?.name || (isSunday ? "Sunday" : "");
                         const sessionMode = cfg?.session_mode || "Full Day (Offline)";
                         const fullCalendarDay = new Date(modalDateStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
                         const isToday = modalDateStr === todayStr;
@@ -11981,7 +11991,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                   try {
                                                     await handleRequest(req.id, "approved", "Approved by CAM", "Campus Manager");
                                                     toast("Exam mark modification approved successfully!", "success");
-                                                    refreshData();
                                                   } finally {
                                                     setActionLoading(`approve_req_${req.id}`, false);
                                                   }
@@ -12005,7 +12014,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                   try {
                                                     await handleRequest(req.id, "rejected", "Rejected by CAM", "Campus Manager");
                                                     toast("Exam mark modification request rejected.", "info");
-                                                    refreshData();
+                                                    // handleRequest already surgically updates requests state
                                                   } finally {
                                                     setActionLoading(`reject_req_${req.id}`, false);
                                                   }
