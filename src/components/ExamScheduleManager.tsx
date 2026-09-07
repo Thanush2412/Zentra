@@ -25,6 +25,11 @@ import {
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
+import {
+  getCollegeOperatingHours,
+  getCollegePeriodTimeSlots,
+  parseTimeToMinutes
+} from "@/lib/utils";
 
 interface ExamSchedule {
   id: string;
@@ -53,7 +58,6 @@ interface SubjectFormRow {
   included: boolean;
   exam_date: string;
   day_order: string;
-  session_type: "FN" | "AN" | "custom";
   start_time: string;
   end_time: string;
   hall_room: string;
@@ -72,7 +76,7 @@ const PRESET_EXAM_SUGGESTIONS = [
 ];
 
 export const ExamScheduleManager: React.FC = () => {
-  const { currentCAM, departmentsList, coursesList, subjectsList } = useApp();
+  const { currentCAM, departmentsList, coursesList, subjectsList, colleges, slots } = useApp();
   const { toast, confirm: showConfirm } = useToast();
 
   const [exams, setExams] = useState<ExamSchedule[]>([]);
@@ -100,7 +104,6 @@ export const ExamScheduleManager: React.FC = () => {
   const [batchSem, setBatchSem] = useState("Semester 1");
   const [batchStartDate, setBatchStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [batchDefaultHall, setBatchDefaultHall] = useState("Main Examination Hall");
-  const [batchSessionTiming, setBatchSessionTiming] = useState<"FN" | "AN" | "custom">("FN");
   const [batchDefaultDayOrder, setBatchDefaultDayOrder] = useState("Day 1");
   const [batchCustomStartTime, setBatchCustomStartTime] = useState("10:00 AM");
   const [batchCustomEndTime, setBatchCustomEndTime] = useState("01:00 PM");
@@ -110,6 +113,86 @@ export const ExamScheduleManager: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const collegeId = currentCAM?.college_id || "Clg_c";
+
+  // Helper to format 12-hour time string
+  const formatTimeLabel = (totalMinutes: number): string => {
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const minutes = totalMinutes % 60;
+    const ampm = hours >= 12 ? "PM" : "AM";
+    let displayHours = hours % 12;
+    if (displayHours === 0) displayHours = 12;
+    const displayMinutes = minutes < 10 ? "0" + minutes : String(minutes);
+    return `${String(displayHours).padStart(2, "0")}:${displayMinutes} ${ampm}`;
+  };
+
+  // College operating hours resolved from timetable slots and shift configurations
+  const collegeHours = useMemo(() => {
+    return getCollegeOperatingHours(collegeId, colleges, slots);
+  }, [collegeId, colleges, slots]);
+
+  // Generates selectable time intervals strictly within college operating hours
+  const selectableTimeOptions = useMemo(() => {
+    const minuteSet = new Set<number>();
+
+    // Boundary limits
+    minuteSet.add(collegeHours.startMinutes);
+    minuteSet.add(collegeHours.endMinutes);
+
+    // 30-minute interval steps
+    let current = Math.ceil(collegeHours.startMinutes / 30) * 30;
+    while (current < collegeHours.endMinutes) {
+      if (current >= collegeHours.startMinutes) {
+        minuteSet.add(current);
+      }
+      current += 30;
+    }
+
+    // College timetable period slot times
+    const periodSlots = getCollegePeriodTimeSlots(collegeId, colleges, slots);
+    periodSlots.forEach((slotStr) => {
+      const parts = slotStr.replace(/to/i, "-").split("-").map((p) => p.trim());
+      parts.forEach((p) => {
+        const m = parseTimeToMinutes(p);
+        if (m >= collegeHours.startMinutes && m <= collegeHours.endMinutes) {
+          minuteSet.add(m);
+        }
+      });
+    });
+
+    // Preset benchmark times if within bounds
+    [
+      parseTimeToMinutes("09:00 AM"),
+      parseTimeToMinutes("10:00 AM"),
+      parseTimeToMinutes("12:00 PM"),
+      parseTimeToMinutes("01:00 PM"),
+      parseTimeToMinutes("02:00 PM"),
+      parseTimeToMinutes("04:00 PM"),
+      parseTimeToMinutes("05:00 PM")
+    ].forEach((m) => {
+      if (m >= collegeHours.startMinutes && m <= collegeHours.endMinutes) {
+        minuteSet.add(m);
+      }
+    });
+
+    const sorted = Array.from(minuteSet).sort((a, b) => a - b);
+    return sorted.map((mins) => ({
+      minutes: mins,
+      label: formatTimeLabel(mins)
+    }));
+  }, [collegeHours, collegeId, colleges, slots]);
+
+  // Ensure default custom start and end times stay bounded within college operating hours
+  useEffect(() => {
+    const sMin = parseTimeToMinutes(batchCustomStartTime);
+    const eMin = parseTimeToMinutes(batchCustomEndTime);
+    if (sMin < collegeHours.startMinutes || sMin >= collegeHours.endMinutes) {
+      setBatchCustomStartTime(formatTimeLabel(collegeHours.startMinutes));
+    }
+    if (eMin <= collegeHours.startMinutes || eMin > collegeHours.endMinutes) {
+      const defaultEnd = Math.min(collegeHours.startMinutes + 180, collegeHours.endMinutes);
+      setBatchCustomEndTime(formatTimeLabel(defaultEnd));
+    }
+  }, [collegeHours]);
 
   // Derive department options strictly from database
   const availableDepartments = useMemo(() => {
@@ -224,10 +307,16 @@ export const ExamScheduleManager: React.FC = () => {
         }
       }
       const dStr = currentDate.toISOString().slice(0, 10);
-      const isFn = batchSessionTiming === "FN";
-      const isAn = batchSessionTiming === "AN";
-      const startT = isFn ? "10:00 AM" : isAn ? "02:00 PM" : batchCustomStartTime;
-      const endT = isFn ? "01:00 PM" : isAn ? "05:00 PM" : batchCustomEndTime;
+      let startT = batchCustomStartTime;
+      let endT = batchCustomEndTime;
+
+      // Clamp strictly within college operating hours
+      if (parseTimeToMinutes(startT) < collegeHours.startMinutes) {
+        startT = collegeHours.startTimeStr;
+      }
+      if (parseTimeToMinutes(endT) > collegeHours.endMinutes) {
+        endT = collegeHours.endTimeStr;
+      }
 
       // Auto cycle Day 1 to Day 6
       const orderNum = (idx % 6) + 1;
@@ -239,7 +328,6 @@ export const ExamScheduleManager: React.FC = () => {
         included: true,
         exam_date: dStr,
         day_order: dOrder,
-        session_type: batchSessionTiming,
         start_time: startT,
         end_time: endT,
         hall_room: batchDefaultHall
@@ -314,15 +402,33 @@ export const ExamScheduleManager: React.FC = () => {
       return;
     }
 
+    // Validate that all exam timings fall strictly within college operating hours and end > start
+    for (const row of selectedToSchedule) {
+      const sMin = parseTimeToMinutes(row.start_time);
+      const eMin = parseTimeToMinutes(row.end_time);
+
+      if (!sMin || !eMin) {
+        toast(`Please choose valid start and end times for ${row.subject_name}`, "warning");
+        return;
+      }
+      if (eMin <= sMin) {
+        toast(`End time must be later than start time for ${row.subject_name} (${row.start_time} - ${row.end_time})`, "warning");
+        return;
+      }
+      if (sMin < collegeHours.startMinutes) {
+        toast(`Start time (${row.start_time}) cannot be earlier than college start time (${collegeHours.startTimeStr}) for ${row.subject_name}`, "warning");
+        return;
+      }
+      if (eMin > collegeHours.endMinutes) {
+        toast(`End time (${row.end_time}) cannot exceed college closing time (${collegeHours.endTimeStr}) for ${row.subject_name}`, "warning");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const payloadSchedules = selectedToSchedule.map((row) => {
-        const sessionTimeStr =
-          row.session_type === "FN"
-            ? `${row.start_time || "10:00 AM"} - ${row.end_time || "01:00 PM"} (FN)`
-            : row.session_type === "AN"
-            ? `${row.start_time || "02:00 PM"} - ${row.end_time || "05:00 PM"} (AN)`
-            : `${row.start_time} - ${row.end_time}`;
+        const sessionTimeStr = `${row.start_time} - ${row.end_time}`;
 
         return {
           id: `exam_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -353,6 +459,11 @@ export const ExamScheduleManager: React.FC = () => {
         toast(`Published ${payloadSchedules.length} exam slots for "${batchExamName}" (${batchDept})!`, "success");
         setIsPopupOpen(false);
         fetchExams();
+        // Notify student & mentor dashboards to update schedule and timetable
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_exams_updated", { detail: { college_id: collegeId } }));
+          window.dispatchEvent(new CustomEvent("fp_schedule_updated", { detail: { college_id: collegeId } }));
+        }
         // Open the newly created group accordion
         const newKey = `${batchExamName.trim()}_${batchDept}_${batchSem}`;
         setOpenAccordions((prev) => ({ ...prev, [newKey]: true }));
@@ -390,6 +501,10 @@ export const ExamScheduleManager: React.FC = () => {
         toast(`Deleted exam timetable with ${failed} warnings`, "warning");
       }
       fetchExams();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("fp_exams_updated", { detail: { college_id: collegeId } }));
+        window.dispatchEvent(new CustomEvent("fp_schedule_updated", { detail: { college_id: collegeId } }));
+      }
     } catch (err: any) {
       toast("Error deleting batch: " + err.message, "error");
     }
@@ -411,6 +526,10 @@ export const ExamScheduleManager: React.FC = () => {
       if (data.success) {
         toast("Exam slot deleted", "success");
         fetchExams();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_exams_updated", { detail: { college_id: collegeId } }));
+          window.dispatchEvent(new CustomEvent("fp_schedule_updated", { detail: { college_id: collegeId } }));
+        }
       } else {
         toast(data.message || "Failed to delete exam", "error");
       }
@@ -1146,6 +1265,18 @@ export const ExamScheduleManager: React.FC = () => {
             {/* Modal Body */}
             <form onSubmit={handlePublishTimetable} className="flex flex-col flex-1 overflow-hidden">
               <div className="p-5 sm:p-6 overflow-y-auto space-y-5 text-xs">
+                {/* College Operating Hours Banner */}
+                <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-indigo-50/80 border border-indigo-150 text-indigo-900 text-xs">
+                  <Clock className="h-4 w-4 text-indigo-600 shrink-0" />
+                  <div className="flex flex-wrap items-center gap-1.5 font-medium">
+                    <span className="font-extrabold uppercase text-[10px] tracking-wider text-indigo-700">
+                      College Operating Hours:
+                    </span>
+                    <span className="font-bold text-slate-900">{collegeHours.startTimeStr} – {collegeHours.endTimeStr}</span>
+                    <span className="text-slate-500 text-[11px]">(Exams can only be scheduled within college operating hours)</span>
+                  </div>
+                </div>
+
                 {/* 1. Exam Type / Name */}
                 <div className="space-y-1.5">
                   <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
@@ -1218,7 +1349,7 @@ export const ExamScheduleManager: React.FC = () => {
                 </div>
 
                 {/* 3. Global Batch Settings (Start Date, Day Order, Timings & Default Hall) */}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50/80 p-4 rounded-2xl border border-slate-150">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 bg-slate-50/80 p-4 rounded-2xl border border-slate-150">
                   <div className="space-y-1.5">
                     <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
                       Starting Exam Date
@@ -1233,7 +1364,7 @@ export const ExamScheduleManager: React.FC = () => {
 
                   <div className="space-y-1.5">
                     <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
-                      Day Order Sequence
+                      Day Order
                     </label>
                     <select
                       value={batchDefaultDayOrder}
@@ -1246,79 +1377,72 @@ export const ExamScheduleManager: React.FC = () => {
                       <option value="Day 4">Start at Day 4</option>
                       <option value="Day 5">Start at Day 5</option>
                       <option value="Day 6">Start at Day 6</option>
-                      <option value="None">None / No Day Order</option>
+                      <option value="None">None / No Order</option>
                     </select>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
-                      Campus Timing
+                    <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+                      <span>Start Time</span>
+                      <span className="text-[9px] text-indigo-600 font-bold">{collegeHours.startTimeStr}</span>
                     </label>
                     <select
-                      value={batchSessionTiming}
+                      value={batchCustomStartTime}
                       onChange={(e) => {
-                        const val = e.target.value as "FN" | "AN" | "custom";
-                        setBatchSessionTiming(val);
-                        const sT = val === "FN" ? "10:00 AM" : val === "AN" ? "02:00 PM" : batchCustomStartTime;
-                        const eT = val === "FN" ? "01:00 PM" : val === "AN" ? "05:00 PM" : batchCustomEndTime;
-                        setSubjectRows(prev => prev.map(r => ({
-                          ...r,
-                          session_type: val,
-                          start_time: sT,
-                          end_time: eT
-                        })));
+                        const newStart = e.target.value;
+                        setBatchCustomStartTime(newStart);
+                        setSubjectRows((prev) => prev.map((r) => ({ ...r, start_time: newStart })));
                       }}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                     >
-                      <option value="FN">FN (10:00 AM - 01:00 PM)</option>
-                      <option value="AN">AN (02:00 PM - 05:00 PM)</option>
-                      <option value="custom">Custom Timing Hours</option>
+                      {selectableTimeOptions.map((opt) => (
+                        <option key={`batch-start-${opt.minutes}`} value={opt.label}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+                      <span>End Time</span>
+                      <span className="text-[9px] text-indigo-600 font-bold">{collegeHours.endTimeStr}</span>
+                    </label>
+                    <select
+                      value={batchCustomEndTime}
+                      onChange={(e) => {
+                        const newEnd = e.target.value;
+                        setBatchCustomEndTime(newEnd);
+                        setSubjectRows((prev) => prev.map((r) => ({ ...r, end_time: newEnd })));
+                      }}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      {selectableTimeOptions
+                        .filter((opt) => opt.minutes > parseTimeToMinutes(batchCustomStartTime))
+                        .map((opt) => (
+                          <option key={`batch-end-${opt.minutes}`} value={opt.label}>
+                            {opt.label}
+                          </option>
+                        ))}
                     </select>
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
-                      Default Hall / Room
+                      Hall / Room
                     </label>
                     <input
                       type="text"
                       placeholder="e.g. Main Hall 101"
                       value={batchDefaultHall}
-                      onChange={(e) => setBatchDefaultHall(e.target.value)}
+                      onChange={(e) => {
+                        const newHall = e.target.value;
+                        setBatchDefaultHall(newHall);
+                        setSubjectRows((prev) => prev.map((r) => ({ ...r, hall_room: newHall })));
+                      }}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
-
-                  {batchSessionTiming === "custom" && (
-                    <div className="sm:col-span-4 grid grid-cols-2 gap-3 pt-2 border-t border-slate-200">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-600 uppercase">Start Time</label>
-                        <input
-                          type="text"
-                          value={batchCustomStartTime}
-                          placeholder="e.g. 09:30 AM"
-                          onChange={(e) => {
-                            setBatchCustomStartTime(e.target.value);
-                            setSubjectRows(prev => prev.map(r => ({ ...r, start_time: e.target.value })));
-                          }}
-                          className="w-full px-3 py-1.5 border border-slate-200 rounded-lg bg-white text-xs font-semibold"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-600 uppercase">End Time</label>
-                        <input
-                          type="text"
-                          value={batchCustomEndTime}
-                          placeholder="e.g. 12:30 PM"
-                          onChange={(e) => {
-                            setBatchCustomEndTime(e.target.value);
-                            setSubjectRows(prev => prev.map(r => ({ ...r, end_time: e.target.value })));
-                          }}
-                          className="w-full px-3 py-1.5 border border-slate-200 rounded-lg bg-white text-xs font-semibold"
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* 4. Subject Accordion / Subject Matrix */}
@@ -1400,44 +1524,35 @@ export const ExamScheduleManager: React.FC = () => {
                                   <option value="None">No Order</option>
                                 </select>
 
-                                <select
-                                  value={row.session_type}
-                                  onChange={(e) => {
-                                    const val = e.target.value as "FN" | "AN" | "custom";
-                                    updateSubjectRow(idx, {
-                                      session_type: val,
-                                      start_time: val === "FN" ? "10:00 AM" : val === "AN" ? "02:00 PM" : row.start_time,
-                                      end_time: val === "FN" ? "01:00 PM" : val === "AN" ? "05:00 PM" : row.end_time
-                                    });
-                                  }}
-                                  className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold bg-slate-50 text-slate-800 cursor-pointer"
-                                >
-                                  <option value="FN">FN (10:00 - 01:00)</option>
-                                  <option value="AN">AN (02:00 - 05:00)</option>
-                                  <option value="custom">Custom</option>
-                                </select>
-
-                                {row.session_type === "custom" && (
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="text"
-                                      placeholder="Start"
-                                      value={row.start_time}
-                                      onChange={(e) => updateSubjectRow(idx, { start_time: e.target.value })}
-                                      className="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium bg-slate-50 text-slate-800"
-                                      title="Start Time"
-                                    />
-                                    <span className="text-slate-400 text-xs">-</span>
-                                    <input
-                                      type="text"
-                                      placeholder="End"
-                                      value={row.end_time}
-                                      onChange={(e) => updateSubjectRow(idx, { end_time: e.target.value })}
-                                      className="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium bg-slate-50 text-slate-800"
-                                      title="End Time"
-                                    />
-                                  </div>
-                                )}
+                                <div className="flex items-center gap-1">
+                                  <select
+                                    value={row.start_time}
+                                    onChange={(e) => updateSubjectRow(idx, { start_time: e.target.value })}
+                                    className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold bg-white text-slate-800 cursor-pointer"
+                                    title="Exam Start Time"
+                                  >
+                                    {selectableTimeOptions.map((opt) => (
+                                      <option key={`row-${idx}-s-${opt.minutes}`} value={opt.label}>
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <span className="text-slate-400 text-xs">-</span>
+                                  <select
+                                    value={row.end_time}
+                                    onChange={(e) => updateSubjectRow(idx, { end_time: e.target.value })}
+                                    className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold bg-white text-slate-800 cursor-pointer"
+                                    title="Exam End Time"
+                                  >
+                                    {selectableTimeOptions
+                                      .filter((opt) => opt.minutes > parseTimeToMinutes(row.start_time))
+                                      .map((opt) => (
+                                        <option key={`row-${idx}-e-${opt.minutes}`} value={opt.label}>
+                                          {opt.label}
+                                        </option>
+                                      ))}
+                                  </select>
+                                </div>
 
                                 <input
                                   type="text"

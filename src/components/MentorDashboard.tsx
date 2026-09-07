@@ -60,7 +60,7 @@ const MentorProfileModal = dynamic(() => import("./MentorProfileModal").then(m =
 const MentorExamMarksStudio = dynamic(() => import("./MentorExamMarksStudio").then(m => m.MentorExamMarksStudio), { ssr: false });
 
 import { CourseInfoButton } from "./CourseInfoModal";
-import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, calculateWeekOffsetForDate } from "@/lib/utils";
+import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, calculateWeekOffsetForDate, isSlotOverlappingExamWindow } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 
 const formatPunchTime = (timeStr?: string | null) => {
@@ -1550,23 +1550,34 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
   useEffect(() => {
     if (currentMentor?.college_id) {
-      fetch(`/api/daily-configs?college_id=${currentMentor.college_id}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.configs) {
-            setDailyConfigsList(data.configs);
-          }
-        })
-        .catch(err => console.error("Error fetching daily configs:", err));
+      const loadDailyConfigsAndExams = () => {
+        fetch(`/api/daily-configs?college_id=${currentMentor.college_id}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.success && data.configs) {
+              setDailyConfigsList(data.configs);
+            }
+          })
+          .catch(err => console.error("Error fetching daily configs:", err));
 
-      fetch(`/api/exams?college_id=${encodeURIComponent(currentMentor.college_id)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && Array.isArray(data.exams)) {
-            setMentorExamsList(data.exams);
-          }
-        })
-        .catch(err => console.error("Error fetching exams for mentor:", err));
+        fetch(`/api/exams?college_id=${encodeURIComponent(currentMentor.college_id || "")}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.success && Array.isArray(data.exams)) {
+              setMentorExamsList(data.exams);
+            }
+          })
+          .catch(err => console.error("Error fetching exams for mentor:", err));
+      };
+
+      loadDailyConfigsAndExams();
+
+      window.addEventListener("fp_exams_updated", loadDailyConfigsAndExams);
+      window.addEventListener("fp_schedule_updated", loadDailyConfigsAndExams);
+      return () => {
+        window.removeEventListener("fp_exams_updated", loadDailyConfigsAndExams);
+        window.removeEventListener("fp_schedule_updated", loadDailyConfigsAndExams);
+      };
     }
   }, [currentMentor?.college_id]);
 
@@ -3216,10 +3227,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           return;
         }
 
-        // Check if there is an exam scheduled on this date
-        const cfg = dailyConfigsMap.get(date.dateStr);
-        const matchingExam = (mentorExamsList || []).find((ex: any) => ex.exam_date === date.dateStr);
-        const isExamDate = (cfg && cfg.day_type === "exam_day") || Boolean(matchingExam);
+        // Check if there is an active exam scheduled on this date overlapping this specific slot's time
+        const examsOnDate = (mentorExamsList || []).filter((ex: any) => ex.exam_date === date.dateStr);
+        const slotExam = examsOnDate.find((ex: any) =>
+          isSlotOverlappingExamWindow(time, ex.start_time, ex.end_time)
+        );
 
         // 1. Own slot
         const ownSlot = mySlots.find(s => s.day === queryDay && isTimeMatch(s.time, time));
@@ -3244,8 +3256,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             return;
           }
 
-          if (isExamDate) {
-            map.set(`${date.dateStr}|${time}`, { slot: ownSlot, type: "exam", cellStatus: "active", hasAttendance, pendingReq, approvedReq, demoSession: null, exam: matchingExam || null });
+          // ONLY mark as exam if this slot's time range overlaps the exam start and end time!
+          if (slotExam) {
+            map.set(`${date.dateStr}|${time}`, { slot: ownSlot, type: "exam", cellStatus: "active", hasAttendance, pendingReq, approvedReq, demoSession: null, exam: slotExam });
             return;
           }
 
@@ -3253,21 +3266,21 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           return;
         }
 
-        // If it is an exam day and there is a matching exam for this mentor's department
-        if (isExamDate && matchingExam) {
+        // If there is an active exam overlapping this time for mentor's department/subjects
+        if (slotExam) {
           const examSlot = {
-            id: `exam_${matchingExam.id || date.dateStr}_${time}`,
+            id: `exam_${slotExam.id || date.dateStr}_${time}`,
             mentorId: currentMentor.id,
             college_id: currentMentor.college_id || "",
             day: queryDay,
-            time: matchingExam.session_time || time,
-            course: matchingExam.subject_name,
-            classGroup: matchingExam.department,
-            location: matchingExam.hall_room || "Examination Hall",
+            time: slotExam.session_time || time,
+            course: slotExam.subject_name,
+            classGroup: slotExam.department,
+            location: slotExam.hall_room || "Examination Hall",
             shift: currentShift
           };
           const hasAttendance = attendanceKeySet.has(`${examSlot.id}|${date.dateStr}`);
-          map.set(`${date.dateStr}|${time}`, { slot: examSlot, type: "exam", cellStatus: "active", hasAttendance, pendingReq: null, approvedReq: null, demoSession: null, exam: matchingExam });
+          map.set(`${date.dateStr}|${time}`, { slot: examSlot, type: "exam", cellStatus: "active", hasAttendance, pendingReq: null, approvedReq: null, demoSession: null, exam: slotExam });
           return;
         }
 
@@ -3454,31 +3467,37 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
     // Use already-cached daily config map instead of a duplicate fetch on every cell click
     const configForDate = dailyConfigsMap.get(dateStr);
-    const matchingExam = (mentorExamsList || []).find((ex: any) => ex.exam_date === dateStr);
+    const overlappingExam = (mentorExamsList || []).find(
+      (ex: any) => ex.exam_date === dateStr && isSlotOverlappingExamWindow(slot.time, ex.start_time, ex.end_time)
+    );
 
-    if (configForDate && configForDate.day_type && configForDate.day_type !== "None") {
-      setIsDayConfigSet(true);
-      setDayConfigDetails(configForDate);
-      if (configForDate.day_type === "event" || configForDate.day_type === "exam_day") {
-        setAttendanceType("Non-Regular");
-        setAttendanceTypeSub(configForDate.day_type === "event" ? "Event" : "Exam");
-      } else {
-        setAttendanceType("Regular");
-      }
-      setAttendanceMode(configForDate.session_mode === "Online" ? "Online" : "Offline");
-    } else if (matchingExam) {
+    if (overlappingExam) {
       setIsDayConfigSet(true);
       setDayConfigDetails({
         college_id: currentMentor.college_id,
         dateStr,
         day_type: "exam_day",
         day_order: "None",
-        notes: `${matchingExam.exam_type} Examination`,
+        notes: `${overlappingExam.exam_type} Examination`,
         session_mode: "Offline"
       });
       setAttendanceType("Non-Regular");
       setAttendanceTypeSub("Exam");
       setAttendanceMode("Offline");
+    } else if (configForDate && configForDate.day_type && configForDate.day_type !== "None") {
+      setIsDayConfigSet(true);
+      setDayConfigDetails(configForDate);
+      if (configForDate.day_type === "event") {
+        setAttendanceType("Non-Regular");
+        setAttendanceTypeSub("Event");
+      } else if (configForDate.day_type === "exam_day") {
+        // Daily config is exam_day, but this slot falls outside the exam hours window -> Regular class
+        setAttendanceType("Regular");
+        setAttendanceTypeSub("");
+      } else {
+        setAttendanceType("Regular");
+      }
+      setAttendanceMode(configForDate.session_mode === "Online" ? "Online" : "Offline");
     } else {
       if (!firstExisting) {
         setIsDayConfigSet(false);

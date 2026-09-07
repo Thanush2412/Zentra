@@ -40,7 +40,7 @@ import {
   Video,
   ExternalLink
 } from "lucide-react";
-import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatch, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate } from "@/lib/utils";
+import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatch, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate, isSlotOverlappingExamWindow } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { CourseInfoButton } from "./CourseInfoModal";
 
@@ -301,6 +301,25 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       .catch(err => console.error("Error fetching daily configs:", err));
 
     fetchStudentExamsAndMarks();
+
+    const handleUpdates = () => {
+      fetchStudentExamsAndMarks();
+      fetch(`/api/daily-configs?college_id=${encodeURIComponent(collegeId)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.configs) {
+            setDailyConfigsList(data.configs);
+          }
+        })
+        .catch(() => {});
+    };
+
+    window.addEventListener("fp_exams_updated", handleUpdates);
+    window.addEventListener("fp_schedule_updated", handleUpdates);
+    return () => {
+      window.removeEventListener("fp_exams_updated", handleUpdates);
+      window.removeEventListener("fp_schedule_updated", handleUpdates);
+    };
   }, [currentStudent?.college_id, currentStudent?.department, currentStudent?.id]);
   const [payingFeeId, setPayingFeeId] = useState<string | null>(null);
 
@@ -929,14 +948,17 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       return false;
     });
 
-    const matchingExam = (studentExamsList || []).find((ex: any) => ex.exam_date === dateStr);
-    const isExamDay = (dailyConfig && (dailyConfig.day_type === "exam_day" || dailyConfig.day_type === "exam")) || Boolean(matchingExam);
+    // Check if there is an active exam for this student on this date whose start & end time window overlaps this specific period slot
+    const examsOnDate = (studentExamsList || []).filter((ex: any) => ex.exam_date === dateStr);
+    const overlappingExam = examsOnDate.find((ex: any) =>
+      isSlotOverlappingExamWindow(time, ex.start_time, ex.end_time)
+    );
 
-    if (isExamDay) {
+    if (overlappingExam) {
       return {
         type: "exam" as const,
         config: dailyConfig || null,
-        exam: matchingExam || null,
+        exam: overlappingExam,
         attendance: dayAttendance || (slot ? myAttendance.find((a) => a.slotId === slot.id && a.dateStr === dateStr) : null) || null,
         slot: slot || null,
         handover: null

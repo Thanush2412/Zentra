@@ -146,8 +146,22 @@ export async function DELETE(request: Request) {
     }
 
     const db = await getDb();
+    const exam = await db.get("SELECT college_id, exam_date FROM exam_schedules WHERE id = ?", [id]);
     await db.run("DELETE FROM exam_schedules WHERE id = ?", [id]);
     await db.run("DELETE FROM student_exam_marks WHERE exam_id = ?", [id]);
+
+    if (exam?.college_id && exam?.exam_date) {
+      const remaining = await db.all(
+        "SELECT id FROM exam_schedules WHERE college_id = ? AND exam_date = ?",
+        [exam.college_id, exam.exam_date]
+      );
+      if (!remaining || remaining.length === 0) {
+        await db.run(
+          "UPDATE campus_daily_configs SET day_type = 'working', notes = NULL WHERE college_id = ? AND dateStr = ? AND day_type = 'exam_day'",
+          [exam.college_id, exam.exam_date]
+        );
+      }
+    }
 
     return NextResponse.json({ success: true, message: "Exam schedule and associated marks deleted" });
   } catch (error: any) {

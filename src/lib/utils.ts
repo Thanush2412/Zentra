@@ -716,10 +716,10 @@ export interface ShiftParams {
 export const parseTimeToMinutes = (timeStr: string): number => {
   if (!timeStr) return 0;
   const cleanStr = timeStr.trim().replace(/\./g, ":");
-  const match = cleanStr.match(/^(\d+):(\d+)\s*(AM|PM)?$/i);
+  const match = cleanStr.match(/^(\d+)(?::(\d+))?\s*(AM|PM)?$/i);
   if (!match) return 0;
   let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
+  const minutes = match[2] ? parseInt(match[2], 10) : 0;
   const ampm = match[3];
   
   if (ampm) {
@@ -1162,6 +1162,69 @@ export function getCollegePeriodTimeSlots(
   }
 
   return Array.from(resultSlots);
+}
+
+/**
+ * Returns the operational working time boundary [minTimeMinutes, maxTimeMinutes]
+ * for a college from its configured slots and shift parameters.
+ */
+export function getCollegeOperatingHours(
+  collegeId?: string,
+  colleges: any[] = [],
+  slots: any[] = []
+): { startMinutes: number; endMinutes: number; startTimeStr: string; endTimeStr: string } {
+  const periodSlots = getCollegePeriodTimeSlots(collegeId, colleges, slots);
+  let minMinutes = 24 * 60;
+  let maxMinutes = 0;
+
+  periodSlots.forEach(slotStr => {
+    const parts = slotStr.replace(/to/i, "-").split("-").map(p => p.trim());
+    if (parts.length >= 2) {
+      const s = parseTimeToMinutes(parts[0]);
+      const e = parseTimeToMinutes(parts[1]);
+      if (s > 0 && s < minMinutes) minMinutes = s;
+      if (e > 0 && e > maxMinutes) maxMinutes = e;
+    }
+  });
+
+  // Default fallbacks if no slots are available (8:20 AM to 5:00 PM)
+  if (minMinutes === 24 * 60) minMinutes = 8 * 60 + 20; // 8:20 AM
+  if (maxMinutes === 0) maxMinutes = 17 * 60;           // 5:00 PM
+
+  return {
+    startMinutes: minMinutes,
+    endMinutes: maxMinutes,
+    startTimeStr: formatMinutesToTime(minMinutes),
+    endTimeStr: formatMinutesToTime(maxMinutes)
+  };
+}
+
+/**
+ * Checks if a timetable slot time range (e.g. "8.20 AM - 9.10 AM", "10:00 AM - 11:00 AM")
+ * overlaps with an exam's specified start and end time window (e.g. "10:00 AM", "01:00 PM").
+ */
+export function isSlotOverlappingExamWindow(
+  slotTimeRange?: string,
+  examStartTime?: string,
+  examEndTime?: string
+): boolean {
+  if (!slotTimeRange || !examStartTime || !examEndTime) return false;
+
+  const slotParts = slotTimeRange.replace(/to/i, "-").split("-").map(p => p.trim());
+  if (slotParts.length < 2) return false;
+
+  const slotStart = parseTimeToMinutes(slotParts[0]);
+  const slotEnd = parseTimeToMinutes(slotParts[1]);
+  const examStart = parseTimeToMinutes(examStartTime);
+  const examEnd = parseTimeToMinutes(examEndTime);
+
+  if (slotStart === 0 && slotEnd === 0) return false;
+  if (examStart === 0 && examEnd === 0) return false;
+
+  const effectiveSlotEnd = slotEnd <= slotStart ? slotStart + 50 : slotEnd;
+  const effectiveExamEnd = examEnd <= examStart ? examStart + 180 : examEnd;
+
+  return slotStart < effectiveExamEnd && effectiveSlotEnd > examStart;
 }
 
 /**
