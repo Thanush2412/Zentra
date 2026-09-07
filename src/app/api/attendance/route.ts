@@ -27,7 +27,7 @@ export async function GET(request: Request) {
         WHERE st.college_id = ?`;
       const args: any[] = [collegeId];
       if (startDate) { sql += " AND sa.dateStr >= ?"; args.push(startDate); }
-      if (endDate)   { sql += " AND sa.dateStr <= ?"; args.push(endDate); }
+      if (endDate) { sql += " AND sa.dateStr <= ?"; args.push(endDate); }
       // Default 60-day window if no date params given — prevents unbounded full-table scan
       if (!startDate && !endDate) {
         const defaultStart = new Date();
@@ -148,53 +148,53 @@ export async function POST(request: Request) {
       }
 
       if (existing) {
-          // Update existing
-          await db.run(
-            "UPDATE student_attendance SET status = ?, markedBy = ?, timestamp = ? WHERE studentId = ? AND slotId = ? AND dateStr = ?",
-            [newStatus, changedBy, new Date().toISOString(), studentId, slotId, dateStr]
-          );
-        } else {
-          // Insert new
-          const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-          await db.run(
-            "INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [recordId, studentId, slotId, dateStr, newStatus, changedBy, new Date().toISOString()]
-          );
-        }
-
-        // Increment student correction counter (only for non-admin standard corrections)
-        if (!isAdminOverride) {
-          await db.run(
-            "UPDATE students SET correction_count = COALESCE(correction_count, 0) + 1 WHERE id = ?",
-            [studentId]
-          );
-        }
-
-        // Log into audit trail
-        const logId = `l_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-        const description = `Attendance corrected for ${student.name} (${studentId}) on ${dateStr} in slot ${slotId}. Status changed from ${oldStatus.toUpperCase()} to ${newStatus.toUpperCase()}. Reason: "${reason}"`;
-        
+        // Update existing
         await db.run(
-          `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp, old_status, new_status, reason, changed_by)
-           VALUES (?, 'attendance_correction', ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            logId,
-            description,
-            changedBy,
-            changedByRole || "Campus Manager",
-            new Date().toISOString(),
-            oldStatus,
-            newStatus,
-            reason,
-            changedBy
-          ]
+          "UPDATE student_attendance SET status = ?, markedBy = ?, timestamp = ? WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+          [newStatus, changedBy, new Date().toISOString(), studentId, slotId, dateStr]
         );
+      } else {
+        // Insert new
+        const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        await db.run(
+          "INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [recordId, studentId, slotId, dateStr, newStatus, changedBy, new Date().toISOString()]
+        );
+      }
 
-        return NextResponse.json({
-          success: true,
-          message: "Attendance corrected successfully.",
-          newCount: currentCount + 1
-        });
+      // Increment student correction counter (only for non-admin standard corrections)
+      if (!isAdminOverride) {
+        await db.run(
+          "UPDATE students SET correction_count = COALESCE(correction_count, 0) + 1 WHERE id = ?",
+          [studentId]
+        );
+      }
+
+      // Log into audit trail
+      const logId = `l_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const description = `Attendance corrected for ${student.name} (${studentId}) on ${dateStr} in slot ${slotId}. Status changed from ${oldStatus.toUpperCase()} to ${newStatus.toUpperCase()}. Reason: "${reason}"`;
+
+      await db.run(
+        `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp, old_status, new_status, reason, changed_by)
+           VALUES (?, 'attendance_correction', ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          logId,
+          description,
+          changedBy,
+          changedByRole || "Campus Manager",
+          new Date().toISOString(),
+          oldStatus,
+          newStatus,
+          reason,
+          changedBy
+        ]
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: "Attendance corrected successfully.",
+        newCount: currentCount + 1
+      });
     }
 
     // ── DIRECT PERIOD MARKING (CAM / FACULTY) ──────────────────────────────
@@ -389,10 +389,10 @@ export async function POST(request: Request) {
         try {
           await db.client.batch(batchChunk, "write");
         } catch (batchErr: any) {
-          console.error(`[Import] batch chunk ${Math.floor(i/STMTS_PER_BATCH)+1} failed, falling back:`, batchErr?.message);
+          console.error(`[Import] batch chunk ${Math.floor(i / STMTS_PER_BATCH) + 1} failed, falling back:`, batchErr?.message);
           // Fallback: run each statement individually (still uses multi-row INSERT, just 1 per HTTP call)
           for (const stmt of batchChunk) {
-            try { await db.run(stmt.sql, stmt.args); } catch (_) {}
+            try { await db.run(stmt.sql, stmt.args); } catch (_) { }
           }
         }
       }
@@ -468,34 +468,34 @@ export async function POST(request: Request) {
     // ── END DAY ORDER / TYPE GUARD ────────────────────────────────────────
 
     // Delete existing
-      await db.run("DELETE FROM student_attendance WHERE slotId = ? AND dateStr = ?", [slotId, dateStr]);
+    await db.run("DELETE FROM student_attendance WHERE slotId = ? AND dateStr = ?", [slotId, dateStr]);
 
-      if (coveredSubject) {
-        await db.run(
-          "UPDATE approved_handovers SET course = ? WHERE slotId = ? AND dateStr = ?",
-          [coveredSubject, slotId, dateStr]
+    if (coveredSubject) {
+      await db.run(
+        "UPDATE approved_handovers SET course = ? WHERE slotId = ? AND dateStr = ?",
+        [coveredSubject, slotId, dateStr]
+      );
+    }
+
+    // ── Batch insert all attendance rows in one multi-row INSERT ──────────
+    // Filter out "not_marked" — those are just absences from the delete above.
+    const validItems = attendance.filter((a: any) => a.status && a.status !== "not_marked");
+    const timestamp = new Date().toISOString();
+    let insertedCount = 0;
+
+    if (validItems.length > 0) {
+      const placeholders = validItems.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+      const params: any[] = [];
+      validItems.forEach((item: any) => {
+        const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        params.push(
+          recordId, item.studentId, slotId, dateStr, item.status,
+          markedBy || "System", timestamp,
+          type || "Regular", mode || "Offline", attendanceTypeSub || null
         );
-      }
-
-      // ── Batch insert all attendance rows in one multi-row INSERT ──────────
-      // Filter out "not_marked" — those are just absences from the delete above.
-      const validItems = attendance.filter((a: any) => a.status && a.status !== "not_marked");
-      const timestamp = new Date().toISOString();
-      let insertedCount = 0;
-
-      if (validItems.length > 0) {
-        const placeholders = validItems.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
-        const params: any[] = [];
-        validItems.forEach((item: any) => {
-          const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-          params.push(
-            recordId, item.studentId, slotId, dateStr, item.status,
-            markedBy || "System", timestamp,
-            type || "Regular", mode || "Offline", attendanceTypeSub || null
-          );
-        });
-        await db.run(
-          `INSERT INTO student_attendance
+      });
+      await db.run(
+        `INSERT INTO student_attendance
            (id, studentId, slotId, dateStr, status, markedBy, timestamp, type, mode, attendanceTypeSub)
            VALUES ${placeholders}
            ON CONFLICT(studentId, slotId, dateStr) DO UPDATE SET
@@ -505,23 +505,23 @@ export async function POST(request: Request) {
              type = excluded.type,
              mode = excluded.mode,
              attendanceTypeSub = excluded.attendanceTypeSub`,
-          params
-        );
-        insertedCount = validItems.length;
-      }
-
-      const presentCount = attendance.filter((a: any) => a.status === "present").length;
-      const absentCount = attendance.filter((a: any) => a.status === "absent").length;
-
-      const logId = `l_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      const description = `Marked ${type || "Regular"} attendance (${mode || "Offline"}) for class ${slot.classGroup || "General"} in course "${slot.course}" on date ${dateStr} (${presentCount} present, ${absentCount} absent).`;
-      
-      await db.run(
-        "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-        [logId, "booking", description, actorName || "Faculty", actorRole || "Mentor", timestamp]
+        params
       );
+      insertedCount = validItems.length;
+    }
 
-      return NextResponse.json({ success: true, message: "Attendance marked successfully.", insertedCount });
+    const presentCount = attendance.filter((a: any) => a.status === "present").length;
+    const absentCount = attendance.filter((a: any) => a.status === "absent").length;
+
+    const logId = `l_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const description = `Marked ${type || "Regular"} attendance (${mode || "Offline"}) for class ${slot.classGroup || "General"} in course "${slot.course}" on date ${dateStr} (${presentCount} present, ${absentCount} absent).`;
+
+    await db.run(
+      "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+      [logId, "booking", description, actorName || "Faculty", actorRole || "Mentor", timestamp]
+    );
+
+    return NextResponse.json({ success: true, message: "Attendance marked successfully.", insertedCount });
   } catch (error: any) {
     console.error("API POST Attendance error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

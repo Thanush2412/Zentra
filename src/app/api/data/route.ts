@@ -163,7 +163,7 @@ export async function GET(request: Request) {
     const isAllocator = role === "allocator";
     const needsDemo = isAdmin || isSME || isAllocator || isCAM;
 
-        // Leave requests scoping
+    // Leave requests scoping
     let leaveSql: string;
     let leaveParams: any[] = [];
     if (isStudent && userId) {
@@ -246,7 +246,7 @@ export async function GET(request: Request) {
       systemSettingsRows
     ] = await db.multiQuery(queryDefs);
 
-    const systemSettings: { mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any } = {
+    const systemSettings: { mailing_enabled: boolean; attendance_lock_enabled: boolean;[key: string]: any } = {
       mailing_enabled: true,
       attendance_lock_enabled: true
     };
