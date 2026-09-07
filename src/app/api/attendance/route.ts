@@ -430,6 +430,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Slot not found." }, { status: 404 });
     }
 
+    // ── FUTURE DATE ATTENDANCE GUARD ─────────────────────────────────────
+    // Faculty mentors cannot record student attendance in advance for future dates
+    const todayDateStr = new Date().toISOString().split("T")[0];
+    if (dateStr > todayDateStr) {
+      return NextResponse.json({
+        success: false,
+        message: "Attendance cannot be recorded in advance for future dates."
+      }, { status: 422 });
+    }
+
     // ── DAY ORDER / TYPE GUARD ────────────────────────────────────────────
     // Attendance cannot be submitted unless the CAM has configured the day
     // order and type for this date. Check campus_daily_configs for the

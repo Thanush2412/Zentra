@@ -90,6 +90,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     gradeStudentTask,
     weeklyAcademicTasks,
     studentAcademicTracker,
+    academicTracker,
     gradeStudentAcademicTask
   } = useApp();
   const { toast } = useToast();
@@ -3342,6 +3343,29 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
           const activeSubjectStats = getSubjectTaskStats(studentTrackerSubject);
 
+          const isSubjMatch = (s1?: string, s2?: string) => {
+            if (!s1 || !s2) return false;
+            return isSubjectNameMatch(s1, s2) || s1.toLowerCase().trim() === s2.toLowerCase().trim();
+          };
+
+          const isCgMatch = (taskCg?: string, studentCg?: string, studentDept?: string) => {
+            if (!taskCg) return true;
+            if (!studentCg && !studentDept) return true;
+            if (studentCg && (
+              isCohortMatching(taskCg, studentCg, coursesList, subjectsList) ||
+              isCohortMatch(taskCg, studentCg) ||
+              taskCg.toLowerCase().trim() === studentCg.toLowerCase().trim()
+            )) {
+              return true;
+            }
+            if (studentDept) {
+              const dNorm = studentDept.toLowerCase().trim();
+              const cgNorm = taskCg.toLowerCase().trim();
+              if (cgNorm.includes(dNorm) || dNorm.includes(cgNorm)) return true;
+            }
+            return false;
+          };
+
           const allWeeks = Array.from({ length: 15 }, (_, i) => i + 1);
           const studentAcadSubjects = studentSubjects.filter(s => !isSkillSubject(s));
           const availableAcadSubjects = studentAcadSubjects.length > 0 ? studentAcadSubjects : studentSubjects;
@@ -3350,14 +3374,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           // Academic stats for student
           const getAcadSubjectStats = (subjName: string) => {
             const matchingTasks = (weeklyAcademicTasks || []).filter(task =>
-              (isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
-                (currentStudent?.department && task.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
-              task.subject.toLowerCase().trim() === subjName.toLowerCase().trim()
+              isCgMatch(task.class_group, currentStudent?.classGroup, currentStudent?.department) &&
+              isSubjMatch(task.subject, subjName)
             );
 
             const studentEmail = (currentStudent?.email || "").toLowerCase().trim();
+            const studentId = (currentStudent?.id || "").toLowerCase().trim();
             const entries = (studentAcademicTracker || []).filter(
-              e => e.student_email.toLowerCase().trim() === studentEmail && e.subject.toLowerCase().trim() === subjName.toLowerCase().trim()
+              e => ((e.student_email && e.student_email.toLowerCase().trim() === studentEmail) ||
+                    (e.student_id && e.student_id.toLowerCase().trim() === studentId)) &&
+                   isSubjMatch(e.subject, subjName)
             );
 
             const evaluatedEntries = entries.filter(e => e.total_marks !== null || e.quiz_marks !== null || e.assessment_marks !== null || e.assignment_marks !== null);
@@ -3449,20 +3475,69 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     </div>
                   </div>
 
+                  {/* Conducted Lecture Topics & Syllabus Log Panel */}
+                  {(() => {
+                    const conductedLogs = (academicTracker || []).filter(
+                      log => isSubjMatch(log.subject, activeAcadSubjName) &&
+                        isCgMatch(log.class_group, currentStudent?.classGroup, currentStudent?.department)
+                    ).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+                    if (conductedLogs.length === 0) return null;
+
+                    return (
+                      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
+                            <BookOpen className="h-4 w-4 text-indigo-600" />
+                            <span>Faculty Lecture Logs &amp; Conducted Topics ({conductedLogs.length} sessions)</span>
+                          </h4>
+                          <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                            Live Syllabus Tracker
+                          </span>
+                        </div>
+                        <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto pr-1">
+                          {conductedLogs.map((log, lIdx) => (
+                            <div key={log.id || `clog_${lIdx}`} className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-extrabold text-slate-800">{log.topic}</span>
+                                  {log.unit && (
+                                    <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase">
+                                      {log.unit.startsWith("Unit") ? log.unit : `Unit ${log.unit}`}
+                                    </span>
+                                  )}
+                                </div>
+                                {log.comments && (
+                                  <p className="text-[11px] text-slate-500 italic">&ldquo;{log.comments}&rdquo;</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 shrink-0">
+                                {log.date && <span>{log.date}</span>}
+                                {log.period_slot && <span>• {log.period_slot}</span>}
+                                {log.mentor_name && <span className="text-slate-600 font-semibold">• {log.mentor_name}</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* 15 Weeks Academic Tasks & Scoped Marks List */}
                   <div className="space-y-4">
                     {allWeeks.map(wk => {
                       const task = (weeklyAcademicTasks || []).find(
-                        t => (isCohortMatching(t.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
-                          (currentStudent?.department && t.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
-                          t.subject.toLowerCase().trim() === activeAcadSubjName.toLowerCase().trim() &&
+                        t => isCgMatch(t.class_group, currentStudent?.classGroup, currentStudent?.department) &&
+                          isSubjMatch(t.subject, activeAcadSubjName) &&
                           t.week_number === wk
                       );
 
                       const studentEmail = (currentStudent?.email || "").toLowerCase().trim();
+                      const studentId = (currentStudent?.id || "").toLowerCase().trim();
                       const entry = (studentAcademicTracker || []).find(
-                        e => e.student_email.toLowerCase().trim() === studentEmail &&
-                          e.subject.toLowerCase().trim() === activeAcadSubjName.toLowerCase().trim() &&
+                        e => ((e.student_email && e.student_email.toLowerCase().trim() === studentEmail) ||
+                              (e.student_id && e.student_id.toLowerCase().trim() === studentId)) &&
+                          isSubjMatch(e.subject, activeAcadSubjName) &&
                           e.week_number === wk
                       );
 

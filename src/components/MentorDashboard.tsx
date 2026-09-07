@@ -6078,6 +6078,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const camKey = `${selectedCell.slot.id}|${selectedCell.dateStr}`;
           const hasCAMApproval = lateAttendanceCamApprovedSet.has(camKey);
           const pendingLateCamReq = lateAttendanceCamPendingSet.has(camKey);
+          const isFuture = !windowCheck.open && windowCheck.reason === "future";
           const isLocked = attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired" && !hasCAMApproval;
           const approvedReq = approvedHandovers.find(h => h.slotId === selectedCell.slot!.id && h.dateStr === selectedCell.dateStr);
 
@@ -6124,8 +6125,18 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   </div>
                 </div>
 
-                {/* Locked Window / Handed Over Notifications */}
-                {isLocked ? (
+                {/* Future Class / Locked Window / Handed Over Notifications */}
+                {isFuture ? (
+                  <div className="p-4 bg-sky-50 border border-sky-200 rounded-xl text-center text-xs text-sky-900 space-y-2 mb-2">
+                    <Clock className="h-6 w-6 mx-auto text-sky-600" />
+                    <div>
+                      <p className="font-bold text-sm text-slate-900">Class Has Not Started Yet</p>
+                      <p className="text-slate-500 mt-1">
+                        Attendance cannot be marked in advance for future classes. Marking unlocks when this period begins ({formatTimeLabel(selectedCell.time)} on {selectedCell.dateFormatted}).
+                      </p>
+                    </div>
+                  </div>
+                ) : isLocked ? (
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center text-xs text-amber-900 space-y-3 mb-2">
                     <Lock className="h-6 w-6 mx-auto text-amber-600" />
                     <div>
@@ -6163,13 +6174,20 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     {/* Choice 1: Mark Attendance */}
                     <button
                       type="button"
+                      disabled={isFuture}
                       onClick={() => {
+                        if (isFuture) return;
                         setIsModalOpen(false);
                         setAttendanceFilterStatus("all");
                         setAttendanceSearchTerm("");
                         setIsAttendanceStudioOpen(true);
                       }}
-                      className="w-full text-left p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50 transition-all shadow-2xs cursor-pointer group flex items-start gap-3"
+                      className={`w-full text-left p-3.5 rounded-xl border transition-all shadow-2xs group flex items-start gap-3 ${
+                        isFuture
+                          ? "bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed"
+                          : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50 cursor-pointer"
+                      }`}
+                      title={isFuture ? "Cannot mark attendance for a future class" : undefined}
                     >
                       <div className="p-2 rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition-colors shrink-0 mt-0.5">
                         <CheckCircle className="w-5 h-5" />
@@ -6330,14 +6348,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const todayStr = `${y}-${m}-${d}`;
 
           const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
+          const isFuture = !windowCheck.open && windowCheck.reason === "future";
           const isLocked = attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired";
           
           // Check if CAM has approved late attendance edit for this session
           const camKey = `${selectedCell.slot.id}|${selectedCell.dateStr}`;
           const hasCAMApproval = lateAttendanceCamApprovedSet.has(camKey);
           
-          // Allow editing if: lock is disabled OR window is open OR has CAM approval for late edit
-          const isPastDay = attendanceLockEnabled && ((selectedCell.dateStr < todayStr || isLocked) && !hasCAMApproval);
+          // Allow editing if: lock is disabled OR window is open OR has CAM approval for late edit. Block future periods unconditionally.
+          const isPastDay = isFuture || (attendanceLockEnabled && ((selectedCell.dateStr < todayStr || isLocked) && !hasCAMApproval));
 
           const presentCount = classStudents.filter(s => (localAttendance[s.id] || "present") === "present").length;
           const absentCount = classStudents.filter(s => localAttendance[s.id] === "absent").length;
@@ -6383,6 +6402,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             // ── End day config guard ──────────────────────────────────────
 
             const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
+            if (windowCheck.reason === "future" || selectedCell.dateStr > todayStr) {
+              setFormError("Class has not started yet. You cannot mark attendance for a future period or date.");
+              return;
+            }
             if (attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired" && !hasCAMApproval) {
               setFormError(windowCheck.message || "Attendance window is closed.");
               return;
