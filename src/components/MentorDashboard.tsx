@@ -8042,7 +8042,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
           // Helper: Resolve mentor's actual timetable slots for a selected date
           const getMentorSlotsForDate = (dateStr: string) => {
-            if (!dateStr) return { dateSlots: [], dayOrder: null, dayType: "working", mappedDay: "", dayName: "" };
+            if (!dateStr) return { dateSlots: [], dayOrder: null, dayType: "working", mappedDay: "", dayName: "", isConfigured: false, isHoliday: false };
             const defaultDay = new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
             const dailyConfig = dailyConfigsMap.get(dateStr);
             const mappedDay = getMappedDayForDate(dateStr, defaultDay);
@@ -8050,11 +8050,18 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             const dayOrder = dailyConfig?.day_order || null;
             const dayName = defaultDay;
 
-            if (mappedDay === "holiday") {
-              return { dateSlots: [], dayOrder, dayType, mappedDay, dayName };
+            const isHoliday = dayType === "holiday" || mappedDay === "holiday";
+            const isConfigured = Boolean(dailyConfig && dailyConfig.day_type && dailyConfig.day_type !== "None" && dailyConfig.day_order && dailyConfig.day_order !== "None");
+
+            if (isHoliday) {
+              return { dateSlots: [], dayOrder, dayType: "holiday", mappedDay: "holiday", dayName, isConfigured, isHoliday: true };
             }
 
-            // 1. Regular assigned slots for this day order / weekday
+            if (!isConfigured) {
+              return { dateSlots: [], dayOrder, dayType, mappedDay, dayName, isConfigured: false, isHoliday: false };
+            }
+
+            // 1. Regular assigned slots for this CAM day order / weekday
             const ownSlots = mySlots.filter(s => s.day === mappedDay && (!s.college_id || !currentMentor.college_id || s.college_id === currentMentor.college_id));
             const activeOwnSlots = ownSlots.filter(s => !approvedHandovers.some(h => h.slotId === s.id && h.dateStr === dateStr));
 
@@ -8063,7 +8070,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             const activeCoveredSlots = coveredHandovers.map(h => slots.find(s => s.id === h.slotId)).filter(Boolean) as Slot[];
 
             const dateSlots = [...activeOwnSlots, ...activeCoveredSlots];
-            return { dateSlots, dayOrder, dayType, mappedDay, dayName };
+            return { dateSlots, dayOrder, dayType, mappedDay, dayName, isConfigured: true, isHoliday: false };
           };
 
           const openNewLogModal = () => {
@@ -8071,16 +8078,29 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             setEditingAcadEntry(null);
             setAcadFormDate(todayStr);
 
-            const { dateSlots } = getMentorSlotsForDate(todayStr);
-            if (dateSlots.length > 0) {
-              const firstSlot = dateSlots[0];
-              setAcadFormPeriodSlot(firstSlot.time);
-              setAcadFormClassGroup(firstSlot.classGroup || "");
-              setAcadFormSubject(firstSlot.course || availableAcadSubjects[0] || "Academic Course");
+            const { dateSlots, dayOrder, dayType, mappedDay, isConfigured, isHoliday } = getMentorSlotsForDate(todayStr);
+
+            if (isHoliday) {
+              toast("Today is declared a Holiday by Campus Manager. Period logging is disabled.", "warning");
+            } else if (!isConfigured) {
+              toast("The Campus Manager has not set the Day Order for today yet. Period logging requires CAM Day Order setting.", "warning");
+            }
+
+            // Prefer slots that have already started
+            const activeStartedSlots = dateSlots.filter(slot => {
+              const periodStart = parseSlotStartTime(slot.time);
+              return !periodStart || new Date() >= periodStart;
+            });
+            const defaultSlot = activeStartedSlots[0] || dateSlots[0];
+
+            if (defaultSlot) {
+              setAcadFormPeriodSlot(defaultSlot.time);
+              setAcadFormClassGroup(defaultSlot.classGroup || "");
+              setAcadFormSubject(defaultSlot.course || availableAcadSubjects[0] || "Academic Course");
             } else {
-              setAcadFormPeriodSlot(standardPeriods[0]);
-              setAcadFormClassGroup(mentorClassesList[0] || (currentMentor?.mentor_group ? `${currentMentor.mentor_group} - Semester 1` : "General Batch"));
-              setAcadFormSubject(currentSelectedSubject || availableAcadSubjects[0] || "Academic Course");
+              setAcadFormPeriodSlot("");
+              setAcadFormClassGroup("");
+              setAcadFormSubject("");
             }
 
             setAcadFormUnit("Unit 1");
@@ -8141,18 +8161,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
           const handleDateChangeInModal = (newDate: string) => {
             const todayStr = new Date().toISOString().split("T")[0];
-            if (newDate > todayStr) {
-              toast("Future dates cannot be logged for period conduction.", "warning");
+            if (newDate !== todayStr) {
+              toast("Period logging is strictly restricted to today's active schedule. Previous and future dates cannot be marked.", "warning");
+              setAcadFormDate(todayStr);
               return;
             }
-            setAcadFormDate(newDate);
-            const { dateSlots } = getMentorSlotsForDate(newDate);
-            if (dateSlots.length > 0) {
-              const firstSlot = dateSlots[0];
-              setAcadFormPeriodSlot(firstSlot.time);
-              setAcadFormClassGroup(firstSlot.classGroup || "");
-              setAcadFormSubject(firstSlot.course || availableAcadSubjects[0] || "Academic Course");
-            }
+            setAcadFormDate(todayStr);
           };
 
           const handlePeriodSelectInModal = (val: string, dateSlots: Slot[]) => {
@@ -8169,12 +8183,33 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const handleSaveLog = async (e: React.FormEvent) => {
             e.preventDefault();
             const todayStr = new Date().toISOString().split("T")[0];
-            if (acadFormDate > todayStr) {
-              toast("Future period conduction cannot be logged in advance.", "warning");
+            if (acadFormDate !== todayStr) {
+              toast("Period logging is only permitted for today's active schedule. Past and future dates cannot be logged.", "warning");
               return;
             }
+
+            const { dateSlots, dayOrder, isConfigured, isHoliday, mappedDay } = getMentorSlotsForDate(todayStr);
+            if (isHoliday) {
+              toast("Today is declared a Holiday by Campus Manager. Period logging is disabled.", "warning");
+              return;
+            }
+            if (!isConfigured || !dayOrder || dayOrder === "None") {
+              toast("Campus Manager has not configured the Day Order for today. Period logging requires CAM Day Order setting.", "warning");
+              return;
+            }
+            if (!acadFormPeriodSlot) {
+              toast("Please select a valid scheduled period slot for today's CAM " + dayOrder + " schedule.", "warning");
+              return;
+            }
+
+            const periodStart = parseSlotStartTime(acadFormPeriodSlot);
+            if (periodStart && new Date() < periodStart) {
+              toast("This period has not started yet. You cannot log a future period in advance.", "warning");
+              return;
+            }
+
             if (!acadFormDate || !acadFormPeriodSlot || !acadFormClassGroup || !acadFormSubject || !acadFormUnit || !acadFormTopic.trim()) {
-              toast("Please fill in all required fields (Date, Period, Class Group, Subject, Unit, and Topic).", "warning");
+              toast("Please fill in all required fields (Period, Class Group, Subject, Unit, and Topic).", "warning");
               return;
             }
 
@@ -8182,7 +8217,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             try {
               const res = await saveAcademicTrackerEntry({
                 id: editingAcadEntry?.id,
-                date: acadFormDate,
+                date: todayStr,
                 periodSlot: acadFormPeriodSlot,
                 classGroup: acadFormClassGroup,
                 subject: acadFormSubject,
@@ -9884,8 +9919,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
               {/* ── LOG / EDIT ACADEMIC PERIOD MODAL ── */}
               {showAcadLogModal && (() => {
-                const { dateSlots, dayOrder, dayType, mappedDay, dayName } = getMentorSlotsForDate(acadFormDate);
-                const isHoliday = dayType === "holiday" || mappedDay === "holiday";
+                const todayStr = new Date().toISOString().split("T")[0];
+                const { dateSlots, dayOrder, dayType, mappedDay, dayName, isConfigured, isHoliday } = getMentorSlotsForDate(todayStr);
+
+                // Check if currently selected slot is in the future today
+                const selectedPeriodStart = parseSlotStartTime(acadFormPeriodSlot);
+                const isSelectedPeriodUpcoming = Boolean(selectedPeriodStart && new Date() < selectedPeriodStart);
+                const isFormBlocked = isHoliday || !isConfigured || dateSlots.length === 0 || isSelectedPeriodUpcoming;
 
                 return (
                   <div
@@ -9905,7 +9945,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <h3 className="text-sm font-black text-slate-900">
                               {editingAcadEntry ? "Edit Academic Period Log" : "Log Teaching Period"}
                             </h3>
-                            <p className="text-xs text-slate-400 font-medium">Record syllabus and topic conduction for your scheduled slot</p>
+                            <p className="text-xs text-slate-400 font-medium">Record syllabus and topic conduction strictly for today's active period</p>
                           </div>
                         </div>
                         <button
@@ -9918,49 +9958,73 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       </div>
 
                       {/* Day Order & Timetable Status Info Badge */}
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2 text-xs">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-extrabold text-slate-800">{dayName}</span>
-                            {dayOrder ? (
+                      {isHoliday ? (
+                        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2.5 text-xs">
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                          <div className="space-y-0.5">
+                            <span className="font-extrabold text-rose-800">Holiday Declared</span>
+                            <p className="text-[11px] text-rose-700 font-medium">
+                              Campus Manager has marked today as a Holiday. Period logging is disabled for today.
+                            </p>
+                          </div>
+                        </div>
+                      ) : !isConfigured ? (
+                        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2.5 text-xs">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div className="space-y-0.5">
+                            <span className="font-extrabold text-amber-800">CAM Day Order Not Set</span>
+                            <p className="text-[11px] text-amber-700 font-medium">
+                              The Campus Manager (CAM) has not configured the Day Order for today. Period logging works strictly as per CAM setting Day Order.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2 text-xs">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-extrabold text-slate-800">{dayName}</span>
                               <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase">
                                 {dayOrder} ({mappedDay} Timetable)
                               </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 text-[10px] font-black uppercase">
-                                Regular Schedule
-                              </span>
-                            )}
+                            </div>
+                            <span className="text-[10.5px] text-slate-500 font-medium block">
+                              {dateSlots.length > 0
+                                ? `${dateSlots.length} scheduled period${dateSlots.length !== 1 ? 's' : ''} assigned to you under CAM ${dayOrder}`
+                                : `No scheduled periods assigned to you for today's CAM ${dayOrder} (${mappedDay}) schedule`}
+                            </span>
                           </div>
-                          <span className="text-[10.5px] text-slate-500 font-medium block">
-                            {isHoliday
-                              ? "Holiday / Off Day declared"
-                              : dateSlots.length > 0
-                              ? `${dateSlots.length} scheduled class${dateSlots.length !== 1 ? 'es' : ''} assigned to you`
-                              : "No scheduled timetable slots found for you on this day"}
-                          </span>
-                        </div>
 
-                        {dateSlots.length > 0 && (
-                          <span className="px-2 py-1 bg-emerald-50 text-emerald-700 font-black text-[9.5px] rounded-lg border border-emerald-200 uppercase shrink-0">
-                            Auto-Mapped
-                          </span>
-                        )}
-                      </div>
+                          {dateSlots.length > 0 && (
+                            <span className="px-2 py-1 bg-emerald-50 text-emerald-700 font-black text-[9.5px] rounded-lg border border-emerald-200 uppercase shrink-0">
+                              CAM Day Order Active
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       <form onSubmit={handleSaveLog} className="space-y-4">
                         {/* Date & Period Slot */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div className="space-y-1">
-                            <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Conduction Date *</label>
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Conduction Date *</label>
+                              <span className="text-[9.5px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                                Today Only
+                              </span>
+                            </div>
                             <input
                               type="date"
-                              max={new Date().toISOString().split("T")[0]}
-                              value={acadFormDate}
-                              onChange={e => handleDateChangeInModal(e.target.value)}
-                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white"
+                              min={todayStr}
+                              max={todayStr}
+                              value={todayStr}
+                              readOnly
+                              disabled
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold outline-none bg-slate-100 text-slate-600 cursor-not-allowed"
                               required
                             />
+                            <p className="text-[10px] text-slate-400 font-medium">
+                              Period logging is restricted to today only. Previous and future dates are locked.
+                            </p>
                           </div>
 
                           <div className="space-y-1">
@@ -9972,19 +10036,36 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   : acadFormPeriodSlot
                               }
                               onChange={e => handlePeriodSelectInModal(e.target.value, dateSlots)}
-                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer"
+                              disabled={isHoliday || !isConfigured || dateSlots.length === 0}
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
                               required
                             >
                               {dateSlots.length > 0 ? (
-                                dateSlots.map(slot => (
-                                  <option key={slot.id} value={slot.id}>
-                                    {slot.time} • {slot.classGroup} ({slot.course})
-                                  </option>
-                                ))
+                                dateSlots.map(slot => {
+                                  const pStart = parseSlotStartTime(slot.time);
+                                  const isUpcoming = Boolean(pStart && new Date() < pStart);
+                                  return (
+                                    <option key={slot.id} value={slot.id}>
+                                      {slot.time} • {slot.classGroup} ({slot.course}){isUpcoming ? " — [Upcoming: Starts " + formatTimeLabel(slot.time) + "]" : ""}
+                                    </option>
+                                  );
+                                })
                               ) : (
-                                <option value="" disabled>No scheduled timetable periods on this date</option>
+                                <option value="" disabled>
+                                  {isHoliday
+                                    ? "No periods available (Holiday)"
+                                    : !isConfigured
+                                    ? "CAM Day Order not configured"
+                                    : `No scheduled periods under CAM ${dayOrder} (${mappedDay})`}
+                                </option>
                               )}
                             </select>
+                            {isSelectedPeriodUpcoming && (
+                              <p className="text-[10.5px] text-amber-600 font-semibold flex items-center gap-1 mt-1">
+                                <Clock className="w-3.5 h-3.5 shrink-0" />
+                                This period has not started yet. Future periods cannot be logged in advance.
+                              </p>
+                            )}
                           </div>
                         </div>
 
@@ -9995,7 +10076,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <select
                               value={acadFormClassGroup}
                               onChange={e => setAcadFormClassGroup(e.target.value)}
-                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer"
+                              disabled={isHoliday || !isConfigured}
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
                               required
                             >
                               {mentorClassesList.map(cg => (
@@ -10010,7 +10092,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <select
                               value={acadFormSubject}
                               onChange={e => setAcadFormSubject(e.target.value)}
-                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer"
+                              disabled={isHoliday || !isConfigured}
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
                               required
                             >
                               {availableAcadSubjects.map(sub => (
@@ -10027,7 +10110,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <select
                               value={acadFormUnit}
                               onChange={e => setAcadFormUnit(e.target.value)}
-                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer"
+                              disabled={isHoliday || !isConfigured}
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
                               required
                             >
                               <option value="Unit 1">Unit 1</option>
@@ -10045,7 +10129,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <select
                               value={acadFormStatus}
                               onChange={e => setAcadFormStatus(e.target.value)}
-                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer"
+                              disabled={isHoliday || !isConfigured}
+                              className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
                               required
                             >
                               <option value="Delivered">Delivered</option>
@@ -10062,7 +10147,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             placeholder="e.g. Introduction to Binary Search Trees & Node Insertion"
                             value={acadFormTopic}
                             onChange={e => setAcadFormTopic(e.target.value)}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none"
+                            disabled={isHoliday || !isConfigured}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
                             required
                           />
                         </div>
@@ -10075,7 +10161,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             placeholder="e.g. Completed textbook derivation, assigned 3 practice problems from chapter 4 for next class."
                             value={acadFormComments}
                             onChange={e => setAcadFormComments(e.target.value)}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:ring-1 focus:ring-indigo-500 outline-none resize-none"
+                            disabled={isHoliday || !isConfigured}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:ring-1 focus:ring-indigo-500 outline-none resize-none disabled:bg-slate-100 disabled:cursor-not-allowed"
                           />
                         </div>
 
@@ -10090,8 +10177,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                           <button
                             type="submit"
-                            disabled={isSavingAcadEntry}
-                            className="px-5 py-2 rounded-xl text-xs font-extrabold text-white bg-slate-900 hover:bg-indigo-600 transition-all cursor-pointer flex items-center gap-2 shadow-xs disabled:opacity-50"
+                            disabled={isSavingAcadEntry || isFormBlocked}
+                            className="px-5 py-2 rounded-xl text-xs font-extrabold text-white bg-slate-900 hover:bg-indigo-600 transition-all cursor-pointer flex items-center gap-2 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={
+                              isHoliday
+                                ? "Disabled: Today is declared a holiday"
+                                : !isConfigured
+                                ? "Disabled: CAM Day Order must be configured first"
+                                : dateSlots.length === 0
+                                ? "Disabled: No scheduled periods assigned to you today"
+                                : isSelectedPeriodUpcoming
+                                ? "Disabled: Future periods cannot be logged in advance"
+                                : undefined
+                            }
                           >
                             {isSavingAcadEntry && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                             <span>{editingAcadEntry ? "Update Log" : "Save Teaching Period"}</span>

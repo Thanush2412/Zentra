@@ -396,9 +396,9 @@ export async function POST(request: Request) {
     }
 
     const todayStr = new Date().toISOString().split("T")[0];
-    if (date.trim() > todayStr) {
+    if (date.trim() !== todayStr) {
       return NextResponse.json(
-        { success: false, message: "Future period conduction cannot be logged in advance." },
+        { success: false, message: "Period conduction can only be logged for today's active schedule. Past and future dates cannot be logged." },
         { status: 400 }
       );
     }
@@ -415,6 +415,37 @@ export async function POST(request: Request) {
         resolvedCollegeId = resolvedCollegeId || mentorRow.college_id;
       }
     }
+
+    // ── CAM DAY ORDER & SCHEDULE GUARD ──────────────────────────
+    // Period conduction must work strictly as per CAM daily configuration and day order
+    if (resolvedCollegeId) {
+      const dayConfig = await db.get(
+        "SELECT day_type, day_order, notes FROM campus_daily_configs WHERE college_id = ? AND dateStr = ?",
+        [resolvedCollegeId, todayStr]
+      );
+
+      if (!dayConfig || !dayConfig.day_type || dayConfig.day_type === "None") {
+        return NextResponse.json(
+          { success: false, message: "Day order has not been configured by Campus Manager for today. The CAM must set today's day schedule before period conduction can be logged." },
+          { status: 422 }
+        );
+      }
+
+      if (dayConfig.day_type === "holiday") {
+        return NextResponse.json(
+          { success: false, message: `Today is marked as a Holiday by Campus Manager${dayConfig.notes ? ` (${dayConfig.notes})` : ""}. Period conduction cannot be logged on a holiday.` },
+          { status: 422 }
+        );
+      }
+
+      if (!dayConfig.day_order || dayConfig.day_order === "None") {
+        return NextResponse.json(
+          { success: false, message: "Campus Manager has not specified a Day Order for today. Period logging requires an active CAM Day Order setting." },
+          { status: 422 }
+        );
+      }
+    }
+    // ── END CAM DAY ORDER GUARD ─────────────────────────────────
 
     await db.run(
       `INSERT INTO academic_tracker (
