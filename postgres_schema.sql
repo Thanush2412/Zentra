@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS mentors (
     subjects TEXT,
     classes TEXT,
     college_id VARCHAR(255) REFERENCES colleges(id),
+    shift VARCHAR(50) DEFAULT 'shift_1',
     employee_id VARCHAR(100),
     phone VARCHAR(50),
     qualification VARCHAR(255),

@@ -4152,6 +4152,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "Faculty Name": "Dr. Anitha Ramesh",
         "Email Address": "anitha.ramesh@faceprep.in",
         "Department": sampleDept,
+        "Shift": isCampusShiftBased ? "Shift 1" : "General Shift",
         "College ID": activeCollegeId || "college_1",
         "Subjects": "Programming in C, Digital Fundamentals",
         "Classes": "Year 1 Section A"
@@ -4160,6 +4161,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "Faculty Name": "Prof. Rajesh Kumar",
         "Email Address": "rajesh.kumar@faceprep.in",
         "Department": sampleDept,
+        "Shift": isCampusShiftBased ? "Shift 2" : "General Shift",
         "College ID": activeCollegeId || "college_1",
         "Subjects": "Computer Fundamentals, Mathematics for Computer Science",
         "Classes": "Year 1 Section A"
@@ -4199,9 +4201,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           const name = row.name || row.FacultyName || row.faculty_name || row["Faculty Name"] || row["Name"] || "";
           const email = row.email || row.EmailAddress || row.email_address || row["Email Address"] || row["Email"] || "";
           const rawDept = row.department || row.Department || row["Department"] || defaultDept;
+          const rawShift = row.shift || row.Shift || row["Shift"] || (isCampusShiftBased ? "shift_1" : "general");
+          const normShift = String(rawShift).toLowerCase().includes("2") ? "shift_2" : String(rawShift).toLowerCase().includes("gen") ? "general" : "shift_1";
           const collegeId = row.college_id || row.collegeId || row["College ID"] || activeCollegeId || "";
-          const subjects = row.subjects || row.Subjects || row["Subjects"] || "";
-          const classes = row.classes || row.Classes || row["Classes"] || "";
+          const subjects = row.subjects || row.Subjects || row["Subjects"] || row["Assigned Subjects"] || "";
+          const classes = row.classes || row.Classes || row["Classes"] || row["Assigned Classes"] || "";
 
           const matchedDept = facultyDepts.find(d => {
             const normD = d.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -4216,6 +4220,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             name: String(name).trim(),
             email: String(email).toLowerCase().trim(),
             department: matchedDept,
+            shift: normShift,
             college_id: collegeId,
             subjects: String(subjects).trim(),
             classes: String(classes).trim(),

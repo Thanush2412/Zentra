@@ -19,15 +19,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get default college if not specified
-    let fallbackCollegeId = defaultCollegeId;
-    if (!fallbackCollegeId) {
-      const firstCol = await db.get("SELECT id FROM colleges LIMIT 1");
-      if (!firstCol) {
-        return NextResponse.json({ success: false, message: "No college found. Please configure a campus first." }, { status: 400 });
-      }
-      fallbackCollegeId = firstCol.id;
-    }
+    // Fetch all colleges to resolve and validate college foreign keys
+    const allColleges = await db.all("SELECT id, name FROM colleges");
+    const collegeIdSet = new Set(allColleges.map((c: any) => c.id));
+    const collegeNameMap = new Map(allColleges.map((c: any) => [String(c.name).toLowerCase().trim(), c.id]));
+    const fallbackCollegeId = (defaultCollegeId && collegeIdSet.has(defaultCollegeId))
+      ? defaultCollegeId
+      : (allColleges[0]?.id || null);
 
     const now = new Date().toISOString();
     let importedCount = 0;
@@ -40,11 +38,10 @@ export async function POST(request: Request) {
         const rawEmail = item.email || item.EmailAddress || item.email_address || item["Email Address"] || item["Email"] || "";
         const rawDept = item.department || item.Department || item["Department"] || "Computer Science";
         const rawShift = item.shift || item.Shift || item["Shift"] || "shift_1";
-        const rawCollegeId = item.college_id || item.collegeId || item.CollegeId || fallbackCollegeId;
-        const rawSubjects = item.subjects || item.Subjects || item["Subjects"] || "";
-        const rawClasses = item.classes || item.Classes || item["Classes"] || "";
+        const rawCollegeId = item.college_id || item.collegeId || item.CollegeId || item["College ID"] || fallbackCollegeId;
+        const rawSubjects = item.subjects || item.Subjects || item["Subjects"] || item["Assigned Subjects"] || "";
+        const rawClasses = item.classes || item.Classes || item["Classes"] || item["Assigned Classes"] || "";
         const rawSubjectGroup = item.mentor_group || item.subject_group || item.subjectGroup || item["Subject Group"] || item["Mentor Group"] || rawDept;
-        // Unified group: mentor_group, subject_group, and department all mirror the same value
         const cleanDept = (rawSubjectGroup || String(rawDept)).trim();
 
         if (!rawName.trim() || !rawEmail.trim()) {
@@ -54,8 +51,18 @@ export async function POST(request: Request) {
 
         const cleanEmail = rawEmail.trim().toLowerCase();
         const cleanName = rawName.trim();
-        const cleanShift = rawShift.trim();
-        const avatar = item.avatar || "";
+        const cleanShift = String(rawShift).toLowerCase().includes("2") ? "shift_2" : String(rawShift).toLowerCase().includes("gen") ? "general" : "shift_1";
+        const avatar = item.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`;
+
+        // Validate and map college ID against existing colleges
+        let safeCollegeId = fallbackCollegeId;
+        if (rawCollegeId) {
+          if (collegeIdSet.has(rawCollegeId)) {
+            safeCollegeId = rawCollegeId;
+          } else if (collegeNameMap.has(String(rawCollegeId).toLowerCase().trim())) {
+            safeCollegeId = collegeNameMap.get(String(rawCollegeId).toLowerCase().trim());
+          }
+        }
 
         // Check if mentor already exists by email or id
         const existing = await tx.get(
@@ -72,34 +79,27 @@ export async function POST(request: Request) {
                  subjects = CASE WHEN ? != '' THEN ? ELSE subjects END,
                  classes = CASE WHEN ? != '' THEN ? ELSE classes END
              WHERE id = ?`,
-            cleanName, cleanDept, cleanShift, rawCollegeId, cleanDept, cleanDept,
+            cleanName, cleanDept, cleanShift, safeCollegeId, cleanDept, cleanDept,
             rawSubjects, rawSubjects, rawClasses, rawClasses, targetId
           );
         } else {
           await tx.run(
             `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, shift, college_id, mentor_group, subject_group)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            targetId, cleanName, cleanEmail, cleanDept, avatar, rawSubjects, rawClasses, cleanShift, rawCollegeId, cleanDept, cleanDept
+            targetId, cleanName, cleanEmail, cleanDept, avatar, rawSubjects, rawClasses, cleanShift, safeCollegeId, cleanDept, cleanDept
           );
         }
 
         // Check if user already exists to preserve password_hash
-        const existingUser = await tx.get("SELECT password_hash FROM users WHERE role = 'mentor' AND reference_id = ?", targetId);
+        const existingUser = await tx.get("SELECT password_hash FROM users WHERE LOWER(email) = ? OR id = ? OR reference_id = ?", cleanEmail, targetId, targetId);
         const passHashToKeep = existingUser?.password_hash || hashPassword("password123");
 
-        // Sync central user credentials
-        await tx.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, targetId]);
+        // Sync central user credentials cleanly
+        await tx.run("DELETE FROM users WHERE LOWER(email) = ? OR id = ? OR reference_id = ?", cleanEmail, targetId, targetId);
         await tx.run(
           `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT (id) DO UPDATE SET
-             email = EXCLUDED.email,
-             password_hash = EXCLUDED.password_hash,
-             role = EXCLUDED.role,
-             reference_id = EXCLUDED.reference_id,
-             status = EXCLUDED.status,
-             updated_at = EXCLUDED.updated_at`,
-          [targetId, cleanEmail, passHashToKeep, "mentor", targetId, "Active", now, now]
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          targetId, cleanEmail, passHashToKeep, "mentor", targetId, "Active", now, now
         );
 
         importedCount++;
