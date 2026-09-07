@@ -40,7 +40,7 @@ import {
   Video,
   ExternalLink
 } from "lucide-react";
-import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate } from "@/lib/utils";
+import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatch, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { CourseInfoButton } from "./CourseInfoModal";
 
