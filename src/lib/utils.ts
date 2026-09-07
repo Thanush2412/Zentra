@@ -865,7 +865,7 @@ export function resolveClassGroupDetailsFromState(
   listB: any[] = []
 ) {
   if (!classGroup) {
-    return { department: "General", semester: "Semester 5", year: "Year 3" };
+    return { department: "General", semester: "Semester 1", year: "Year 1" };
   }
 
   // Detect which list is coursesList (has .code or .established_year or .start_year) and which is subjectsList (has .weekly_hours or .type)
@@ -987,7 +987,7 @@ export function resolveClassGroupDetailsFromState(
   }
 
   if (!resolvedSemester) {
-    resolvedSemester = "Semester 5";
+    resolvedSemester = "Semester 1";
   }
 
   // 3. Resolve Year

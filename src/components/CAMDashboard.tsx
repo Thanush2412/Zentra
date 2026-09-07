@@ -871,7 +871,7 @@ const CAMCampusInsightPanel: React.FC<{
           sNo: idx + 1,
           name: sub.name,
           dept: sub.department || "General",
-          sem: sub.semester || "Semester 5",
+          sem: sub.semester || "Semester 1",
           type: sub.type || "Theory",
           targetHours: targetSemesterHours,
           actualHours,

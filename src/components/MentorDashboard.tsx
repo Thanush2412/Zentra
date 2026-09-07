@@ -3741,7 +3741,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       const act = activeDept.toLowerCase().trim();
       return d === act || mg === act || (d.length > 2 && act.includes(d)) || (act.length > 2 && d.includes(act));
     }).map(s => s.semester).filter(Boolean))).sort((a, b) => parseInt((a || "").replace(/\D/g, "") || "0") - parseInt((b || "").replace(/\D/g, "") || "0"));
-    const activeSem = trackerSem || (semOpts.length > 0 ? semOpts[0] : "Semester 5");
+    const activeSem = trackerSem || (semOpts.length > 0 ? semOpts[0] : "Semester 1");
     const activeClassGroup = `${activeDept} - ${activeSem}`;
 
     const subjectObjs = subjectsList.filter(s => {
@@ -8579,8 +8579,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                 const activeWeeklyDept = acadWeeklyDept || deptOptions[0] || currentMentor?.mentor_group || "";
 
-                const semesterOptions = Array.from(new Set(
-                  subjectsList
+                const standardSemesters = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+                const semesterOptions = Array.from(new Set([
+                  ...standardSemesters,
+                  ...subjectsList
                     .filter(s => {
                       if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
                       const d = (s.department || "").toLowerCase().trim();
@@ -8590,15 +8592,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     })
                     .map(s => s.semester)
                     .filter(Boolean)
-                )).sort((a, b) => {
+                ])).sort((a, b) => {
                   const na = parseInt((a || "").replace(/\D/g, "") || "0");
                   const nb = parseInt((b || "").replace(/\D/g, "") || "0");
                   return na - nb;
                 });
 
-                const defaultSems = ["Semester 5", "Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 6", "Semester 7", "Semester 8"];
-                const finalSemOptions = semesterOptions.length > 0 ? semesterOptions : defaultSems;
-                const activeWeeklySem = acadWeeklySem || finalSemOptions[0] || "Semester 5";
+                const finalSemOptions = semesterOptions.length > 0 ? semesterOptions : standardSemesters;
+                const activeWeeklySem = (acadWeeklySem && finalSemOptions.includes(acadWeeklySem))
+                  ? acadWeeklySem
+                  : finalSemOptions[0] || "Semester 1";
 
                 // Filter academic subjects (theory/practical)
                 const subjectObjs = subjectsList.filter(s => {
