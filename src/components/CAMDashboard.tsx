@@ -4367,7 +4367,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
   const collegeMentors = useMemo(() => {
     if (isGlobalAllCampuses) return mentors;
-    return mentors.filter(m => m.college_id === activeCollegeId);
+    const campusMentors = mentors.filter(m => m.college_id === activeCollegeId);
+    if (campusMentors.length > 0) return campusMentors;
+    const unassigned = mentors.filter(m => !m.college_id);
+    return unassigned.length > 0 ? unassigned : mentors;
   }, [mentors, activeCollegeId, isGlobalAllCampuses]);
 
   const collegeStudents = useMemo(() => {
@@ -6799,9 +6802,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     wsMentors.columns = [
       { header: "Mentor (ID/Name/Email)", key: "mentor", width: 40 }
     ];
-    collegeMentors.forEach(m => {
-      wsMentors.addRow({ mentor: `${m.name} (${m.id})` });
-    });
+    if (collegeMentors.length === 0) {
+      wsMentors.addRow({ mentor: "Unassigned Faculty" });
+    } else {
+      collegeMentors.forEach(m => {
+        wsMentors.addRow({ mentor: `${m.name} (${m.id})` });
+      });
+    }
 
     // 3. Create Sheet 5: Classrooms (Reference List)
     const wsRooms = workbook.addWorksheet("Classrooms");
@@ -6811,9 +6818,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const campusRooms = activeCollege?.rooms 
       ? parseRoomsList(activeCollege.rooms)
       : Array.from(new Set(collegeSlots.map(s => s.location).filter(Boolean)));
-    campusRooms.forEach(r => {
-      wsRooms.addRow({ room: r });
-    });
+    if (campusRooms.length === 0) {
+      wsRooms.addRow({ room: "Room 101" });
+    } else {
+      campusRooms.forEach(r => {
+        wsRooms.addRow({ room: r });
+      });
+    }
 
     // 4. Create Sheet 3: Mentor Mapping
     const wsMentorMapping = workbook.addWorksheet("Mentor Mapping");
@@ -6839,12 +6850,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       });
     });
 
-    // Add validations to Mentor Mapping columns
-    const subjectsRange = `='Subjects'!$A$2:$A$100`;
-    const mentorsRange = `='Mentors'!$A$2:$A$100`;
-    const roomsRange = `='Classrooms'!$A$2:$A$100`;
+    // Add validations to Mentor Mapping columns with exact non-empty bounds
+    const subjectsCount = Math.max(deptSubjects.length, 1);
+    const mentorsCount = Math.max(collegeMentors.length, 1);
+    const roomsCount = Math.max(campusRooms.length, 1);
 
-    for (let i = 2; i <= 100; i++) {
+    const subjectsRange = `='Subjects'!$A$2:$A$${subjectsCount + 1}`;
+    const mentorsRange = `='Mentors'!$A$2:$A$${mentorsCount + 1}`;
+    const roomsRange = `='Classrooms'!$A$2:$A$${roomsCount + 1}`;
+
+    const maxMappingRows = Math.max(deptSubjects.length + 15, 30);
+    for (let i = 2; i <= maxMappingRows; i++) {
       wsMentorMapping.getCell(`A${i}`).dataValidation = {
         type: "list",
         allowBlank: true,
@@ -9345,24 +9361,29 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     const existingClassGroups = Array.from(new Set(collegeSlots.map(s => s.classGroup).filter((g): g is string => Boolean(g))));
                     const DAYS = workingDays.length > 0 ? workingDays : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
-                    const cohortCourses = Array.from(new Set(activeBatches.map(cg => {
+                    const batchCourses = activeBatches.map(cg => {
                       const slot = collegeSlots.find(s => s.classGroup === cg);
                       return slot?.department || getCourseFromClassGroup(cg);
-                    }).filter(Boolean)));
+                    }).filter(Boolean);
+                    const collegeCourseNames = collegeCourses.map(c => c.name).filter(Boolean);
+                    const cohortCourses = Array.from(new Set([...collegeCourseNames, ...batchCourses]));
 
-                    const cohortSemesters = Array.from(new Set(
-                      activeBatches
-                        .filter(cg => {
-                          const slot = collegeSlots.find(s => s.classGroup === cg);
-                          const c = slot?.department || getCourseFromClassGroup(cg);
-                          return c === selectedCohortCourse;
-                        })
-                        .map(cg => {
-                          const slot = collegeSlots.find(s => s.classGroup === cg);
-                          return slot?.semester || getSemesterFromClassGroup(cg);
-                        })
-                        .filter(Boolean)
-                    ));
+                    const batchSemesters = activeBatches
+                      .filter(cg => {
+                        const slot = collegeSlots.find(s => s.classGroup === cg);
+                        const c = slot?.department || getCourseFromClassGroup(cg);
+                        return c === selectedCohortCourse;
+                      })
+                      .map(cg => {
+                        const slot = collegeSlots.find(s => s.classGroup === cg);
+                        return slot?.semester || getSemesterFromClassGroup(cg);
+                      })
+                      .filter(Boolean);
+
+                    const currentCourseObj = collegeCourses.find(c => c.name === selectedCohortCourse);
+                    const totalSemesters = currentCourseObj?.years ? Math.min(Number(currentCourseObj.years) * 2, 8) : 8;
+                    const defaultSemesters = Array.from({ length: totalSemesters }, (_, i) => `Semester ${i + 1}`);
+                    const cohortSemesters = Array.from(new Set(batchSemesters.length > 0 ? batchSemesters : defaultSemesters));
 
                     const previewTimeSlots = getTimeSlots(
                       hasShifts ? (timetableSubTab === "view" ? viewerShift : genShift) : "general",
@@ -10032,41 +10053,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   </div>
                                 </div>
 
-                                <div className="flex justify-between items-center pt-4 border-t border-slate-100 flex-wrap gap-3">
-                                  <div className="flex gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={handleDownloadGridTemplate}
-                                      disabled={!genSelectedCourse || !genClassGroup}
-                                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-sm cursor-pointer select-none active:scale-95 duration-150 ${
-                                        !genSelectedCourse || !genClassGroup
-                                          ? "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
-                                          : "border-emerald-150 bg-emerald-50/50 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-850 hover:border-emerald-200"
-                                      }`}
-                                      title="Download Excel Template for this class"
-                                    >
-                                      <Download className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                                      <span>Download Template</span>
-                                    </button>
-
-                                    <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-sm cursor-pointer select-none active:scale-95 duration-150 ${
-                                      !genSelectedCourse || !genClassGroup
-                                        ? "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
-                                        : "border-blue-150 bg-blue-50/50 text-blue-700 hover:bg-blue-50 hover:text-blue-850 hover:border-blue-200"
-                                    }`}>
-                                      <Upload className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                                      <span>Upload Timetable</span>
-                                      {genSelectedCourse && genClassGroup && (
-                                        <input
-                                          type="file"
-                                          accept=".xlsx, .xls"
-                                          onChange={handleUploadGrid}
-                                          className="hidden"
-                                        />
-                                      )}
-                                    </label>
-                                  </div>
-
+                                <div className="flex justify-end items-center pt-4 border-t border-slate-100">
                                   <Button
                                     variant="primary"
                                     size="md"
@@ -10143,22 +10130,29 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                               )
                                             : [];
 
-                                          // Pick the most specific list: subject-level → subject_group-level → program-level → all college mentors
-                                          const mentorsToDisplay =
-                                            subjectMentors.length > 0
-                                              ? subjectMentors
-                                              : groupMentors.length > 0
-                                                ? groupMentors
-                                                : programMentors.length > 0
-                                                  ? programMentors
-                                                  : collegeMentors;
+                                          // Collect priority mentors
+                                           const priorityMentorIds = new Set<string>();
+                                           const priorityMentors: typeof collegeMentors = [];
+                                           
+                                           [...subjectMentors, ...groupMentors, ...programMentors].forEach(m => {
+                                             if (!priorityMentorIds.has(m.id)) {
+                                               priorityMentorIds.add(m.id);
+                                               priorityMentors.push(m);
+                                             }
+                                           });
 
-                                          // Count existing scheduled hours per mentor in current semester
-                                          const getMentorHrs = (mentorId: string): number =>
-                                            collegeSlots.filter(s => s.mentorId === mentorId).length;
+                                           const otherMentors = collegeMentors.filter(m => !priorityMentorIds.has(m.id));
+                                           const baseMentors = collegeMentors.length > 0 ? collegeMentors : [];
+                                           const mentorsToDisplay = (priorityMentors.length > 0 || otherMentors.length > 0)
+                                             ? [...priorityMentors, ...otherMentors]
+                                             : baseMentors;
 
-                                          const assignedMentor = a.mentorId ? collegeMentors.find(m => m.id === a.mentorId) : null;
-                                          const assignedHrs = a.mentorId ? getMentorHrs(a.mentorId) : null;
+                                           // Count existing scheduled hours per mentor in current semester
+                                           const getMentorHrs = (mentorId: string): number =>
+                                             collegeSlots.filter(s => s.mentorId === mentorId).length;
+
+                                           const assignedMentor = a.mentorId ? collegeMentors.find(m => m.id === a.mentorId) : null;
+                                           const assignedHrs = a.mentorId ? getMentorHrs(a.mentorId) : null;
 
                                           return (
                                             <tr key={a.subjectId} className="hover:bg-slate-50/20">
@@ -10201,12 +10195,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                   className="w-full p-1.5 border border-slate-200 rounded-lg bg-white font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                                 >
                                                   <option value="">Select Mentor</option>
+                                                  {mentorsToDisplay.length === 0 && <option value="" disabled>No Mentors Available</option>}
                                                   {mentorsToDisplay.map(m => {
                                                     const hrs = getMentorHrs(m.id);
                                                     const loadLabel = hrs > 0 ? ` (${hrs} hrs/wk)` : " (free)";
-                                                    const groupLabel = m.subject_group ? ` (${m.subject_group})` : " (General)";
+                                                    const groupLabel = m.subject_group ? ` (${m.subject_group})` : (m.department ? ` (${m.department})` : " (General)");
+                                                    const isPriority = priorityMentorIds.has(m.id);
                                                     return (
-                                                      <option key={m.id} value={m.id}>{m.name}{groupLabel}{loadLabel}</option>
+                                                      <option key={m.id} value={m.id}>
+                                                        {isPriority ? "★ " : ""}{m.name}{groupLabel}{loadLabel}
+                                                      </option>
                                                     );
                                                   })}
                                                 </select>
