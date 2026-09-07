@@ -77,6 +77,121 @@ export async function GET(request: Request) {
     query += ` ORDER BY flr.created_at DESC`;
 
     const records = await db.all(query, params);
+
+    // Enrich with cover requests and perform self-healing auto-sync if covers are approved
+    for (const rec of records) {
+      try {
+        const covers = await db.all(
+          `SELECT id, targetStaffId, targetStaffName, targetstaffname, status, course, day, time, dateStr, dateFormatted 
+           FROM handover_requests 
+           WHERE compensates_handover_id = ?`,
+          [rec.id]
+        );
+        rec.covers = covers || [];
+
+        // Auto-heal any timezone-shifted handover dates
+        for (const c of rec.covers) {
+          const cDate = c.datestr || c.dateStr;
+          if (cDate && rec.start_date && cDate < rec.start_date) {
+            const [rY, rM, rD] = rec.start_date.split("-").map(Number);
+            const dtObj = new Date(rY, rM - 1, rD, 12, 0, 0);
+            const corFormatted = dtObj.toLocaleDateString("en-IN", {
+              weekday: "long", day: "2-digit", month: "short", year: "numeric"
+            });
+            await db.run(
+              "UPDATE handover_requests SET datestr = ?, dateformatted = ? WHERE id = ?",
+              [rec.start_date, corFormatted, c.id]
+            );
+            await db.run(
+              "UPDATE approved_handovers SET datestr = ? WHERE requestid = ?",
+              [rec.start_date, c.id]
+            );
+            c.datestr = rec.start_date;
+            c.dateStr = rec.start_date;
+            c.dateformatted = corFormatted;
+            c.dateFormatted = corFormatted;
+          }
+        }
+
+        // Auto-heal any timezone-shifted handover dates
+        for (const c of rec.covers) {
+          const cDate = c.datestr || c.dateStr;
+          if (cDate && rec.start_date && cDate < rec.start_date) {
+            const [rY, rM, rD] = rec.start_date.split("-").map(Number);
+            const dtObj = new Date(rY, rM - 1, rD, 12, 0, 0);
+            const corFormatted = dtObj.toLocaleDateString("en-IN", {
+              weekday: "long", day: "2-digit", month: "short", year: "numeric"
+            });
+            await db.run(
+              "UPDATE handover_requests SET datestr = ?, dateformatted = ? WHERE id = ?",
+              [rec.start_date, corFormatted, c.id]
+            );
+            await db.run(
+              "UPDATE approved_handovers SET datestr = ? WHERE requestid = ?",
+              [rec.start_date, c.id]
+            );
+            c.datestr = rec.start_date;
+            c.dateStr = rec.start_date;
+            c.dateformatted = corFormatted;
+            c.dateFormatted = corFormatted;
+          }
+        }
+
+        // If leave is pending but all assigned covers are approved, auto-approve and sync attendance
+        if (rec.status === "pending" && covers && covers.length > 0) {
+          const allApproved = covers.every((c: any) => c.status === "approved");
+          if (allApproved) {
+            const coverNames = Array.from(new Set(
+              covers.map((c: any) => c.targetStaffName || c.targetstaffname).filter(Boolean)
+            )).join(", ");
+            const approverTag = `Cover Approved (${coverNames || "Assigned Mentor"})`;
+            await db.run(
+              `UPDATE faculty_leave_requests SET status = 'approved', approved_by = ?, updated_at = NOW() WHERE id = ?`,
+              [approverTag, rec.id]
+            );
+            rec.status = "approved";
+            rec.approved_by = approverTag;
+
+            // Auto-sync mentor attendance
+            try {
+              const [sY, sM, sD] = rec.start_date.split("-").map(Number);
+              const [eY, eM, eD] = (rec.end_date || rec.start_date).split("-").map(Number);
+              let cur = new Date(sY, sM - 1, sD, 12, 0, 0);
+              const end = new Date(eY, eM - 1, eD, 12, 0, 0);
+              const attStatus = rec.request_type === "OD" ? "OD" : "Leave";
+              while (cur <= end) {
+                const year = cur.getFullYear();
+                const month = String(cur.getMonth() + 1).padStart(2, "0");
+                const day = String(cur.getDate()).padStart(2, "0");
+                const dateStr = `${year}-${month}-${day}`;
+                const attId = `att_${rec.mentor_id}_${dateStr}`;
+                await db.run(
+                  `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, reason, marked_by, marked_by_id, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'cover_approval', ?, NOW())
+                   ON CONFLICT(mentor_id, date_str) DO UPDATE SET
+                   status = excluded.status,
+                   reason = excluded.reason,
+                   marked_by = excluded.marked_by,
+                   marked_by_id = excluded.marked_by_id,
+                   updated_at = NOW()`,
+                  [
+                    attId,
+                    rec.mentor_id,
+                    rec.college_id,
+                    dateStr,
+                    attStatus,
+                    `${rec.request_type}: ${rec.reason || 'Leave Approved'} (Covered by ${coverNames})`,
+                    approverTag
+                  ]
+                );
+                cur.setDate(cur.getDate() + 1);
+              }
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+
     return NextResponse.json({ success: true, records });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -113,7 +228,7 @@ export async function POST(request: Request) {
 
       await db.run(
         `UPDATE faculty_leave_requests
-         SET status = ?, approved_by = ?, rejection_reason = ?, updated_at = datetime('now')
+         SET status = ?, approved_by = ?, rejection_reason = ?, updated_at = NOW()
          WHERE id = ?`,
         [newStatus, approvedBy || "Campus Manager", rejectionReason || null, requestId]
       );
@@ -121,24 +236,28 @@ export async function POST(request: Request) {
       // Automatic Sync to mentor_attendance if approved
       let affectedClasses: any[] = [];
       if (action === "approve") {
-        const startDate = new Date(reqRecord.start_date);
-        const endDate = new Date(reqRecord.end_date);
+        const [sY, sM, sD] = reqRecord.start_date.split("-").map(Number);
+        const [eY, eM, eD] = (reqRecord.end_date || reqRecord.start_date).split("-").map(Number);
+        let cur = new Date(sY, sM - 1, sD, 12, 0, 0);
+        const end = new Date(eY, eM - 1, eD, 12, 0, 0);
         const attStatus = reqRecord.request_type === "OD" ? "OD" : "Leave";
 
-        let cur = new Date(startDate);
-        while (cur <= endDate) {
-          const dateStr = cur.toISOString().split("T")[0];
+        while (cur <= end) {
+          const year = cur.getFullYear();
+          const month = String(cur.getMonth() + 1).padStart(2, "0");
+          const day = String(cur.getDate()).padStart(2, "0");
+          const dateStr = `${year}-${month}-${day}`;
           const attId = `att_${reqRecord.mentor_id}_${dateStr}`;
           
           await db.run(
             `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, reason, marked_by, marked_by_id, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, 'cam_approval', ?, datetime('now'))
+             VALUES (?, ?, ?, ?, ?, ?, 'cam_approval', ?, NOW())
              ON CONFLICT(mentor_id, date_str) DO UPDATE SET
              status = excluded.status,
              reason = excluded.reason,
              marked_by = excluded.marked_by,
              marked_by_id = excluded.marked_by_id,
-             updated_at = datetime('now')`,
+             updated_at = NOW()`,
             [
               attId,
               reqRecord.mentor_id,
@@ -256,9 +375,12 @@ export async function POST(request: Request) {
 
         // Automatic identification of affected regular teaching classes for this mentor
         const mentorSlots = await db.all("SELECT * FROM slots WHERE mentorId = ?", [reqRecord.mentor_id]);
-        let curSlotCheck = new Date(startDate);
-        while (curSlotCheck <= endDate) {
-          const dStr = curSlotCheck.toISOString().split("T")[0];
+        let curSlotCheck = new Date(sY, sM - 1, sD, 12, 0, 0);
+        while (curSlotCheck <= end) {
+          const cYear = curSlotCheck.getFullYear();
+          const cMonth = String(curSlotCheck.getMonth() + 1).padStart(2, "0");
+          const cDay = String(curSlotCheck.getDate()).padStart(2, "0");
+          const dStr = `${cYear}-${cMonth}-${cDay}`;
           const dName = curSlotCheck.toLocaleDateString("en-US", { weekday: "long" });
           const daySlots = mentorSlots.filter((s: any) => s.day.toLowerCase() === dName.toLowerCase());
           for (const s of daySlots) {
@@ -354,7 +476,7 @@ export async function POST(request: Request) {
 
     await db.run(
       `INSERT INTO faculty_leave_requests (id, mentor_id, college_id, request_type, leave_category, start_date, end_date, reason, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'), datetime('now'))`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
       [
         reqId,
         mentorId,
@@ -382,7 +504,9 @@ export async function POST(request: Request) {
           if (!slot || !coverMentor) continue;
 
           const handoverId = `ho_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-          const dateFormatted = new Date(dateStr + "T00:00:00").toLocaleDateString("en-IN", {
+          const [dY, dM, dD] = dateStr.split("-").map(Number);
+          const dateObj = new Date(dY, dM - 1, dD, 12, 0, 0);
+          const dateFormatted = dateObj.toLocaleDateString("en-IN", {
             weekday: "long", day: "2-digit", month: "short", year: "numeric"
           });
 
@@ -440,7 +564,9 @@ export async function POST(request: Request) {
           const slot = await db.get("SELECT * FROM slots WHERE id = ?", [slotId]);
           if (slot) {
             const handoverId = `ho_cam_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-            const dateFormatted = new Date(dateStr + "T00:00:00").toLocaleDateString("en-IN", {
+            const [dY2, dM2, dD2] = dateStr.split("-").map(Number);
+            const dateObj2 = new Date(dY2, dM2 - 1, dD2, 12, 0, 0);
+            const dateFormatted = dateObj2.toLocaleDateString("en-IN", {
               weekday: "long", day: "2-digit", month: "short", year: "numeric"
             });
 

@@ -51,9 +51,17 @@ export async function POST(request: Request) {
     const nowIso = new Date().toISOString();
 
     await db.run(
-      `INSERT OR REPLACE INTO class_mentor_assignments (
+      `INSERT INTO class_mentor_assignments (
         id, college_id, year, department, classGroup, mentor_id, mentor_name, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET
+        college_id = EXCLUDED.college_id,
+        year = EXCLUDED.year,
+        department = EXCLUDED.department,
+        classGroup = EXCLUDED.classGroup,
+        mentor_id = EXCLUDED.mentor_id,
+        mentor_name = EXCLUDED.mentor_name,
+        updated_at = EXCLUDED.updated_at`,
       id,
       college_id,
       year,

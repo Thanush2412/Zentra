@@ -55,7 +55,7 @@ export async function GET(request: Request) {
         colleges, students, fees, payments, cams,
         stats: { totalFees, totalPaid, totalOutstanding, paidCount, partialCount, unpaidCount, totalStudents: students.length }
       }, {
-        headers: { "Cache-Control": "private, max-age=15, stale-while-revalidate=45" }
+        headers: { "Cache-Control": "no-store, no-cache, must-revalidate" }
       });
     }
 
@@ -96,7 +96,7 @@ export async function GET(request: Request) {
           collectionRate: totalFees > 0 ? Math.min(Math.round((totalPaid / totalFees) * 100), 100) : 0
         }
       }, {
-        headers: { "Cache-Control": "private, max-age=15, stale-while-revalidate=45" }
+        headers: { "Cache-Control": "no-store, no-cache, must-revalidate" }
       });
     }
 
@@ -122,7 +122,7 @@ export async function GET(request: Request) {
           unpaidCount: fees.filter((f: any) => f.status === 'unpaid').length
         }
       }, {
-        headers: { "Cache-Control": "private, max-age=15, stale-while-revalidate=45" }
+        headers: { "Cache-Control": "no-store, no-cache, must-revalidate" }
       });
     }
 
@@ -176,8 +176,10 @@ export async function POST(request: Request) {
     // 2. Delete a Fee Record
     if (isDeleteFee) {
       if (!feeId) return NextResponse.json({ success: false, message: "Missing feeId" }, { status: 400 });
-      await db.run("DELETE FROM student_fees WHERE id = ?", feeId);
-      await db.run("DELETE FROM fee_payments WHERE fee_id = ?", feeId);
+      await db.transaction(async (tx) => {
+        await tx.run("DELETE FROM fee_payments WHERE fee_id = ?", feeId);
+        await tx.run("DELETE FROM student_fees WHERE id = ?", feeId);
+      });
       return NextResponse.json({ success: true, message: "Semester fee deleted successfully" });
     }
 
@@ -198,26 +200,28 @@ export async function POST(request: Request) {
       const targetProof = paymentProof !== undefined ? paymentProof : (fee.payment_proof || "");
       const targetStatus = status || (targetPaid >= targetAmount && targetAmount > 0 ? 'paid' : targetPaid > 0 ? 'partial' : 'unpaid');
 
-      await db.run(
-        `UPDATE student_fees 
-         SET amount = ?, paid_amount = ?, term_name = ?, due_date = ?, status = ?, pay_link = ?, payment_proof = ?, updated_at = ? 
-         WHERE id = ?`,
-        [targetAmount, targetPaid, targetTerm, targetDue, targetStatus, targetPayLink, targetProof, now, feeId]
-      );
-
-      const diff = targetPaid - fee.paid_amount;
-      if (diff !== 0) {
-        const payId = "pay_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
-        const receiptNo = "RCP" + Date.now().toString().slice(-6);
-        const refNo = referenceNo || "MANUAL_ADJ";
-        const method = "Manual Adjustment";
-
-        await db.run(
-          `INSERT INTO fee_payments (id, fee_id, student_id, college_id, amount, payment_method, reference_no, receipt_no, payment_date)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [payId, feeId, fee.student_id, fee.college_id, diff, method, refNo, receiptNo, now]
+      await db.transaction(async (tx) => {
+        await tx.run(
+          `UPDATE student_fees 
+           SET amount = ?, paid_amount = ?, term_name = ?, due_date = ?, status = ?, pay_link = ?, payment_proof = ?, updated_at = ? 
+           WHERE id = ?`,
+          [targetAmount, targetPaid, targetTerm, targetDue, targetStatus, targetPayLink, targetProof, now, feeId]
         );
-      }
+
+        const diff = targetPaid - fee.paid_amount;
+        if (diff !== 0) {
+          const payId = "pay_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
+          const receiptNo = "RCP" + Date.now().toString().slice(-6);
+          const refNo = referenceNo || "MANUAL_ADJ";
+          const method = "Manual Adjustment";
+
+          await tx.run(
+            `INSERT INTO fee_payments (id, fee_id, student_id, college_id, amount, payment_method, reference_no, receipt_no, payment_date)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [payId, feeId, fee.student_id, fee.college_id, diff, method, refNo, receiptNo, now]
+          );
+        }
+      });
 
       return NextResponse.json({
         success: true,
@@ -229,23 +233,42 @@ export async function POST(request: Request) {
       // Standard transaction pathway
       const method = paymentMethod || "manual";
       const payAmount = Number(amount);
+      if (payAmount <= 0) {
+        return NextResponse.json({ success: false, message: "Payment amount must be greater than zero" }, { status: 400 });
+      }
+
+      // Backend Idempotency Check: Prevent duplicate payment submitted within last 5 seconds with same amount and fee_id
+      const recentDup = await db.get(
+        "SELECT id, receipt_no FROM fee_payments WHERE fee_id = ? AND amount = ? AND (reference_no = ? OR payment_date >= ?) LIMIT 1",
+        feeId, payAmount, referenceNo || "NOMATCH", new Date(Date.now() - 5000).toISOString()
+      );
+      if (recentDup && !referenceNo) {
+        return NextResponse.json({
+          success: true,
+          message: "Payment already recorded (duplicate prevented)",
+          receiptNo: recentDup.receipt_no
+        });
+      }
+
       const newPaid = Math.min(fee.paid_amount + payAmount, fee.amount);
       const newStatus = newPaid >= fee.amount ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
-
-      await db.run(
-        "UPDATE student_fees SET paid_amount = ?, status = ?, updated_at = ? WHERE id = ?",
-        [newPaid, newStatus, now, feeId]
-      );
 
       const payId = "pay_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
       const receiptNo = "RCP" + Date.now().toString().slice(-6);
       const refNo = referenceNo || ("REF" + Date.now().toString(36).toUpperCase());
 
-      await db.run(
-        `INSERT INTO fee_payments (id, fee_id, student_id, college_id, amount, payment_method, reference_no, receipt_no, payment_date)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [payId, feeId, fee.student_id, fee.college_id, payAmount, method, refNo, receiptNo, now]
-      );
+      await db.transaction(async (tx) => {
+        await tx.run(
+          "UPDATE student_fees SET paid_amount = ?, status = ?, updated_at = ? WHERE id = ?",
+          [newPaid, newStatus, now, feeId]
+        );
+
+        await tx.run(
+          `INSERT INTO fee_payments (id, fee_id, student_id, college_id, amount, payment_method, reference_no, receipt_no, payment_date)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [payId, feeId, fee.student_id, fee.college_id, payAmount, method, refNo, receiptNo, now]
+        );
+      });
 
       return NextResponse.json({
         success: true,

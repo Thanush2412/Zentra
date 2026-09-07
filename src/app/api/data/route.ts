@@ -4,24 +4,10 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { seedDatabase } from "@/lib/seed";
-
-let isDatabaseInitialized = false;
 
 export async function GET(request: Request) {
   try {
     const db = await getDb();
-
-    // Check if table structure exists only once on first boot
-    if (!isDatabaseInitialized) {
-      try {
-        await db.get("SELECT COUNT(*) as count FROM admin_users");
-        isDatabaseInitialized = true;
-      } catch (_) {
-        await seedDatabase();
-        isDatabaseInitialized = true;
-      }
-    }
 
     const { searchParams } = new URL(request.url);
     const role = searchParams.get("role");
@@ -56,20 +42,23 @@ export async function GET(request: Request) {
 
     // ── FAST PATH: attendance-only re-fetch (used after bulk import / mentor mark) ──
     if (fields === "attendance") {
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setDate(sixMonthsAgo.getDate() - 180);
-      const thresh = sixMonthsAgo.toISOString().slice(0, 10);
+      const fortyFiveDaysAgo = new Date();
+      fortyFiveDaysAgo.setDate(fortyFiveDaysAgo.getDate() - 45);
+      const thresh = fortyFiveDaysAgo.toISOString().slice(0, 10);
 
       let attSql: string;
       let attParams: any[];
       if (role === "student" && userId) {
-        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE studentId = ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr DESC LIMIT 2000";
+        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE studentId = ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr DESC LIMIT 1000";
         attParams = [userId];
+      } else if (role === "mentor" && userId) {
+        attSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa WHERE (sa.slotId IN (SELECT id FROM slots WHERE mentorId = ?) OR sa.markedBy = ?) AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 5000";
+        attParams = [userId, userId, thresh];
       } else if (collegeId) {
-        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) AND dateStr >= ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr ASC";
+        attSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 15000";
         attParams = [collegeId, thresh];
       } else {
-        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE dateStr >= ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr DESC LIMIT 80000";
+        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE dateStr >= ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr DESC LIMIT 10000";
         attParams = [thresh];
       }
       const att = await db.all(attSql, ...attParams);
@@ -144,30 +133,55 @@ export async function GET(request: Request) {
       : collegeId ? "SELECT * FROM announcements WHERE college_id = ? OR college_id IS NULL ORDER BY created_at DESC LIMIT 30" : "SELECT * FROM announcements ORDER BY created_at DESC LIMIT 30";
     const announcementParams = kamHasColleges ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
 
-    // Role-optimized attendance query (Full date range from semester start)
-    let attendanceSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE dateStr >= ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr ASC LIMIT 60000";
-    let attendanceParams: any[] = [fullDateThreshold];
+    // Role-optimized attendance query (Role-scoped date windows to prevent 24MB memory & transfer bloat)
+    let attendanceSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE dateStr >= ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr ASC LIMIT 10000";
+    let attendanceParams: any[] = [mentorDateThreshold];
 
     if (isStudent && userId) {
-      attendanceSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE studentId = ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr DESC LIMIT 2000";
+      attendanceSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE studentId = ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr DESC LIMIT 1000";
       attendanceParams = [userId];
     } else if (kamHasColleges) {
-      attendanceSql = `SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id IN ${kamInClause} AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0' ORDER BY sa.dateStr ASC`;
-      attendanceParams = [...kamCollegeIds, fullDateThreshold];
-    } else if (isMentor && collegeId) {
-      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0' ORDER BY sa.dateStr ASC";
-      attendanceParams = [collegeId, mentorDateThreshold];
+      attendanceSql = `SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id IN ${kamInClause} AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 15000`;
+      attendanceParams = [...kamCollegeIds, mentorDateThreshold];
+    } else if (isMentor && userId) {
+      // Mentor only needs attendance for their assigned slots or where they marked attendance
+      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa WHERE (sa.slotId IN (SELECT id FROM slots WHERE mentorId = ?) OR sa.markedBy = ?) AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 5000";
+      attendanceParams = [userId, userId, mentorDateThreshold];
     } else if (isCAM && collegeId) {
-      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0' ORDER BY sa.dateStr ASC";
-      attendanceParams = [collegeId, fullDateThreshold];
+      // CAM monitoring view scopes to 45-day window for college (covers current month + buffer)
+      const fortyFiveDaysAgo = new Date();
+      fortyFiveDaysAgo.setDate(now.getDate() - 45);
+      const camThreshold = fortyFiveDaysAgo.toISOString().slice(0, 10);
+      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 15000";
+      attendanceParams = [collegeId, camThreshold];
     } else if (collegeId) {
-      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0' ORDER BY sa.dateStr ASC";
-      attendanceParams = [collegeId, fullDateThreshold];
+      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 10000";
+      attendanceParams = [collegeId, mentorDateThreshold];
     }
 
     const isSME = role === "sme";
     const isAllocator = role === "allocator";
     const needsDemo = isAdmin || isSME || isAllocator || isCAM;
+
+        // Leave requests scoping
+    let leaveSql: string;
+    let leaveParams: any[] = [];
+    if (isStudent && userId) {
+      leaveSql = "SELECT * FROM leave_requests WHERE studentId = ? OR studentId IN (SELECT id FROM students WHERE id = ? OR email = ?) ORDER BY timestamp DESC LIMIT 100";
+      leaveParams = [userId, userId, userId];
+    } else if (kamHasColleges && !isStudent) {
+      leaveSql = `SELECT * FROM leave_requests WHERE studentId IN (SELECT id FROM students WHERE college_id IN ${kamInClause}) ORDER BY timestamp DESC LIMIT 100`;
+      leaveParams = [...kamCollegeIds];
+    } else if (collegeId && !isStudent) {
+      leaveSql = "SELECT lr.* FROM leave_requests lr LEFT JOIN students s ON lr.studentId = s.id WHERE LOWER(TRIM(s.college_id)) = LOWER(TRIM(?)) OR LOWER(TRIM(lr.classGroup)) IN (SELECT LOWER(TRIM(classGroup)) FROM class_mentor_assignments WHERE LOWER(TRIM(college_id)) = LOWER(TRIM(?))) OR LOWER(TRIM(lr.classGroup)) IN (SELECT LOWER(TRIM(mentor_group)) FROM mentors WHERE LOWER(TRIM(college_id)) = LOWER(TRIM(?))) ORDER BY lr.timestamp DESC LIMIT 100";
+      leaveParams = [collegeId, collegeId, collegeId];
+    } else if (!isStudent && (isCAM || isAdminOrKAM)) {
+      leaveSql = "SELECT * FROM leave_requests ORDER BY timestamp DESC LIMIT 100";
+      leaveParams = [];
+    } else {
+      leaveSql = "SELECT 1 WHERE 1=0";
+      leaveParams = [];
+    }
 
     const queryDefs = [
       { sql: mentorSql, params: mentorParams },
@@ -179,7 +193,7 @@ export async function GET(request: Request) {
       { sql: courseSql, params: courseParams },
       { sql: studentSql, params: studentParams },
       { sql: attendanceSql, params: attendanceParams },
-      { sql: (kamHasColleges && !isStudent) ? `SELECT * FROM leave_requests WHERE studentId IN (SELECT id FROM students WHERE college_id IN ${kamInClause}) ORDER BY timestamp DESC LIMIT 100` : (collegeId && !isStudent ? "SELECT * FROM leave_requests WHERE studentId IN (SELECT id FROM students WHERE college_id = ?) ORDER BY timestamp DESC LIMIT 40" : (!isStudent && (isCAM || isAdminOrKAM) ? "SELECT * FROM leave_requests ORDER BY timestamp DESC LIMIT 40" : "SELECT 1 WHERE 1=0")), params: (kamHasColleges && !isStudent) ? [...kamCollegeIds] : (collegeId && !isStudent ? [collegeId] : []) },
+      { sql: leaveSql, params: leaveParams },
       { sql: kamHasColleges ? `SELECT * FROM colleges WHERE id IN ${kamInClause}` : (isKAM && kamCollegeIds.length === 0 ? "SELECT 1 WHERE 1=0" : "SELECT * FROM colleges"), params: kamHasColleges ? [...kamCollegeIds] : [] },
       { sql: (userId && (isAdminOrKAM || isCAM)) ? "SELECT id, user_id, title, message, is_read, link, type, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 15" : "SELECT 1 WHERE 1=0", params: (userId && (isAdminOrKAM || isCAM)) ? [userId] : [] },
       { sql: announcementSql, params: announcementParams },
@@ -208,7 +222,8 @@ export async function GET(request: Request) {
       { sql: (isStudent && userId) ? "SELECT * FROM student_academic_tracker WHERE student_id = ? OR student_email IN (SELECT email FROM students WHERE id = ? OR email = ?) ORDER BY updated_at DESC LIMIT 500" : (collegeId && (isCAM || isMentor) ? "SELECT * FROM student_academic_tracker WHERE student_id IN (SELECT id FROM students WHERE college_id = ?) OR student_email IN (SELECT email FROM students WHERE college_id = ?) OR graded_by = ? ORDER BY updated_at DESC LIMIT 500" : (isAdminOrKAM ? "SELECT * FROM student_academic_tracker ORDER BY updated_at DESC LIMIT 500" : "SELECT 1 WHERE 1=0")), params: (isStudent && userId) ? [userId, userId, userId] : (collegeId && (isCAM || isMentor) ? [collegeId, collegeId, userId || ""] : []) },
       { sql: needsDemo ? "SELECT * FROM sme_availability ORDER BY day_of_week, start_time" : "SELECT 1 WHERE 1=0", params: [] },
       { sql: isAdmin ? "SELECT * FROM campus_managers" : "SELECT 1 WHERE 1=0", params: [] },
-      { sql: isAdmin ? "SELECT * FROM kam_users" : "SELECT 1 WHERE 1=0", params: [] }
+      { sql: isAdmin ? "SELECT * FROM kam_users" : "SELECT 1 WHERE 1=0", params: [] },
+      { sql: "SELECT key, value FROM system_settings", params: [] }
     ];
 
     const [
@@ -227,8 +242,25 @@ export async function GET(request: Request) {
       studentAcademicTracker,
       smeAvailability,
       campusManagers,
-      kamUsers
+      kamUsers,
+      systemSettingsRows
     ] = await db.multiQuery(queryDefs);
+
+    const systemSettings: { mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any } = {
+      mailing_enabled: true,
+      attendance_lock_enabled: true
+    };
+    if (Array.isArray(systemSettingsRows)) {
+      systemSettingsRows.forEach((row: any) => {
+        if (row.key === "mailing_enabled") {
+          systemSettings.mailing_enabled = row.value === "true" || row.value === "1";
+        } else if (row.key === "attendance_lock_enabled") {
+          systemSettings.attendance_lock_enabled = row.value === "true" || row.value === "1";
+        } else {
+          systemSettings[row.key] = row.value;
+        }
+      });
+    }
 
     let filteredColleges = colleges;
     let filteredCourses = courses;
@@ -255,7 +287,7 @@ export async function GET(request: Request) {
       const studentCohortNames = new Set(filteredStudents.map((s: any) => s.classGroup?.toLowerCase().trim()).filter(Boolean));
 
       filteredStudentAttendance = studentAttendance.filter((sa: any) => studentIds.has(sa.studentId));
-      filteredLeaveRequests = leaveRequests.filter((lr: any) => studentIds.has(lr.studentId));
+      filteredLeaveRequests = leaveRequests.filter((lr: any) => studentIds.has(lr.studentId) || studentCohortNames.has(lr.classGroup?.toLowerCase().trim()) || !lr.studentId);
       filteredWeeklyTasks = weeklyTasks.filter((t: any) => mentorIds.has(t.mentor_id) || studentCohortNames.has(t.class_group?.toLowerCase().trim()) || (t.mentor_id && t.mentor_id === userId));
       filteredStudentTracker = studentTracker.filter((e: any) => studentIds.has(e.student_id) || (e.graded_by && e.graded_by === userId));
       filteredWeeklyAcademicTasks = (weeklyAcademicTasks || []).filter((t: any) => mentorIds.has(t.mentor_id) || studentCohortNames.has(t.class_group?.toLowerCase().trim()) || (t.mentor_id && t.mentor_id === userId));
@@ -272,6 +304,7 @@ export async function GET(request: Request) {
         email: m.email,
         role: "mentor",
         avatar: m.avatar,
+        department: m.department || m.mentor_group || "General",
         subjects: m.subjects,
         classes: m.classes,
         college_id: m.college_id,
@@ -286,7 +319,8 @@ export async function GET(request: Request) {
         last_login: m.last_login,
         created_at: m.created_at,
         updated_at: m.updated_at,
-        mentor_group: m.mentor_group || null
+        mentor_group: m.mentor_group || m.department || null,
+        subject_group: m.subject_group || null
       })),
       slots: filteredSlots,
       requests: filteredRequests,
@@ -325,7 +359,8 @@ export async function GET(request: Request) {
       academicTracker: academicTracker || [],
       smeAvailability: smeAvailability || [],
       campusManagers: campusManagers || [],
-      kamUsers: kamUsers || []
+      kamUsers: kamUsers || [],
+      systemSettings
     }, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate"
@@ -333,110 +368,19 @@ export async function GET(request: Request) {
     });
   } catch (error: any) {
     console.error("API GET Data error:", error);
-    // On network timeout or connection reset, return safe structured fallback to prevent frontend crashes
     return NextResponse.json({
-      success: true,
-      isFallback: true,
-      error: error.message,
-      mentors: [],
-      slots: [],
-      requests: [],
-      approvedHandovers: [],
-      auditLogs: [],
-      subjects: [],
-      departments: [],
-      courses: [],
-      students: [],
-      studentAttendance: [],
-      leaveRequests: [],
-      colleges: [],
-      notifications: [],
-      announcements: [],
-      holidays: [],
-      loginHistory: [],
-      users: [],
-      weeklyTasks: [],
-      studentTracker: [],
-      academicTracker: [],
-      smes: [],
-      demoSessions: [],
-      subjectGroups: [],
-      demoRules: [],
-      demoSwapRequests: [],
-      signupRequests: [],
-      kamTasks: [],
-      campusIssues: [],
-      academicYears: [],
-      academicEvents: [],
-      campusManagers: [],
-      kamUsers: []
-    });
+      success: false,
+      error: error.message || "Failed to load database state"
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const db = await getDb();
-    const body = await request.json();
-
-    if (body.action === "reset") {
-      await seedDatabase();
-      return NextResponse.json({ success: true, message: "Database successfully reset." });
-    }
-
-    if (body.action === "clear") {
-      if (body.confirm !== "DELETE") {
-        return NextResponse.json({ success: false, message: "Missing or invalid database clear confirmation." }, { status: 400 });
-      }
-      await db.run("DELETE FROM student_attendance");
-      await db.run("DELETE FROM students");
-      await db.run("DELETE FROM leave_requests");
-      await db.run("DELETE FROM audit_logs");
-      await db.run("DELETE FROM approved_handovers");
-      await db.run("DELETE FROM handover_requests");
-      await db.run("DELETE FROM slots");
-      await db.run("DELETE FROM mentors");
-      await db.run("DELETE FROM subjects");
-      await db.run("DELETE FROM campus_managers");
-      await db.run("DELETE FROM colleges");
-      await db.run("DELETE FROM kam_users");
-      await db.run("DELETE FROM courses");
-      await db.run("DELETE FROM login_history");
-      await db.run("DELETE FROM holidays");
-      await db.run("DELETE FROM announcements");
-      await db.run("DELETE FROM notifications");
-      await db.run("DELETE FROM users");
-      await db.run("DELETE FROM weekly_tasks");
-      await db.run("DELETE FROM student_tracker");
-      await db.run("DELETE FROM fee_payments");
-      await db.run("DELETE FROM student_fees");
-      await db.run("DELETE FROM sme_users");
-      await db.run("DELETE FROM demo_sessions");
-      await db.run("DELETE FROM demo_swap_requests");
-      await db.run("DELETE FROM demo_rules");
-      await db.run("DELETE FROM subject_groups");
-      await db.run("DELETE FROM campus_daily_configs");
-      await db.run("DELETE FROM signup_requests");
-      await db.run("DELETE FROM faculty_configs");
-      await db.run("DELETE FROM kam_tasks");
-      await db.run("DELETE FROM campus_issues");
-      await db.run("DELETE FROM academic_years");
-      await db.run("DELETE FROM academic_events");
-      await db.run("DELETE FROM feedback_reports");
-      await db.run("DELETE FROM campus_drafts");
-      
-      // Ensure admin exists
-      await db.run("DELETE FROM admin_users");
-      await db.run("INSERT INTO admin_users (id, name, email) VALUES ('admin_1', 'System Admin', 'admin@university.edu')");
-      await db.run(
-        "INSERT INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES ('admin_1', 'admin@university.edu', 'password123', 'admin', 'admin_1', ?, ?)",
-        [new Date().toISOString(), new Date().toISOString()]
-      );
-
-      return NextResponse.json({ success: true, message: "Database successfully cleared. Super Admin remains." });
-    }
-
-    return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });
+    return NextResponse.json({
+      success: false,
+      message: "Database mutation via /api/data is disabled in production. Use dedicated domain API endpoints."
+    }, { status: 403 });
   } catch (error: any) {
     console.error("API POST Data error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

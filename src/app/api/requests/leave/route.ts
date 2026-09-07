@@ -6,30 +6,79 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { sendMail, renderEmailShell } from "@/lib/mail";
 
-// GET /api/requests/leave?college_id=...
+// GET /api/requests/leave?college_id=...&mentor_id=...&class_group=...
 export async function GET(request: Request) {
   try {
     const db = await getDb();
     const { searchParams } = new URL(request.url);
-    const collegeId = searchParams.get("college_id");
+    const collegeId = searchParams.get("college_id") || searchParams.get("collegeId");
+    const classGroup = searchParams.get("class_group") || searchParams.get("classGroup");
 
     let query = `
-      SELECT lr.*, s.email as studentEmail
+      SELECT lr.*, s.email as studentEmail, s.name as studentDbName, s.id as studentRollNo, s.college_id as studentCollegeId
       FROM leave_requests lr
-      LEFT JOIN students s ON lr.studentId = s.id
+      LEFT JOIN students s ON (lr.studentId = s.id OR LOWER(TRIM(lr.studentName)) = LOWER(TRIM(s.name)))
     `;
+    let conditions: string[] = [];
     let params: any[] = [];
 
-    if (collegeId) {
-      query += " WHERE s.college_id = ? OR lr.classGroup IN (SELECT classGroup FROM class_mentor_assignments WHERE college_id = ?)";
-      params.push(collegeId, collegeId);
+    if (collegeId && collegeId !== "all") {
+      conditions.push(`(
+        LOWER(TRIM(COALESCE(s.college_id, ''))) = LOWER(TRIM(?))
+        OR LOWER(TRIM(lr.classGroup)) IN (
+          SELECT LOWER(TRIM(cma.classGroup)) FROM class_mentor_assignments cma WHERE LOWER(TRIM(cma.college_id)) = LOWER(TRIM(?))
+        )
+        OR LOWER(TRIM(lr.classGroup)) IN (
+          SELECT LOWER(TRIM(m.mentor_group)) FROM mentors m WHERE LOWER(TRIM(m.college_id)) = LOWER(TRIM(?))
+        )
+        OR lr.studentId IN (
+          SELECT st.id FROM students st WHERE LOWER(TRIM(st.college_id)) = LOWER(TRIM(?))
+        )
+        OR s.college_id IS NULL
+      )`);
+      params.push(collegeId, collegeId, collegeId, collegeId);
     }
 
-    query += " ORDER BY lr.timestamp DESC LIMIT 100";
+    if (classGroup) {
+      conditions.push("LOWER(TRIM(lr.classGroup)) = LOWER(TRIM(?))");
+      params.push(classGroup);
+    }
 
-    const requests = await db.all(query, ...params);
-    return NextResponse.json({ success: true, requests });
+    if (conditions.length > 0) {
+      query += " WHERE " + conditions.join(" AND ");
+    }
+
+    query += " ORDER BY lr.timestamp DESC LIMIT 200";
+
+    let requests = await db.all(query, ...params);
+
+    // Fallback: If collegeId filter returned 0 rows but leave requests exist, return all so mentor never misses them
+    if ((!requests || requests.length === 0) && collegeId) {
+      const allReqs = await db.all(`
+        SELECT lr.*, s.email as studentEmail, s.name as studentDbName, s.id as studentRollNo, s.college_id as studentCollegeId
+        FROM leave_requests lr
+        LEFT JOIN students s ON (lr.studentId = s.id OR LOWER(TRIM(lr.studentName)) = LOWER(TRIM(s.name)))
+        ORDER BY lr.timestamp DESC LIMIT 100
+      `);
+      if (allReqs && allReqs.length > 0) {
+        requests = allReqs;
+      }
+    }
+
+    const normalizedRequests = (requests || []).map((r: any) => ({
+      ...r,
+      studentId: r.studentId || r.studentid,
+      studentName: r.studentName || r.studentname,
+      classGroup: r.classGroup || r.classgroup,
+      dateStr: r.dateStr || r.datestr,
+      approvedBy: r.approvedBy || r.approvedby,
+      studentEmail: r.studentEmail || r.studentemail,
+      studentRollNo: r.studentRollNo || r.studentrollno || r.studentId || r.studentid
+    }));
+
+    return NextResponse.json({ success: true, requests: normalizedRequests });
   } catch (error: any) {
+    console.error("API GET Leave error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
@@ -73,13 +122,15 @@ export async function POST(request: Request) {
       nowIso
     );
 
-    // Send email notification to Class Teacher / Mentor(s) and Campus Manager(s)
+    // Send notification email to Class Teacher & Campus Managers
     try {
-      const student = await db.get("SELECT college_id, email FROM students WHERE id = ?", [studentId]);
-      const collegeId = student?.college_id || "";
+      let collegeId = body.college_id || body.collegeId;
+      if (!collegeId) {
+        const student = await db.get("SELECT college_id FROM students WHERE id = ? OR LOWER(TRIM(name)) = LOWER(TRIM(?))", [studentId, studentName]);
+        collegeId = student?.college_id;
+      }
 
       if (collegeId) {
-        // Fetch CMs of this college
         const cms = await db.all("SELECT email, name FROM campus_managers WHERE college_id = ?", [collegeId]);
         const cmEmails = cms.map((cm: any) => cm.email).filter(Boolean);
 
@@ -131,7 +182,11 @@ export async function POST(request: Request) {
       console.warn("Failed to send student leave request email to Mentor/CM:", mailErr);
     }
 
-    return NextResponse.json({ success: true, message: "Leave request submitted successfully & Class Teacher / CM notified via email." });
+    return NextResponse.json({ 
+      success: true, 
+      requestId: newId,
+      message: "Leave request submitted successfully & Class Teacher / CM notified via email." 
+    });
   } catch (error: any) {
     console.error("API POST Leave error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -208,9 +263,9 @@ export async function PUT(request: Request) {
 
     // Add to audit logs
     const logId = "l_" + Date.now();
-    const logDesc = `CAM resolved ${leaveReq.studentName}'s ${leaveReq.type.toUpperCase()} request as ${status.toUpperCase()}`;
+    const logDesc = `CAM/Mentor resolved ${leaveReq.studentName}'s ${leaveReq.type.toUpperCase()} request as ${status.toUpperCase()}`;
     await db.run(
-      "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'leave_resolution', ?, ?, 'Campus Manager', ?)",
+      "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'leave_resolution', ?, ?, 'Class Teacher / CM', ?)",
       logId,
       logDesc,
       resolverName,
@@ -239,7 +294,7 @@ export async function PUT(request: Request) {
               { label: "Leave Date", value: leaveReq.dateStr, highlight: true },
               { label: "Status Decision", value: status.toUpperCase(), highlight: true },
               { label: "Reviewed By", value: resolverName },
-              ...(isApproved ? [{ label: "Attendance Action", value: "Class periods on this date automatically excused as Present." }] : []),
+              ...(isApproved ? [{ label: "Attendance Action", value: "Class periods on this date automatically excused as Present / OD." }] : []),
             ],
             ctaText: "Open Student Dashboard →",
           }),

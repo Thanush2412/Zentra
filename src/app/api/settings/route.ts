@@ -13,11 +13,14 @@ export async function GET() {
     // Map settings array to an object
     const settings: Record<string, any> = {
       mailing_enabled: true, // default
+      attendance_lock_enabled: true, // default
     };
 
     rows.forEach((row: any) => {
       if (row.key === "mailing_enabled") {
         settings.mailing_enabled = row.value === "true" || row.value === "1";
+      } else if (row.key === "attendance_lock_enabled") {
+        settings.attendance_lock_enabled = row.value === "true" || row.value === "1";
       } else {
         settings[row.key] = row.value;
       }
@@ -46,8 +49,8 @@ export async function POST(request: Request) {
     // Upsert into system_settings
     await db.run(
       `INSERT INTO system_settings (key, value, updated_at, updated_by)
-       VALUES (?, ?, datetime('now'), ?)
-       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now'), updated_by=excluded.updated_by`,
+       VALUES (?, ?, NOW(), ?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=NOW(), updated_by=excluded.updated_by`,
       [key, strValue, actorName]
     );
 
@@ -55,6 +58,8 @@ export async function POST(request: Request) {
     const auditId = `audit_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const description = key === "mailing_enabled"
       ? `Global Email Delivery toggled ${strValue === "true" ? "ON (Active)" : "OFF (Disabled)"}`
+      : key === "attendance_lock_enabled"
+      ? `Attendance Mark Lock toggled ${strValue === "true" ? "ON (Strict Period Enforcement)" : "OFF (Flexible / Direct Past Marking Allowed)"}`
       : `System setting '${key}' updated to '${strValue}'`;
 
     await db.run(

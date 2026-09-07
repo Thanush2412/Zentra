@@ -156,6 +156,95 @@ export async function POST(request: Request) {
       requestId
     );
 
+    // If this is a leave cover linked to faculty_leave_requests, link and update parent leave
+    if (handoverRequest.compensates_handover_id) {
+      const parentLeaveId = handoverRequest.compensates_handover_id;
+      if (status === "approved") {
+        try {
+          const siblingCovers = await db.all(
+            "SELECT id, status, targetStaffName, targetstaffname FROM handover_requests WHERE compensates_handover_id = ?",
+            [parentLeaveId]
+          );
+          const allApproved = siblingCovers.length > 0 && siblingCovers.every(
+            (c: any) => c.id === requestId || c.status === "approved"
+          );
+
+          if (allApproved) {
+            const leaveReq = await db.get(
+              "SELECT * FROM faculty_leave_requests WHERE id = ?",
+              [parentLeaveId]
+            );
+            if (leaveReq) {
+              const coverNames = Array.from(new Set([
+                ...siblingCovers.map((c: any) => c.targetStaffName || c.targetstaffname).filter(Boolean),
+                cleanApproverName
+              ])).join(", ");
+              const approverTag = `Cover Approved (${coverNames || cleanApproverName})`;
+
+              await db.run(
+                `UPDATE faculty_leave_requests 
+                 SET status = 'approved', approved_by = ?, updated_at = NOW() 
+                 WHERE id = ?`,
+                [approverTag, parentLeaveId]
+              );
+
+              // Automatically sync mentor_attendance for the leave period
+              try {
+                const [sY, sM, sD] = leaveReq.start_date.split("-").map(Number);
+                const [eY, eM, eD] = (leaveReq.end_date || leaveReq.start_date).split("-").map(Number);
+                let cur = new Date(sY, sM - 1, sD, 12, 0, 0);
+                const end = new Date(eY, eM - 1, eD, 12, 0, 0);
+                const attStatus = leaveReq.request_type === "OD" ? "OD" : "Leave";
+
+                while (cur <= end) {
+                  const year = cur.getFullYear();
+                  const month = String(cur.getMonth() + 1).padStart(2, "0");
+                  const day = String(cur.getDate()).padStart(2, "0");
+                  const dateStr = `${year}-${month}-${day}`;
+                  const attId = `att_${leaveReq.mentor_id}_${dateStr}`;
+                  await db.run(
+                    `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, reason, marked_by, marked_by_id, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, 'cover_approval', ?, NOW())
+                     ON CONFLICT(mentor_id, date_str) DO UPDATE SET
+                     status = excluded.status,
+                     reason = excluded.reason,
+                     marked_by = excluded.marked_by,
+                     marked_by_id = excluded.marked_by_id,
+                     updated_at = NOW()`,
+                    [
+                      attId,
+                      leaveReq.mentor_id,
+                      leaveReq.college_id,
+                      dateStr,
+                      attStatus,
+                      `${leaveReq.request_type}: ${leaveReq.reason || 'Leave Approved'} (Covered by ${cleanApproverName})`,
+                      approverTag
+                    ]
+                  );
+                  cur.setDate(cur.getDate() + 1);
+                }
+              } catch (attErr) {
+                console.error("Error auto-syncing mentor_attendance on cover approval:", attErr);
+              }
+            }
+          }
+        } catch (linkErr) {
+          console.error("Error updating faculty_leave_requests on cover approval:", linkErr);
+        }
+      } else if (status === "rejected") {
+        try {
+          await db.run(
+            `UPDATE faculty_leave_requests 
+             SET rejection_reason = ?, updated_at = NOW() 
+             WHERE id = ?`,
+            [`Cover declined by ${cleanApproverName}: ${headerReason || 'No reason specified'}`, parentLeaveId]
+          );
+        } catch (rejErr) {
+          console.error("Error updating faculty_leave_requests on cover rejection:", rejErr);
+        }
+      }
+    }
+
     // If Approved and it was already at 'pending' stage, create ApprovedHandover mapping
     if (status === "approved" && handoverRequest.status === "pending") {
       const handoverId = "h_" + Date.now();

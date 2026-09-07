@@ -125,7 +125,7 @@ export async function PATCH(request: Request) {
       const userId = "u_" + Date.now();
       await db.run(
         `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'Active', datetime('now'), datetime('now'))`,
+         VALUES (?, ?, ?, ?, ?, 'Active', NOW()::text, NOW()::text)`,
         [userId, req.email.toLowerCase(), req.password_hash, targetRole, referenceId]
       );
 

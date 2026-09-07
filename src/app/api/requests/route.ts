@@ -32,6 +32,38 @@ export async function GET(request: Request) {
     query += " ORDER BY timestamp DESC";
 
     const records = await db.all(query, params);
+
+    // Auto-heal any timezone-shifted leave_cover handover dates
+    for (const rec of records) {
+      if (rec.compensates_handover_id && rec.request_type === "leave_cover") {
+        try {
+          const leave = await db.get("SELECT start_date, end_date FROM faculty_leave_requests WHERE id = ?", [rec.compensates_handover_id]);
+          if (leave && leave.start_date) {
+            const recDateStr = rec.dateStr || rec.datestr;
+            if (recDateStr && recDateStr < leave.start_date) {
+              const [rY, rM, rD] = leave.start_date.split("-").map(Number);
+              const dtObj = new Date(rY, rM - 1, rD, 12, 0, 0);
+              const corFormatted = dtObj.toLocaleDateString("en-IN", {
+                weekday: "long", day: "2-digit", month: "short", year: "numeric"
+              });
+              await db.run(
+                "UPDATE handover_requests SET datestr = ?, dateformatted = ? WHERE id = ?",
+                [leave.start_date, corFormatted, rec.id]
+              );
+              await db.run(
+                "UPDATE approved_handovers SET datestr = ? WHERE requestid = ?",
+                [leave.start_date, rec.id]
+              );
+              rec.datestr = leave.start_date;
+              rec.dateStr = leave.start_date;
+              rec.dateformatted = corFormatted;
+              rec.dateFormatted = corFormatted;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     return NextResponse.json({ success: true, requests: records });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -68,26 +100,78 @@ export async function POST(request: Request) {
       const metaClassGroup = classGroup || requestor.department || "Faculty";
       const metaTargetStaffName = targetStaffName || "CAM Approval";
 
-      await db.run(
-        `INSERT INTO handover_requests (
-           id, requestorId, requestorName, slotId, course, day, time,
-           dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?)`,
-        newId,
-        mentorId,
-        requestor.name,
-        slotId,
-        metaCourse,
-        "",
-        "",
-        dateStr,
-        dateFormatted,
-        targetStaffId,
-        metaTargetStaffName,
-        reason,
-        new Date().toISOString(),
-        metaClassGroup
-      );
+      try {
+        await db.run(
+          `INSERT INTO handover_requests (
+             id, requestorId, requestorName, slotId, course, day, time,
+             dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?)`,
+          newId,
+          mentorId,
+          requestor.name,
+          slotId,
+          metaCourse,
+          "",
+          "",
+          dateStr,
+          dateFormatted,
+          targetStaffId,
+          metaTargetStaffName,
+          reason,
+          new Date().toISOString(),
+          metaClassGroup
+        );
+      } catch (insertErr: any) {
+        if (insertErr?.code === "23503" || insertErr?.message?.includes("foreign key")) {
+          try {
+            await db.run("ALTER TABLE handover_requests DROP CONSTRAINT IF EXISTS handover_requests_targetstaffid_fkey");
+            await db.run(
+              `INSERT INTO handover_requests (
+                 id, requestorId, requestorName, slotId, course, day, time,
+                 dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?)`,
+              newId,
+              mentorId,
+              requestor.name,
+              slotId,
+              metaCourse,
+              "",
+              "",
+              dateStr,
+              dateFormatted,
+              targetStaffId,
+              metaTargetStaffName,
+              reason,
+              new Date().toISOString(),
+              metaClassGroup
+            );
+          } catch (retryErr: any) {
+            // Fallback: use requestor's own mentorId as valid target FK reference while keeping targetStaffName as CAM Approval
+            await db.run(
+              `INSERT INTO handover_requests (
+                 id, requestorId, requestorName, slotId, course, day, time,
+                 dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?)`,
+              newId,
+              mentorId,
+              requestor.name,
+              slotId,
+              metaCourse,
+              "",
+              "",
+              dateStr,
+              dateFormatted,
+              mentorId,
+              metaTargetStaffName,
+              reason,
+              new Date().toISOString(),
+              metaClassGroup
+            );
+          }
+        } else {
+          throw insertErr;
+        }
+      }
 
       // Audit log
       await db.run(

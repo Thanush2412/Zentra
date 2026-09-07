@@ -41,7 +41,11 @@ export async function POST(request: Request) {
     const updatedShift = shift !== undefined ? shift : (existing ? existing.shift : "general");
 
     await db.run(
-      "INSERT OR REPLACE INTO faculty_configs (mentor_id, max_hours, shift) VALUES (?, ?, ?)",
+      `INSERT INTO faculty_configs (mentor_id, max_hours, shift) 
+       VALUES (?, ?, ?)
+       ON CONFLICT (mentor_id) DO UPDATE SET
+         max_hours = EXCLUDED.max_hours,
+         shift = EXCLUDED.shift`,
       [mentorId, updatedMaxHours, updatedShift]
     );
 

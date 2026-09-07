@@ -272,28 +272,23 @@ export async function POST(request: Request) {
 
       let count = 0;
       if (mentors.length > 0) {
-        try {
-          await db.run("BEGIN TRANSACTION");
+        await db.transaction(async (tx) => {
           for (const m of mentors) {
             const id = `att_${m.id}_${dateStr}`;
-            await db.run(
+            await tx.run(
               `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, punch_in_time, marked_by, marked_by_id, updated_at)
-               VALUES (?, ?, ?, ?, 'Present', ?, ?, ?, datetime('now'))
+               VALUES (?, ?, ?, ?, 'Present', ?, ?, ?, NOW())
                ON CONFLICT(mentor_id, date_str) DO UPDATE SET
                status = excluded.status,
                punch_in_time = COALESCE(mentor_attendance.punch_in_time, excluded.punch_in_time),
                marked_by = excluded.marked_by,
                marked_by_id = excluded.marked_by_id,
-               updated_at = datetime('now')`,
+               updated_at = NOW()`,
               [id, m.id, collegeId, dateStr, currentTime, markedBy || "cam", markedById || "cam"]
             );
             count++;
           }
-          await db.run("COMMIT");
-        } catch (txErr) {
-          try { await db.run("ROLLBACK"); } catch (_) {}
-          throw txErr;
-        }
+        });
       }
 
       return NextResponse.json({
@@ -333,14 +328,14 @@ export async function POST(request: Request) {
 
     await db.run(
       `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, punch_in_time, reason, marked_by, marked_by_id, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
        ON CONFLICT(mentor_id, date_str) DO UPDATE SET
        status = excluded.status,
        punch_in_time = COALESCE(excluded.punch_in_time, mentor_attendance.punch_in_time),
        reason = excluded.reason,
        marked_by = excluded.marked_by,
        marked_by_id = excluded.marked_by_id,
-       updated_at = datetime('now')`,
+       updated_at = NOW()`,
       [
         recordId,
         mentorId,

@@ -32,6 +32,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let cleanName = "";
   try {
     const db = await getDb();
     const body = await request.json();
@@ -41,8 +42,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Course name is required" }, { status: 400 });
     }
 
-    const cleanName = name.trim();
-    const targetCollegeId = college_id || null;
+    cleanName = name.trim();
+    let targetCollegeId = college_id || null;
+    if (!targetCollegeId) {
+      const firstCol = await db.get("SELECT id FROM colleges ORDER BY id ASC LIMIT 1");
+      targetCollegeId = firstCol?.id || null;
+    }
 
     // Check uniqueness scoped to college
     let existing;
@@ -50,6 +55,14 @@ export async function POST(request: Request) {
       existing = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)", cleanName, targetCollegeId);
     } else {
       existing = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND college_id IS NULL", cleanName);
+    }
+
+    // If creating a new course and a course with this name already exists in the campus, reject with an error
+    if (existing && !body.id) {
+      return NextResponse.json({
+        success: false,
+        message: `A course named "${cleanName}" already exists in this campus. Duplicate courses are not allowed.`
+      }, { status: 409 });
     }
 
     if (existing) {
@@ -70,7 +83,7 @@ export async function POST(request: Request) {
           shift_based = ?,
           sections = COALESCE(NULLIF(?, ''), sections)
         WHERE id = ?`,
-        targetCollegeId || existing.college_id || "college_1",
+        targetCollegeId || existing.college_id,
         code || "",
         description || "",
         status || existing.status || "Active",
@@ -88,8 +101,14 @@ export async function POST(request: Request) {
 
       try {
         await db.run(
-          "INSERT OR REPLACE INTO departments (id, name, college_id, code, description) VALUES (?, ?, ?, ?, ?)",
-          existing.id, cleanName, targetCollegeId || "college_1", code || existing.code || "", description || existing.description || ""
+          `INSERT INTO departments (id, name, college_id, code, description) 
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET
+             name = EXCLUDED.name,
+             college_id = EXCLUDED.college_id,
+             code = EXCLUDED.code,
+             description = EXCLUDED.description`,
+          existing.id, cleanName, targetCollegeId || existing.college_id, code || existing.code || "", description || existing.description || ""
         );
       } catch (_) {}
 
@@ -99,7 +118,7 @@ export async function POST(request: Request) {
         course: {
           ...existing,
           name: cleanName,
-          college_id: targetCollegeId || existing.college_id || "college_1",
+          college_id: targetCollegeId || existing.college_id,
           code: code || existing.code || "",
           description: description || existing.description || "",
           status: status || existing.status || "Active",
@@ -124,31 +143,106 @@ export async function POST(request: Request) {
       id = `${id}_${Date.now().toString(36)}`;
     }
 
-    await db.run(
-      "INSERT INTO courses (id, name, college_id, code, description, hod_name, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based, sections) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      id,
-      cleanName,
-      targetCollegeId || "college_1",
-      code || "",
-      description || "",
-      "",
-      established_year || "",
-      status || "Active",
-      years !== undefined ? Number(years) : 4,
-      start_date || "",
-      end_date || "",
-      start_year || "",
-      end_year || "",
-      default_room || null,
-      default_shift || null,
-      shift_based === undefined ? 0 : Number(shift_based),
-      sections || null
-    );
+    try {
+      await db.run(
+        "INSERT INTO courses (id, name, college_id, code, description, hod_name, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based, sections) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        id,
+        cleanName,
+        targetCollegeId,
+        code || "",
+        description || "",
+        "",
+        established_year || "",
+        status || "Active",
+        years !== undefined ? Number(years) : 4,
+        start_date || "",
+        end_date || "",
+        start_year || "",
+        end_year || "",
+        default_room || null,
+        default_shift || null,
+        shift_based === undefined ? 0 : Number(shift_based),
+        sections || null
+      );
+    } catch (insertErr: any) {
+      if (insertErr.message && (insertErr.message.includes("UNIQUE constraint failed") || insertErr.message.includes("duplicate key"))) {
+        // Fallback: If a course with this name already exists, update it instead of crashing with 500
+        const conflictCourse = await db.get(
+          "SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)",
+          cleanName,
+          targetCollegeId
+        ) || await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))", cleanName);
+
+        if (conflictCourse) {
+          await db.run(
+            `UPDATE courses SET 
+              college_id = COALESCE(?, college_id),
+              code = COALESCE(NULLIF(?, ''), code),
+              description = COALESCE(NULLIF(?, ''), description),
+              status = COALESCE(NULLIF(?, ''), status, 'Active'),
+              years = COALESCE(?, years, 4),
+              start_date = COALESCE(NULLIF(?, ''), start_date, ''),
+              end_date = COALESCE(NULLIF(?, ''), end_date, ''),
+              start_year = COALESCE(NULLIF(?, ''), start_year, ''),
+              end_year = COALESCE(NULLIF(?, ''), end_year, ''),
+              default_room = COALESCE(NULLIF(?, ''), default_room),
+              default_shift = COALESCE(NULLIF(?, ''), default_shift),
+              shift_based = ?,
+              sections = COALESCE(NULLIF(?, ''), sections)
+            WHERE id = ?`,
+            targetCollegeId || conflictCourse.college_id,
+            code || "",
+            description || "",
+            status || conflictCourse.status || "Active",
+            years !== undefined ? Number(years) : (conflictCourse.years || 4),
+            start_date || conflictCourse.start_date || "",
+            end_date || conflictCourse.end_date || "",
+            start_year || conflictCourse.start_year || "",
+            end_year || conflictCourse.end_year || "",
+            default_room || conflictCourse.default_room || null,
+            default_shift || conflictCourse.default_shift || null,
+            shift_based === undefined ? (conflictCourse.shift_based || 0) : Number(shift_based),
+            sections || conflictCourse.sections || null,
+            conflictCourse.id
+          );
+          try {
+            await db.run(
+              `INSERT INTO departments (id, name, college_id, code, description) 
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT (id) DO UPDATE SET
+                 name = EXCLUDED.name,
+                 college_id = EXCLUDED.college_id,
+                 code = EXCLUDED.code,
+                 description = EXCLUDED.description`,
+              conflictCourse.id, cleanName, targetCollegeId || conflictCourse.college_id, code || conflictCourse.code || "", description || conflictCourse.description || ""
+            );
+          } catch (_) {}
+
+          return NextResponse.json({
+            success: true,
+            message: "Course configuration updated successfully.",
+            course: {
+              ...conflictCourse,
+              college_id: targetCollegeId || conflictCourse.college_id,
+              code: code || conflictCourse.code || "",
+              description: description || conflictCourse.description || ""
+            }
+          });
+        }
+      }
+      throw insertErr;
+    }
 
     try {
       await db.run(
-        "INSERT OR REPLACE INTO departments (id, name, college_id, code, description) VALUES (?, ?, ?, ?, ?)",
-        id, cleanName, targetCollegeId || "college_1", code || "", description || ""
+        `INSERT INTO departments (id, name, college_id, code, description) 
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name,
+           college_id = EXCLUDED.college_id,
+           code = EXCLUDED.code,
+           description = EXCLUDED.description`,
+        id, cleanName, targetCollegeId, code || "", description || ""
       );
     } catch (_) {}
 
@@ -158,7 +252,7 @@ export async function POST(request: Request) {
       course: {
         id,
         name: cleanName,
-        college_id: targetCollegeId || "college_1",
+        college_id: targetCollegeId,
         code: code || "",
         description: description || "",
         established_year: established_year || "",
@@ -176,7 +270,11 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error("API POST Courses error:", error);
-    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+    const isUniqueConstraint = error?.message?.includes("UNIQUE constraint failed") || error?.message?.includes("duplicate key");
+    return NextResponse.json({ 
+      success: false, 
+      message: isUniqueConstraint ? `A course with name "${cleanName}" already exists for this campus.` : (error.message || "Failed to process course request") 
+    }, { status: isUniqueConstraint ? 409 : 500 });
   }
 }
 
@@ -196,7 +294,7 @@ export async function PUT(request: Request) {
     // Find the current course details
     let currentCourse = await db.get("SELECT * FROM courses WHERE id = ?", id);
     if (!currentCourse) {
-      currentCourse = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)", cleanName, college_id || "college_1");
+      currentCourse = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)", cleanName, college_id || null);
     }
     if (!currentCourse) {
       currentCourse = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))", cleanName);
@@ -205,7 +303,11 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: false, message: "Course not found." }, { status: 404 });
     }
 
-    const targetCollegeId = college_id || currentCourse.college_id;
+    let targetCollegeId = college_id || currentCourse.college_id;
+    if (!targetCollegeId) {
+      const firstCol = await db.get("SELECT id FROM colleges ORDER BY id ASC LIMIT 1");
+      targetCollegeId = firstCol?.id || null;
+    }
 
     // Check name uniqueness among other courses in the same college
     let duplicate;
@@ -220,81 +322,93 @@ export async function PUT(request: Request) {
 
     const oldName = currentCourse.name;
 
-    // Run cascade updates for course rename
-    // 1. Rename course in master list
-    await db.run(
-      `UPDATE courses SET 
-        name = ?, 
-        college_id = ?, 
-        code = ?, 
-        description = ?, 
-        hod_name = ?, 
-        established_year = ?, 
-        status = ?, 
-        years = ?, 
-        start_date = ?, 
-        end_date = ?, 
-        start_year = ?, 
-        end_year = ?, 
-        default_room = ?, 
-        default_shift = ?, 
-        shift_based = ?, 
-        sections = ? 
-      WHERE id = ?`,
-      cleanName,
-      targetCollegeId || "college_1",
-      code !== undefined ? code : (currentCourse.code || ""),
-      description !== undefined ? description : (currentCourse.description || ""),
-      "",
-      established_year !== undefined ? established_year : (currentCourse.established_year || ""),
-      status || currentCourse.status || "Active",
-      years !== undefined ? Number(years) : (currentCourse.years || 4),
-      start_date !== undefined ? start_date : (currentCourse.start_date || ""),
-      end_date !== undefined ? end_date : (currentCourse.end_date || ""),
-      start_year !== undefined ? start_year : (currentCourse.start_year || ""),
-      end_year !== undefined ? end_year : (currentCourse.end_year || ""),
-      default_room !== undefined ? default_room : (currentCourse.default_room || null),
-      default_shift !== undefined ? default_shift : (currentCourse.default_shift || null),
-      shift_based !== undefined ? Number(shift_based) : (currentCourse.shift_based || 0),
-      sections !== undefined ? sections : (currentCourse.sections || null),
-      currentCourse.id
-    );
-
-    try {
-      await db.run(
-        `INSERT OR REPLACE INTO departments 
-          (id, name, college_id, code, description, status, years, start_year, end_year, shift_based) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        currentCourse.id,
+    // Run cascade updates for course rename inside a PostgreSQL transaction
+    await db.transaction(async (tx) => {
+      // 1. Rename course in master list
+      await tx.run(
+        `UPDATE courses SET 
+          name = ?, 
+          college_id = ?, 
+          code = ?, 
+          description = ?, 
+          hod_name = ?, 
+          established_year = ?, 
+          status = ?, 
+          years = ?, 
+          start_date = ?, 
+          end_date = ?, 
+          start_year = ?, 
+          end_year = ?, 
+          default_room = ?, 
+          default_shift = ?, 
+          shift_based = ?, 
+          sections = ? 
+        WHERE id = ?`,
         cleanName,
-        targetCollegeId || "college_1",
+        targetCollegeId,
         code !== undefined ? code : (currentCourse.code || ""),
         description !== undefined ? description : (currentCourse.description || ""),
+        "",
+        established_year !== undefined ? established_year : (currentCourse.established_year || ""),
         status || currentCourse.status || "Active",
         years !== undefined ? Number(years) : (currentCourse.years || 4),
+        start_date !== undefined ? start_date : (currentCourse.start_date || ""),
+        end_date !== undefined ? end_date : (currentCourse.end_date || ""),
         start_year !== undefined ? start_year : (currentCourse.start_year || ""),
         end_year !== undefined ? end_year : (currentCourse.end_year || ""),
-        shift_based !== undefined ? Number(shift_based) : (currentCourse.shift_based || 0)
+        default_room !== undefined ? default_room : (currentCourse.default_room || null),
+        default_shift !== undefined ? default_shift : (currentCourse.default_shift || null),
+        shift_based !== undefined ? Number(shift_based) : (currentCourse.shift_based || 0),
+        sections !== undefined ? sections : (currentCourse.sections || null),
+        currentCourse.id
       );
-    } catch (_) {}
 
-    // 2. Cascade rename to mentors table
-    await db.run("UPDATE mentors SET department = ? WHERE department = ?", cleanName, oldName);
+      try {
+        await tx.run(
+          `INSERT INTO departments 
+            (id, name, college_id, code, description, status, years, start_year, end_year, shift_based) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            college_id = EXCLUDED.college_id,
+            code = EXCLUDED.code,
+            description = EXCLUDED.description,
+            status = EXCLUDED.status,
+            years = EXCLUDED.years,
+            start_year = EXCLUDED.start_year,
+            end_year = EXCLUDED.end_year,
+            shift_based = EXCLUDED.shift_based`,
+          currentCourse.id,
+          cleanName,
+          targetCollegeId,
+          code !== undefined ? code : (currentCourse.code || ""),
+          description !== undefined ? description : (currentCourse.description || ""),
+          status || currentCourse.status || "Active",
+          years !== undefined ? Number(years) : (currentCourse.years || 4),
+          start_year !== undefined ? start_year : (currentCourse.start_year || ""),
+          end_year !== undefined ? end_year : (currentCourse.end_year || ""),
+          shift_based !== undefined ? Number(shift_based) : (currentCourse.shift_based || 0)
+        );
+      } catch (_) {}
 
-    // 3. Cascade rename to subjects table
-    await db.run("UPDATE subjects SET department = ? WHERE department = ?", cleanName, oldName);
+      // 2. Cascade rename to mentors table
+      await tx.run("UPDATE mentors SET department = ? WHERE department = ?", cleanName, oldName);
 
-    // 4. Cascade rename to slots table (Bug #24 fix)
-    await db.run("UPDATE slots SET department = ? WHERE department = ?", cleanName, oldName);
+      // 3. Cascade rename to subjects table
+      await tx.run("UPDATE subjects SET department = ? WHERE department = ?", cleanName, oldName);
 
-    // 5. Cascade rename to handover_requests.classGroup where it contains the old department (Bug #26 fix)
-    await db.run(
-      "UPDATE handover_requests SET classGroup = REPLACE(classGroup, ?, ?) WHERE classGroup LIKE ?",
-      oldName, cleanName, `${oldName}%`
-    );
+      // 4. Cascade rename to slots table
+      await tx.run("UPDATE slots SET department = ? WHERE department = ?", cleanName, oldName);
 
-    // 6. Cascade rename in students table department field
-    await db.run("UPDATE students SET department = ? WHERE department = ?", cleanName, oldName);
+      // 5. Cascade rename to handover_requests.classGroup where it contains the old department
+      await tx.run(
+        "UPDATE handover_requests SET classGroup = REPLACE(classGroup, ?, ?) WHERE classGroup LIKE ?",
+        oldName, cleanName, `${oldName}%`
+      );
+
+      // 6. Cascade rename in students table department field
+      await tx.run("UPDATE students SET department = ? WHERE department = ?", cleanName, oldName);
+    });
 
     return NextResponse.json({
       success: true,
@@ -302,7 +416,7 @@ export async function PUT(request: Request) {
       course: {
         id: currentCourse.id,
         name: cleanName,
-        college_id: targetCollegeId || "college_1",
+        college_id: targetCollegeId,
         code: code !== undefined ? code : (currentCourse.code || ""),
         description: description !== undefined ? description : (currentCourse.description || ""),
         status: status || currentCourse.status || "Active",

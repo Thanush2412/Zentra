@@ -233,7 +233,7 @@ export async function POST(request: Request) {
         );
       });
       batchStatements.push({
-        sql: `INSERT OR REPLACE INTO students (
+        sql: `INSERT INTO students (
           id, name, email, classGroup, section, department, college_id,
           register_number, roll_number, semester, shift,
           hire_score, efset_score, mother_name, father_name, pan_number,
@@ -242,7 +242,19 @@ export async function POST(request: Request) {
           linkedin_link, github_id, project_drive_link, hackerrank_link,
           leetcode_link, figma_link,
           status, password_hash, created_at, updated_at
-        ) VALUES ${stPlaceholders}`,
+        ) VALUES ${stPlaceholders}
+        ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name,
+          email = EXCLUDED.email,
+          classGroup = EXCLUDED.classGroup,
+          section = EXCLUDED.section,
+          department = EXCLUDED.department,
+          college_id = EXCLUDED.college_id,
+          register_number = EXCLUDED.register_number,
+          roll_number = EXCLUDED.roll_number,
+          semester = EXCLUDED.semester,
+          shift = EXCLUDED.shift,
+          updated_at = EXCLUDED.updated_at`,
         args: stArgs
       });
 
@@ -251,14 +263,20 @@ export async function POST(request: Request) {
       const uArgs: any[] = [];
       chunk.forEach(s => { uArgs.push(s.stId, s.stEmail, defaultPasswordHash, s.stId, nowStr, nowStr); });
       batchStatements.push({
-        sql: `INSERT OR REPLACE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at)
-              VALUES ${uPlaceholders}`,
+        sql: `INSERT INTO users (id, email, password_hash, role, reference_id, created_at, updated_at)
+              VALUES ${uPlaceholders}
+              ON CONFLICT (id) DO UPDATE SET
+                email = EXCLUDED.email,
+                password_hash = EXCLUDED.password_hash,
+                role = EXCLUDED.role,
+                reference_id = EXCLUDED.reference_id,
+                updated_at = EXCLUDED.updated_at`,
         args: uArgs
       });
     }
 
     // Execute all inserts as a single atomic batch
-    await db.client.batch(batchStatements, "write");
+    await db.client.batch(batchStatements);
 
     return NextResponse.json({ success: true, message: `${normalizedStudents.length} students created successfully.` });
   } catch (error: any) {

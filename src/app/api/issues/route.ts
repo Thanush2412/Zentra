@@ -27,9 +27,21 @@ export async function POST(request: Request) {
 
     const issueId = id || "i_" + Date.now();
     await db.run(
-      `INSERT OR REPLACE INTO campus_issues 
+      `INSERT INTO campus_issues 
        (id, title, type, priority, desc, status, collegeId, collegeName, escalated, escalatedAt, resolvedAt, notes) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET
+         title = EXCLUDED.title,
+         type = EXCLUDED.type,
+         priority = EXCLUDED.priority,
+         desc = EXCLUDED.desc,
+         status = EXCLUDED.status,
+         collegeId = EXCLUDED.collegeId,
+         collegeName = EXCLUDED.collegeName,
+         escalated = EXCLUDED.escalated,
+         escalatedAt = EXCLUDED.escalatedAt,
+         resolvedAt = EXCLUDED.resolvedAt,
+         notes = EXCLUDED.notes`,
       [
         issueId,
         title,

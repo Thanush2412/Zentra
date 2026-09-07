@@ -387,8 +387,12 @@ export function formatDisplayDob(val?: string): string {
 export function parseDbDate(dStr?: string): Date {
   if (!dStr) return new Date();
   const trimmed = dStr.trim();
-  // If raw SQLite timestamp (no 'Z', '+', or 'T')
-  if (!trimmed.includes("Z") && !trimmed.includes("+") && !trimmed.includes("T")) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const [y, m, d] = trimmed.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  // If raw SQLite timestamp with space (no 'Z', '+', or 'T')
+  if (trimmed.includes(" ") && !trimmed.includes("Z") && !trimmed.includes("+") && !trimmed.includes("T")) {
     return new Date(trimmed.replace(" ", "T") + "Z");
   }
   return new Date(trimmed);
@@ -524,9 +528,59 @@ export function isMentorInProgram(
   return false;
 }
 
+export interface ParsedCohort {
+  raw: string;
+  courseName: string;
+  semester: number;
+  year: number;
+  shift?: "shift_1" | "shift_2" | "general";
+  canonicalName: string;
+}
+
+export function parseCohort(classGroup?: string): ParsedCohort {
+  if (!classGroup) {
+    return { raw: "", courseName: "", semester: 1, year: 1, canonicalName: "" };
+  }
+  const raw = classGroup.trim();
+  const courseName = getDeptFromClassGroup(raw);
+
+  let shift: "shift_1" | "shift_2" | "general" | undefined = undefined;
+  if (/shift\s*1/i.test(raw)) shift = "shift_1";
+  else if (/shift\s*2/i.test(raw)) shift = "shift_2";
+  else if (/general/i.test(raw)) shift = "general";
+
+  let semester = 1;
+  const semMatch = raw.match(/sem(?:ester)?[\s\-_]*(\d+|[ivx]+)/i);
+  if (semMatch) {
+    const romanMap: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8 };
+    semester = parseInt(semMatch[1], 10) || romanMap[semMatch[1].toLowerCase()] || 1;
+  } else {
+    const yrMatch = raw.match(/(?:year|yr)[\s\-_]*(\d+|[ivx]+)/i) || raw.match(/(\d+)(?:st|nd|rd|th)\s*year/i);
+    if (yrMatch) {
+      const romanMap: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4 };
+      const y = parseInt(yrMatch[1], 10) || romanMap[yrMatch[1].toLowerCase()] || 1;
+      semester = y * 2 - 1;
+    } else if (/^III\s+/i.test(raw)) {
+      semester = 5;
+    } else if (/^II\s+/i.test(raw)) {
+      semester = 3;
+    } else if (/^IV\s+/i.test(raw)) {
+      semester = 7;
+    }
+  }
+
+  const year = Math.max(1, Math.ceil(semester / 2));
+  const shiftPart = shift === "shift_1" ? " - Shift 1" : shift === "shift_2" ? " - Shift 2" : "";
+  const canonicalName = `${courseName}${shiftPart} - Semester ${semester}`;
+
+  return { raw, courseName, semester, year, shift, canonicalName };
+}
+
 export function getDeptFromClassGroup(classGroup?: string): string {
   if (!classGroup) return "";
   const lower = classGroup.toLowerCase().trim();
+
+  // Known special course name variations (backwards compatibility)
   if (lower.includes("b. com(fintech)") || lower.includes("b.com(fintech)") || lower.includes("b. com (fintech)")) {
     return "B. Com(Fintech)";
   }
@@ -539,23 +593,8 @@ export function getDeptFromClassGroup(classGroup?: string): string {
   if (lower.includes("cc") || lower.includes("cloud")) {
     return "B.Sc. Computer Science with Cloud Computing";
   }
-  if (lower.includes("bca") || lower.includes("computer application")) {
-    return "BCA";
-  }
   if (lower.includes("dm") || lower.includes("digital marketing") || (lower.includes("bba") && lower.includes("dm"))) {
     return "BBA DM";
-  }
-  if (lower.includes("com") && lower.includes("banking")) {
-    return "B.Com. Banking and FinTech";
-  }
-  if (lower.includes("com") && (lower.includes("ai") || lower.includes("fintech"))) {
-    return "B.Com. FinTech and Artificial Intelligence";
-  }
-  if (lower.includes("banking") || lower.includes("fintech")) {
-    if (lower.includes("banking")) {
-      return "B.Com. Banking and FinTech";
-    }
-    return "B.Com. FinTech and Artificial Intelligence";
   }
   if (lower.includes("airline") || lower.includes("airport") || lower.includes("aa")) {
     return "BBA Airline and Airport Management";
@@ -563,7 +602,25 @@ export function getDeptFromClassGroup(classGroup?: string): string {
   if (lower.includes("fashion") || lower.includes("fm")) {
     return "BBA Fashion Management";
   }
-  return classGroup;
+
+  // General dynamic extraction:
+  let clean = classGroup.trim();
+  // 1. Remove batch year in parens e.g. (2026-2029) or (2026)
+  clean = clean.replace(/\s*\(\s*\d{4}\s*[-–]\s*\d{4}\s*\)/g, "").replace(/\s*\(\s*\d{4}\s*\)/g, "");
+  // 2. Remove leading Roman year prefixes e.g. "III BCA" -> "BCA"
+  clean = clean.replace(/^(III|II|I|IV)\s+/i, "");
+  // 3. Remove shift suffixes or middle sections e.g. "- Shift 1"
+  clean = clean.replace(/\s*-\s*(shift\s*[12]|general)\s*/gi, " - ");
+  // 4. Remove semester, year, and section suffixes
+  clean = clean
+    .replace(/\s*-\s*sem(?:ester)?[\s\-_]*(\d+|[ivx]+).*$/i, "")
+    .replace(/\s*-\s*year[\s\-_]*(\d+|[ivx]+).*$/i, "")
+    .replace(/\s*-\s*(?:1st|2nd|3rd|4th)\s*year.*$/i, "")
+    .replace(/\s*-\s*sec(?:tion)?\s*[a-z0-9]+.*$/i, "")
+    .replace(/(\s*-\s*)+$/, "")
+    .trim();
+
+  return clean || classGroup;
 }
 
 export function isSubjectNameMatch(name1: string, name2: string): boolean {

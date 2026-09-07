@@ -251,7 +251,7 @@ CREATE TABLE IF NOT EXISTS handover_requests (
     time VARCHAR(100) NOT NULL,
     dateStr VARCHAR(50) NOT NULL,
     dateFormatted VARCHAR(100) NOT NULL,
-    targetStaffId VARCHAR(255) NOT NULL REFERENCES mentors(id) ON DELETE CASCADE,
+    targetStaffId VARCHAR(255) NOT NULL,
     targetStaffName VARCHAR(255) NOT NULL,
     reason TEXT NOT NULL,
     status VARCHAR(50) NOT NULL,
@@ -289,6 +289,8 @@ CREATE TABLE IF NOT EXISTS student_attendance (
     type VARCHAR(50) DEFAULT 'Regular',
     mode VARCHAR(50) DEFAULT 'Offline',
     attendanceTypeSub VARCHAR(100),
+    correction_count INTEGER DEFAULT 0,
+    notes TEXT,
     UNIQUE(studentId, slotId, dateStr)
 );
 
@@ -679,6 +681,18 @@ CREATE TABLE IF NOT EXISTS sme_users (
     is_head_sme INTEGER DEFAULT 0,
     head_subject_group VARCHAR(255),
     mentor_group VARCHAR(255)
+);
+
+CREATE TABLE IF NOT EXISTS sme_availability (
+    id TEXT PRIMARY KEY,
+    sme_id TEXT NOT NULL,
+    day_of_week TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    slot_type TEXT DEFAULT 'demo'
 );
 
 CREATE TABLE IF NOT EXISTS mentor_groups (

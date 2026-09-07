@@ -94,8 +94,16 @@ export async function POST(request: Request) {
       }
 
       await db.run(
-        `INSERT OR REPLACE INTO campus_daily_configs (id, college_id, dateStr, day_type, day_order, session_mode, notes, updated_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        `INSERT INTO campus_daily_configs (id, college_id, dateStr, day_type, day_order, session_mode, notes, updated_at) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+         ON CONFLICT (id) DO UPDATE SET
+           college_id = EXCLUDED.college_id,
+           dateStr = EXCLUDED.dateStr,
+           day_type = EXCLUDED.day_type,
+           day_order = EXCLUDED.day_order,
+           session_mode = EXCLUDED.session_mode,
+           notes = EXCLUDED.notes,
+           updated_at = NOW()`,
         id, college_id, dStr, currentDayType, currentDayOrder, session_mode || "Offline", notes || ""
       );
 
@@ -114,7 +122,7 @@ export async function POST(request: Request) {
           const link = u.role === "mentor" ? `/mentor/schedule?date=${dStr}` : `/student/schedule?date=${dStr}`;
           await db.run(
             `INSERT INTO notifications (id, user_id, title, message, type, link, is_read, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'))`,
+             VALUES (?, ?, ?, ?, ?, ?, 0, NOW()::text)`,
             notifId,
             u.id,
             `Campus Schedule Update: ${dStr}`,

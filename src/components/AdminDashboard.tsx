@@ -50,21 +50,58 @@ import {
   CheckCircle2,
   EyeOff,
   Copy,
-  Check
+  Check,
+  RefreshCw,
+  Lock,
+  Unlock
 } from "lucide-react";
 import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak, isDeptSubjectMatch, isSameYear, isSameSemester } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
+import { CourseInfoButton } from "./CourseInfoModal";
+import { CourseModal } from "./CourseModal";
 import { LoadingButton } from "./ui/LoadingButton";
 import { Pagination } from "@/components/ui/Pagination";
+
+export const generateCampusCode = (name: string): string => {
+  if (!name || !name.trim()) return "";
+  const stopwords = new Set(["of", "and", "the", "for", "in", "at", "&", "to", "a", "an"]);
+  const rawWords = name.trim().replace(/[^a-zA-Z0-9\s-]/g, " ").split(/[\s-]+/).filter(Boolean);
+  const words = rawWords.filter(w => !stopwords.has(w.toLowerCase()));
+  const list = words.length > 0 ? words : rawWords;
+
+  if (list.length === 1) {
+    return list[0].substring(0, 6).toUpperCase();
+  }
+
+  // Preserve words that are already uppercase acronyms (e.g. "FP", "IIT", "SRM")
+  const parts = list.map(w => {
+    if (w.length <= 4 && w === w.toUpperCase() && /^[A-Z0-9]+$/.test(w)) {
+      return w;
+    }
+    return w[0].toUpperCase();
+  });
+
+  const combined = parts.join("");
+  if (combined.length >= 2 && combined.length <= 8) {
+    return combined;
+  }
+
+  return combined.substring(0, 8);
+};
 
 const generateCodeFromName = (name: string): string => {
   const words = name.replace(/with|and|for/gi, "").split(/\s+/).filter(Boolean);
   let code = words.map(w => {
-    const cleanWord = w.replace(/[^a-zA-Z]/g, "");
+    const cleanWord = w.replace(/[^a-zA-Z0-9]/g, "");
     if (!cleanWord) return "";
-    if (cleanWord.toLowerCase() === "bsc") return "BSC";
-    if (cleanWord.toLowerCase() === "bba") return "BBA";
-    if (cleanWord.toLowerCase() === "bcom") return "BCOM";
+    if (/^\d+$/.test(cleanWord)) return cleanWord;
+    const lower = cleanWord.toLowerCase();
+    if (lower === "bsc") return "BSC";
+    if (lower === "bba") return "BBA";
+    if (lower === "bcom") return "BCOM";
+    if (lower === "bca") return "BCA";
+    const match = cleanWord.match(/^([a-zA-Z]+)(\d+)$/);
+    if (match) return match[1][0].toUpperCase() + match[2];
     return cleanWord[0].toUpperCase();
   }).filter(Boolean).join("-");
   return code || "";
@@ -229,7 +266,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [notifications, setNotifications] = useState<any[]>([]);
 
   // Global System Settings & Mailing Control State
-  const [systemSettings, setSystemSettings] = useState<{ mailing_enabled: boolean; [key: string]: any }>({ mailing_enabled: true });
+  const [systemSettings, setSystemSettings] = useState<{ mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any }>({ mailing_enabled: true, attendance_lock_enabled: true });
   const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
 
   // ── Clear Attendance by Date Range ──────────────────────────────────────
@@ -348,6 +385,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           newValue
             ? "Global Email Delivery ENABLED (Active). Outbound transactional emails active."
             : "Global Email Delivery DISABLED (OFF). Outbound emails are paused.",
+          newValue ? "success" : "warning"
+        );
+        fetchAdminDetails();
+      } else {
+        toast(data.message || "Failed to update setting.", "error");
+      }
+    } catch (err: any) {
+      toast(err.message || "Error updating setting.", "error");
+    } finally {
+      setIsUpdatingSettings(false);
+    }
+  };
+
+  const handleToggleAttendanceLock = async (newValue: boolean) => {
+    setIsUpdatingSettings(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "attendance_lock_enabled",
+          value: newValue,
+          updatedBy: currentAdmin?.name || "Admin"
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSystemSettings(prev => ({ ...prev, attendance_lock_enabled: newValue }));
+        toast(
+          newValue
+            ? "Attendance Marking Lock ENABLED (Strict Mode). Past/ended periods are locked."
+            : "Attendance Marking Lock DISABLED (Flexible Mode). Mentors can freely mark and update past attendance.",
           newValue ? "success" : "warning"
         );
         fetchAdminDetails();
@@ -575,6 +644,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     working_days: 5
   });
   const [editingCampus, setEditingCampus] = useState<boolean>(false);
+  const [isCampusCodeCustomized, setIsCampusCodeCustomized] = useState<boolean>(false);
   const [campusFieldErrors, setCampusFieldErrors] = useState<Record<string, boolean>>({});
   const [courseFieldErrors, setCourseFieldErrors] = useState<Record<string, boolean>>({});
   const [campusWizardStep, setCampusWizardStep] = useState<number>(1);
@@ -1175,6 +1245,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } catch (_) { }
     setDraftLastSaved(null);
     setHasRestoredDraft(false);
+    setIsCampusCodeCustomized(false);
     setCampusWizardStep(1);
     setWizardCourses([]);
     setCampusForm({
@@ -1306,6 +1377,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         working_days: (col as any).working_days === undefined ? 5 : Number((col as any).working_days)
       });
       setEditingCampus(true);
+      setIsCampusCodeCustomized(true);
       setCampusWizardStep(1);
       const existing = coursesList.filter(d => d.college_id === col.id || (col.id === "college_1" && !d.college_id));
       setWizardCourses(existing.map(c => {
@@ -1369,6 +1441,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           working_days: 5
         });
         setCampusWizardStep(1);
+        setIsCampusCodeCustomized(false);
         setWizardCourses([]);
       }
     }
@@ -1555,7 +1628,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       let collegeId = campusForm.id;
       if (!editingCampus) {
-        const cleanCode = campusForm.code || generateCodeFromName(campusForm.name) || Date.now().toString();
+        const cleanCode = campusForm.code || generateCampusCode(campusForm.name) || Date.now().toString();
         collegeId = "Clg_" + cleanCode.trim().replace(/[^a-zA-Z0-9]/g, "");
       }
 
@@ -1593,7 +1666,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           await createCourse({
             name: course.name,
             college_id: updatedForm.id,
-            code: course.code || course.name.toLowerCase().replace(/[^a-z0-9]/g, "_"),
+            code: course.code?.trim().toUpperCase() || generateCodeFromName(course.name),
             description: course.description || "",
             years: Number(course.years) || 3,
             start_date: course.start_date || new Date().toISOString().split("T")[0],
@@ -3872,9 +3945,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <div key={dept.id} className="border border-gray-150 rounded-xl overflow-hidden bg-gray-50/20">
                                     {/* Department row */}
                                     <div className="p-3 bg-white border-b border-gray-150 flex items-center justify-between gap-4 flex-wrap">
-                                      <button
+                                      <div
+                                        role="button"
+                                        tabIndex={0}
                                         onClick={() => setExpandedDepts(prev => ({ ...prev, [dept.id]: !prev[dept.id] }))}
-                                        className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 hover:text-indigo-650 transition-all text-left font-bold cursor-pointer border-none bg-transparent p-0 max-w-full"
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter" || e.key === " ") {
+                                            e.preventDefault();
+                                            setExpandedDepts(prev => ({ ...prev, [dept.id]: !prev[dept.id] }));
+                                          }
+                                        }}
+                                        className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 hover:text-indigo-650 transition-all text-left font-bold cursor-pointer border-none bg-transparent p-0 max-w-full select-none"
                                       >
                                         {isDeptExpanded ? (
                                           <ChevronDown className="h-4 w-4 text-gray-555 shrink-0" />
@@ -3882,6 +3963,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                           <ChevronRight className="h-4 w-4 text-gray-555 shrink-0" />
                                         )}
                                         <span className="text-xs font-black text-gray-900">{dept.name}</span>
+                                        <CourseInfoButton course={dept} collegeId={col.id} size="xs" />
                                         {dept.code && (
                                           <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-755 border border-indigo-100 text-[9px] font-bold">
                                             {dept.code}
@@ -3915,7 +3997,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                             </span>
                                           );
                                         })()}
-                                      </button>
+                                      </div>
 
                                       <div className="flex items-center gap-4 text-[11px] font-bold text-gray-600">
                                         <span>Faculty: <span className="text-gray-900">{facultyCount}</span></span>
@@ -5822,6 +5904,74 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
+                {/* Attendance Marking Lock Policy Card */}
+                <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-5">
+                  <div>
+                    <div className="flex items-start justify-between gap-4 mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 ${systemSettings.attendance_lock_enabled !== false ? "bg-amber-50 text-amber-600 border border-amber-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200"}`}>
+                          {systemSettings.attendance_lock_enabled !== false ? (
+                            <Lock className="h-6 w-6" />
+                          ) : (
+                            <Unlock className="h-6 w-6" />
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-extrabold text-gray-900">Attendance Marking Lock Policy</h3>
+                          <span className="text-[10px] text-gray-400 font-medium block">Controls strict period expiration &amp; retroactive marking lockout</span>
+                        </div>
+                      </div>
+
+                      {/* Live Status Badge */}
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black border ${systemSettings.attendance_lock_enabled !== false ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                        <span className={`h-2 w-2 rounded-full ${systemSettings.attendance_lock_enabled !== false ? "bg-amber-500 animate-pulse" : "bg-emerald-500"}`} />
+                        {systemSettings.attendance_lock_enabled !== false ? "LOCK ACTIVE (STRICT)" : "LOCK DISABLED (FLEXIBLE)"}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-gray-600 font-medium leading-relaxed mt-2 bg-gray-50/80 p-3.5 rounded-xl border border-gray-150">
+                      {systemSettings.attendance_lock_enabled !== false ? (
+                        <>
+                          When <strong className="text-amber-700 font-bold">ENABLED (Strict Mode)</strong>, direct attendance marking is locked as soon as a period&apos;s scheduled end time passes or for prior calendar dates. Faculty must request <span className="text-indigo-600 font-semibold">Campus Manager (CAM) approval</span> with a reason to unlock the session.
+                        </>
+                      ) : (
+                        <>
+                          When <strong className="text-emerald-700 font-bold">DISABLED (Flexible Mode)</strong>, the period time window and past-date lockouts are completely bypassed. <span className="text-emerald-700 font-semibold">Faculty / Mentors can directly mark, edit, and record attendance for past periods and dates without CAM approval.</span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Action Row */}
+                  <div className="pt-4 border-t border-gray-150 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAttendanceLock(systemSettings.attendance_lock_enabled === false)}
+                        disabled={isUpdatingSettings}
+                        className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-sm border ${
+                          systemSettings.attendance_lock_enabled !== false
+                            ? "bg-rose-600 hover:bg-rose-700 text-white border-rose-700"
+                            : "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700"
+                        } disabled:opacity-50`}
+                      >
+                        {isUpdatingSettings ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : systemSettings.attendance_lock_enabled !== false ? (
+                          <Unlock className="h-4 w-4" />
+                        ) : (
+                          <Lock className="h-4 w-4" />
+                        )}
+                        {systemSettings.attendance_lock_enabled !== false ? "Disable Attendance Lock" : "Enable Attendance Lock"}
+                      </button>
+                    </div>
+
+                    <span className="text-[10px] text-gray-400 font-semibold">
+                      Enforcement: {systemSettings.attendance_lock_enabled !== false ? "Strict Window Lock" : "Flexible / Unlocked"}
+                    </span>
+                  </div>
+                </div>
+
               </div>
 
               {/* ── Clear Attendance by Date Range ── */}
@@ -5969,6 +6119,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         if (typeof window !== "undefined") localStorage.removeItem("campus_wizard_draft");
                         setDraftLastSaved(null);
                         setHasRestoredDraft(false);
+                        setIsCampusCodeCustomized(false);
                         setCampusWizardStep(1);
                         setWizardCourses([]);
                         setCampusForm({
@@ -6144,33 +6295,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               value={campusForm.name}
                               onChange={(e) => {
                                 const name = e.target.value;
-                                const code = name
-                                  .toLowerCase()
-                                  .replace(/[^a-z0-9\s]/g, "")
-                                  .trim()
-                                  .split(/\s+/)
-                                  .map((w, i) => i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1))
-                                  .join("")
-                                  .substring(0, 12);
-                                setCampusForm({ ...campusForm, name, code: campusForm.code || code });
+                                const autoCode = generateCampusCode(name);
+                                setCampusForm(prev => ({
+                                  ...prev,
+                                  name,
+                                  code: isCampusCodeCustomized ? prev.code : autoCode
+                                }));
                               }}
                               className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
                             />
                           </div>
 
                           <div className="space-y-1">
-                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
-                              Campus Code
-                              <span className="ml-1 text-indigo-500 font-bold normal-case">(Auto-generated)</span>
-                            </label>
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
+                                Campus Code
+                                <span className="ml-1 text-indigo-500 font-bold normal-case">(Auto-generated)</span>
+                              </label>
+                              {!editingCampus && campusForm.name && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const code = generateCampusCode(campusForm.name);
+                                    setIsCampusCodeCustomized(false);
+                                    setCampusForm(prev => ({ ...prev, code }));
+                                  }}
+                                  className="text-[10px] text-indigo-600 hover:text-indigo-700 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="Reset to auto-generated code"
+                                >
+                                  <RefreshCw className="h-2.5 w-2.5" />
+                                  <span>Sync with Name</span>
+                                </button>
+                              )}
+                            </div>
                             <input
                               type="text"
                               required
-                              placeholder="Auto-generated from name"
+                              placeholder="Auto-generated e.g. FPSC"
                               disabled={editingCampus}
                               value={campusForm.code}
-                              onChange={(e) => setCampusForm({ ...campusForm, code: e.target.value })}
-                              className="w-full bg-gray-100 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-500 disabled:text-gray-400"
+                              onChange={(e) => {
+                                setIsCampusCodeCustomized(true);
+                                setCampusForm(prev => ({ ...prev, code: e.target.value.toUpperCase() }));
+                              }}
+                              className={`w-full border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold tracking-wider uppercase focus:outline-none focus:ring-1 focus:ring-indigo-650 ${
+                                editingCampus ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-gray-55 text-gray-900"
+                              }`}
                             />
                           </div>
 
@@ -7375,6 +7545,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 setModalError("Please fill in all required fields highlighted in red.");
                                 return;
                               }
+                              if (!campusForm.code?.trim()) {
+                                setCampusForm(prev => ({ ...prev, code: generateCampusCode(prev.name) }));
+                              }
                             }
                             if (campusWizardStep === 2 && wizardCourses.length === 0) {
                               setModalError("Please add at least one course before continuing.");
@@ -8534,227 +8707,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {/* ── Course Modal ── */}
         {showDeptModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-            <div className="bg-white rounded-xl border border-gray-150 shadow-2xl max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden animate-slideUp">
-              {/* Header (Fixed) */}
-              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/80 shrink-0">
-                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-                    <Layers className="h-4 w-4 text-indigo-650" />
-                  </div>
-                  {editingDept ? "Edit Course Details" : "Add Course"}
-                </h3>
-                <button onClick={() => setShowDeptModal(false)} className="p-1.5 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer text-gray-500 hover:text-gray-800">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {/* Scrollable Form Body */}
-              <form onSubmit={handleDeptSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-semibold">
-                {modalError && (
-                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
-                    <ShieldAlert className="h-4 w-4 shrink-0" />
-                    {modalError}
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Course Name</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Computer Science with Artificial Intelligence"
-                      value={deptForm.name}
-                      onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Course Duration</label>
-                    <select
-                      value={deptForm.years || 4}
-                      onChange={(e) => handleCourseYearsChange(Number(e.target.value))}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                    >
-                      <option value={1}>1 Year (2 Semesters)</option>
-                      <option value={2}>2 Years (4 Semesters)</option>
-                      <option value={3}>3 Years (6 Semesters)</option>
-                      <option value={4}>4 Years (8 Semesters)</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Status</label>
-                    <select
-                      value={deptForm.status || "Active"}
-                      onChange={(e) => setDeptForm({ ...deptForm, status: e.target.value })}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Assigned Campus</label>
-                    <select
-                      required
-                      value={deptForm.college_id || ""}
-                      onChange={(e) => setDeptForm({ ...deptForm, college_id: e.target.value })}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                    >
-                      <option value="">— Select Campus —</option>
-                      {colleges.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-3 sm:col-span-2 border-t border-gray-150 pt-4 mt-2">
-                    <h4 className="text-[10px] font-black text-indigo-650 uppercase tracking-wider">
-                      Classroom Allocations (Year-wise)
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {(() => {
-                        const campus = colleges.find(c => c.id === deptForm.college_id);
-                        const campusRooms = campus && campus.rooms ? campus.rooms.split(",").map(r => r.trim()).filter(Boolean) : [];
-
-                        const suggestions = new Set<string>(campusRooms);
-                        coursesList
-                          .filter(d => d.college_id === deptForm.college_id && d.id !== deptForm.id)
-                          .forEach(d => {
-                            if (d.default_room) {
-                              if (d.default_room.startsWith("{")) {
-                                try {
-                                  const parsed = JSON.parse(d.default_room);
-                                  Object.values(parsed).forEach((r: any) => {
-                                    if (r && typeof r === 'string' && r.trim()) {
-                                      suggestions.add(r.trim());
-                                    }
-                                  });
-                                } catch (_) { }
-                              } else {
-                                suggestions.add(d.default_room.trim());
-                              }
-                            }
-                          });
-
-                        const suggestionArray = Array.from(suggestions);
-
-                        return (
-                          <>
-                            {Array.from({ length: Number(deptForm.years || 3) }, (_, idx) => {
-                              const yearNum = idx + 1;
-                              let currentRoom = "";
-                              try {
-                                if (deptForm.default_room && deptForm.default_room.startsWith("{")) {
-                                  const parsed = JSON.parse(deptForm.default_room);
-                                  currentRoom = parsed[yearNum] || "";
-                                } else if (deptForm.default_room && yearNum === 1) {
-                                  currentRoom = deptForm.default_room;
-                                }
-                              } catch (_) { }
-
-                              return (
-                                <div key={yearNum} className="space-y-1">
-                                  <label className="text-[9.5px] text-gray-400 font-bold block uppercase tracking-wider">
-                                    Year {yearNum} Room
-                                  </label>
-                                  <input
-                                    type="text"
-                                    list={`rooms-suggest-modal-${deptForm.college_id || 'none'}`}
-                                    placeholder={`e.g. Room for Year ${yearNum}`}
-                                    value={currentRoom}
-                                    onChange={(e) => handleYearRoomChange(yearNum, e.target.value)}
-                                    className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-805 text-xs font-semibold"
-                                  />
-                                </div>
-                              );
-                            })}
-
-                            {suggestionArray.length > 0 && (
-                              <datalist id={`rooms-suggest-modal-${deptForm.college_id || 'none'}`}>
-                                {suggestionArray.map(r => (
-                                  <option key={r} value={r} />
-                                ))}
-                              </datalist>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Offering</label>
-                    <select
-                      value={deptForm.default_shift || "shift_1"}
-                      onChange={(e) => setDeptForm({ ...deptForm, default_shift: e.target.value })}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-gray-800"
-                    >
-                      <option value="shift_1">Shift 1 (Day)</option>
-                      <option value="shift_2">Shift 2 (Evening)</option>
-                      <option value="both">Both Shifts (Shift 1 & 2)</option>
-                      <option value="general">General Shift</option>
-                      <option value="all">Both Shifts + General (Shift 1, 2 & General)</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">
-                      Sections <span className="normal-case text-gray-400 font-normal">(Optional, comma separated e.g. A, B, C)</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. A, B"
-                      value={deptForm.sections || ""}
-                      onChange={(e) => setDeptForm({ ...deptForm, sections: e.target.value })}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800 text-xs"
-                    />
-                  </div>
-
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Description</label>
-                    <textarea
-                      placeholder="Enter course summary or notes..."
-                      value={deptForm.description || ""}
-                      onChange={(e) => setDeptForm({ ...deptForm, description: e.target.value })}
-                      rows={2}
-                      className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-gray-800 resize-none font-semibold"
-                    />
-                  </div>
-                </div>
-
-                {/* Sticky Footer */}
-                <div className="flex justify-end gap-2.5 pt-4 mt-4 border-t border-gray-100 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setShowDeptModal(false)}
-                    className="px-4 py-2 hover:bg-gray-100 text-gray-555 rounded-xl transition-all font-bold cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isDeptSubmitting}
-                    className={`btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer flex items-center justify-center gap-2 ${isDeptSubmitting ? "opacity-75 cursor-not-allowed" : "hover:opacity-95 active:scale-95"
-                      }`}
-                  >
-                    {isDeptSubmitting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin text-white shrink-0" />
-                        <span>{editingDept ? "Saving Changes..." : "Creating Course..."}</span>
-                      </>
-                    ) : (
-                      <span>{editingDept ? "Save Changes" : "Create Course"}</span>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+          <CourseModal
+            isOpen={showDeptModal}
+            onClose={() => setShowDeptModal(false)}
+            editingCourse={editingDept ? (deptForm as Department) : null}
+            defaultCollegeId={deptForm.college_id || colleges[0]?.id || ""}
+            allowCollegeSelect={true}
+            onToast={toast}
+            onSaved={() => {
+              setShowDeptModal(false);
+            }}
+          />
         )}
 
         {/* ── Mentor Group Modal ── */}

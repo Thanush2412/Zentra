@@ -23,74 +23,88 @@ export async function POST(request: Request) {
     let fallbackCollegeId = defaultCollegeId;
     if (!fallbackCollegeId) {
       const firstCol = await db.get("SELECT id FROM colleges LIMIT 1");
-      fallbackCollegeId = firstCol?.id || "college_1";
+      if (!firstCol) {
+        return NextResponse.json({ success: false, message: "No college found. Please configure a campus first." }, { status: 400 });
+      }
+      fallbackCollegeId = firstCol.id;
     }
 
     const now = new Date().toISOString();
     let importedCount = 0;
     const errors: string[] = [];
 
-    for (let i = 0; i < mentors.length; i++) {
-      const item = mentors[i];
-      const rawName = item.name || item.FacultyName || item.faculty_name || item["Faculty Name"] || item["Name"] || "";
-      const rawEmail = item.email || item.EmailAddress || item.email_address || item["Email Address"] || item["Email"] || "";
-      const rawDept = item.department || item.Department || item["Department"] || "Computer Science";
-      const rawShift = item.shift || item.Shift || item["Shift"] || "shift_1";
-      const rawCollegeId = item.college_id || item.collegeId || item.CollegeId || fallbackCollegeId;
-      const rawSubjects = item.subjects || item.Subjects || item["Subjects"] || "";
-      const rawClasses = item.classes || item.Classes || item["Classes"] || "";
-      const rawSubjectGroup = item.mentor_group || item.subject_group || item.subjectGroup || item["Subject Group"] || item["Mentor Group"] || rawDept;
-      // Unified group: mentor_group, subject_group, and department all mirror the same value
-      const cleanDept = (rawSubjectGroup || String(rawDept)).trim();
+    await db.transaction(async (tx) => {
+      for (let i = 0; i < mentors.length; i++) {
+        const item = mentors[i];
+        const rawName = item.name || item.FacultyName || item.faculty_name || item["Faculty Name"] || item["Name"] || "";
+        const rawEmail = item.email || item.EmailAddress || item.email_address || item["Email Address"] || item["Email"] || "";
+        const rawDept = item.department || item.Department || item["Department"] || "Computer Science";
+        const rawShift = item.shift || item.Shift || item["Shift"] || "shift_1";
+        const rawCollegeId = item.college_id || item.collegeId || item.CollegeId || fallbackCollegeId;
+        const rawSubjects = item.subjects || item.Subjects || item["Subjects"] || "";
+        const rawClasses = item.classes || item.Classes || item["Classes"] || "";
+        const rawSubjectGroup = item.mentor_group || item.subject_group || item.subjectGroup || item["Subject Group"] || item["Mentor Group"] || rawDept;
+        // Unified group: mentor_group, subject_group, and department all mirror the same value
+        const cleanDept = (rawSubjectGroup || String(rawDept)).trim();
 
-      if (!rawName || !rawEmail) {
-        errors.push(`Row ${i + 1}: Skipped due to missing Name or Email.`);
-        continue;
-      }
+        if (!rawName.trim() || !rawEmail.trim()) {
+          errors.push(`Row ${i + 1}: Name and email are required.`);
+          continue;
+        }
 
-      const cleanEmail = String(rawEmail).toLowerCase().trim();
-      const cleanName = String(rawName).trim();
+        const cleanEmail = rawEmail.trim().toLowerCase();
+        const cleanName = rawName.trim();
+        const cleanShift = rawShift.trim();
+        const avatar = item.avatar || "";
 
-      // Standardize shift string
-      let cleanShift = String(rawShift).toLowerCase().trim();
-      if (cleanShift.includes("1") || cleanShift.includes("shift 1")) cleanShift = "shift_1";
-      else if (cleanShift.includes("2") || cleanShift.includes("shift 2")) cleanShift = "shift_2";
-      else cleanShift = "general";
-
-      const mentorId = item.id || `mentor_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
-      const avatar = item.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`;
-
-      // Check if mentor with email already exists to update or insert
-      const existing = await db.get("SELECT id FROM mentors WHERE LOWER(email) = ?", cleanEmail);
-      const targetId = existing ? existing.id : mentorId;
-
-      if (existing) {
-        await db.run(
-          `UPDATE mentors SET name = ?, department = ?, avatar = ?, subjects = ?, classes = ?, shift = ?, college_id = ?, subject_group = ?, mentor_group = ? WHERE id = ?`,
-          cleanName, cleanDept, avatar, rawSubjects, rawClasses, cleanShift, rawCollegeId, cleanDept, cleanDept, targetId
+        // Check if mentor already exists by email or id
+        const existing = await tx.get(
+          "SELECT id, subjects, classes FROM mentors WHERE LOWER(email) = ? OR id = ?",
+          cleanEmail, item.id || ""
         );
-      } else {
-        await db.run(
-          `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, shift, college_id, subject_group, mentor_group)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          targetId, cleanName, cleanEmail, cleanDept, avatar, rawSubjects, rawClasses, cleanShift, rawCollegeId, cleanDept, cleanDept
+
+        let targetId = existing?.id || item.id || "m_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
+
+        if (existing) {
+          await tx.run(
+            `UPDATE mentors 
+             SET name = ?, department = ?, shift = ?, college_id = ?, mentor_group = ?, subject_group = ?,
+                 subjects = CASE WHEN ? != '' THEN ? ELSE subjects END,
+                 classes = CASE WHEN ? != '' THEN ? ELSE classes END
+             WHERE id = ?`,
+            cleanName, cleanDept, cleanShift, rawCollegeId, cleanDept, cleanDept,
+            rawSubjects, rawSubjects, rawClasses, rawClasses, targetId
+          );
+        } else {
+          await tx.run(
+            `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, shift, college_id, mentor_group, subject_group)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            targetId, cleanName, cleanEmail, cleanDept, avatar, rawSubjects, rawClasses, cleanShift, rawCollegeId, cleanDept, cleanDept
+          );
+        }
+
+        // Check if user already exists to preserve password_hash
+        const existingUser = await tx.get("SELECT password_hash FROM users WHERE role = 'mentor' AND reference_id = ?", targetId);
+        const passHashToKeep = existingUser?.password_hash || hashPassword("password123");
+
+        // Sync central user credentials
+        await tx.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, targetId]);
+        await tx.run(
+          `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET
+             email = EXCLUDED.email,
+             password_hash = EXCLUDED.password_hash,
+             role = EXCLUDED.role,
+             reference_id = EXCLUDED.reference_id,
+             status = EXCLUDED.status,
+             updated_at = EXCLUDED.updated_at`,
+          [targetId, cleanEmail, passHashToKeep, "mentor", targetId, "Active", now, now]
         );
+
+        importedCount++;
       }
-
-      // Check if user already exists to preserve password_hash
-      const existingUser = await db.get("SELECT password_hash FROM users WHERE role = 'mentor' AND reference_id = ?", targetId);
-      const passHashToKeep = existingUser?.password_hash || hashPassword("password123");
-
-      // Sync central user credentials
-      await db.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, targetId]);
-      await db.run(
-        `INSERT OR REPLACE INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [targetId, cleanEmail, passHashToKeep, "mentor", targetId, "Active", now, now]
-      );
-
-      importedCount++;
-    }
+    });
 
     await syncMentorSubjectGroups(db);
 

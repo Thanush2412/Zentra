@@ -36,6 +36,8 @@ import {
   Award, TrendingUp, FileText, FileSpreadsheet, RefreshCw, Plus, Trash2, Edit2, Edit, Grid, Download, Upload, ChevronDown, Loader2, Save,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle, User, SlidersHorizontal, CalendarCheck2, IndianRupee, BadgePercent, X, Mail, Lock, Menu, Briefcase, Layers, Info
 } from "lucide-react";
+import { CourseInfoButton } from "./CourseInfoModal";
+import { CourseModal } from "./CourseModal";
 
 
 
@@ -645,16 +647,19 @@ const CAMCampusInsightPanel: React.FC<{
     return map;
   }, [campusSlots]);
 
-  // O(1) Pre-aggregated subject conducted counts
+  // O(1) Pre-aggregated distinct subject conducted sessions
   const subjectConductedCountMap = useMemo(() => {
-    const map = new Map<string, number>();
+    const sessionMap = new Map<string, Set<string>>();
     (studentAttendance || []).forEach(a => {
       const subj = a.coveredSubject || (a.slotId ? slotCourseMap.get(a.slotId) : "");
-      if (!subj) return;
+      if (!subj || !a.slotId || !a.dateStr) return;
       const clean = subj.trim().toLowerCase();
-      map.set(clean, (map.get(clean) || 0) + 1);
+      if (!sessionMap.has(clean)) sessionMap.set(clean, new Set());
+      sessionMap.get(clean)!.add(`${a.slotId}_${a.dateStr}`);
     });
-    return map;
+    const countMap = new Map<string, number>();
+    sessionMap.forEach((sessions, subj) => countMap.set(subj, sessions.size));
+    return countMap;
   }, [studentAttendance, slotCourseMap]);
 
   // Export helpers
@@ -855,10 +860,9 @@ const CAMCampusInsightPanel: React.FC<{
         const cleanSub = sub.name.trim().toLowerCase();
 
         // O(1) count lookup from pre-aggregated map
+        // Exact distinct session count directly from distinct (slotId, dateStr) sets
         const conductedCount = subjectConductedCountMap.get(cleanSub) || 0;
-
-        // Distinct session count estimate
-        const distinctSessions = Math.min(targetSemesterHours, Math.round(conductedCount / avgCohortDivisor));
+        const distinctSessions = Math.min(targetSemesterHours, conductedCount);
         const actualHours = distinctSessions > 0 ? distinctSessions : Math.min(targetSemesterHours, campusSlots.filter(s => isSubjectNameMatch(s.course, sub.name)).length * 10);
         const completionPct = Math.min(100, Math.round((actualHours / targetSemesterHours) * 100));
         const status = completionPct >= 80 ? "On Track" : completionPct >= 50 ? "In Progress" : "Lagging Behind";
@@ -2562,12 +2566,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   // This ensures mentor-marked data appears in the CAM matrix without a manual page refresh
   useEffect(() => {
     if (activeTab !== "monitoring") return;
+    let isMounted = true;
     // Immediate fetch on tab open so data is always fresh
     refreshAttendance(activeCollegeId);
     const interval = setInterval(() => {
-      refreshAttendance(activeCollegeId);
+      if (isMounted) refreshAttendance(activeCollegeId);
     }, 30_000); // every 30 seconds
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [activeTab, activeCollegeId]);
 
   // KAM Overview Computed Metrics
@@ -2576,33 +2584,65 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const campusIds = new Set(scopedColleges.map(c => c.id));
     const kStudents = students.filter(s => campusIds.has(s.college_id || ""));
     const kMentors = mentors.filter(m => campusIds.has(m.college_id || ""));
+    const studentCollegeMap = new Map<string, string>();
+    students.forEach(s => {
+      if (s.id && s.college_id) studentCollegeMap.set(s.id, s.college_id);
+    });
     
-    // Compute Attendance %
+    // Compute Attendance % via O(1) Map lookup
     const kAtt = studentAttendance.filter(a => {
-      const st = students.find(s => s.id === a.studentId);
-      return st && campusIds.has(st.college_id || "");
+      const cId = studentCollegeMap.get(a.studentId);
+      return cId && campusIds.has(cId);
     });
     const totalPresent = kAtt.filter(a => a.status === "present" || a.status === "Present" || a.status === "OD" || a.status === "od").length;
     const avgAttendance = kAtt.length > 0 ? Math.round((totalPresent / kAtt.length) * 100) : 88;
 
+    // Single-pass pre-aggregations by college_id to avoid O(C x N) linear scans
+    const studentsByCollege = new Map<string, number>();
+    students.forEach(s => {
+      if (s.college_id) studentsByCollege.set(s.college_id, (studentsByCollege.get(s.college_id) || 0) + 1);
+    });
+
+    const mentorsByCollege = new Map<string, number>();
+    mentors.forEach(m => {
+      if (m.college_id) mentorsByCollege.set(m.college_id, (mentorsByCollege.get(m.college_id) || 0) + 1);
+    });
+
+    const attTotalByCollege = new Map<string, number>();
+    const attPresByCollege = new Map<string, number>();
+    studentAttendance.forEach(a => {
+      const cId = studentCollegeMap.get(a.studentId);
+      if (cId) {
+        attTotalByCollege.set(cId, (attTotalByCollege.get(cId) || 0) + 1);
+        const st = (a.status || "").toLowerCase();
+        if (st === "present" || st === "od") {
+          attPresByCollege.set(cId, (attPresByCollege.get(cId) || 0) + 1);
+        }
+      }
+    });
+
+    const openIssuesByCollege = new Map<string, number>();
+    (localIssuesFromDB || []).forEach(i => {
+      if (i.collegeId && i.status === "open") {
+        openIssuesByCollege.set(i.collegeId, (openIssuesByCollege.get(i.collegeId) || 0) + 1);
+      }
+    });
+
     const campusesList = scopedColleges.map(c => {
-      const cSt = students.filter(s => s.college_id === c.id);
-      const cM = mentors.filter(m => m.college_id === c.id);
-      const cAtt = studentAttendance.filter(a => {
-        const st = students.find(s => s.id === a.studentId);
-        return st && st.college_id === c.id;
-      });
-      const cPres = cAtt.filter(a => a.status === "present" || a.status === "Present" || a.status === "OD" || a.status === "od").length;
-      const attPct = cAtt.length > 0 ? Math.round((cPres / cAtt.length) * 100) : 85;
-      const issues = (localIssuesFromDB || []).filter(i => i.collegeId === c.id && i.status === "open").length;
+      const totalStudents = studentsByCollege.get(c.id) || 0;
+      const activeFaculty = mentorsByCollege.get(c.id) || 0;
+      const totalAtt = attTotalByCollege.get(c.id) || 0;
+      const presAtt = attPresByCollege.get(c.id) || 0;
+      const attPct = totalAtt > 0 ? Math.round((presAtt / totalAtt) * 100) : 85;
+      const issues = openIssuesByCollege.get(c.id) || 0;
 
       return {
         id: c.id,
         name: c.name,
         code: c.code || c.id,
         location: c.city || c.location || "Campus Center",
-        totalStudents: cSt.length,
-        activeFaculty: cM.length,
+        totalStudents,
+        activeFaculty,
         attendancePct: attPct,
         openIssues: issues,
         healthScore: Math.min(100, Math.max(50, Math.round(attPct * 0.7 + (issues === 0 ? 30 : 15)))),
@@ -2924,9 +2964,27 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [templateSem, setTemplateSem] = useState<string>("Semester 1");
 
   // Download Student Excel Template matching requested headers
-  const handleDownloadStudentTemplate = async (classGroupOverride?: string, shiftOverride?: string) => {
-    const campusDepts = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
-    const resolvedDept = templateDept || campusDepts[0] || "General";
+  const handleDownloadStudentTemplate = async (classGroupOverride?: string, shiftOverride?: string, deptOverride?: string) => {
+    const campusDepts = Array.from(new Set([
+      ...(collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name?.trim()).filter(Boolean),
+      ...collegeStudents.map(s => s.department?.trim()).filter(Boolean)
+    ])).sort();
+
+    let extractedDept = "";
+    if (classGroupOverride) {
+      const parts = classGroupOverride.split(" - ").map(p => p.trim()).filter(Boolean);
+      if (parts.length > 0 && parts[0] && parts[0].toLowerCase() !== "all") {
+        extractedDept = parts[0];
+      }
+    }
+
+    const resolvedDept = (deptOverride && deptOverride.trim())
+      || (templateDept && templateDept.trim())
+      || extractedDept
+      || (studentDirDeptFilter && studentDirDeptFilter !== "all" ? studentDirDeptFilter : "")
+      || campusDepts[0]
+      || "General";
+
     const resolvedShift = shiftOverride || templateShift || "General";
     const resolvedSem = templateSem || "Semester 1";
     const resolvedClass = classGroupOverride || (
@@ -3081,7 +3139,26 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     });
 
     // 1. Resolve Department
-    const finalDept = mapped.department || templateDept || (defaultCG ? defaultCG.split(" - ")[0]?.trim() : "General");
+    const rawDept = mapped.department || (defaultCG ? defaultCG.split(" - ")[0]?.trim() : "") || templateDept || "General";
+    const normRawDept = rawDept.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const allAvailableCourses = collegeCourses.length > 0 ? collegeCourses : coursesList;
+    let matchedKnownDept = allAvailableCourses.find(c => {
+      const normC = c.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+      return normC === normRawDept;
+    });
+    if (!matchedKnownDept) {
+      matchedKnownDept = allAvailableCourses.find(c => {
+        const normC = c.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+        return normRawDept.startsWith(normC) && normC.length >= 3;
+      });
+    }
+    if (!matchedKnownDept && normRawDept.length >= 4) {
+      matchedKnownDept = allAvailableCourses.find(c => {
+        const normC = c.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+        return normC.startsWith(normRawDept) && normRawDept.length >= normC.length * 0.7;
+      });
+    }
+    const finalDept = matchedKnownDept ? matchedKnownDept.name : rawDept;
     mapped.department = finalDept;
 
     // 2. Resolve Shift — exactly as in row, or defaultCG / templateShift
@@ -3149,8 +3226,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         }
 
         const defaultCG = (() => {
-          const campusDepts = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
-          const dept = templateDept || campusDepts[0] || "General";
+          const fromCourses = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name.trim()).filter(Boolean);
+          const fromStudents = collegeStudents.map(s => s.department?.trim()).filter(Boolean) as string[];
+          const campusDepts = Array.from(new Set([...fromCourses, ...fromStudents])).sort();
+          const dept = (studentDirDeptFilter && studentDirDeptFilter !== "all" && campusDepts.includes(studentDirDeptFilter))
+            ? studentDirDeptFilter
+            : (templateDept && campusDepts.includes(templateDept))
+              ? templateDept
+              : (campusDepts[0] || "General");
           const shift = templateShift || getDefaultShiftForCourse(dept);
           const sem = templateSem || "Semester 1";
           return (shift && shift !== "General") ? `${dept} - ${shift} - ${sem}` : `${dept} - ${sem}`;
@@ -4063,21 +4146,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [isImportingFaculty, setIsImportingFaculty] = useState(false);
 
   const handleDownloadFacultyTemplate = async () => {
+    const sampleDept = facultyDepts[0] || (collegeCourses[0]?.name) || "B.Sc Mathematics";
     const sampleData = [
       {
         "Faculty Name": "Dr. Anitha Ramesh",
-        "Email Address": "anitha.ramesh@zentra.edu",
-        "Department": "Computer Science",
+        "Email Address": "anitha.ramesh@faceprep.in",
+        "Department": sampleDept,
         "College ID": activeCollegeId || "college_1",
-        "Subjects": "Data Structures, Web Development",
-        "Classes": "Year 2 Section A, Year 3 Section B"
+        "Subjects": "Programming in C, Digital Fundamentals",
+        "Classes": "Year 1 Section A"
       },
       {
         "Faculty Name": "Prof. Rajesh Kumar",
-        "Email Address": "rajesh.kumar@zentra.edu",
-        "Department": "Information Technology",
+        "Email Address": "rajesh.kumar@faceprep.in",
+        "Department": sampleDept,
         "College ID": activeCollegeId || "college_1",
-        "Subjects": "Database Systems, Python Programming",
+        "Subjects": "Computer Fundamentals, Mathematics for Computer Science",
         "Classes": "Year 1 Section A"
       }
     ];
@@ -4109,14 +4193,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           return;
         }
 
+        const defaultDept = facultyDepts[0] || (collegeCourses[0]?.name) || "General";
         const warnings: string[] = [];
         const parsedFaculty = rawRows.map((row, idx) => {
           const name = row.name || row.FacultyName || row.faculty_name || row["Faculty Name"] || row["Name"] || "";
           const email = row.email || row.EmailAddress || row.email_address || row["Email Address"] || row["Email"] || "";
-          const dept = row.department || row.Department || row["Department"] || "Computer Science";
+          const rawDept = row.department || row.Department || row["Department"] || defaultDept;
           const collegeId = row.college_id || row.collegeId || row["College ID"] || activeCollegeId || "";
           const subjects = row.subjects || row.Subjects || row["Subjects"] || "";
           const classes = row.classes || row.Classes || row["Classes"] || "";
+
+          const matchedDept = facultyDepts.find(d => {
+            const normD = d.toLowerCase().replace(/[^a-z0-9]/g, "");
+            const normRaw = String(rawDept).toLowerCase().replace(/[^a-z0-9]/g, "");
+            return normD === normRaw || normRaw.includes(normD) || normD.includes(normRaw);
+          }) || String(rawDept).trim();
 
           if (!name) warnings.push(`Row ${idx + 2}: Missing Faculty Name.`);
           if (!email) warnings.push(`Row ${idx + 2}: Missing Email Address.`);
@@ -4124,7 +4215,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           return {
             name: String(name).trim(),
             email: String(email).toLowerCase().trim(),
-            department: String(dept).trim(),
+            department: matchedDept,
             college_id: collegeId,
             subjects: String(subjects).trim(),
             classes: String(classes).trim(),
@@ -4165,17 +4256,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const handleOpenMentorModal = (m?: Mentor) => {
     setModalError(null);
     setMentorSubjectSearch("");
+    const defaultDept = facultyDepts.find(d => d !== "General") || collegeCourses[0]?.name || "General";
     if (m) {
       setMentorForm({
         id: m.id,
         name: m.name,
         email: m.email,
-        department: m.mentor_group || m.department || "General",
+        department: (m.department && m.department !== "General") ? m.department : (facultyDepts.length === 1 ? facultyDepts[0] : (m.mentor_group || defaultDept)),
         avatar: m.avatar,
         subjects: m.subjects || "",
         classes: m.classes || "",
         college_id: m.college_id || activeCollegeId,
-        subject_group: m.mentor_group || m.subject_group || "General"
+        subject_group: m.subject_group || "General"
       });
       setEditingMentor(true);
     } else {
@@ -4183,7 +4275,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         id: "m" + (mentors.length + 1),
         name: "",
         email: "",
-        department: "General",
+        department: defaultDept,
         avatar: "",
         subjects: "",
         classes: "",
@@ -4219,6 +4311,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       subjects: mentorForm.subjects.trim(),
       classes: mentorForm.classes.trim(),
       college_id: activeCollegeId,
+      mentor_group: mentorForm.department.trim(),
       subject_group: mentorForm.subject_group.trim()
     };
 
@@ -4321,8 +4414,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   }, [slots, activeCollegeId, isGlobalAllCampuses]);
 
   const dbCourseNames = useMemo(() => {
-    return Array.from(new Set(collegeCourses.map(c => c.name.trim()).filter(Boolean))).sort();
-  }, [collegeCourses]);
+    const fromCourses = collegeCourses.map(c => c.name.trim()).filter(Boolean);
+    const fromStudents = collegeStudents.map(s => s.department?.trim()).filter(Boolean) as string[];
+    const set = new Set<string>();
+    fromCourses.forEach(name => set.add(name));
+    fromStudents.forEach(name => {
+      const norm = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const exists = fromCourses.some(c => c.toLowerCase().replace(/[^a-z0-9]/g, "") === norm);
+      if (!exists) set.add(name);
+    });
+    return Array.from(set).sort();
+  }, [collegeCourses, collegeStudents]);
 
   const dbSemesterOptions = useMemo(() => {
     const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
@@ -4762,9 +4864,82 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     return Array.from(new Set([...colRooms, ...slotRooms])).map(r => r.replace(/[\[\]"]/g, "").trim()).filter(Boolean);
   }, [collegeSlots, colleges, activeCollegeId]);
 
+  const collegeDepts = useMemo(() => {
+    if (isGlobalAllCampuses) return departmentsList;
+    return departmentsList.filter(d => !d.college_id || d.college_id === activeCollegeId);
+  }, [departmentsList, activeCollegeId, isGlobalAllCampuses]);
+
   const facultyDepts = useMemo(() => {
-    return Array.from(new Set(collegeMentors.map(m => m.department?.trim()).filter(Boolean))).sort();
-  }, [collegeMentors]);
+    const fromCourses = collegeCourses.map(c => c.name?.trim()).filter(Boolean);
+    const fromDepartments = (collegeDepts || []).map(d => d.name?.trim()).filter(Boolean);
+    const fromStudents = collegeStudents.map(s => s.department?.trim()).filter(Boolean) as string[];
+    const fromMentors = collegeMentors.map(m => m.department?.trim()).filter(Boolean) as string[];
+
+    const map = new Map<string, string>();
+    fromCourses.forEach(c => {
+      const norm = c.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (norm && !map.has(norm)) map.set(norm, c);
+    });
+    fromDepartments.forEach(d => {
+      const norm = d.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (norm && !map.has(norm)) map.set(norm, d);
+    });
+    fromStudents.forEach(s => {
+      const norm = s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (norm && norm !== "general" && !map.has(norm)) map.set(norm, s);
+    });
+    fromMentors.forEach(m => {
+      const norm = m.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (norm && norm !== "general" && !map.has(norm)) map.set(norm, m);
+    });
+
+    if (map.size === 0 && fromMentors.some(m => m.toLowerCase() === "general")) {
+      map.set("general", "General");
+    }
+
+    return Array.from(map.values()).sort();
+  }, [collegeCourses, collegeDepts, collegeStudents, collegeMentors]);
+
+  const isFacultyInDept = useCallback((m: Mentor, targetDept: string): boolean => {
+    if (!targetDept || targetDept === "all") return true;
+    const fNorm = targetDept.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const mDept = (m.department || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const mGroup = (m.mentor_group || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const sGroup = (m.subject_group || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    // 1. Direct or partial match on department / mentor_group / subject_group
+    if (mDept === fNorm || mDept.includes(fNorm) || fNorm.includes(mDept)) return true;
+    if (mGroup === fNorm || mGroup.includes(fNorm) || fNorm.includes(mGroup)) return true;
+    if (sGroup === fNorm || sGroup.includes(fNorm) || fNorm.includes(sGroup)) return true;
+
+    // 2. If college has only 1 individual department, any "General" or unassigned mentor belongs to it
+    if ((mDept === "general" || !mDept) && facultyDepts.length === 1 && fNorm === facultyDepts[0].toLowerCase().replace(/[^a-z0-9]/g, "")) {
+      return true;
+    }
+
+    // 3. Match via subjects assigned to mentor
+    const mSubjects = (m.subjects || "").toLowerCase();
+    const collegeSubList = (collegeSubjects || []).filter(s => {
+      const sDept = (s.department || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      return sDept === fNorm || sDept.includes(fNorm);
+    });
+    if (collegeSubList.some(s => mSubjects.includes(s.name.toLowerCase()))) {
+      return true;
+    }
+
+    // 4. Match via timetable slots assigned to mentor
+    const mentorSlots = collegeSlots.filter(s => s.mentorId === m.id);
+    if (mentorSlots.some(s => {
+      const sDept = (s.department || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const sCourse = (s.course || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const sCG = (s.classGroup || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      return sDept === fNorm || sDept.includes(fNorm) || sCourse.includes(fNorm) || sCG.includes(fNorm);
+    })) {
+      return true;
+    }
+
+    return false;
+  }, [facultyDepts, collegeSubjects, collegeSlots]);
 
   const studentDepts = useMemo(() => {
     return Array.from(new Set(collegeStudents.map(s => s.department?.trim()).filter(Boolean))).sort();
@@ -6510,7 +6685,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       return;
     }
 
-    const days = workingDays.length > 0 ? workingDays : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+    // Timetable Excel file uses Friday alone (Monday to Friday, 5 days)
+    const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
     const timeSlots = getTimeSlots(activeShift, activeSem);
 
     // Initialize Workbook
@@ -6903,7 +7079,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
         const rows: any[][] = XLSX.utils.sheet_to_json(gridSheet, { header: 1 });
         const timeSlots = getTimeSlots(activeShift, activeSem);
-        const days = workingDays.length > 0 ? workingDays : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+        const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
         const parsedSlots: any[] = [];
         const validationWarnings: any[] = [];
@@ -8647,6 +8823,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 <div>
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <span className="text-[12px] font-black text-slate-800">{deptName}</span>
+                                    <CourseInfoButton course={registeredDept || deptName} collegeId={activeCollegeId} size="xs" />
                                     {registeredDept?.code && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 border border-indigo-150 text-indigo-700 rounded font-bold uppercase">{registeredDept.code}</span>}
                                     {registeredDept?.start_year && registeredDept?.end_year && (
                                       <span className="text-[9px] px-1.5 py-0.5 bg-purple-50 border border-purple-150 text-purple-700 rounded font-bold">
@@ -8945,7 +9122,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         {(() => {
                           const filtered = collegeMentors.filter(m => {
                             const matchesSearch = m.name.toLowerCase().includes(facultySearch.toLowerCase());
-                            const matchesDept = facultyDeptFilter === "all" || m.department === facultyDeptFilter;
+                            const matchesDept = isFacultyInDept(m, facultyDeptFilter);
                             return matchesSearch && matchesDept;
                           });
 
@@ -8968,7 +9145,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                           // Dept distribution
                           const deptCounts: Record<string, number> = {};
-                          filtered.forEach(m => { const d = m.department || "General"; deptCounts[d] = (deptCounts[d] || 0) + 1; });
+                          filtered.forEach(m => {
+                            const d = (m.department && m.department !== "General")
+                              ? m.department
+                              : (facultyDepts.length === 1 ? facultyDepts[0] : (m.mentor_group || m.department || "General"));
+                            deptCounts[d] = (deptCounts[d] || 0) + 1;
+                          });
                           const deptData = Object.entries(deptCounts).map(([name, value]) => ({ name: name.length > 10 ? name.slice(0, 10) + "…" : name, value })).sort((a, b) => b.value - a.value).slice(0, 6);
 
                           return (
@@ -9040,7 +9222,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {collegeMentors
                             .filter(m => {
                               const matchesSearch = m.name.toLowerCase().includes(facultySearch.toLowerCase());
-                              const matchesDept = facultyDeptFilter === "all" || m.department === facultyDeptFilter;
+                              const matchesDept = isFacultyInDept(m, facultyDeptFilter);
                               return matchesSearch && matchesDept;
                             })
                             .map(m => {
@@ -9088,8 +9270,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     </div>
                                     <div className="min-w-0 flex-1">
                                       <h4 className="text-xs font-black text-slate-800 truncate pr-6" title={m.name}>{m.name}</h4>
-                                      <span className="text-[9.5px] text-slate-400 font-bold block truncate mt-0.5">
-                                        Mentor Group: {m.mentor_group || m.subject_group || m.department || "General"}
+                                      <span className="text-[9.5px] text-slate-500 font-bold block truncate mt-0.5">
+                                        Department: {m.department && m.department !== "General" ? m.department : (facultyDepts.length === 1 ? facultyDepts[0] : (m.mentor_group || m.department || "General"))}
                                       </span>
                                     </div>
                                   </div>
@@ -9308,6 +9490,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       <option key={`c_crs_${c}_${idx}`} value={c}>{c}</option>
                                     ))}
                                   </select>
+                                  {selectedCohortCourse && (
+                                    <CourseInfoButton course={selectedCohortCourse} collegeId={activeCollegeId} size="xs" />
+                                  )}
                                 </div>
 
                                 {/* Semester Dropdown */}
@@ -9715,7 +9900,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div className="space-y-1">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Course / Department</label>
+                                    <div className="flex items-center justify-between">
+                                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Course / Department</label>
+                                      {genSelectedCourse && (
+                                        <CourseInfoButton course={genSelectedCourse} collegeId={activeCollegeId} size="xs" />
+                                      )}
+                                    </div>
                                     <select
                                       value={genSelectedCourse}
                                       onChange={e => handleGenCourseChange(e.target.value)}
@@ -11869,8 +12059,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* Tab 8.5: Class Handovers */}
                   {activeTab === "handovers" && (() => {
-                    const campusRequests = requests.filter(r => mentors.find(m => m.id === r.requestorId)?.college_id === activeCollegeId);
-                    const campusApproved = approvedHandovers.filter(h => mentors.find(m => m.id === h.originalMentorId)?.college_id === activeCollegeId);
+                    const mentorCollegeMap = new Map<string, string>();
+                    mentors.forEach(m => { if (m.id && m.college_id) mentorCollegeMap.set(m.id, m.college_id); });
+                    const campusRequests = requests.filter(r => mentorCollegeMap.get(r.requestorId) === activeCollegeId);
+                    const campusApproved = approvedHandovers.filter(h => mentorCollegeMap.get(h.originalMentorId) === activeCollegeId);
                     const camMentor = mentors.find(m => 
                       m.email?.toLowerCase() === currentCAM?.email?.toLowerCase() || 
                       m.name?.toLowerCase() === currentCAM?.name?.toLowerCase()
@@ -13663,7 +13855,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {/* Single Download Template Button */}
                           <button
                             type="button"
-                            onClick={() => setShowTemplateModal(true)}
+                            onClick={() => {
+                              if (studentDirDeptFilter && studentDirDeptFilter !== "all") {
+                                setTemplateDept(studentDirDeptFilter);
+                                const newShifts = getAvailableShiftsForCourse(studentDirDeptFilter);
+                                if (!newShifts.includes(templateShift)) {
+                                  setTemplateShift(newShifts[0] || "General");
+                                }
+                              } else if (!templateDept && dbCourseNames.length > 0) {
+                                setTemplateDept(dbCourseNames[0]);
+                              }
+                              setShowTemplateModal(true);
+                            }}
                             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
                             title="Choose course, shift and semester to download template"
                           >
@@ -13752,6 +13955,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 <option key={d} value={d}>{d}</option>
                               ))}
                             </select>
+                            {studentDirDeptFilter !== "all" && (
+                              <CourseInfoButton course={studentDirDeptFilter} collegeId={activeCollegeId} size="xs" />
+                            )}
                           </div>
 
                           {/* Semester Filter */}
@@ -13869,10 +14075,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               s.email?.toLowerCase().includes(studentDirSearch.toLowerCase()) ||
                               s.phone?.includes(studentDirSearch);
 
-                            const stDept = (s.department || "").trim().toLowerCase();
+                            const normDept = (str?: string) => (str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+                            const filterNorm = normDept(studentDirDeptFilter);
                             const matchDept = studentDirDeptFilter === "all" || 
-                              stDept === studentDirDeptFilter.toLowerCase() ||
-                              (s.classGroup && s.classGroup.toLowerCase().includes(studentDirDeptFilter.toLowerCase()));
+                              normDept(s.department) === filterNorm ||
+                              normDept(s.department).includes(filterNorm) ||
+                              filterNorm.includes(normDept(s.department)) ||
+                              (s.classGroup && normDept(s.classGroup).includes(filterNorm));
 
                             const stSemNum = extractSemNum(s.semester) || extractSemNum(s.classGroup);
                             const matchSem = targetSemNum === null || (stSemNum !== null && stSemNum === targetSemNum);
@@ -15708,6 +15917,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         />
                       </div>
 
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase tracking-wider block">Department / Program</label>
+                        <select
+                          required
+                          value={mentorForm.department}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMentorForm({ ...mentorForm, department: val });
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-slate-800"
+                        >
+                          {facultyDepts.map(d => (
+                            <option key={d} value={d}>{d}</option>
+                          ))}
+                        </select>
+                      </div>
+
                        <div className="space-y-1">
                         <label className="text-[10px] text-slate-400 uppercase tracking-wider block">Subject Group / Category</label>
                         <select
@@ -15748,6 +15974,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 const mSubGroup = (mentorForm.subject_group || "").toLowerCase().trim();
                                 const mDept = (mentorForm.department || "").toLowerCase().trim();
                                 const sSubGroup = (s.subject_group || "").toLowerCase().trim();
+                                const sDeptNorm = (s.department || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+                                const mDeptNorm = mDept.replace(/[^a-z0-9]/g, "");
 
                                 if (mSubGroup && sSubGroup) {
                                   // Map CS / Technical
@@ -15763,6 +15991,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   // Direct match
                                   if (sSubGroup === mSubGroup || sSubGroup === mDept) return true;
                                 }
+                                if (sDeptNorm && mDeptNorm && (sDeptNorm === mDeptNorm || sDeptNorm.includes(mDeptNorm) || mDeptNorm.includes(sDeptNorm))) return true;
+                                if (facultyDepts.length === 1) return true;
                                 return s.department.toLowerCase() === mDept;
                               }
                               return matchesSearch;
@@ -16172,13 +16402,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
               {/* Download Student Excel Template Selection Modal */}
               {showTemplateModal && (() => {
-                const campusDeptNames = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
+                const fromCourses = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name.trim()).filter(Boolean);
+                const fromStudents = collegeStudents.map(s => s.department?.trim()).filter(Boolean) as string[];
+                const campusDeptNames = Array.from(new Set([...fromCourses, ...fromStudents])).sort();
                 const deptOptions = campusDeptNames;
                 const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
-                const selectedDept = templateDept || deptOptions[0] || "General";
+                const selectedDept = (templateDept && deptOptions.includes(templateDept))
+                  ? templateDept
+                  : (studentDirDeptFilter && studentDirDeptFilter !== "all" && deptOptions.includes(studentDirDeptFilter))
+                    ? studentDirDeptFilter
+                    : (deptOptions[0] || "General");
 
+                const normSelected = selectedDept.toLowerCase().replace(/[^a-z0-9]/g, "");
                 const selectedCourseObj = (collegeCourses.length > 0 ? collegeCourses : coursesList).find(
-                  c => c.name.trim().toLowerCase() === selectedDept.trim().toLowerCase()
+                  c => c.name.toLowerCase().replace(/[^a-z0-9]/g, "") === normSelected
                 );
 
                 const shiftOptions = getAvailableShiftsForCourse(selectedDept);
@@ -16213,7 +16450,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="space-y-3.5 text-xs">
                         <div>
                           <div className="flex justify-between items-center mb-1">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Course / Department</label>
+                            <div className="flex items-center gap-1.5">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Course / Department</label>
+                              <CourseInfoButton course={selectedDept} collegeId={activeCollegeId} size="xs" />
+                            </div>
                             {selectedCourseObj && (
                               <span className="text-[9.5px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
                                 {selectedCourseObj.shift_based === 1 ? "Shift Based Course" : "Standard Course"}
@@ -16294,7 +16534,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            handleDownloadStudentTemplate(composedClass, selectedShift);
+                            handleDownloadStudentTemplate(composedClass, selectedShift, selectedDept);
                             setShowTemplateModal(false);
                           }}
                           className="px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5 active:scale-95"
@@ -16359,14 +16599,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="p-3 bg-white border border-slate-200 rounded-xl flex flex-col justify-center gap-1.5 shadow-xs sm:col-span-1">
                           <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Target Class Cohort</label>
                           {(() => {
-                            const campusDeptNames = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name);
+                            const fromCourses = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name.trim()).filter(Boolean);
+                            const fromStudents = collegeStudents.map(s => s.department?.trim()).filter(Boolean) as string[];
+                            const campusDeptNames = Array.from(new Set([...fromCourses, ...fromStudents])).sort();
                             const deptOptions = campusDeptNames;
                             const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
                             const current = studentImportPreview.targetClassGroup || "";
 
                             // Sort by length desc so longer matching department name is matched first
                             const sortedDepts = [...deptOptions].sort((a, b) => b.length - a.length);
-                            const currentDept = sortedDepts.find(d => current.toLowerCase().startsWith(d.toLowerCase())) ||
+                            const normCurrent = current.toLowerCase().replace(/[^a-z0-9]/g, "");
+                            const currentDept = sortedDepts.find(d => {
+                              const normD = d.toLowerCase().replace(/[^a-z0-9]/g, "");
+                              return normCurrent.startsWith(normD) || normD === normCurrent || normCurrent.includes(normD);
+                            }) || sortedDepts.find(d => current.toLowerCase().startsWith(d.toLowerCase())) ||
                                                 (deptOptions.includes(current.split(" - ")[0]?.trim()) ? current.split(" - ")[0]?.trim() : "") ||
                                                 deptOptions[0] || "General";
 
@@ -18081,260 +18327,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </div>
               )}
 
-        {/* ── COURSE & BATCH MODAL (ADMIN-GRADE POPUP) ── */}
         {showDeptModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fadeIn">
-            <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden animate-slideUp">
-              {/* Header (Fixed) */}
-              <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
-                <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-                    <Layers className="h-4 w-4 text-indigo-650" />
-                  </div>
-                  {editingDept ? "Edit Course & Batch Details" : "Add Course / Department"}
-                </h3>
-                <button onClick={() => setShowDeptModal(false)} className="p-1.5 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer text-slate-500 hover:text-slate-800">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {/* Scrollable Form Body */}
-              <form onSubmit={handleDeptSubmitModal} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-semibold">
-                {modalError && (
-                  <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
-                    <ShieldAlert className="h-4 w-4 shrink-0" />
-                    {modalError}
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Course / Department Name</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Bachelor of Computer Applications (BCA)"
-                      value={deptForm.name}
-                      onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Course Duration</label>
-                    <select
-                      value={deptForm.years || 3}
-                      onChange={(e) => handleCourseYearsChange(Number(e.target.value))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-slate-800"
-                    >
-                      <option value={1}>1 Year (2 Semesters)</option>
-                      <option value={2}>2 Years (4 Semesters)</option>
-                      <option value={3}>3 Years (6 Semesters)</option>
-                      <option value={4}>4 Years (8 Semesters)</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Status</label>
-                    <select
-                      value={deptForm.status || "Active"}
-                      onChange={(e) => setDeptForm({ ...deptForm, status: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-slate-800"
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
-                  </div>
-
-                  {/* Batch Dates & Batch Years */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Batch Start Date</label>
-                    <input
-                      type="date"
-                      value={deptForm.start_date}
-                      onChange={(e) => handleCourseStartDateChange(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Batch End Date</label>
-                    <input
-                      type="date"
-                      value={deptForm.end_date}
-                      onChange={(e) => setDeptForm({ ...deptForm, end_date: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Batch Start Year</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 2024"
-                      value={deptForm.start_year}
-                      onChange={(e) => setDeptForm({ ...deptForm, start_year: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Batch End Year</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 2027"
-                      value={deptForm.end_year}
-                      onChange={(e) => setDeptForm({ ...deptForm, end_year: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs"
-                    />
-                  </div>
-
-                  {/* Year-wise Classroom Allocations */}
-                  <div className="space-y-3 sm:col-span-2 border-t border-slate-150 pt-4 mt-2">
-                    <h4 className="text-[10px] font-black text-indigo-650 uppercase tracking-wider">
-                      Classroom Allocations (Year-wise)
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {(() => {
-                        const campus = colleges.find(c => c.id === deptForm.college_id);
-                        const campusRooms = campus && campus.rooms ? campus.rooms.split(",").map(r => r.trim()).filter(Boolean) : [];
-
-                        const suggestions = new Set<string>(campusRooms);
-                        coursesList
-                          .filter(d => d.college_id === deptForm.college_id && d.id !== deptForm.id)
-                          .forEach(d => {
-                            if (d.default_room) {
-                              if (d.default_room.startsWith("{")) {
-                                try {
-                                  const parsed = JSON.parse(d.default_room);
-                                  Object.values(parsed).forEach((r: any) => {
-                                    if (r && typeof r === 'string' && r.trim()) {
-                                      suggestions.add(r.trim());
-                                    }
-                                  });
-                                } catch (_) { }
-                              } else {
-                                suggestions.add(d.default_room.trim());
-                              }
-                            }
-                          });
-
-                        const suggestionArray = Array.from(suggestions);
-
-                        return (
-                          <>
-                            {Array.from({ length: Number(deptForm.years || 3) }, (_, idx) => {
-                              const yearNum = idx + 1;
-                              let currentRoom = "";
-                              try {
-                                if (deptForm.default_room && deptForm.default_room.startsWith("{")) {
-                                  const parsed = JSON.parse(deptForm.default_room);
-                                  currentRoom = parsed[yearNum] || "";
-                                } else if (deptForm.default_room && yearNum === 1) {
-                                  currentRoom = deptForm.default_room;
-                                }
-                              } catch (_) { }
-
-                              return (
-                                <div key={yearNum} className="space-y-1">
-                                  <label className="text-[9.5px] text-slate-400 font-bold block uppercase tracking-wider">
-                                    Year {yearNum} Room
-                                  </label>
-                                  <input
-                                    type="text"
-                                    list={`rooms-suggest-modal-${deptForm.college_id || 'none'}`}
-                                    placeholder={`e.g. Room for Year ${yearNum}`}
-                                    value={currentRoom}
-                                    onChange={(e) => handleYearRoomChange(yearNum, e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs font-semibold"
-                                  />
-                                </div>
-                              );
-                            })}
-
-                            {suggestionArray.length > 0 && (
-                              <datalist id={`rooms-suggest-modal-${deptForm.college_id || 'none'}`}>
-                                {suggestionArray.map(r => (
-                                  <option key={r} value={r} />
-                                ))}
-                              </datalist>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Shift Offering</label>
-                    <select
-                      value={deptForm.default_shift || "shift_1"}
-                      onChange={(e) => setDeptForm({ ...deptForm, default_shift: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer text-slate-800"
-                    >
-                      <option value="shift_1">Shift 1 (Day)</option>
-                      <option value="shift_2">Shift 2 (Evening)</option>
-                      <option value="both">Both Shifts (Shift 1 & 2)</option>
-                      <option value="general">General Shift</option>
-                      <option value="all">Both Shifts + General (Shift 1, 2 & General)</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">
-                      Sections <span className="normal-case text-slate-400 font-normal">(Optional, comma separated e.g. A, B, C)</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. A, B"
-                      value={deptForm.sections || ""}
-                      onChange={(e) => setDeptForm({ ...deptForm, sections: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 text-xs font-semibold"
-                    />
-                  </div>
-
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Description</label>
-                    <textarea
-                      placeholder="Enter course summary or notes..."
-                      value={deptForm.description || ""}
-                      onChange={(e) => setDeptForm({ ...deptForm, description: e.target.value })}
-                      rows={2}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 text-slate-800 resize-none font-semibold"
-                    />
-                  </div>
-
-
-                </div>
-
-                {/* Sticky Footer */}
-                <div className="flex justify-end gap-2.5 pt-4 mt-4 border-t border-slate-100 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setShowDeptModal(false)}
-                    className="px-4 py-2 hover:bg-slate-100 text-slate-500 rounded-xl transition-all font-bold cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isDeptSubmitting}
-                    className={`btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer flex items-center justify-center gap-2 ${isDeptSubmitting ? "opacity-75 cursor-not-allowed" : "hover:opacity-95 active:scale-95"
-                      }`}
-                  >
-                    {isDeptSubmitting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin text-white shrink-0" />
-                        <span>{editingDept ? "Saving Changes..." : "Creating Course..."}</span>
-                      </>
-                    ) : (
-                      <span>{editingDept ? "Save Changes" : "Create Course"}</span>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+          <CourseModal
+            isOpen={showDeptModal}
+            onClose={() => setShowDeptModal(false)}
+            editingCourse={editingDept ? (deptForm as any) : null}
+            defaultCollegeId={activeCollegeId}
+            allowCollegeSelect={false}
+            onToast={toast}
+            onSaved={() => {
+              setShowDeptModal(false);
+            }}
+          />
         )}
         {/* ── FACULTY BULK IMPORT PREVIEW MODAL ── */}
         {showFacultyImportModal && facultyImportPreview && (

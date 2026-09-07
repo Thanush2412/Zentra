@@ -27,7 +27,16 @@ export async function POST(request: Request) {
 
     const taskId = id || "t_" + Date.now();
     await db.run(
-      "INSERT OR REPLACE INTO kam_tasks (id, title, collegeId, assigned_cam_id, description, priority, status, dueDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      `INSERT INTO kam_tasks (id, title, collegeId, assigned_cam_id, description, priority, status, dueDate) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET
+         title = EXCLUDED.title,
+         collegeId = EXCLUDED.collegeId,
+         assigned_cam_id = EXCLUDED.assigned_cam_id,
+         description = EXCLUDED.description,
+         priority = EXCLUDED.priority,
+         status = EXCLUDED.status,
+         dueDate = EXCLUDED.dueDate`,
       [taskId, title, collegeId || null, assigned_cam_id || null, description || null, priority || "medium", status || "pending", dueDate]
     );
 

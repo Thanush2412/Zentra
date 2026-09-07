@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     const role = (searchParams.get("role") || "").toLowerCase().trim();
 
     const offset = (page - 1) * limit;
-    let query = "SELECT id, email, role, reference_id, status, plain_password, must_change_password, last_login, created_at, updated_at FROM users WHERE 1=1";
+    let query = "SELECT id, email, role, reference_id, status, must_change_password, last_login, created_at, updated_at FROM users WHERE 1=1";
     let countQuery = "SELECT COUNT(*) as count FROM users WHERE 1=1";
     const params: any[] = [];
     const countParams: any[] = [];
@@ -114,35 +114,35 @@ export async function POST(request: Request) {
 
       if (userRole === "kam") {
         await db.run(
-          `INSERT OR IGNORE INTO kam_users (id, name, email, title) VALUES (?, ?, ?, ?)`,
+          `INSERT INTO kam_users (id, name, email, title) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
           [refId, displayName, cleanEmail, body.title || "Key Account Manager"]
         );
       } else if (userRole === "cam" || userRole === "cm") {
         await db.run(
-          `INSERT OR IGNORE INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
           [refId, displayName, cleanEmail, safeColId, safeKamId]
         );
       } else if (userRole === "mentor") {
         await db.run(
-          `INSERT OR IGNORE INTO mentors (id, name, email, college_id, department, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'Active', ?, ?)`,
+          `INSERT INTO mentors (id, name, email, college_id, department, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'Active', ?, ?) ON CONFLICT (id) DO NOTHING`,
           [refId, displayName, cleanEmail, safeColId, body.department || "Engineering", nowStr, nowStr]
         );
       } else if (userRole === "sme") {
         await db.run(
-          `INSERT OR IGNORE INTO sme_users (id, name, email, department) VALUES (?, ?, ?, ?)`,
+          `INSERT INTO sme_users (id, name, email, department) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
           [refId, displayName, cleanEmail, body.department || "Subject Matter Expert"]
         );
       } else if (userRole === "student") {
         await db.run(
-          `INSERT OR IGNORE INTO students (id, name, email, college_id, department, classGroup, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?)`,
+          `INSERT INTO students (id, name, email, college_id, department, classGroup, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?) ON CONFLICT (id) DO NOTHING`,
           [refId, displayName, cleanEmail, safeColId, body.department || "Engineering", body.classGroup || "General", nowStr, nowStr]
         );
       }
 
       return NextResponse.json({
         success: true,
-        message: `User credential created successfully with initial password '${rawPassword}'.`,
-        user: { id: newId, email: cleanEmail, role: userRole, reference_id: refId, status: userStatus, plain_password: rawPassword }
+        message: "User credential created successfully.",
+        user: { id: newId, email: cleanEmail, role: userRole, reference_id: refId, status: userStatus }
       });
     }
 

@@ -40,6 +40,7 @@ import {
   Menu,
   Download,
   Lock,
+  Unlock,
   Trash2,
   Loader2,
   Award,
@@ -49,7 +50,8 @@ import {
   Edit2,
   Layers,
   ArrowUpRight,
-  Save
+  Save,
+  ArrowRight
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -57,6 +59,7 @@ const InterviewModule = dynamic(() => import("./InterviewModule").then(m => m.In
 const MentorProfileModal = dynamic(() => import("./MentorProfileModal").then(m => m.MentorProfileModal), { ssr: false });
 const MentorExamMarksStudio = dynamic(() => import("./MentorExamMarksStudio").then(m => m.MentorExamMarksStudio), { ssr: false });
 
+import { CourseInfoButton } from "./CourseInfoModal";
 import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, calculateWeekOffsetForDate } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 
@@ -79,7 +82,7 @@ const formatPunchTime = (timeStr?: string | null) => {
 /* ─── Mentor Daily Attendance Punch Widget ─── */
 const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   const { toast } = useToast();
-  const { requests, setRequests, refreshData, colleges } = useApp();
+  const { requests, setRequests, refreshData, colleges, attendanceLockEnabled } = useApp();
   const [loading, setLoading] = useState(true);
   const [punchStatus, setPunchStatus] = useState<string>("Not Punched");
   const [punchTime, setPunchTime] = useState<string | null>(null);
@@ -153,7 +156,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
     );
   }, [requests, mentor.id, todayStr]);
 
-  const isPunchLocked = isDeadlinePassed && punchStatus === "Not Punched" && !approvedLateCamReq;
+  const isPunchLocked = isDeadlinePassed && punchStatus === "Not Punched" && !approvedLateCamReq && attendanceLockEnabled;
 
   const fetchMyAttendance = async () => {
     setLoading(true);
@@ -449,10 +452,18 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
     return incomingCovers.filter(c => c.status === "pending" || c.status === "pending_cam").length;
   }, [incomingCovers]);
 
+  // Helper to format local date as YYYY-MM-DD without UTC timezone skew
+  const formatLocalDateYMD = (d: Date): string => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   // Request form state
   const [requestType, setRequestType] = useState<"Casual Leave" | "Emergency Leave" | "Leave" | "Permission" | "OD">("Casual Leave");
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().split("T")[0]);
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [startDate, setStartDate] = useState(() => formatLocalDateYMD(new Date()));
+  const [endDate, setEndDate] = useState(() => formatLocalDateYMD(new Date()));
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("11:00");
   const [reason, setReason] = useState("");
@@ -467,12 +478,13 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
     const mentorSlots = slots.filter(s => s.mentorId === mentor.id);
     const affected: { dateStr: string; slot: Slot }[] = [];
 
-    const start = new Date(startDate + "T00:00:00");
-    const end = requestType === "Permission" ? start : new Date((endDate || startDate) + "T00:00:00");
+    const [sY, sM, sD] = startDate.split("-").map(Number);
+    const [eY, eM, eD] = (endDate || startDate).split("-").map(Number);
+    const cur = new Date(sY, sM - 1, sD, 12, 0, 0);
+    const end = requestType === "Permission" ? new Date(sY, sM - 1, sD, 12, 0, 0) : new Date(eY, eM - 1, eD, 12, 0, 0);
 
-    let cur = new Date(start);
     while (cur <= end) {
-      const dStr = cur.toISOString().split("T")[0];
+      const dStr = formatLocalDateYMD(cur);
       const weekday = cur.toLocaleDateString("en-US", { weekday: "long" });
       const daySlots = mentorSlots.filter(s => s.day.toLowerCase() === weekday.toLowerCase());
       for (const s of daySlots) {
@@ -909,7 +921,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
                   <th className="p-3">Request Type</th>
                   <th className="p-3">Schedule / Dates</th>
                   <th className="p-3">Mandatory Reason</th>
-                  <th className="p-3">CM Approval Status</th>
+                  <th className="p-3">Approval Status</th>
                   <th className="p-3 text-right">Submitted On</th>
                 </tr>
               </thead>
@@ -934,9 +946,84 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
                         {r.reason}
                       </td>
                       <td className="p-3">
-                        {r.status === "pending" && <span className="px-2.5 py-0.5 rounded-full bg-amber-100/80 text-amber-800 text-[10px] font-black uppercase">Pending CM</span>}
-                        {r.status === "approved" && <span className="px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 text-[10px] font-black uppercase">Approved</span>}
-                        {r.status === "rejected" && <span className="px-2.5 py-0.5 rounded-full bg-rose-100/80 text-rose-800 text-[10px] font-black uppercase">Rejected</span>}
+                        {(() => {
+                          const st = (r.status || "").toLowerCase().trim();
+                          const approver = r.approved_by || r.approvedBy;
+                          const rejReason = r.rejection_reason || r.rejectionReason;
+
+                          if (st === "approved") {
+                            return (
+                              <div className="space-y-0.5">
+                                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 text-[10px] font-black uppercase inline-flex items-center gap-1 shadow-2xs">
+                                  <CheckCircle className="h-3 w-3" />
+                                  Approved
+                                </span>
+                                {approver && (
+                                  <div className="text-[10px] text-slate-500 font-bold">
+                                    {approver}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          if (st === "rejected") {
+                            return (
+                              <div className="space-y-0.5">
+                                <span className="px-2.5 py-0.5 rounded-full bg-rose-100/80 text-rose-800 text-[10px] font-black uppercase inline-flex items-center gap-1 shadow-2xs">
+                                  <XCircle className="h-3 w-3" />
+                                  Rejected
+                                </span>
+                                {rejReason && (
+                                  <div className="text-[10px] text-rose-600 font-medium max-w-[200px] truncate" title={rejReason}>
+                                    {rejReason}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          return (
+                          <div className="space-y-0.5">
+                            {r.covers && r.covers.length > 0 ? (
+                              r.covers.some((c: any) => c.status === "approved") ? (
+                                <div>
+                                  <span className="px-2.5 py-0.5 rounded-full bg-blue-100/80 text-blue-800 text-[10px] font-black uppercase inline-flex items-center gap-1 shadow-2xs">
+                                    <CheckCircle className="h-3 w-3" />
+                                    Cover Accepted
+                                  </span>
+                                  <div className="text-[10px] text-slate-500 font-bold">
+                                    {r.covers.filter((c: any) => c.status === "approved").map((c: any) => c.targetStaffName || c.targetstaffname).join(", ")}
+                                  </div>
+                                </div>
+                              ) : r.covers.some((c: any) => c.status === "rejected") ? (
+                                <div>
+                                  <span className="px-2.5 py-0.5 rounded-full bg-rose-100/80 text-rose-800 text-[10px] font-black uppercase inline-flex items-center gap-1 shadow-2xs">
+                                    <XCircle className="h-3 w-3" />
+                                    Cover Declined
+                                  </span>
+                                  <div className="text-[10px] text-rose-600 font-medium">Please re-select cover</div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <span className="px-2.5 py-0.5 rounded-full bg-amber-100/80 text-amber-800 text-[10px] font-black uppercase inline-flex items-center gap-1 shadow-2xs">
+                                    <Clock className="h-3 w-3" />
+                                    Pending Cover
+                                  </span>
+                                  <div className="text-[10px] text-slate-500 font-bold">
+                                    {r.covers.map((c: any) => c.targetStaffName || c.targetstaffname).join(", ")}
+                                  </div>
+                                </div>
+                              )
+                            ) : (
+                              <span className="px-2.5 py-0.5 rounded-full bg-amber-100/80 text-amber-800 text-[10px] font-black uppercase inline-flex items-center gap-1 shadow-2xs">
+                                <Clock className="h-3 w-3" />
+                                Pending CM
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       </td>
                       <td className="p-3 text-right font-mono text-[10px] text-slate-400">
                         {new Date(r.created_at).toLocaleDateString()}
@@ -1354,7 +1441,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     resolveDemoSwap,
     requestDemoSwap,
     colleges,
-    isDataLoading
+    isDataLoading,
+    attendanceLockEnabled,
+    systemSettings
   } = useApp();
   const { toast, confirm: showConfirm } = useToast();
 
@@ -1362,12 +1451,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
   const [studentLeaveRequests, setStudentLeaveRequests] = useState<any[]>([]);
   const [isFetchingLeaveReqs, setIsFetchingLeaveReqs] = useState(false);
+  const [mentorLeaveActiveSubTab, setMentorLeaveActiveSubTab] = useState<"student_leaves" | "faculty_leaves">("student_leaves");
+  const [studentLeaveStatusFilter, setStudentLeaveStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
+  const [studentLeaveSearch, setStudentLeaveSearch] = useState("");
 
-  const fetchStudentLeaveRequests = async () => {
-    if (!currentMentor?.college_id) return;
+  const fetchStudentLeaveRequests = useCallback(async () => {
     setIsFetchingLeaveReqs(true);
     try {
-      const res = await fetch(`/api/requests/leave?college_id=${encodeURIComponent(currentMentor.college_id)}`);
+      const params = new URLSearchParams();
+      if (currentMentor?.college_id) params.set("college_id", currentMentor.college_id);
+      const res = await fetch(`/api/requests/leave?${params.toString()}`);
       const data = await res.json();
       if (data.success) {
         setStudentLeaveRequests(data.requests || []);
@@ -1377,7 +1470,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     } finally {
       setIsFetchingLeaveReqs(false);
     }
-  };
+  }, [currentMentor?.college_id]);
 
   const handleResolveStudentLeave = async (requestId: string, status: "approved" | "rejected") => {
     try {
@@ -1445,10 +1538,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   };
 
   useEffect(() => {
-    if (currentMentor?.college_id) {
-      fetchStudentLeaveRequests();
-    }
-  }, [currentMentor?.college_id]);
+    fetchStudentLeaveRequests();
+  }, [fetchStudentLeaveRequests]);
 
   // Reset week offset on mount
   useEffect(() => {
@@ -2275,6 +2366,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   };
 
   const checkAttendanceWindow = (dateStr: string, timeStr: string) => {
+    // If Admin has disabled attendance mark lock, past periods remain open for marking
+    if (!attendanceLockEnabled) {
+      const startTime = parseSlotStartTimeForDate(timeStr, dateStr);
+      const now = new Date();
+      if (startTime && now < startTime) {
+        return { open: false, reason: "future", message: "Class has not started yet." };
+      }
+      return { open: true };
+    }
+
     const startTime = parseSlotStartTimeForDate(timeStr, dateStr);
     const endTime = parseSlotEndTimeForDate(timeStr, dateStr);
     if (!startTime || !endTime) return { open: true };
@@ -2576,8 +2677,51 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   // Timetable hours (own slots)
   const targetMinutes = useMemo(() => mySlots.reduce((acc, s) => acc + parseSlotMinutes(s.time), 0), [mySlots]);
 
+  // O(1) Lookup Map for Daily Configs (Eliminates repeated array scans)
+  const dailyConfigsMap = useMemo(() => {
+    const m = new Map<string, any>();
+    (dailyConfigsList || []).forEach((c: any) => {
+      if (c && c.dateStr) m.set(c.dateStr, c);
+    });
+    return m;
+  }, [dailyConfigsList]);
+
+  // Ensure Saturday is dynamically included in weekDates whenever 6-day working, Saturday slots exist, or Saturday has daily config
+  const effectiveWeekDates = useMemo(() => {
+    if (weekDates.length >= 6) return weekDates;
+    if (weekDates.length === 0) return weekDates;
+
+    const mon = new Date(weekDates[0].dateStr);
+    const sat = new Date(mon);
+    sat.setDate(mon.getDate() + 5);
+    const satDateStr = sat.toISOString().split("T")[0];
+
+    const hasSatConfig = (() => {
+      const c = dailyConfigsMap.get(satDateStr);
+      if (!c) return false;
+      return (c.day_order && c.day_order !== "None") || c.day_type === "working" || c.day_type === "regular" || c.day_type === "event" || c.day_type === "exam_day";
+    })();
+
+    const hasSatSlots = mySlots.some(s => s.day === "Saturday");
+    const activeCollege = colleges.find(c => c.id === currentMentor?.college_id);
+    const is6DaysCollege = Number(activeCollege?.working_days) === 6;
+
+    if (is6DaysCollege || hasSatSlots || hasSatConfig) {
+      return [
+        ...weekDates,
+        {
+          day: "Saturday",
+          dateStr: satDateStr,
+          formatted: sat.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+        }
+      ];
+    }
+
+    return weekDates;
+  }, [weekDates, dailyConfigsMap, mySlots, colleges, currentMentor]);
+
   // Extra coverage hours for the current week (from approved handovers scheduled in this week's dates)
-  const currentWeekDateStrings = useMemo(() => weekDates.map(d => d.dateStr), [weekDates]);
+  const currentWeekDateStrings = useMemo(() => effectiveWeekDates.map(d => d.dateStr), [effectiveWeekDates]);
   const currentWeekCoveredHandovers = useMemo(() => approvedHandovers.filter(
     h => h.coverStaffId === currentMentor.id && currentWeekDateStrings.includes(h.dateStr)
   ), [approvedHandovers, currentMentor.id, currentWeekDateStrings]);
@@ -2681,14 +2825,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     ]));
   }, [currentMentor.subjects, mySlots, currentWeekCoveredSlots, subjectsList]);
 
-  // O(1) Lookup Map for Daily Configs (Eliminates repeated array scans)
-  const dailyConfigsMap = useMemo(() => {
-    const m = new Map<string, any>();
-    (dailyConfigsList || []).forEach((c: any) => {
-      if (c && c.dateStr) m.set(c.dateStr, c);
-    });
-    return m;
-  }, [dailyConfigsList]);
+
 
   // Helper to resolve the active day for a calendar date, accounting for CAM Day Order overrides (O(1))
   const getMappedDayForDate = (dateStr: string, defaultDay: string) => {
@@ -2700,7 +2837,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
 
     if (dailyConfig && dailyConfig.day_order && dailyConfig.day_order !== "None") {
-      const match = dailyConfig.day_order.match(/^Day (\d+)$/);
+      const match = dailyConfig.day_order.match(/^Day (\d+)$/i);
       if (match) {
         const orderNum = parseInt(match[1], 10);
         const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -2709,11 +2846,59 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         }
       }
     }
+
+    // If Saturday, check if explicit Saturday slots exist. If not, map to Friday for 6-day schedules
+    if (defaultDay === "Saturday") {
+      const hasDirectSatSlots = mySlots.some(s => s.day === "Saturday");
+      if (!hasDirectSatSlots) {
+        return "Friday";
+      }
+    }
+
     return defaultDay;
   };
 
+  // ── O(1) High-Performance Fast-Lookup Structures (Eliminates 540,000,000 inner render scans) ──
+  const markedAttendanceKeySet = useMemo(() => {
+    const set = new Set<string>();
+    (studentAttendance || []).forEach(a => {
+      if (a.slotId && a.dateStr) {
+        set.add(`${a.slotId}|${a.dateStr}`);
+      }
+    });
+    return set;
+  }, [studentAttendance]);
+
+  const approvedHandoverSet = useMemo(() => {
+    const set = new Set<string>();
+    (approvedHandovers || []).forEach(h => {
+      if (h.slotId && h.dateStr) {
+        set.add(`${h.slotId}|${h.dateStr}`);
+      }
+    });
+    return set;
+  }, [approvedHandovers]);
+
+  const pendingHandoverMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (requests || []).forEach(r => {
+      if (r.status === "pending" && r.slotId && r.dateStr) {
+        map.set(`${r.slotId}|${r.dateStr}`, r);
+      }
+    });
+    return map;
+  }, [requests]);
+
+  const slotByIdMap = useMemo(() => {
+    const map = new Map<string, Slot>();
+    (slots || []).forEach(s => {
+      if (s.id) map.set(s.id, s);
+    });
+    return map;
+  }, [slots]);
+
   const getAgendaClassesForDay = (dayName: string) => {
-    const dateObj = weekDates.find(d => d.day === dayName);
+    const dateObj = effectiveWeekDates.find(d => d.day === dayName);
     const dateStr = dateObj ? dateObj.dateStr : "";
 
     const queryDay = getMappedDayForDate(dateStr, dayName);
@@ -2728,11 +2913,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
     // Filter out slots that have been handed over to someone else on this date
     const activeOwnClasses = ownSlots.map(slot => {
-      const isHandedOver = approvedHandovers.some(h => h.slotId === slot.id && h.dateStr === dateStr);
-      const pendingHandover = requests.find(r => r.slotId === slot.id && r.dateStr === dateStr && r.status === "pending");
-      const hasAttendance = isExam
-        ? studentAttendance.some(a => a.dateStr === dateStr && (a.slotId === slot.id || (slot.classGroup && isCohortMatch((a as any).classGroup || slots.find(s => s.id === a.slotId)?.classGroup, slot.classGroup))))
-        : studentAttendance.some(a => a.slotId === slot.id && a.dateStr === dateStr);
+      const isHandedOver = approvedHandoverSet.has(`${slot.id}|${dateStr}`);
+      const pendingHandover = pendingHandoverMap.get(`${slot.id}|${dateStr}`) || null;
+      const hasAttendance = markedAttendanceKeySet.has(`${slot.id}|${dateStr}`);
 
       return {
         slot,
@@ -2747,12 +2930,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     // 2. Covered slots (handed over to us on this date)
     const coveredHandovers = approvedHandovers.filter(h => h.coverStaffId === currentMentor.id && h.dateStr === dateStr);
     const activeCoverClasses = coveredHandovers.map(h => {
-      const slot = slots.find(s => s.id === h.slotId);
-      const hasAttendance = slot
-        ? (isExam
-            ? studentAttendance.some(a => a.dateStr === dateStr && (a.slotId === slot.id || (slot.classGroup && isCohortMatch((a as any).classGroup || slots.find(s => s.id === a.slotId)?.classGroup, slot.classGroup))))
-            : studentAttendance.some(a => a.slotId === slot.id && a.dateStr === dateStr))
-        : false;
+      const slot = slotByIdMap.get(h.slotId);
+      const hasAttendance = slot ? markedAttendanceKeySet.has(`${slot.id}|${dateStr}`) : false;
       return {
         slot,
         type: "covering" as const,
@@ -2925,7 +3104,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     const list: { slot: Slot; day: string; dateStr: string; dateFormatted: string; type: "own" | "covering" | "demo"; status: "active" | "pending" | "handover"; originalMentorId?: string }[] = [];
 
     // Check all dates and times
-    weekDates.forEach((date) => {
+    effectiveWeekDates.forEach((date) => {
       timeSlots.forEach((time) => {
         const slotResult = getSlotAt(date.day, date.dateStr, time);
         if (slotResult) {
@@ -2963,7 +3142,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   // Memoize agenda classes for the selected day
   const agendaClasses = useMemo(() => getAgendaClassesForDay(agendaDay), [
     agendaDay, mySlots, approvedHandovers, requests, studentAttendance, demoSessions,
-    weekDates, currentMentor.id, dailyConfigsMap
+    effectiveWeekDates, currentMentor.id, dailyConfigsMap
   ]);
 
   // Pre-computed late attendance CAM request lookup sets — avoid per-cell array scans in timetable JSX
@@ -3029,7 +3208,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       }
     });
 
-    weekDates.forEach(date => {
+    effectiveWeekDates.forEach(date => {
       timeSlots.forEach(time => {
         const queryDay = getMappedDayForDate(date.dateStr, date.day);
         if (queryDay === "holiday") {
@@ -3131,7 +3310,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       });
     });
     return map;
-  }, [weekDates, timeSlots, mySlots, approvedHandovers, requests, studentAttendance, demoSessions, mentorExamsList,
+  }, [effectiveWeekDates, timeSlots, mySlots, approvedHandovers, requests, studentAttendance, demoSessions, mentorExamsList,
     currentMentor.id, currentMentor.college_id, slotsByIdMap, dailyConfigsMap,
     selectedClassFilter, selectedStatusFilter, selectedLocationFilter]);
 
@@ -3140,13 +3319,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
   const isFilterActive = selectedClassFilter !== null || selectedStatusFilter !== null || selectedLocationFilter !== null;
   const filteredSlotsList = useMemo(() => isFilterActive ? getFilteredSlotsList() : [], [
-    isFilterActive, weekDates, timeSlots, mySlots, requests, approvedHandovers, demoSessions,
+    isFilterActive, effectiveWeekDates, timeSlots, mySlots, requests, approvedHandovers, demoSessions,
     selectedClassFilter, selectedStatusFilter, selectedLocationFilter, slotsByIdMap,
     currentMentor.id, dailyConfigsMap
   ]);
 
   const hasMatchingSlotInRow = (time: string) => {
-    return weekDates.some((date) => {
+    return effectiveWeekDates.some((date) => {
       const slotResult = getSlotAt(date.day, date.dateStr, time);
       return slotResult !== null;
     });
@@ -3645,6 +3824,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         const getNotificationCount = (tabId: string) => {
           if (tabId === "handovers" && currentMentor) {
             return sidebarNotificationCount;
+          }
+          if (tabId === "leave_requests") {
+            return (studentLeaveRequests || []).filter(r => r.status === "pending").length;
           }
           return 0;
         };
@@ -4489,7 +4671,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </button>
                   <span className="text-[10px] font-bold text-gray-755 px-2 min-w-[130px] text-center select-none">
-                    {weekDates.some(d => d.dateStr === new Date().toISOString().slice(0, 10)) ? "Current Week" : `${weekDates[0]?.formatted} – ${weekDates[weekDates.length - 1]?.formatted}`}
+                    {effectiveWeekDates.some(d => d.dateStr === new Date().toISOString().slice(0, 10)) ? "Current Week" : `${effectiveWeekDates[0]?.formatted} – ${effectiveWeekDates[effectiveWeekDates.length - 1]?.formatted}`}
                   </span>
                   <button
                     type="button"
@@ -4667,7 +4849,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-150 bg-white">
-                  {weekDates.map((date) => {
+                  {effectiveWeekDates.map((date) => {
                     return (
                       <tr key={date.day} className="h-24 hover:bg-gray-55/10 transition-colors">
                         {/* First Cell: Day / Date */}
@@ -4683,6 +4865,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             {(() => {
                               const cfg = dailyConfigsMap.get(date.dateStr);
                               if (!cfg || !cfg.day_type) {
+                                if (date.day === "Saturday") {
+                                  return (
+                                    <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-teal-50 text-teal-700 border border-teal-200 shrink-0 text-center leading-tight" title="Mapped to Friday Timetable">
+                                      Fri Mapping
+                                    </span>
+                                  );
+                                }
                                 return (
                                   <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200 shrink-0 text-center leading-tight" title="Day order not configured by CAM">
                                     No Order
@@ -5471,8 +5660,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-150 text-[9px] font-black text-slate-700 uppercase">
                       Faculty Mentor
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-150 text-[9px] font-black text-slate-700 uppercase">
-                      {currentMentor.mentor_group}
+                    <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-150 text-[9px] font-black text-slate-700 uppercase inline-flex items-center gap-1">
+                      <span>{currentMentor.mentor_group}</span>
+                      <CourseInfoButton course={currentMentor.mentor_group} collegeId={currentMentor.college_id} size="xs" />
                     </span>
                   </div>
                 </div>
@@ -5888,7 +6078,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const camKey = `${selectedCell.slot.id}|${selectedCell.dateStr}`;
           const hasCAMApproval = lateAttendanceCamApprovedSet.has(camKey);
           const pendingLateCamReq = lateAttendanceCamPendingSet.has(camKey);
-          const isLocked = !windowCheck.open && windowCheck.reason === "expired" && !hasCAMApproval;
+          const isLocked = attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired" && !hasCAMApproval;
           const approvedReq = approvedHandovers.find(h => h.slotId === selectedCell.slot!.id && h.dateStr === selectedCell.dateStr);
 
           return (
@@ -6140,14 +6330,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const todayStr = `${y}-${m}-${d}`;
 
           const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
-          const isLocked = !windowCheck.open && windowCheck.reason === "expired";
+          const isLocked = attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired";
           
           // Check if CAM has approved late attendance edit for this session
           const camKey = `${selectedCell.slot.id}|${selectedCell.dateStr}`;
           const hasCAMApproval = lateAttendanceCamApprovedSet.has(camKey);
           
-          // Allow editing if: window is open OR has CAM approval for late edit
-          const isPastDay = (selectedCell.dateStr < todayStr || isLocked) && !hasCAMApproval;
+          // Allow editing if: lock is disabled OR window is open OR has CAM approval for late edit
+          const isPastDay = attendanceLockEnabled && ((selectedCell.dateStr < todayStr || isLocked) && !hasCAMApproval);
 
           const presentCount = classStudents.filter(s => (localAttendance[s.id] || "present") === "present").length;
           const absentCount = classStudents.filter(s => localAttendance[s.id] === "absent").length;
@@ -6193,7 +6383,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             // ── End day config guard ──────────────────────────────────────
 
             const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
-            if (!windowCheck.open && windowCheck.reason === "expired") {
+            if (attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired" && !hasCAMApproval) {
               setFormError(windowCheck.message || "Attendance window is closed.");
               return;
             }
@@ -6266,6 +6456,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             CAM Approved
                           </span>
                         )}
+                        {!attendanceLockEnabled && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase tracking-wider flex items-center gap-1">
+                            <Unlock className="w-3 h-3" /> Lock Disabled by Admin
+                          </span>
+                        )}
                         <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
                           {deptShort || "Class"}
                         </span>
@@ -6292,6 +6487,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <X className="w-5 h-5" />
                   </button>
                 </div>
+
+                {/* Lock Disabled by Admin Banner */}
+                {!attendanceLockEnabled && (
+                  <div className="px-5 py-2 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2 shrink-0 text-emerald-800 text-xs font-semibold">
+                    <Unlock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Attendance Marking Lock is currently disabled by Administrator. Retroactive and past period marking is open.</span>
+                  </div>
+                )}
 
                 {/* Day Config Status Banner */}
                 {!isDayConfigSet && (
@@ -7081,7 +7284,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <div className="flex flex-col md:items-end text-[10px] text-slate-500 font-medium gap-1 shrink-0 border-t md:border-t-0 pt-2 md:pt-0 border-slate-100">
                           {(() => {
                             const assigned = parseDbDate(currentTask.created_at || currentTask.updated_at);
-                            const deadline = new Date(assigned.getTime() + 3 * 24 * 60 * 60 * 1000);
+                            const deadline = new Date(assigned.getTime() + 7 * 24 * 60 * 60 * 1000);
                             const isExpired = new Date() > deadline;
                             return (
                               <>
@@ -7092,7 +7295,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 <div className="flex items-center gap-1">
                                   <span className="text-slate-400 font-semibold">Submission Deadline:</span>
                                   <span className={`font-extrabold ${isExpired ? "text-rose-600" : "text-emerald-600"}`}>
-                                    {deadline.toLocaleDateString()} ({isExpired ? "Expired" : "3 Days"})
+                                    {deadline.toLocaleDateString()}{isExpired ? " (Expired)" : ""}
                                   </span>
                                 </div>
                               </>
@@ -7686,9 +7889,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 </div>
                               </div>
 
-                              <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-center justify-between text-[11px] text-rose-700 font-medium">
-                                <span>Deadline: <strong className="font-extrabold">3 Days from Assignment</strong></span>
-                                <span className="px-2 py-0.5 bg-rose-100 font-bold rounded-lg uppercase tracking-wider text-[9px]">
+                              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-[11px] text-slate-700 font-medium">
+                                <span>Deadline: <strong className="font-extrabold text-slate-900">1 Week from Assignment</strong></span>
+                                <span className="px-2 py-0.5 bg-slate-200/80 text-slate-700 font-bold rounded-lg uppercase tracking-wider text-[9px]">
                                   {trackerWeek % 2 === 0 ? "ASSESSMENT WEEK" : "REGULAR WEEK"}
                                 </span>
                               </div>
@@ -8118,7 +8321,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Select Academic Subject to Filter</span>
-                      <span className="text-xs font-bold text-slate-500">{currentMentor.name} • {currentMentor.mentor_group || "Faculty"}</span>
+                      <span className="text-xs font-bold text-slate-500 inline-flex items-center gap-1.5">
+                        <span>{currentMentor.name} • {currentMentor.mentor_group || "Faculty"}</span>
+                        {currentMentor.mentor_group && (
+                          <CourseInfoButton course={currentMentor.mentor_group} collegeId={currentMentor.college_id} size="xs" />
+                        )}
+                      </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -10171,7 +10379,239 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         {/* Tab: Leave & Permissions */}
         {activeTab === "leave_requests" && currentMentor && (
           <div className="space-y-6 font-sans">
-            <MentorFacultyLeavePanel mentor={currentMentor} slots={slots} />
+            {/* Top Sub-Tab Switcher */}
+            <div className="flex items-center justify-between flex-wrap gap-3 pb-2 border-b border-slate-200">
+              <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setMentorLeaveActiveSubTab("student_leaves")}
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                    mentorLeaveActiveSubTab === "student_leaves"
+                      ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <Users className="h-4 w-4" />
+                  <span>Student Leave & OD Requests</span>
+                  {studentLeaveRequests.filter(r => r.status === "pending").length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white">
+                      {studentLeaveRequests.filter(r => r.status === "pending").length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMentorLeaveActiveSubTab("faculty_leaves")}
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                    mentorLeaveActiveSubTab === "faculty_leaves"
+                      ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <UserCheck className="h-4 w-4" />
+                  <span>My Faculty Applications & Covers</span>
+                </button>
+              </div>
+
+              {mentorLeaveActiveSubTab === "student_leaves" && (
+                <button
+                  type="button"
+                  onClick={fetchStudentLeaveRequests}
+                  disabled={isFetchingLeaveReqs}
+                  className="px-3.5 py-2 text-xs font-bold rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isFetchingLeaveReqs ? "animate-spin" : ""}`} />
+                  <span>Refresh List</span>
+                </button>
+              )}
+            </div>
+
+            {/* Sub-tab 1: Student Leave & OD Approvals */}
+            {mentorLeaveActiveSubTab === "student_leaves" && (
+              <div className="space-y-4">
+                {/* Header with Stats & Filter Toolbar */}
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                  <div className="flex justify-between items-center flex-wrap gap-3">
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                        <ClipboardList className="h-5 w-5 text-indigo-600" />
+                        Student Leave & On-Duty (OD) Approvals
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1 font-medium">
+                        Review leave applications submitted by students. Approved requests automatically update student attendance records as Excused/OD.
+                      </p>
+                    </div>
+
+                    {/* Filter Pills */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(['all', 'pending', 'approved', 'rejected'] as const).map((st) => {
+                        const count = st === 'all'
+                          ? studentLeaveRequests.length
+                          : studentLeaveRequests.filter(r => r.status === st).length;
+                        return (
+                          <button
+                            key={st}
+                            type="button"
+                            onClick={() => setStudentLeaveStatusFilter(st)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                              studentLeaveStatusFilter === st
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            <span className="capitalize">{st === 'all' ? 'All' : st}</span>
+                            <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                              studentLeaveStatusFilter === st ? 'bg-white/20 text-white' : 'bg-white text-slate-700'
+                            }`}>
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search by student name, roll number, class group, or reason..."
+                      value={studentLeaveSearch}
+                      onChange={(e) => setStudentLeaveSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                {/* Requests Table */}
+                {(() => {
+                  const filtered = studentLeaveRequests.filter((req) => {
+                    const matchStatus = studentLeaveStatusFilter === 'all' || req.status === studentLeaveStatusFilter;
+                    const q = studentLeaveSearch.toLowerCase().trim();
+                    const matchSearch = !q ||
+                      req.studentName?.toLowerCase().includes(q) ||
+                      req.classGroup?.toLowerCase().includes(q) ||
+                      req.reason?.toLowerCase().includes(q) ||
+                      req.studentEmail?.toLowerCase().includes(q) ||
+                      req.studentRollNo?.toLowerCase().includes(q);
+                    return matchStatus && matchSearch;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="text-center py-12 border border-slate-200 rounded-2xl bg-white shadow-xs space-y-3">
+                        <div className="h-12 w-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                          <CheckCircle className="h-6 w-6" />
+                        </div>
+                        <p className="text-xs text-slate-500 font-bold">
+                          {studentLeaveSearch || studentLeaveStatusFilter !== 'all'
+                            ? 'No requests match your current filters.'
+                            : 'No student leave or OD requests submitted yet.'}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
+                      <table className="w-full border-collapse text-left text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px]">
+                            <th className="p-3.5">Student</th>
+                            <th className="p-3.5">Class Group</th>
+                            <th className="p-3.5">Type</th>
+                            <th className="p-3.5">Leave Date</th>
+                            <th className="p-3.5">Reason</th>
+                            <th className="p-3.5">Submitted</th>
+                            <th className="p-3.5">Status</th>
+                            <th className="p-3.5 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filtered.map((req) => (
+                            <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="p-3.5">
+                                <span className="font-black text-slate-900 block">{req.studentName}</span>
+                                <span className="text-slate-400 text-[10px] font-medium block">
+                                  {req.studentEmail || req.studentRollNo || req.studentId}
+                                </span>
+                              </td>
+                              <td className="p-3.5 font-bold text-indigo-600">
+                                {req.classGroup}
+                              </td>
+                              <td className="p-3.5">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase border ${
+                                  req.type?.toLowerCase() === 'od'
+                                    ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}>
+                                  {req.type?.toUpperCase() === 'OD' ? 'On-Duty' : 'Leave'}
+                                </span>
+                              </td>
+                              <td className="p-3.5 font-bold text-slate-800 whitespace-nowrap">
+                                {req.dateStr}
+                              </td>
+                              <td className="p-3.5 text-slate-600 max-w-[240px] truncate font-medium" title={req.reason}>
+                                {req.reason}
+                              </td>
+                              <td className="p-3.5 text-slate-400 text-[10px] whitespace-nowrap">
+                                {formatDate(req.timestamp)}
+                              </td>
+                              <td className="p-3.5">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                                  req.status === 'approved'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : req.status === 'rejected'
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {req.status}
+                                </span>
+                                {req.approvedBy && (
+                                  <span className="block text-[9px] text-slate-400 font-medium mt-0.5">
+                                    By: {req.approvedBy}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3.5 text-right whitespace-nowrap">
+                                {req.status === 'pending' ? (
+                                  <div className="flex justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleResolveStudentLeave(req.id, 'approved')}
+                                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black shadow-xs transition-all cursor-pointer"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleResolveStudentLeave(req.id, 'rejected')}
+                                      className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-black shadow-xs transition-all cursor-pointer"
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 font-medium italic">
+                                    Resolved
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Sub-tab 2: Faculty Leave Panel */}
+            {mentorLeaveActiveSubTab === "faculty_leaves" && (
+              <MentorFacultyLeavePanel mentor={currentMentor} slots={slots} />
+            )}
           </div>
         )}
 

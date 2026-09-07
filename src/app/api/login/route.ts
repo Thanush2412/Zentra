@@ -44,7 +44,14 @@ export async function POST(request: Request) {
       const newHashed = hashPassword(password);
       if (!user) {
         await db.run(
-          "INSERT OR REPLACE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          `INSERT INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET
+             email = EXCLUDED.email,
+             password_hash = EXCLUDED.password_hash,
+             role = EXCLUDED.role,
+             reference_id = EXCLUDED.reference_id,
+             updated_at = EXCLUDED.updated_at`,
           ["admin_thanush", lowerEmail, newHashed, "admin", "admin_thanush", new Date().toISOString(), new Date().toISOString()]
         );
         user = { id: "admin_thanush", email: lowerEmail, role: "admin", reference_id: "admin_thanush", password_hash: newHashed };
@@ -102,7 +109,14 @@ export async function POST(request: Request) {
           const newHashed = hashPassword(password);
           const newId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
           await db.run(
-            "INSERT OR REPLACE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            `INSERT INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (id) DO UPDATE SET
+               email = EXCLUDED.email,
+               password_hash = EXCLUDED.password_hash,
+               role = EXCLUDED.role,
+               reference_id = EXCLUDED.reference_id,
+               updated_at = EXCLUDED.updated_at`,
             [newId, resolvedEmail, newHashed, foundRole, refId, new Date().toISOString(), new Date().toISOString()]
           );
           user = { id: newId, email: resolvedEmail, password_hash: newHashed, role: foundRole, reference_id: refId };

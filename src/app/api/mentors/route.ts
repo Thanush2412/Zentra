@@ -105,8 +105,15 @@ export async function PUT(request: Request) {
     // Create or update centralized users table entry
     const now = new Date().toISOString();
     await db.run(
-      `INSERT OR REPLACE INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET
+         email = EXCLUDED.email,
+         password_hash = EXCLUDED.password_hash,
+         role = EXCLUDED.role,
+         reference_id = EXCLUDED.reference_id,
+         status = EXCLUDED.status,
+         updated_at = EXCLUDED.updated_at`,
       [id, cleanEmail, passHashToKeep, "mentor", id, "Active", now, now]
     );
 

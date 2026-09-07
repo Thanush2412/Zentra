@@ -92,10 +92,27 @@ export async function GET(request: Request) {
 
     query += " ORDER BY date DESC, period_slot ASC LIMIT 500";
 
+    let weeklyTasksPromise;
+    let studentTrackerPromise;
+
+    if (collegeId && collegeId !== "all") {
+      weeklyTasksPromise = db.all(
+        "SELECT * FROM weekly_academic_tasks WHERE class_group IN (SELECT DISTINCT classGroup FROM students WHERE college_id = ?)",
+        collegeId
+      ).catch(() => []);
+      studentTrackerPromise = db.all(
+        "SELECT * FROM student_academic_tracker WHERE class_group IN (SELECT DISTINCT classGroup FROM students WHERE college_id = ?)",
+        collegeId
+      ).catch(() => []);
+    } else {
+      weeklyTasksPromise = db.all("SELECT * FROM weekly_academic_tasks").catch(() => []);
+      studentTrackerPromise = db.all("SELECT * FROM student_academic_tracker").catch(() => []);
+    }
+
     const [entries, weeklyTasks, studentTracker] = await Promise.all([
       db.all(query, ...params).catch(() => []),
-      db.all("SELECT * FROM weekly_academic_tasks").catch(() => []),
-      db.all("SELECT * FROM student_academic_tracker").catch(() => [])
+      weeklyTasksPromise,
+      studentTrackerPromise
     ]);
 
     return NextResponse.json({

@@ -15,11 +15,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
-    // Resolve college_id from mentor if not passed
+    // Resolve college_id from mentor or database if not passed
     let resolvedCollegeId = college_id;
     if (!resolvedCollegeId) {
       const mentorObj = await db.get("SELECT college_id FROM mentors WHERE id = ?", mentorId);
-      resolvedCollegeId = mentorObj?.college_id || "college_1";
+      if (mentorObj?.college_id) {
+        resolvedCollegeId = mentorObj.college_id;
+      } else {
+        const firstCol = await db.get("SELECT id FROM colleges ORDER BY id ASC LIMIT 1");
+        resolvedCollegeId = firstCol?.id || null;
+      }
     }
 
     const cleanLocation = location.trim();
@@ -224,7 +229,12 @@ export async function PUT(request: Request) {
     let resolvedCollegeId = college_id;
     if (!resolvedCollegeId) {
       const mentorObj = await db.get("SELECT college_id FROM mentors WHERE id = ?", mentorId);
-      resolvedCollegeId = mentorObj?.college_id || "college_1";
+      if (mentorObj?.college_id) {
+        resolvedCollegeId = mentorObj.college_id;
+      } else {
+        const firstCol = await db.get("SELECT id FROM colleges ORDER BY id ASC LIMIT 1");
+        resolvedCollegeId = firstCol?.id || null;
+      }
     }
 
     const cleanLocation = location.trim();

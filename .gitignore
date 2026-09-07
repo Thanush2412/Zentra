@@ -30,18 +30,29 @@ scratch_*.ts
 /tmp/
 /temp/
 landmarks.txt
+hello.txt
 Code.gs
 /data/
 Naveen htmls/
 "Naveen htmls"/
+naveen HTMLS/
+"naveen HTMLS"/
+[Nn]aveen [Hh][Tt][Mm][Ll][Ss]/
 
 # Backups & SQL Dumps
 backups/
 /backups/
+migration_backup/
+/migration_backup/
 *.sql
 !postgres_schema.sql
 *.sql.bak
 local_backup.sql
+
+# Office & Drawing Temporary Files
+~$*
+*.drawio.bkp
+*.drawio.dtmp
 
 # Temporary Test, Debug, Benchmark & Scratch Scripts
 test-*.js

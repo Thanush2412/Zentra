@@ -72,9 +72,23 @@ export async function POST(request: Request) {
     const materialId = id || `mat_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
     await db.run(
-      `INSERT OR REPLACE INTO subject_materials (
+      `INSERT INTO subject_materials (
         id, subject, unit_number, title, description, material_type, file_url, external_url, file_size, uploaded_by, mentor_id, class_group, college_id, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      ON CONFLICT (id) DO UPDATE SET
+        subject = EXCLUDED.subject,
+        unit_number = EXCLUDED.unit_number,
+        title = EXCLUDED.title,
+        description = EXCLUDED.description,
+        material_type = EXCLUDED.material_type,
+        file_url = EXCLUDED.file_url,
+        external_url = EXCLUDED.external_url,
+        file_size = EXCLUDED.file_size,
+        uploaded_by = EXCLUDED.uploaded_by,
+        mentor_id = EXCLUDED.mentor_id,
+        class_group = EXCLUDED.class_group,
+        college_id = EXCLUDED.college_id,
+        updated_at = NOW()`,
       [
         materialId,
         subject,

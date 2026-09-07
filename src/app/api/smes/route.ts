@@ -104,12 +104,22 @@ export async function PUT(request: Request) {
       // Clean old credentials associated with this email (excluding current SME ID)
       await db.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, id]);
 
+      const existingUser = await db.get("SELECT password_hash FROM users WHERE role = 'sme' AND reference_id = ?", id);
+      const passHashToKeep = existingUser?.password_hash || "password123";
+
       // Create or update centralized users table entry
       const now = new Date().toISOString();
       await db.run(
-        `INSERT OR REPLACE INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, cleanEmail, "password123", "sme", id, "Active", now, now]
+        `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           email = EXCLUDED.email,
+           password_hash = EXCLUDED.password_hash,
+           role = EXCLUDED.role,
+           reference_id = EXCLUDED.reference_id,
+           status = EXCLUDED.status,
+           updated_at = EXCLUDED.updated_at`,
+        [id, cleanEmail, passHashToKeep, "sme", id, "Active", now, now]
       );
     } else {
       // Partial update (just group name mapping)

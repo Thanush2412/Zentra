@@ -85,13 +85,14 @@ export async function POST(request: Request) {
 
     // Audit Log Entry
     await db.run(
-      `INSERT INTO audit_logs (id, timestamp, action, user_name, details) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
       [
-        `audit_${Date.now()}`,
-        now,
-        `Approval Requested: ${module_type}`,
+        `audit_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        "approval_request",
+        `Created pending approval for request ${request_id} (${module_type})`,
         requester_name,
-        `Created pending approval for request ${request_id}`
+        "Requester",
+        now
       ]
     );
 
@@ -231,13 +232,14 @@ export async function PUT(request: Request) {
 
     // Audit Log Entry
     await db.run(
-      `INSERT INTO audit_logs (id, timestamp, action, user_name, details) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
       [
-        `audit_${Date.now()}`,
-        now,
-        `Approval Resolved: ${status.toUpperCase()}`,
+        `audit_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        "approval_resolution",
+        `Resolved request ${request_id} for ${approval.requester_name}: ${status.toUpperCase()}. Remarks: ${reasonText || "None"}`,
         approver_name,
-        `Resolved request ${request_id} for ${approval.requester_name}. Remarks: ${reasonText}`
+        "Approver",
+        now
       ]
     );
 

@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
+import { CourseInfoButton } from "./CourseInfoModal";
 
 // Library Books Interface
 interface BookItem {
@@ -605,7 +606,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     recordsByDate.forEach((recs, dStr) => {
       const d = parseDbDate(dStr);
       const isSunday = d.getDay() === 0;
-      const isExam = isExamDate(dStr, dailyConfigsList, studentAttendance);
+      const isExam = isExamDate(dStr, dailyConfigsList, myAttendance);
       if (isSunday && !isExam) return; // Skip invalid Sunday records
 
       totalDays++;
@@ -621,7 +622,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       absentClasses: absentDays,
       overallPercentage
     };
-  }, [myAttendance, dailyConfigsList, studentAttendance]);
+  }, [myAttendance, dailyConfigsList]);
 
   const totalClasses = evaluatedDailyStats.totalClasses;
   const presentClasses = evaluatedDailyStats.presentClasses;
@@ -817,6 +818,39 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
 
 
+  // Ensure Saturday is dynamically included in weekDates whenever 6-day working, Saturday slots exist, or Saturday has daily config
+  const effectiveWeekDates = useMemo(() => {
+    if (weekDates.length >= 6) return weekDates;
+    if (weekDates.length === 0) return weekDates;
+
+    const mon = new Date(weekDates[0].dateStr);
+    const sat = new Date(mon);
+    sat.setDate(mon.getDate() + 5);
+    const satDateStr = sat.toISOString().split("T")[0];
+
+    const hasSatConfig = dailyConfigsList.some((c: any) => {
+      if (c.dateStr !== satDateStr) return false;
+      return (c.day_order && c.day_order !== "None") || c.day_type === "working" || c.day_type === "regular" || c.day_type === "event" || c.day_type === "exam_day";
+    });
+
+    const hasSatSlots = myClassSlots.some(s => s.day === "Saturday");
+    const activeCollege = colleges.find(c => c.id === currentStudent?.college_id);
+    const is6DaysCollege = Number(activeCollege?.working_days) === 6;
+
+    if (is6DaysCollege || hasSatSlots || hasSatConfig) {
+      return [
+        ...weekDates,
+        {
+          day: "Saturday",
+          dateStr: satDateStr,
+          formatted: sat.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+        }
+      ];
+    }
+
+    return weekDates;
+  }, [weekDates, dailyConfigsList, myClassSlots, colleges, currentStudent]);
+
   // Helper to resolve the active day for a calendar date, accounting for CAM Day Order overrides
   const getMappedDayForDate = (dateStr: string, defaultDay: string) => {
     const dailyConfig = dailyConfigsList.find((c: any) => c.dateStr === dateStr);
@@ -827,7 +861,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     }
 
     if (dailyConfig && dailyConfig.day_order && dailyConfig.day_order !== "None") {
-      const match = dailyConfig.day_order.match(/^Day (\d+)$/);
+      const match = dailyConfig.day_order.match(/^Day (\d+)$/i);
       if (match) {
         const orderNum = parseInt(match[1]);
         const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -836,6 +870,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         }
       }
     }
+
+    // If Saturday, check if explicit Saturday slots exist. If not, map to Friday for 6-day schedules
+    if (defaultDay === "Saturday") {
+      const hasDirectSatSlots = myClassSlots.some(s => s.day === "Saturday");
+      if (!hasDirectSatSlots) {
+        return "Friday";
+      }
+    }
+
     return defaultDay;
   };
 
@@ -1899,7 +1942,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </button>
                 <span className="text-[10px] font-bold text-slate-755 px-2 min-w-[130px] text-center select-none font-sans">
-                  {weekOffset === 0 ? "Current Week" : `${weekDates[0]?.formatted} – ${weekDates[weekDates.length - 1]?.formatted}`}
+                  {weekOffset === 0 ? "Current Week" : `${effectiveWeekDates[0]?.formatted} – ${effectiveWeekDates[effectiveWeekDates.length - 1]?.formatted}`}
                 </span>
                 <button
                   type="button"
@@ -1943,7 +1986,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-150 dark:divide-white/5 bg-white dark:bg-[#101015]">
-                  {weekDates.map((date) => {
+                  {effectiveWeekDates.map((date) => {
                     const dayConfig = dailyConfigsList.find((c: any) => c.dateStr === date.dateStr);
                     const isHighlighted = highlightedDate === date.dateStr;
 
@@ -1980,6 +2023,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             {dayConfig?.day_order && dayConfig.day_order !== "None" && dayConfig.day_type !== "holiday" && (
                               <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[7.5px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
                                 {dayConfig.day_order}
+                              </span>
+                            )}
+                            {date.day === "Saturday" && (!dayConfig?.day_order || dayConfig?.day_order === "None") && dayConfig?.day_type !== "holiday" && (
+                              <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[7.5px] font-black uppercase bg-teal-50 text-teal-700 border border-teal-200 shrink-0" title="Mapped to Friday Timetable">
+                                Fri Mapping
                               </span>
                             )}
                             {studentInterviews.some((inv: any) => inv.target_date === date.dateStr) && (
@@ -2555,8 +2603,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <div>
                       <h2 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                         Assessments & Exam Hub
-                        <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-black uppercase">
-                          {currentStudent?.department || "Department"}
+                        <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-black uppercase inline-flex items-center gap-1">
+                          <span>{currentStudent?.department || "Department"}</span>
+                          {currentStudent?.department && (
+                            <CourseInfoButton course={currentStudent.department} collegeId={currentStudent.college_id} size="xs" />
+                          )}
                         </span>
                       </h2>
                       <p className="text-[11px] text-slate-450 mt-0.5">
@@ -3451,8 +3502,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                   {(() => {
                                     if (!task) return null;
                                     const targetTaskDate = task.task_date || task.created_at?.slice(0, 10);
-                                    const stAttLogs = (studentAttendance || []).filter(a => {
-                                      if (a.studentId !== currentStudent?.id) return false;
+                                    const stAttLogs = (myAttendance || []).filter(a => {
                                       const slot = (slots || []).find(sl => sl.id === a.slotId);
                                       const subj = a.coveredSubject || slot?.course || "";
                                       return isSubjectNameMatch(subj, activeAcadSubjName);
@@ -4347,7 +4397,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           required
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-850 block">{currentStudent.department}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-extrabold text-slate-850 block">{currentStudent.department}</span>
+                          <CourseInfoButton course={currentStudent.department} collegeId={currentStudent.college_id} size="xs" />
+                        </div>
                       )}
                     </div>
 

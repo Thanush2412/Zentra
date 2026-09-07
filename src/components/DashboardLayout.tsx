@@ -326,11 +326,15 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
   /* auto-refresh notifications on mount + when opened + every 30s / 15s if unread exists */
   useEffect(() => {
+    let isMounted = true;
     fetchNotifications(true);
     const interval = window.setInterval(() => {
-      fetchNotifications(true);
+      if (isMounted) fetchNotifications(true);
     }, hasUnread ? 15000 : 30000);
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRole, notifRefreshKey, currentMentor?.id, currentCAM?.id, currentHR?.id, currentAdmin?.id, currentStudent?.id, currentSME?.id]);
 

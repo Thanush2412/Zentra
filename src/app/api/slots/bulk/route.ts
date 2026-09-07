@@ -16,10 +16,11 @@ export async function POST(request: Request) {
     }
 
     let addedCount = 0;
+    const validSlotsToInsert: any[] = [];
 
     for (const slot of slots) {
       const { mentorId, day, time, course, location, shift, classGroup } = slot;
-      const cleanLocation = location.trim();
+      const cleanLocation = location?.trim() || "";
       const activeShift = shift || "general";
       const cleanClassGroup = classGroup ? classGroup.trim() : "General Class";
 
@@ -49,11 +50,11 @@ export async function POST(request: Request) {
       const { department, semester, year } = await resolveClassGroupDetails(db, cleanClassGroup);
 
       const mentorObj = await db.get("SELECT college_id FROM mentors WHERE id = ?", mentorId);
-      const collegeId = mentorObj?.college_id || "college_1";
+      const firstCol = !mentorObj?.college_id ? await db.get("SELECT id FROM colleges ORDER BY id ASC LIMIT 1") : null;
+      const collegeId = mentorObj?.college_id || firstCol?.id || null;
 
       const newId = "s_csv_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
-      await db.run(
-        "INSERT INTO slots (id, mentorId, day, time, course, location, shift, classGroup, semester, year, department, college_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      validSlotsToInsert.push({
         newId,
         mentorId,
         day,
@@ -66,21 +67,44 @@ export async function POST(request: Request) {
         year,
         department,
         collegeId
-      );
-      await syncMentorSubjectsAndClasses(db, mentorId, course, cleanClassGroup);
-      addedCount++;
+      });
     }
 
-    if (addedCount > 0) {
-      // Log upload
-      const logId = "l_" + Date.now();
-      await db.run(
-        "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'csv_upload', ?, ?, 'Mentor Header', ?)",
-        logId,
-        `Bulk imported ${addedCount} timetable slots from template CSV file`,
-        actorName || "Mentor Header",
-        new Date().toISOString()
-      );
+    if (validSlotsToInsert.length > 0) {
+      await db.transaction(async (tx) => {
+        for (const s of validSlotsToInsert) {
+          await tx.run(
+            "INSERT INTO slots (id, mentorId, day, time, course, location, shift, classGroup, semester, year, department, college_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            s.newId,
+            s.mentorId,
+            s.day,
+            s.time,
+            s.course,
+            s.cleanLocation,
+            s.activeShift,
+            s.cleanClassGroup,
+            s.semester,
+            s.year,
+            s.department,
+            s.collegeId
+          );
+        }
+
+        const logId = "l_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+        await tx.run(
+          "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'csv_upload', ?, ?, 'Mentor Header', ?)",
+          logId,
+          `Bulk imported ${validSlotsToInsert.length} timetable slots from template CSV file`,
+          actorName || "Mentor Header",
+          new Date().toISOString()
+        );
+      });
+
+      for (const s of validSlotsToInsert) {
+        await syncMentorSubjectsAndClasses(db, s.mentorId, s.course, s.cleanClassGroup);
+      }
+
+      addedCount = validSlotsToInsert.length;
 
       return NextResponse.json({
         success: true,

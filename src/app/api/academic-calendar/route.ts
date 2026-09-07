@@ -52,7 +52,7 @@ export async function POST(request: Request) {
       if (!year_name) {
         return NextResponse.json({ success: false, message: "Missing year name" }, { status: 400 });
       }
-      await db.run("INSERT OR IGNORE INTO academic_years (year_name) VALUES (?)", [year_name.trim()]);
+      await db.run("INSERT INTO academic_years (year_name) VALUES (?) ON CONFLICT (year_name) DO NOTHING", [year_name.trim()]);
       return NextResponse.json({ success: true, message: "Academic year added successfully" });
     } else if (type === "event") {
       const { 
@@ -67,10 +67,25 @@ export async function POST(request: Request) {
       const photosStr = typeof photos === "string" ? photos : (Array.isArray(photos) ? JSON.stringify(photos) : null);
 
       await db.run(
-        `INSERT OR REPLACE INTO academic_events (
-          id, name, date, end_date, desc, category, department, audience, 
+        `INSERT INTO academic_events (
+          id, name, date, end_date, "desc", category, department, audience, 
           status, venue, college_id, photos, coordinator, chief_guest, registration_link
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name,
+          date = EXCLUDED.date,
+          end_date = EXCLUDED.end_date,
+          "desc" = EXCLUDED."desc",
+          category = EXCLUDED.category,
+          department = EXCLUDED.department,
+          audience = EXCLUDED.audience,
+          status = EXCLUDED.status,
+          venue = EXCLUDED.venue,
+          college_id = EXCLUDED.college_id,
+          photos = EXCLUDED.photos,
+          coordinator = EXCLUDED.coordinator,
+          chief_guest = EXCLUDED.chief_guest,
+          registration_link = EXCLUDED.registration_link`,
         [
           eventId,
           name,
@@ -105,10 +120,25 @@ export async function POST(request: Request) {
         const photosStr = typeof ev.photos === "string" ? ev.photos : (Array.isArray(ev.photos) ? JSON.stringify(ev.photos) : null);
 
         await db.run(
-          `INSERT OR REPLACE INTO academic_events (
-            id, name, date, end_date, desc, category, department, audience, 
+          `INSERT INTO academic_events (
+            id, name, date, end_date, "desc", category, department, audience, 
             status, venue, college_id, photos, coordinator, chief_guest, registration_link
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            date = EXCLUDED.date,
+            end_date = EXCLUDED.end_date,
+            "desc" = EXCLUDED."desc",
+            category = EXCLUDED.category,
+            department = EXCLUDED.department,
+            audience = EXCLUDED.audience,
+            status = EXCLUDED.status,
+            venue = EXCLUDED.venue,
+            college_id = EXCLUDED.college_id,
+            photos = EXCLUDED.photos,
+            coordinator = EXCLUDED.coordinator,
+            chief_guest = EXCLUDED.chief_guest,
+            registration_link = EXCLUDED.registration_link`,
           [
             eventId,
             ev.name,

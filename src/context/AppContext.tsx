@@ -289,6 +289,7 @@ export interface Department {
   default_shift?: string;
   shift_based?: number;
   sections?: string;
+  working_days?: number;
 }
 
 export type Course = Department;
@@ -562,6 +563,9 @@ interface AppContextProps {
   approveSignupRequest: (id: string, mappingData: any) => Promise<{ success: boolean; message: string }>;
   rejectSignupRequest: (id: string) => Promise<{ success: boolean; message: string }>;
   deleteSignupRequest: (id: string) => Promise<{ success: boolean; message: string }>;
+  systemSettings: { mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any };
+  attendanceLockEnabled: boolean;
+  setSystemSettings: React.Dispatch<React.SetStateAction<{ mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any }>>;
 }
 
 const AppContext = createContext<AppContextProps | undefined>(undefined);
@@ -586,7 +590,7 @@ export function getWeekDates(offsetWeeks: number = 0, baseDateStr?: string, work
   monday.setDate(today.getDate() + distanceToMonday);
 
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const count = workingDaysCount === 6 ? 6 : 5;
+  const count = Number(workingDaysCount) === 6 ? 6 : 5;
   for (let i = 0; i < count; i++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
@@ -624,7 +628,7 @@ export const SHIFT_TIME_SLOTS: Record<ShiftType, string[]> = {
   ]
 };
 
-const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   let startLoading = (_msg?: string) => {};
@@ -675,6 +679,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [facultyWorkloadLimits, setFacultyWorkloadLimits] = useState<{ [key: string]: number }>({});
   const [facultyShifts, setFacultyShifts] = useState<{ [key: string]: string }>({});
   const [signupRequests, setSignupRequests] = useState<any[]>([]);
+  const [systemSettings, setSystemSettings] = useState<{ mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any }>({
+    mailing_enabled: true,
+    attendance_lock_enabled: true
+  });
+  const attendanceLockEnabled = systemSettings.attendance_lock_enabled !== false;
 
   const [currentRole, setCurrentRoleState] = useState<Role>(() => {
     if (typeof window !== "undefined") {
@@ -707,7 +716,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentStudent?.college_id || 
     colleges[0]?.id;
   const activeCollegeObj = colleges.find(c => c.id === activeCollegeId);
-  const workingDays = activeCollegeObj ? activeCollegeObj.working_days : 5;
+  const collegeWorkingDays = activeCollegeObj ? Number(activeCollegeObj.working_days) : 5;
+  const hasSaturdaySlots = slots.some(s => s.day === "Saturday");
+  const workingDays = (collegeWorkingDays === 6 || hasSaturdaySlots) ? 6 : 5;
 
   const weekDates = getWeekDates(weekOffset, baseDate, workingDays);
 
@@ -804,6 +815,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (data.campusIssues) setCampusIssues(data.campusIssues);
         if (data.academicYears) setAcademicYears(data.academicYears.map((ay: any) => typeof ay === "string" ? ay : ay.year || ay.year_name || ay.name || String(ay)));
         if (data.academicEvents) setAcademicEvents(data.academicEvents);
+        if (data.systemSettings) setSystemSettings(prev => ({ ...prev, ...data.systemSettings }));
 
         return {
           mentors: data.mentors || [] as Mentor[],
@@ -829,7 +841,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const role = localStorage.getItem("fp_current_role") || "";
       const userId = localStorage.getItem("fp_cam_id") || localStorage.getItem("fp_admin_id") || localStorage.getItem("fp_mentor_id") || "";
-      const res = await fetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}&fields=attendance&_t=${Date.now()}`, {
+      const colParam = targetCollegeId ? `&college_id=${encodeURIComponent(targetCollegeId)}` : "";
+      const res = await fetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}${colParam}&fields=attendance&_t=${Date.now()}`, {
         cache: "no-store",
         headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" }
       });
@@ -866,10 +879,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const initApp = async () => {
       document.documentElement.classList.remove("dark");
 
-      // 1. Fetch all data from DB
-      const dbData = await refreshData();
-
-      // 2. Restore session from localStorage using DB-sourced user lists
+      // Check if logged in first — avoid unauthenticated 24MB data downloads on login screen
       if (typeof window !== "undefined") {
         const loggedIn = localStorage.getItem("fp_logged_in") === "true";
         if (!loggedIn) {
@@ -883,6 +893,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setIsLoading(false);
           return;
         }
+      }
+
+      // 1. Fetch data from DB only for authenticated sessions
+      const dbData = await refreshData();
+
+      // 2. Restore session from localStorage using DB-sourced user lists
+      if (typeof window !== "undefined") {
 
         const storedRole = localStorage.getItem("fp_current_role") as Role | null;
         const storedMentorId = localStorage.getItem("fp_mentor_id");
@@ -1847,9 +1864,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.success) {
         setStudentAttendance(prev => {
           const updated = [...prev];
+          const keyToIndex = new Map<string, number>();
+          for (let i = 0; i < updated.length; i++) {
+            const a = updated[i];
+            if (a.slotId === slotId && a.dateStr === dateStr) {
+              keyToIndex.set(a.studentId, i);
+            }
+          }
+
           attendanceData.forEach(item => {
-            const idx = updated.findIndex(a => a.studentId === item.studentId && a.slotId === slotId && a.dateStr === dateStr);
-            if (idx >= 0) {
+            const idx = keyToIndex.get(item.studentId);
+            if (idx !== undefined) {
               updated[idx] = { ...updated[idx], status: item.status as any, type, mode, attendanceTypeSub };
             } else {
               updated.push({
@@ -1942,7 +1967,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           classGroup: currentStudent.classGroup,
           type,
           dateStr,
-          reason
+          reason,
+          college_id: currentStudent.college_id
         })
       });
       const data = await res.json();
@@ -3532,7 +3558,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     submitSignupRequest,
     approveSignupRequest,
     rejectSignupRequest,
-    deleteSignupRequest
+    deleteSignupRequest,
+    systemSettings,
+    attendanceLockEnabled,
+    setSystemSettings
   }), [
     mentors,
     slots,
@@ -3582,7 +3611,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     academicEvents,
     facultyWorkloadLimits,
     facultyShifts,
-    signupRequests
+    signupRequests,
+    systemSettings,
+    attendanceLockEnabled
   ]);
 
   return (
