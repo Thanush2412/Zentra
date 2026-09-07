@@ -42,23 +42,23 @@ export async function GET(request: Request) {
 
     // ── FAST PATH: attendance-only re-fetch (used after bulk import / mentor mark) ──
     if (fields === "attendance") {
-      const fortyFiveDaysAgo = new Date();
-      fortyFiveDaysAgo.setDate(fortyFiveDaysAgo.getDate() - 45);
-      const thresh = fortyFiveDaysAgo.toISOString().slice(0, 10);
+      const oneEightyDaysAgo = new Date();
+      oneEightyDaysAgo.setDate(oneEightyDaysAgo.getDate() - 180);
+      const thresh = oneEightyDaysAgo.toISOString().slice(0, 10);
 
       let attSql: string;
       let attParams: any[];
       if (role === "student" && userId) {
-        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE studentId = ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr DESC LIMIT 1000";
+        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE studentId = ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr DESC LIMIT 2000";
         attParams = [userId];
       } else if (role === "mentor" && userId) {
-        attSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa WHERE (sa.slotId IN (SELECT id FROM slots WHERE mentorId = ?) OR sa.markedBy = ?) AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 5000";
+        attSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa WHERE (sa.slotId IN (SELECT id FROM slots WHERE mentorId = ?) OR sa.markedBy = ?) AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 10000";
         attParams = [userId, userId, thresh];
       } else if (collegeId) {
-        attSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 15000";
+        attSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 60000";
         attParams = [collegeId, thresh];
       } else {
-        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE dateStr >= ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr DESC LIMIT 10000";
+        attSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE dateStr >= ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr DESC LIMIT 60000";
         attParams = [thresh];
       }
       const att = await db.all(attSql, ...attParams);
@@ -133,30 +133,27 @@ export async function GET(request: Request) {
       : collegeId ? "SELECT * FROM announcements WHERE college_id = ? OR college_id IS NULL ORDER BY created_at DESC LIMIT 30" : "SELECT * FROM announcements ORDER BY created_at DESC LIMIT 30";
     const announcementParams = kamHasColleges ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
 
-    // Role-optimized attendance query (Role-scoped date windows to prevent 24MB memory & transfer bloat)
-    let attendanceSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE dateStr >= ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr ASC LIMIT 10000";
-    let attendanceParams: any[] = [mentorDateThreshold];
+    // Role-optimized attendance query (Role-scoped date windows to prevent memory & transfer bloat)
+    let attendanceSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE dateStr >= ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr ASC LIMIT 60000";
+    let attendanceParams: any[] = [fullDateThreshold];
 
     if (isStudent && userId) {
-      attendanceSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE studentId = ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr DESC LIMIT 1000";
+      attendanceSql = "SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub FROM student_attendance WHERE studentId = ? AND EXTRACT(DOW FROM dateStr::date) != 0 ORDER BY dateStr DESC LIMIT 2000";
       attendanceParams = [userId];
     } else if (kamHasColleges) {
-      attendanceSql = `SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id IN ${kamInClause} AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 15000`;
-      attendanceParams = [...kamCollegeIds, mentorDateThreshold];
+      attendanceSql = `SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id IN ${kamInClause} AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 60000`;
+      attendanceParams = [...kamCollegeIds, fullDateThreshold];
     } else if (isMentor && userId) {
       // Mentor only needs attendance for their assigned slots or where they marked attendance
-      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa WHERE (sa.slotId IN (SELECT id FROM slots WHERE mentorId = ?) OR sa.markedBy = ?) AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 5000";
+      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa WHERE (sa.slotId IN (SELECT id FROM slots WHERE mentorId = ?) OR sa.markedBy = ?) AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 10000";
       attendanceParams = [userId, userId, mentorDateThreshold];
     } else if (isCAM && collegeId) {
-      // CAM monitoring view scopes to 45-day window for college (covers current month + buffer)
-      const fortyFiveDaysAgo = new Date();
-      fortyFiveDaysAgo.setDate(now.getDate() - 45);
-      const camThreshold = fortyFiveDaysAgo.toISOString().slice(0, 10);
-      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 15000";
-      attendanceParams = [collegeId, camThreshold];
+      // CAM monitoring view scopes to full semester window for college
+      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 60000";
+      attendanceParams = [collegeId, fullDateThreshold];
     } else if (collegeId) {
-      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 10000";
-      attendanceParams = [collegeId, mentorDateThreshold];
+      attendanceSql = "SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND EXTRACT(DOW FROM sa.dateStr::date) != 0 ORDER BY sa.dateStr ASC LIMIT 60000";
+      attendanceParams = [collegeId, fullDateThreshold];
     }
 
     const isSME = role === "sme";
