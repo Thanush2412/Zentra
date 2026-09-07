@@ -27,7 +27,6 @@ import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import {
   getCollegeOperatingHours,
-  getCollegePeriodTimeSlots,
   parseTimeToMinutes
 } from "@/lib/utils";
 
@@ -125,61 +124,149 @@ export const ExamScheduleManager: React.FC = () => {
     return `${String(displayHours).padStart(2, "0")}:${displayMinutes} ${ampm}`;
   };
 
+  // Helper to format minutes to 24h "HH:mm" for native <input type="time">
+  const formatMinutesTo24h = (totalMinutes: number): string => {
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const minutes = totalMinutes % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  };
+
+  // Helper to convert any time string (12h or 24h) to 24h "HH:mm" for <input type="time">
+  const timeTo24h = (timeStr?: string): string => {
+    if (!timeStr) return "";
+    const clean = timeStr.trim();
+    if (/^\d{2}:\d{2}$/.test(clean)) return clean;
+    const mins = parseTimeToMinutes(clean);
+    return formatMinutesTo24h(mins);
+  };
+
+  // Helper to convert any time string (24h or 12h) to canonical 12h format (e.g. "10:00 AM")
+  const timeTo12h = (timeStr?: string): string => {
+    if (!timeStr) return "";
+    const mins = parseTimeToMinutes(timeStr);
+    let hours = Math.floor(mins / 60) % 24;
+    const minutes = mins % 60;
+    const ampm = hours >= 12 ? "PM" : "AM";
+    let displayHours = hours % 12;
+    if (displayHours === 0) displayHours = 12;
+    return `${String(displayHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${ampm}`;
+  };
+
   // College operating hours resolved from timetable slots and shift configurations
   const collegeHours = useMemo(() => {
     return getCollegeOperatingHours(collegeId, colleges, slots);
   }, [collegeId, colleges, slots]);
 
-  // Generates selectable time intervals strictly within college operating hours
-  const selectableTimeOptions = useMemo(() => {
-    const minuteSet = new Set<number>();
+  // 24-hour boundary strings for native <input type="time" min="..." max="..." />
+  const collegeMin24 = useMemo(() => formatMinutesTo24h(collegeHours.startMinutes), [collegeHours]);
+  const collegeMax24 = useMemo(() => formatMinutesTo24h(collegeHours.endMinutes), [collegeHours]);
 
-    // Boundary limits
-    minuteSet.add(collegeHours.startMinutes);
-    minuteSet.add(collegeHours.endMinutes);
-
-    // 30-minute interval steps
-    let current = Math.ceil(collegeHours.startMinutes / 30) * 30;
-    while (current < collegeHours.endMinutes) {
-      if (current >= collegeHours.startMinutes) {
-        minuteSet.add(current);
-      }
-      current += 30;
+  // Handler for global batch start time input
+  const handleBatchStartTimeChange = (newVal24: string) => {
+    if (!newVal24) return;
+    let mins = parseTimeToMinutes(newVal24);
+    if (mins < collegeHours.startMinutes) {
+      mins = collegeHours.startMinutes;
+      toast(`Exam cannot start earlier than college opening time (${collegeHours.startTimeStr})`, "warning");
+    } else if (mins > collegeHours.endMinutes) {
+      mins = collegeHours.endMinutes;
+      toast(`Exam cannot start later than college closing time (${collegeHours.endTimeStr})`, "warning");
     }
 
-    // College timetable period slot times
-    const periodSlots = getCollegePeriodTimeSlots(collegeId, colleges, slots);
-    periodSlots.forEach((slotStr) => {
-      const parts = slotStr.replace(/to/i, "-").split("-").map((p) => p.trim());
-      parts.forEach((p) => {
-        const m = parseTimeToMinutes(p);
-        if (m >= collegeHours.startMinutes && m <= collegeHours.endMinutes) {
-          minuteSet.add(m);
-        }
-      });
-    });
+    const newStart12 = timeTo12h(formatMinutesTo24h(mins));
+    setBatchCustomStartTime(newStart12);
 
-    // Preset benchmark times if within bounds
-    [
-      parseTimeToMinutes("09:00 AM"),
-      parseTimeToMinutes("10:00 AM"),
-      parseTimeToMinutes("12:00 PM"),
-      parseTimeToMinutes("01:00 PM"),
-      parseTimeToMinutes("02:00 PM"),
-      parseTimeToMinutes("04:00 PM"),
-      parseTimeToMinutes("05:00 PM")
-    ].forEach((m) => {
-      if (m >= collegeHours.startMinutes && m <= collegeHours.endMinutes) {
-        minuteSet.add(m);
-      }
-    });
+    const currentEndMins = parseTimeToMinutes(batchCustomEndTime);
+    let newEnd12 = batchCustomEndTime;
+    if (currentEndMins <= mins) {
+      const adjustedEndMins = Math.min(mins + 180, collegeHours.endMinutes);
+      newEnd12 = timeTo12h(formatMinutesTo24h(adjustedEndMins));
+      setBatchCustomEndTime(newEnd12);
+    }
 
-    const sorted = Array.from(minuteSet).sort((a, b) => a - b);
-    return sorted.map((mins) => ({
-      minutes: mins,
-      label: formatTimeLabel(mins)
-    }));
-  }, [collegeHours, collegeId, colleges, slots]);
+    setSubjectRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        start_time: newStart12,
+        end_time: currentEndMins <= mins ? newEnd12 : r.end_time
+      }))
+    );
+  };
+
+  // Handler for global batch end time input
+  const handleBatchEndTimeChange = (newVal24: string) => {
+    if (!newVal24) return;
+    let mins = parseTimeToMinutes(newVal24);
+    const startMins = parseTimeToMinutes(batchCustomStartTime);
+
+    if (mins > collegeHours.endMinutes) {
+      mins = collegeHours.endMinutes;
+      toast(`Exam cannot end later than college closing time (${collegeHours.endTimeStr})`, "warning");
+    } else if (mins < collegeHours.startMinutes) {
+      mins = Math.min(startMins + 60, collegeHours.endMinutes);
+      toast(`Exam end time cannot be earlier than college start time (${collegeHours.startTimeStr})`, "warning");
+    } else if (mins <= startMins) {
+      mins = Math.min(startMins + 60, collegeHours.endMinutes);
+      toast("Exam end time must be after the start time", "warning");
+    }
+
+    const newEnd12 = timeTo12h(formatMinutesTo24h(mins));
+    setBatchCustomEndTime(newEnd12);
+
+    setSubjectRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        end_time: newEnd12
+      }))
+    );
+  };
+
+  // Handler for individual subject row start time
+  const handleRowStartTimeChange = (idx: number, newVal24: string) => {
+    if (!newVal24) return;
+    let mins = parseTimeToMinutes(newVal24);
+    if (mins < collegeHours.startMinutes) {
+      mins = collegeHours.startMinutes;
+      toast(`Exam cannot start earlier than college opening time (${collegeHours.startTimeStr})`, "warning");
+    } else if (mins > collegeHours.endMinutes) {
+      mins = collegeHours.endMinutes;
+      toast(`Exam cannot start later than college closing time (${collegeHours.endTimeStr})`, "warning");
+    }
+
+    const newStart12 = timeTo12h(formatMinutesTo24h(mins));
+    const currentRow = subjectRows[idx];
+    const currentEndMins = parseTimeToMinutes(currentRow?.end_time);
+    const updates: Partial<SubjectFormRow> = { start_time: newStart12 };
+
+    if (currentEndMins <= mins) {
+      const adjustedEndMins = Math.min(mins + 180, collegeHours.endMinutes);
+      updates.end_time = timeTo12h(formatMinutesTo24h(adjustedEndMins));
+    }
+
+    updateSubjectRow(idx, updates);
+  };
+
+  // Handler for individual subject row end time
+  const handleRowEndTimeChange = (idx: number, newVal24: string) => {
+    if (!newVal24) return;
+    let mins = parseTimeToMinutes(newVal24);
+    const currentRow = subjectRows[idx];
+    const startMins = parseTimeToMinutes(currentRow?.start_time);
+
+    if (mins > collegeHours.endMinutes) {
+      mins = collegeHours.endMinutes;
+      toast(`Exam cannot end later than college closing time (${collegeHours.endTimeStr})`, "warning");
+    } else if (mins < collegeHours.startMinutes) {
+      mins = Math.min(startMins + 60, collegeHours.endMinutes);
+      toast(`Exam end time cannot be earlier than college start time (${collegeHours.startTimeStr})`, "warning");
+    } else if (mins <= startMins) {
+      mins = Math.min(startMins + 60, collegeHours.endMinutes);
+      toast("Exam end time must be after the start time", "warning");
+    }
+
+    const newEnd12 = timeTo12h(formatMinutesTo24h(mins));
+    updateSubjectRow(idx, { end_time: newEnd12 });
+  };
 
   // Ensure default custom start and end times stay bounded within college operating hours
   useEffect(() => {
@@ -1384,47 +1471,31 @@ export const ExamScheduleManager: React.FC = () => {
                   <div className="space-y-1.5">
                     <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center justify-between">
                       <span>Start Time</span>
-                      <span className="text-[9px] text-indigo-600 font-bold">{collegeHours.startTimeStr}</span>
+                      <span className="text-[9px] text-indigo-600 font-bold">Min: {collegeHours.startTimeStr}</span>
                     </label>
-                    <select
-                      value={batchCustomStartTime}
-                      onChange={(e) => {
-                        const newStart = e.target.value;
-                        setBatchCustomStartTime(newStart);
-                        setSubjectRows((prev) => prev.map((r) => ({ ...r, start_time: newStart })));
-                      }}
+                    <input
+                      type="time"
+                      min={collegeMin24}
+                      max={collegeMax24}
+                      value={timeTo24h(batchCustomStartTime)}
+                      onChange={(e) => handleBatchStartTimeChange(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                    >
-                      {selectableTimeOptions.map((opt) => (
-                        <option key={`batch-start-${opt.minutes}`} value={opt.label}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center justify-between">
                       <span>End Time</span>
-                      <span className="text-[9px] text-indigo-600 font-bold">{collegeHours.endTimeStr}</span>
+                      <span className="text-[9px] text-indigo-600 font-bold">Max: {collegeHours.endTimeStr}</span>
                     </label>
-                    <select
-                      value={batchCustomEndTime}
-                      onChange={(e) => {
-                        const newEnd = e.target.value;
-                        setBatchCustomEndTime(newEnd);
-                        setSubjectRows((prev) => prev.map((r) => ({ ...r, end_time: newEnd })));
-                      }}
+                    <input
+                      type="time"
+                      min={timeTo24h(batchCustomStartTime) || collegeMin24}
+                      max={collegeMax24}
+                      value={timeTo24h(batchCustomEndTime)}
+                      onChange={(e) => handleBatchEndTimeChange(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                    >
-                      {selectableTimeOptions
-                        .filter((opt) => opt.minutes > parseTimeToMinutes(batchCustomStartTime))
-                        .map((opt) => (
-                          <option key={`batch-end-${opt.minutes}`} value={opt.label}>
-                            {opt.label}
-                          </option>
-                        ))}
-                    </select>
+                    />
                   </div>
 
                   <div className="space-y-1.5">
@@ -1524,34 +1595,32 @@ export const ExamScheduleManager: React.FC = () => {
                                   <option value="None">No Order</option>
                                 </select>
 
-                                <div className="flex items-center gap-1">
-                                  <select
-                                    value={row.start_time}
-                                    onChange={(e) => updateSubjectRow(idx, { start_time: e.target.value })}
-                                    className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold bg-white text-slate-800 cursor-pointer"
-                                    title="Exam Start Time"
-                                  >
-                                    {selectableTimeOptions.map((opt) => (
-                                      <option key={`row-${idx}-s-${opt.minutes}`} value={opt.label}>
-                                        {opt.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <span className="text-slate-400 text-xs">-</span>
-                                  <select
-                                    value={row.end_time}
-                                    onChange={(e) => updateSubjectRow(idx, { end_time: e.target.value })}
-                                    className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold bg-white text-slate-800 cursor-pointer"
-                                    title="Exam End Time"
-                                  >
-                                    {selectableTimeOptions
-                                      .filter((opt) => opt.minutes > parseTimeToMinutes(row.start_time))
-                                      .map((opt) => (
-                                        <option key={`row-${idx}-e-${opt.minutes}`} value={opt.label}>
-                                          {opt.label}
-                                        </option>
-                                      ))}
-                                  </select>
+                                <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-slate-200">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase">From</span>
+                                    <input
+                                      type="time"
+                                      min={collegeMin24}
+                                      max={collegeMax24}
+                                      value={timeTo24h(row.start_time)}
+                                      onChange={(e) => handleRowStartTimeChange(idx, e.target.value)}
+                                      className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
+                                      title={`Start Time (Min: ${collegeHours.startTimeStr})`}
+                                    />
+                                  </div>
+                                  <span className="text-slate-400 text-xs font-bold">-</span>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase">To</span>
+                                    <input
+                                      type="time"
+                                      min={timeTo24h(row.start_time) || collegeMin24}
+                                      max={collegeMax24}
+                                      value={timeTo24h(row.end_time)}
+                                      onChange={(e) => handleRowEndTimeChange(idx, e.target.value)}
+                                      className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
+                                      title={`End Time (Max: ${collegeHours.endTimeStr})`}
+                                    />
+                                  </div>
                                 </div>
 
                                 <input

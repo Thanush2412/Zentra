@@ -43,6 +43,25 @@ export async function GET(request: Request) {
   }
 }
 
+function formatToCanonicalTime12(timeStr?: string): string {
+  if (!timeStr) return "10:00 AM";
+  const cleanStr = timeStr.trim().replace(/\./g, ":");
+  const match = cleanStr.match(/^(\d+)(?::(\d+))?\s*(AM|PM)?$/i);
+  if (!match) return timeStr;
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2] ? parseInt(match[2], 10) : 0;
+  const ampm = match[3];
+  if (ampm) {
+    const isPM = ampm.toUpperCase() === "PM";
+    if (isPM && hours < 12) hours += 12;
+    if (!isPM && hours === 12) hours = 0;
+  }
+  const period = hours >= 12 ? "PM" : "AM";
+  let displayHours = hours % 12;
+  if (displayHours === 0) displayHours = 12;
+  return `${String(displayHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${period}`;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -65,9 +84,11 @@ export async function POST(request: Request) {
       const subject_name = item.subject_name || "Subject";
       const subject_code = item.subject_code || null;
       const exam_date = item.exam_date || new Date().toISOString().slice(0, 10);
-      const session_time = item.session_time || (item.start_time && item.end_time ? `${item.start_time} - ${item.end_time}` : "10:00 AM - 01:00 PM");
-      const start_time = item.start_time || session_time.split("-")[0]?.trim() || "10:00 AM";
-      const end_time = item.end_time || session_time.split("-")[1]?.trim() || "01:00 PM";
+      const rawStart = item.start_time || (item.session_time ? item.session_time.split("-")[0]?.trim() : "") || "10:00 AM";
+      const rawEnd = item.end_time || (item.session_time ? item.session_time.split("-")[1]?.trim() : "") || "01:00 PM";
+      const start_time = formatToCanonicalTime12(rawStart);
+      const end_time = formatToCanonicalTime12(rawEnd);
+      const session_time = `${start_time} - ${end_time}`;
       const day_order = item.day_order || "Day 1";
       const hall_room = item.hall_room || "Main Examination Hall";
       const max_marks = parseFloat(item.max_marks) || 50;
