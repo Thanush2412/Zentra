@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
-import { resolveClassGroupDetailsFromState } from "@/lib/utils";
+import { resolveClassGroupDetailsFromState, isCohortMatch } from "@/lib/utils";
 import { useToast } from "@/context/ToastContext";
 
 export interface MentorGroup {
@@ -2406,8 +2406,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: "DELETE"
       });
       const data = await res.json();
-      if (data.success) {
-        setSlots(prev => prev.filter(s => !(s.classGroup && s.classGroup.toLowerCase() === classGroup.toLowerCase() && (!targetCollegeId || s.college_id === targetCollegeId))));
+      if (data.success && (data.count === undefined || data.count > 0)) {
+        setSlots(prev => prev.filter(s => !(s.classGroup && (s.classGroup.toLowerCase() === classGroup.toLowerCase() || isCohortMatch(s.classGroup, classGroup)) && (!targetCollegeId || s.college_id === targetCollegeId))));
         return { success: true, message: data.message || `Timetable for ${classGroup} cleared successfully.` };
       } else {
         return { success: false, message: data.message || "Failed to clear timetable." };

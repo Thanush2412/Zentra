@@ -4,6 +4,7 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb, resolveClassGroupDetails, syncMentorSubjectsAndClasses } from "@/lib/db";
+import { isCohortMatch } from "@/lib/utils";
 
 export async function POST(request: Request) {
   try {
@@ -158,33 +159,39 @@ export async function DELETE(request: Request) {
         const sBase = sCG.replace(/\s*\([^)]*\)/g, "").trim();
         const sNormBase = sBase.replace(/[^a-z0-9]/g, "");
 
-        // Strict exact match or base-name match (stripping year brackets), NEVER loose partial substring match
+        // Match exact, normalized base, or semantic cohort match (e.g. III BCA <-> BCA - Semester 5)
         return (
           sCG === cleanCG ||
           sNorm === normCG ||
           sBase === baseCG ||
-          sNormBase === normBaseCG
+          sNormBase === normBaseCG ||
+          isCohortMatch(s.classGroup, classGroup)
         );
       }).map(s => s.id);
 
-      if (matchedSlotIds.length > 0) {
-        const placeholders = matchedSlotIds.map(() => "?").join(",");
-        await db.run(`DELETE FROM slots WHERE id IN (${placeholders})`, matchedSlotIds);
+      if (matchedSlotIds.length === 0) {
+        return NextResponse.json({
+          success: false,
+          count: 0,
+          message: `No timetable slots found matching class group "${classGroup}".`
+        });
       }
 
-      if (matchedSlotIds.length > 0) {
-        const logDesc = `Cleared timetable for class group "${classGroup}" (${matchedSlotIds.length} slots)`;
-        const logId = "l_" + Date.now();
-        await db.run(
-          "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'release', ?, ?, ?, ?)",
-          logId,
-          logDesc,
-          actorName,
-          actorRole,
-          new Date().toISOString()
-        );
-      }
-      return NextResponse.json({ success: true, count: matchedSlotIds.length });
+      const placeholders = matchedSlotIds.map(() => "?").join(",");
+      await db.run(`DELETE FROM slots WHERE id IN (${placeholders})`, matchedSlotIds);
+
+      const logDesc = `Cleared timetable for class group "${classGroup}" (${matchedSlotIds.length} slots)`;
+      const logId = "l_" + Date.now();
+      await db.run(
+        "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'release', ?, ?, ?, ?)",
+        logId,
+        logDesc,
+        actorName,
+        actorRole,
+        new Date().toISOString()
+      );
+
+      return NextResponse.json({ success: true, count: matchedSlotIds.length, message: `Successfully cleared ${matchedSlotIds.length} slots for ${classGroup}.` });
     }
 
     const slotToDelete = await db.get("SELECT * FROM slots WHERE id = ?", id);

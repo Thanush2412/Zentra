@@ -61,6 +61,7 @@ import { CourseInfoButton } from "./CourseInfoModal";
 import { CourseModal } from "./CourseModal";
 import { LoadingButton } from "./ui/LoadingButton";
 import { Pagination } from "@/components/ui/Pagination";
+import { CAMDashboard } from "./CAMDashboard";
 
 export const generateCampusCode = (name: string): string => {
   if (!name || !name.trim()) return "";
@@ -225,6 +226,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       icon: Grid,
       items: [
         { id: "schedules", label: "Schedules", icon: Grid },
+        { id: "monitoring", label: "Attendance Monitoring", icon: Clock },
         { id: "holidays", label: "Holidays", icon: Calendar },
         { id: "announcements", label: "Announcements", icon: Megaphone }
       ]
@@ -240,7 +242,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   ];
 
-  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "hierarchy" | "logs" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu">("overview");
+  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "monitoring" | "hierarchy" | "logs" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu">("overview");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
@@ -2843,8 +2845,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/*  Main Scrollable Content Area — 40px left padding (px-10) */}
       <main className="flex-grow overflow-x-hidden overflow-y-auto h-full pt-4 md:pt-8 pb-20 md:pb-16 px-4 md:px-10 space-y-6 scroll-touch">
 
+        {/* Drill-down Campus Console view */}
+        {drillDownCollegeId && (
+          <div className="space-y-4 animate-fadeIn pb-12">
+            <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDrillDownCollegeId(null)}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-black rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
+                >
+                  ← Back to Admin Central
+                </button>
+                <div className="h-4 w-px bg-slate-200" />
+                <span className="text-xs font-bold text-slate-400">Campus Console:</span>
+                <span className="text-xs font-black text-indigo-700">
+                  {colleges.find(c => c.id === drillDownCollegeId)?.name || drillDownCollegeId}
+                </span>
+              </div>
+            </div>
+            <CAMDashboard
+              overrideCollegeId={drillDownCollegeId}
+              onTabChange={() => {}}
+            />
+          </div>
+        )}
+
         {/* Tab More Menu: Grid of remaining tabs */}
-        {activeTab === "more_menu" && (
+        {!drillDownCollegeId && activeTab === "more_menu" && (
           <div className="space-y-6 animate-fadeIn pb-10">
             <h2 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider">More Admin Portals</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -4734,6 +4762,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Tab: Attendance Monitoring Central ── */}
+          {activeTab === "monitoring" && (
+            <div className="space-y-4 animate-fadeIn">
+              <CAMDashboard
+                activeTab="monitoring"
+                overrideCollegeId="all"
+              />
             </div>
           )}
 

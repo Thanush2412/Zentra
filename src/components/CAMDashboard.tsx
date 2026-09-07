@@ -2482,7 +2482,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [internalSelectedCollegeId, setInternalSelectedCollegeId] = useState<string>(() => {
     if (overrideCollegeId) return overrideCollegeId;
     if (isKAMView) return "all";
-    return currentCAM?.college_id || colleges[0]?.id || "college_1";
+    if (currentCAM?.college_id) return currentCAM.college_id;
+    // Default to a college with students if available, otherwise first college
+    const collegeWithStudents = colleges.find(c => students.some(s => s.college_id === c.id));
+    return collegeWithStudents?.id || colleges[0]?.id || "college_1";
   });
 
   const activeCollegeId = overrideCollegeId !== undefined
@@ -2491,9 +2494,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       ? (superAdminScope === "all" ? "all" : superAdminScope)
       : isKAMView
         ? internalSelectedCollegeId
-        : (currentCAM?.college_id || colleges[0]?.id || "college_1");
+        : (currentCAM?.college_id || internalSelectedCollegeId || colleges[0]?.id || "college_1");
 
-  const isGlobalAllCampuses = (isSuperAdminUser && superAdminScope === "all") || (isKAMView && activeCollegeId === "all");
+  const isGlobalAllCampuses = activeCollegeId === "all" || (isSuperAdminUser && superAdminScope === "all") || (isKAMView && activeCollegeId === "all");
 
   const activeCollegeName = isGlobalAllCampuses
     ? (isKAMView ? "All Supervised Campuses (Portfolio Overview)" : "All Regions & Campuses (Global Data Scope)")
@@ -2808,13 +2811,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
   // Attendance Directory & Date-Wise Monitoring States
   const [attendanceDate, setAttendanceDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
-  const [attendanceStartDate, setAttendanceStartDate] = useState(() => {
-    // Default to last 30 days for better performance
-    const today = new Date();
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(today.getDate() - 30);
-    return thirtyDaysAgo.toISOString().split("T")[0];
-  });
+  const [attendanceStartDate, setAttendanceStartDate] = useState<string>("2026-06-15");
   const [attendanceEndDate, setAttendanceEndDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
   const [attendanceMonthFilter, setAttendanceMonthFilter] = useState("all");
   const [showAttendanceTemplateModal, setShowAttendanceTemplateModal] = useState(false);
@@ -4374,7 +4371,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   }, [mentors, activeCollegeId, isGlobalAllCampuses]);
 
   const collegeStudents = useMemo(() => {
-    if (isGlobalAllCampuses) return students;
+    if (isGlobalAllCampuses || activeCollegeId === "all") return students;
     return students.filter(s => s.college_id === activeCollegeId);
   }, [students, activeCollegeId, isGlobalAllCampuses]);
 
@@ -4417,7 +4414,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   }, [getAvailableShiftsForCourse]);
 
   const collegeSlots = useMemo(() => {
-    if (isGlobalAllCampuses) return slots;
+    if (isGlobalAllCampuses || activeCollegeId === "all") return slots;
     return slots.filter(s => s.college_id === activeCollegeId);
   }, [slots, activeCollegeId, isGlobalAllCampuses]);
 

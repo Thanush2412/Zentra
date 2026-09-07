@@ -100,16 +100,23 @@ export async function POST(request: Request) {
       );
 
       try {
-        await db.run(
-          `INSERT INTO departments (id, name, college_id, code, description) 
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT (id) DO UPDATE SET
-             name = EXCLUDED.name,
-             college_id = EXCLUDED.college_id,
-             code = EXCLUDED.code,
-             description = EXCLUDED.description`,
-          existing.id, cleanName, targetCollegeId || existing.college_id, code || existing.code || "", description || existing.description || ""
+        const existingDept = await db.get(
+          "SELECT id FROM departments WHERE id = ? OR (LOWER(name) = LOWER(?) AND (college_id = ? OR college_id IS NULL))",
+          existing.id,
+          cleanName,
+          targetCollegeId || existing.college_id
         );
+        if (existingDept) {
+          await db.run(
+            "UPDATE departments SET name = ?, college_id = ?, code = ?, description = ? WHERE id = ?",
+            cleanName, targetCollegeId || existing.college_id, code || existing.code || "", description || existing.description || "", existingDept.id
+          );
+        } else {
+          await db.run(
+            "INSERT INTO departments (id, name, college_id, code, description) VALUES (?, ?, ?, ?, ?)",
+            existing.id, cleanName, targetCollegeId || existing.college_id, code || existing.code || "", description || existing.description || ""
+          );
+        }
       } catch (_) {}
 
       return NextResponse.json({
@@ -206,16 +213,23 @@ export async function POST(request: Request) {
             conflictCourse.id
           );
           try {
-            await db.run(
-              `INSERT INTO departments (id, name, college_id, code, description) 
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT (id) DO UPDATE SET
-                 name = EXCLUDED.name,
-                 college_id = EXCLUDED.college_id,
-                 code = EXCLUDED.code,
-                 description = EXCLUDED.description`,
-              conflictCourse.id, cleanName, targetCollegeId || conflictCourse.college_id, code || conflictCourse.code || "", description || conflictCourse.description || ""
+            const existingDept = await db.get(
+              "SELECT id FROM departments WHERE id = ? OR (LOWER(name) = LOWER(?) AND (college_id = ? OR college_id IS NULL))",
+              conflictCourse.id,
+              cleanName,
+              targetCollegeId || conflictCourse.college_id
             );
+            if (existingDept) {
+              await db.run(
+                "UPDATE departments SET name = ?, college_id = ?, code = ?, description = ? WHERE id = ?",
+                cleanName, targetCollegeId || conflictCourse.college_id, code || conflictCourse.code || "", description || conflictCourse.description || "", existingDept.id
+              );
+            } else {
+              await db.run(
+                "INSERT INTO departments (id, name, college_id, code, description) VALUES (?, ?, ?, ?, ?)",
+                conflictCourse.id, cleanName, targetCollegeId || conflictCourse.college_id, code || conflictCourse.code || "", description || conflictCourse.description || ""
+              );
+            }
           } catch (_) {}
 
           return NextResponse.json({
@@ -234,16 +248,23 @@ export async function POST(request: Request) {
     }
 
     try {
-      await db.run(
-        `INSERT INTO departments (id, name, college_id, code, description) 
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET
-           name = EXCLUDED.name,
-           college_id = EXCLUDED.college_id,
-           code = EXCLUDED.code,
-           description = EXCLUDED.description`,
-        id, cleanName, targetCollegeId, code || "", description || ""
+      const existingDept = await db.get(
+        "SELECT id FROM departments WHERE id = ? OR (LOWER(name) = LOWER(?) AND (college_id = ? OR college_id IS NULL))",
+        id,
+        cleanName,
+        targetCollegeId
       );
+      if (existingDept) {
+        await db.run(
+          "UPDATE departments SET name = ?, college_id = ?, code = ?, description = ? WHERE id = ?",
+          cleanName, targetCollegeId, code || "", description || "", existingDept.id
+        );
+      } else {
+        await db.run(
+          "INSERT INTO departments (id, name, college_id, code, description) VALUES (?, ?, ?, ?, ?)",
+          id, cleanName, targetCollegeId, code || "", description || ""
+        );
+      }
     } catch (_) {}
 
     return NextResponse.json({
@@ -363,21 +384,45 @@ export async function PUT(request: Request) {
         currentCourse.id
       );
 
-      try {
+      // Update or insert into departments gracefully without crashing transaction
+      const existingDept = await tx.get(
+        "SELECT id FROM departments WHERE id = ? OR (LOWER(name) = LOWER(?) AND (college_id = ? OR college_id IS NULL)) OR (LOWER(name) = LOWER(?) AND (college_id = ? OR college_id IS NULL))",
+        currentCourse.id,
+        cleanName,
+        targetCollegeId,
+        oldName,
+        targetCollegeId
+      );
+
+      if (existingDept) {
+        await tx.run(
+          `UPDATE departments SET 
+            name = ?, 
+            college_id = ?, 
+            code = ?, 
+            description = ?, 
+            status = ?, 
+            years = ?, 
+            start_year = ?, 
+            end_year = ?, 
+            shift_based = ? 
+          WHERE id = ?`,
+          cleanName,
+          targetCollegeId,
+          code !== undefined ? code : (currentCourse.code || ""),
+          description !== undefined ? description : (currentCourse.description || ""),
+          status || currentCourse.status || "Active",
+          years !== undefined ? Number(years) : (currentCourse.years || 4),
+          start_year !== undefined ? start_year : (currentCourse.start_year || ""),
+          end_year !== undefined ? end_year : (currentCourse.end_year || ""),
+          shift_based !== undefined ? Number(shift_based) : (currentCourse.shift_based || 0),
+          existingDept.id
+        );
+      } else {
         await tx.run(
           `INSERT INTO departments 
             (id, name, college_id, code, description, status, years, start_year, end_year, shift_based) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            college_id = EXCLUDED.college_id,
-            code = EXCLUDED.code,
-            description = EXCLUDED.description,
-            status = EXCLUDED.status,
-            years = EXCLUDED.years,
-            start_year = EXCLUDED.start_year,
-            end_year = EXCLUDED.end_year,
-            shift_based = EXCLUDED.shift_based`,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           currentCourse.id,
           cleanName,
           targetCollegeId,
@@ -389,7 +434,7 @@ export async function PUT(request: Request) {
           end_year !== undefined ? end_year : (currentCourse.end_year || ""),
           shift_based !== undefined ? Number(shift_based) : (currentCourse.shift_based || 0)
         );
-      } catch (_) {}
+      }
 
       // 2. Cascade rename to mentors table
       await tx.run("UPDATE mentors SET department = ? WHERE department = ?", cleanName, oldName);
@@ -399,15 +444,17 @@ export async function PUT(request: Request) {
 
       // 4. Cascade rename to slots table
       await tx.run("UPDATE slots SET department = ? WHERE department = ?", cleanName, oldName);
+      await tx.run("UPDATE slots SET classgroup = ? WHERE classgroup = ?", cleanName, oldName);
 
       // 5. Cascade rename to handover_requests.classGroup where it contains the old department
       await tx.run(
-        "UPDATE handover_requests SET classGroup = REPLACE(classGroup, ?, ?) WHERE classGroup LIKE ?",
+        "UPDATE handover_requests SET classgroup = REPLACE(classgroup, ?, ?) WHERE classgroup LIKE ?",
         oldName, cleanName, `${oldName}%`
       );
 
-      // 6. Cascade rename in students table department field
+      // 6. Cascade rename in students table department & classgroup fields
       await tx.run("UPDATE students SET department = ? WHERE department = ?", cleanName, oldName);
+      await tx.run("UPDATE students SET classgroup = ? WHERE classgroup = ?", cleanName, oldName);
     });
 
     return NextResponse.json({
