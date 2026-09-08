@@ -2954,7 +2954,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [camAcadWeeklyDept, setCamAcadWeeklyDept] = useState<string>("");
   const [camAcadWeeklySem, setCamAcadWeeklySem] = useState<string>("");
   const [camAcadWeeklySubj, setCamAcadWeeklySubj] = useState<string>("");
-  const [camAcadWeeklyWeek, setCamAcadWeeklyWeek] = useState<number>(1);
+  const [camAcadWeeklyFrom, setCamAcadWeeklyFrom] = useState<string>("");
+  const [camAcadWeeklyTo, setCamAcadWeeklyTo] = useState<string>("");
   // Template download selectors (3 separate pickers)
   const [templateDept, setTemplateDept] = useState<string>("");
   const [templateShift, setTemplateShift] = useState<string>("General");
@@ -12758,7 +12759,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       : subjectOptions[0] || "";
 
                     const activeClassGroup = `${activeDept} - ${activeSemester}`;
-                    const activeWeek = camAcadWeeklyWeek || 1;
 
                     // Unified student matcher for selected course and semester
                     const cohortStudents = students.filter(s => {
@@ -12767,14 +12767,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         (s.department && s.department.toLowerCase().trim() === activeDept.toLowerCase().trim() && (!s.semester || s.semester.toLowerCase().includes(activeSemester.toLowerCase().trim())));
                     });
 
-                    // Active Weekly Task
-                    const currentWeeklyTask = (weeklyAcademicTasks || []).find(
+                    // Active Weekly Task – filtered by date range (task_date) or fallback to first matching task
+                    const matchingTasks = (weeklyAcademicTasks || []).filter(
                       t => (isSubjectNameMatch(t.subject, activeSubject) || t.subject.toLowerCase().trim() === activeSubject.toLowerCase().trim()) &&
-                        t.week_number === activeWeek &&
                         (isCohortMatching(t.class_group, activeClassGroup, coursesList, subjectsList) ||
                           t.class_group.toLowerCase().includes(activeDept.toLowerCase().trim()) ||
                           activeClassGroup.toLowerCase().includes(t.class_group.toLowerCase().trim()))
                     );
+                    const currentWeeklyTask = matchingTasks.find(t => {
+                      if (!t.task_date) return (!camAcadWeeklyFrom && !camAcadWeeklyTo);
+                      if (camAcadWeeklyFrom && t.task_date < camAcadWeeklyFrom) return false;
+                      if (camAcadWeeklyTo && t.task_date > camAcadWeeklyTo) return false;
+                      return true;
+                    }) ?? ((!camAcadWeeklyFrom && !camAcadWeeklyTo) ? matchingTasks[0] : undefined);
+                    const activeWeek = currentWeeklyTask?.week_number ?? 1;
 
                     // Conduction logs filtered for CAM
                     const campusMentors = mentors.filter(m => matchesCollege(m.college_id));
@@ -12806,7 +12812,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           const entry = (studentAcademicTracker || []).find(
                             e => ((e.student_id && (e.student_id === s.id || e.student_id === s.register_number)) || (s.email && e.student_email && e.student_email.toLowerCase().trim() === s.email.toLowerCase().trim())) &&
                               isSubjectNameMatch(e.subject, activeSubject) &&
-                              e.week_number === activeWeek
+                              (currentWeeklyTask ? e.week_number === currentWeeklyTask.week_number : true)
                           );
                           return [
                             idx + 1,
@@ -12898,7 +12904,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         {camAcadSubTab === "weekly_tasks" && (
                           <div className="space-y-5">
                             {/* Cascading Filter Bar */}
-                            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs grid grid-cols-2 sm:grid-cols-4 gap-4 items-end">
+                            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs grid grid-cols-2 sm:grid-cols-5 gap-4 items-end">
                               <div className="space-y-1.5">
                                 <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Department</label>
                                 <select
@@ -12942,16 +12948,24 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               </div>
 
                               <div className="space-y-1.5">
-                                <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Week Number</label>
-                                <select
-                                  value={activeWeek}
-                                  onChange={(e) => setCamAcadWeeklyWeek(parseInt(e.target.value, 10))}
+                                <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">From Date</label>
+                                <input
+                                  type="date"
+                                  value={camAcadWeeklyFrom}
+                                  onChange={(e) => setCamAcadWeeklyFrom(e.target.value)}
                                   className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
-                                >
-                                  {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
-                                    <option key={wk} value={wk}>Week {wk}</option>
-                                  ))}
-                                </select>
+                                />
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">To Date</label>
+                                <input
+                                  type="date"
+                                  value={camAcadWeeklyTo}
+                                  min={camAcadWeeklyFrom || undefined}
+                                  onChange={(e) => setCamAcadWeeklyTo(e.target.value)}
+                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                                />
                               </div>
                             </div>
 
@@ -13053,7 +13067,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         const entry = (studentAcademicTracker || []).find(
                                           e => ((e.student_id && (e.student_id === student.id || e.student_id === student.register_number)) || (student.email && e.student_email && e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim())) &&
                                             isSubjectNameMatch(e.subject, activeSubject) &&
-                                            e.week_number === activeWeek
+                                            (currentWeeklyTask ? e.week_number === currentWeeklyTask.week_number : true)
                                         );
                                         const qm = entry?.quiz_marks !== undefined && entry?.quiz_marks !== null ? entry.quiz_marks : "—";
                                         const asm = entry?.assessment_marks !== undefined && entry?.assessment_marks !== null ? entry.assessment_marks : "—";
