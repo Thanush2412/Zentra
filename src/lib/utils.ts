@@ -1344,6 +1344,25 @@ export function evaluateDailyStudentAttendance(
   const totalMarked = records.length;
   const totalEff = Math.max(stSlotsCount, totalMarked);
 
+  // RULE 0: Master Tracker Sheet compliance resolution (when hourly records carry daily compliance tag)
+  const masterDailyRec = records.find(r => r.attendancetypesub === "daily_present" || r.attendancetypesub === "daily_absent");
+  if (masterDailyRec) {
+    const isDailyP = masterDailyRec.attendancetypesub === "daily_present";
+    return {
+      status: isDailyP ? "P" : "A",
+      presentDays: isDailyP ? 1 : 0,
+      absentDays: isDailyP ? 0 : 1,
+      totalMarked,
+      pCount,
+      aCount,
+      odCount,
+      isExamDay,
+      tooltipInfo: isDailyP
+        ? `Present (Master: Present | Hourly: ${pCount}P / ${aCount}A)`
+        : `Absent (Master: Absent | Hourly: ${pCount}P / ${aCount}A)`
+    };
+  }
+
   // RULE 1: If absent in ANY period -> Whole day is Absent (A)
   if (aCount > 0) {
     return {
