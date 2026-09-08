@@ -12811,7 +12811,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         ];
                         const rows = cohortStudents.map((s, idx) => {
                           const entry = (studentAcademicTracker || []).find(
-                            e => e.student_email.toLowerCase().trim() === s.email.toLowerCase().trim() &&
+                            e => ((e.student_id && (e.student_id === s.id || e.student_id === s.register_number)) || (s.email && e.student_email && e.student_email.toLowerCase().trim() === s.email.toLowerCase().trim())) &&
                               isSubjectNameMatch(e.subject, activeSubject) &&
                               e.week_number === activeWeek
                           );
@@ -13058,7 +13058,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     ) : (
                                       cohortStudents.map((student, idx) => {
                                         const entry = (studentAcademicTracker || []).find(
-                                          e => e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim() &&
+                                          e => ((e.student_id && (e.student_id === student.id || e.student_id === student.register_number)) || (student.email && e.student_email && e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim())) &&
                                             isSubjectNameMatch(e.subject, activeSubject) &&
                                             e.week_number === activeWeek
                                         );

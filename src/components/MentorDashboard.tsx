@@ -8719,8 +8719,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     (student.register_number || "").toLowerCase().includes(qSearch);
 
                   const entry = (studentAcademicTracker || []).find(
-                    e => e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim() &&
-                      e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                    e => ((e.student_id && (e.student_id === student.id || e.student_id === student.register_number)) || (student.email && e.student_email && e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim())) &&
+                      (isSubjectNameMatch(e.subject, activeWeeklySubj) || e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim()) &&
                       e.week_number === acadWeeklyWeek
                   );
 
@@ -8770,8 +8770,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         return isSubjectNameMatch(subj, activeWeeklySubj);
                       });
                       const existingEntry = (studentAcademicTracker || []).find(
-                        e => e.student_email.toLowerCase().trim() === s.email.toLowerCase().trim() &&
-                          e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                        e => ((e.student_id && (e.student_id === s.id || e.student_id === s.register_number)) || (s.email && e.student_email && e.student_email.toLowerCase().trim() === s.email.toLowerCase().trim())) &&
+                          (isSubjectNameMatch(e.subject, activeWeeklySubj) || e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim()) &&
                           e.week_number === acadWeeklyWeek
                       );
 
@@ -8940,8 +8940,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                       for (let wk = 1; wk <= 15; wk++) {
                         const entry = (studentAcademicTracker || []).find(
-                          e => e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim() &&
-                            e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                          e => ((e.student_id && (e.student_id === student.id || e.student_id === student.register_number)) || (student.email && e.student_email && e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim())) &&
+                            (isSubjectNameMatch(e.subject, activeWeeklySubj) || e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim()) &&
                             e.week_number === wk
                         );
 
@@ -9288,8 +9288,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   if (!student) continue;
 
                                   const existingEntry = (studentAcademicTracker || []).find(
-                                    e => e.student_email.toLowerCase().trim() === email.toLowerCase().trim() &&
-                                      e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                                    e => ((e.student_id && (e.student_id === student.id || e.student_id === student.register_number)) || (student.email && e.student_email && e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim())) &&
+                                      (isSubjectNameMatch(e.subject, activeWeeklySubj) || e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim()) &&
                                       e.week_number === acadWeeklyWeek
                                   );
 
@@ -9411,8 +9411,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               paginatedWeeklyStudents.map((student, idx) => {
                                 const rowNum = acadWeeklyPageSize === -1 ? idx + 1 : (validPage - 1) * acadWeeklyPageSize + idx + 1;
                                 const entry = (studentAcademicTracker || []).find(
-                                  e => e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim() &&
-                                    e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim() &&
+                                  e => ((e.student_id && (e.student_id === student.id || e.student_id === student.register_number)) || (student.email && e.student_email && e.student_email.toLowerCase().trim() === student.email.toLowerCase().trim())) &&
+                                    (isSubjectNameMatch(e.subject, activeWeeklySubj) || e.subject.toLowerCase().trim() === activeWeeklySubj.toLowerCase().trim()) &&
                                     e.week_number === acadWeeklyWeek
                                 );
 

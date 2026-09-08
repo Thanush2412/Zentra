@@ -630,7 +630,31 @@ export function isSubjectNameMatch(name1: string, name2: string): boolean {
   const norm2 = name2.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
   
   if (norm1 === norm2) return true;
-  
+
+  // Lab vs Theory MUST NEVER match
+  const isLab1 = norm1.includes("lab") || norm1.includes("practical") || norm1.includes("pract") || norm1.includes("simulation");
+  const isLab2 = norm2.includes("lab") || norm2.includes("practical") || norm2.includes("pract") || norm2.includes("simulation");
+  if (isLab1 !== isLab2) return false;
+
+  // Specific canonical aliases
+  // AI (Application vs Appliction vs Applications)
+  const isAi = (n: string) => n.includes("ai") && (n.includes("applic") || n.includes("appliction"));
+  if (isAi(norm1) && isAi(norm2)) return true;
+
+  // SPM
+  const isSpm = (n: string) => (n.includes("spm") || (n.includes("software") && n.includes("project")));
+  if (isSpm(norm1) && isSpm(norm2)) return true;
+
+  // Gen AI (Generative AI vs Advanced Gen AI)
+  const isGenAi = (n: string) => (n.includes("genai") || (n.includes("generative") && n.includes("ai")));
+  if (isGenAi(norm1) && isGenAi(norm2)) return true;
+
+  // NLP Lab or NLP Theory
+  const isNlp = (n: string) => (n.includes("nlp") || (n.includes("natural") && n.includes("language")));
+  if (isNlp(norm1) && isNlp(norm2)) {
+    if (isLab1 === isLab2) return true;
+  }
+
   // Helper to extract Roman numeral or number from the end/middle of normalized string
   const getNum = (n: string) => {
     if (n.endsWith("iv") || n.includes("sem4") || n.includes("semiv") || n.endsWith("4") || n.includes("l4") || n.includes("lang4") || n.includes("language4") || n.includes("tamil4")) return 4;
@@ -643,7 +667,6 @@ export function isSubjectNameMatch(name1: string, name2: string): boolean {
   const num1 = getNum(norm1);
   const num2 = getNum(norm2);
   
-  // If one has a suffix number and the other has a different suffix number, they cannot match
   if (num1 !== null && num2 !== null && num1 !== num2) {
     return false;
   }
@@ -660,18 +683,13 @@ export function isSubjectNameMatch(name1: string, name2: string): boolean {
     return true; // Languages with no conflicting semester numbers match
   }
 
-  // Refined checks to prevent false positive substring matches
-  const isLab1 = norm1.includes("lab") || norm1.includes("practical") || norm1.includes("pract") || norm1.includes("simulation");
-  const isLab2 = norm2.includes("lab") || norm2.includes("practical") || norm2.includes("pract") || norm2.includes("simulation");
-  if (isLab1 !== isLab2) return false;
-  
   const isModern1 = norm1.includes("modern");
   const isModern2 = norm2.includes("modern");
-  if (isModern1 !== isModern2) return false;
+  if (isModern1 !== isModern2 && !(isNlp(norm1) && isNlp(norm2))) return false;
 
   const isAdvanced1 = norm1.includes("advanced");
   const isAdvanced2 = norm2.includes("advanced");
-  if (isAdvanced1 !== isAdvanced2) return false;
+  if (isAdvanced1 !== isAdvanced2 && !(isGenAi(norm1) && isGenAi(norm2))) return false;
 
   const isFoundations1 = norm1.includes("foundations") || norm1.includes("foundation");
   const isFoundations2 = norm2.includes("foundations") || norm2.includes("foundation");
@@ -1074,10 +1092,31 @@ export function isCohortMatching(cg1?: string, cg2?: string, coursesList: any[] 
   const norm2 = clean2.replace(/[^a-z0-9]/g, "");
   if (norm1 === norm2) return true;
 
+  const p1 = parseCohort(cg1);
+  const p2 = parseCohort(cg2);
+  if (p1.canonicalName && p2.canonicalName && p1.canonicalName.toLowerCase() === p2.canonicalName.toLowerCase()) {
+    return true;
+  }
+
+  const dept1 = getDeptFromClassGroup(cg1).toLowerCase().trim();
+  const dept2 = getDeptFromClassGroup(cg2).toLowerCase().trim();
+  if (dept1 && dept2 && (dept1 === dept2 || dept1.includes(dept2) || dept2.includes(dept1))) {
+    if (p1.semester && p2.semester && p1.semester === p2.semester) {
+      return true;
+    }
+  }
+
   const d1 = resolveClassGroupDetailsFromState(cg1, subjectsList, coursesList);
   const d2 = resolveClassGroupDetailsFromState(cg2, subjectsList, coursesList);
 
-  if (d1.department && d2.department && d1.department.toLowerCase().trim() === d2.department.toLowerCase().trim()) {
+  if (d1.canonicalName && d2.canonicalName && d1.canonicalName.toLowerCase().trim() === d2.canonicalName.toLowerCase().trim()) {
+    return true;
+  }
+
+  const depClean1 = (d1.department || "").replace(/^(iii|ii|i|iv)\s+/i, "").toLowerCase().trim();
+  const depClean2 = (d2.department || "").replace(/^(iii|ii|i|iv)\s+/i, "").toLowerCase().trim();
+
+  if (depClean1 && depClean2 && (depClean1 === depClean2 || depClean1.includes(depClean2) || depClean2.includes(depClean1))) {
     if (d1.semester && d2.semester && d1.semester.toLowerCase().trim() === d2.semester.toLowerCase().trim()) {
       return true;
     }
