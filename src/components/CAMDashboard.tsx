@@ -12753,9 +12753,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       s => matchesCollege(s.college_id) &&
                            matchesCourseName(s.department || "", activeDept, selectedCourseObj?.code) &&
                            (s.semester?.trim().toLowerCase() === activeSemester.trim().toLowerCase() || !s.semester) &&
-                           !isSkillSubject(s)
+                           isAcademicSubject(s)
                     );
-                    const acadSubjectObjs = allDeptSemSubjects.length > 0 ? allDeptSemSubjects : subjectsList.filter(s => matchesCollege(s.college_id) && !isSkillSubject(s));
+                    const acadSubjectObjs = allDeptSemSubjects.length > 0
+                      ? allDeptSemSubjects
+                      : subjectsList.filter(s => matchesCollege(s.college_id) && matchesCourseName(s.department || "", activeDept, selectedCourseObj?.code) && isAcademicSubject(s));
 
                     const subjectOptions = acadSubjectObjs.map(s => s.name);
                     const activeSubject = (camAcadWeeklySubj && subjectOptions.includes(camAcadWeeklySubj))
@@ -15165,29 +15167,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         .map(s => s.name?.trim())
                         .filter(Boolean);
 
-                      const subjectsFromSlots = (slots || [])
-                        .filter(s => (!activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId))
-                        .map(s => s.course?.trim())
-                        .filter(s => s && isAcademicSubject(s));
-
-                      const subjectsFromFaculty = collegeMentors.flatMap(m => {
-                        if (!m) return [];
-                        const subs: string[] = [];
-                        if (Array.isArray(m.subjects)) {
-                          subs.push(...m.subjects);
-                        } else if (typeof m.subjects === "string") {
-                          subs.push(...m.subjects.split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean));
-                        }
-                        if ((m as any).specialization) subs.push((m as any).specialization.trim());
-                        return subs.filter(s => isAcademicSubject(s));
-                      });
-
                       const subjectsFromLogs = campusLogs.map(l => l.subject?.trim()).filter(s => s && isAcademicSubject(s));
 
                       const allSubjectCandidates = [
                         ...subjectsFromList,
-                        ...subjectsFromSlots,
-                        ...subjectsFromFaculty,
                         ...subjectsFromLogs
                       ];
 
