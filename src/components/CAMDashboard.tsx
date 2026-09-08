@@ -13099,121 +13099,569 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         )}
 
                         {/* SUB-VIEW 2: FACULTY LESSON CONDUCTION LEDGER */}
-                        {camAcadSubTab === "lesson_conduction" && (
-                          <div className="space-y-5">
-                            {/* Filter Bar */}
-                            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs grid grid-cols-1 sm:grid-cols-3 md:grid-cols-5 gap-3">
-                              <div>
-                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Faculty / Mentor</label>
-                                <select
-                                  value={camAcadMentorFilter}
-                                  onChange={(e) => setCamAcadMentorFilter(e.target.value)}
-                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
-                                >
-                                  <option value="all">All Faculty ({campusMentors.length})</option>
-                                  {campusMentors.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                                </select>
+                        {camAcadSubTab === "lesson_conduction" && (() => {
+                          // Campus scoped records
+                          const campusMentorIds = new Set(collegeMentors.map(m => m.id));
+                          const campusLogs = (academicTracker || []).filter(log => {
+                            if (log.college_id && log.college_id === activeCollegeId) return true;
+                            if (campusMentorIds.has(log.mentor_id)) return true;
+                            return false;
+                          });
+
+                          // Unique course/department names directly from Batch Creation module for active campus
+                          const availableDepts = Array.from(
+                            new Set(
+                              (collegeCourses.length > 0
+                                ? collegeCourses
+                                : departmentsList.filter(d => !activeCollegeId || d.college_id === activeCollegeId)
+                              )
+                                .map(c => c.name.trim())
+                                .filter(Boolean)
+                            )
+                          ).sort();
+
+                          const availableCohorts = Array.from(new Set([
+                            ...campusLogs.map(l => l.class_group),
+                            ...(collegeSlots || []).map(s => s.classGroup),
+                            ...(collegeStudents || []).map(st => st.classGroup)
+                          ].filter(Boolean))).sort();
+
+                          const availableSemesters = [
+                            "Semester 1",
+                            "Semester 2",
+                            "Semester 3",
+                            "Semester 4",
+                            "Semester 5",
+                            "Semester 6",
+                            "Semester 7",
+                            "Semester 8"
+                          ];
+
+                          const availableFaculty = collegeMentors.sort((a, b) => a.name.localeCompare(b.name));
+
+                          // Collect available academic subjects dynamically based on selected mentor
+                          let availableSubjects: string[] = [];
+
+                          if (camAcadMentorFilter !== "all") {
+                            const selectedMentor = collegeMentors.find(m => m.id === camAcadMentorFilter);
+                            const mentorAssignedSubs: string[] = [];
+                            if (selectedMentor) {
+                              if (Array.isArray(selectedMentor.subjects)) {
+                                mentorAssignedSubs.push(...selectedMentor.subjects);
+                              } else if (typeof selectedMentor.subjects === "string") {
+                                mentorAssignedSubs.push(...selectedMentor.subjects.split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean));
+                              }
+                              if ((selectedMentor as any).specialization) {
+                                mentorAssignedSubs.push((selectedMentor as any).specialization.trim());
+                              }
+                            }
+
+                            const mentorSlotSubs = (slots || [])
+                              .filter(s => s.mentorId === camAcadMentorFilter && s.course && (!activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId))
+                              .map(s => s.course.trim());
+
+                            const mentorLogSubs = campusLogs
+                              .filter(l => l.mentor_id === camAcadMentorFilter)
+                              .map(l => l.subject?.trim())
+                              .filter(Boolean);
+
+                            const mentorCandidates = [
+                              ...mentorAssignedSubs,
+                              ...mentorSlotSubs,
+                              ...mentorLogSubs
+                            ];
+
+                            availableSubjects = Array.from(
+                              new Set(
+                                mentorCandidates.filter(s => {
+                                  if (!s) return false;
+                                  const subObj = subjectsList.find(sub => sub.name.toLowerCase().trim() === s.toLowerCase().trim());
+                                  return isAcademicSubject(subObj || s);
+                                })
+                              )
+                            ).sort((a, b) => a.localeCompare(b));
+                          } else {
+                            // All faculty scope — collect all campus academic subjects from Batch Creation
+                            const subjectsFromList = (subjectsList || [])
+                              .filter(s => (!activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId) && isAcademicSubject(s))
+                              .map(s => s.name?.trim())
+                              .filter(Boolean);
+
+                            const subjectsFromLogs = campusLogs.map(l => l.subject?.trim()).filter(s => s && isAcademicSubject(s));
+
+                            const allSubjectCandidates = [
+                              ...subjectsFromList,
+                              ...subjectsFromLogs
+                            ];
+
+                            availableSubjects = Array.from(
+                              new Set(
+                                allSubjectCandidates.filter(s => {
+                                  if (!s) return false;
+                                  const subObj = subjectsList.find(sub => sub.name.toLowerCase().trim() === s.toLowerCase().trim());
+                                  return isAcademicSubject(subObj || s);
+                                })
+                              )
+                            ).sort((a, b) => a.localeCompare(b));
+                          }
+
+                          // Scope subjects by selected department if filtered
+                          if (camAcadDeptFilter !== "all") {
+                            const courseObj = collegeCourses.find(c => c.name.trim().toLowerCase() === camAcadDeptFilter.toLowerCase().trim());
+                            availableSubjects = availableSubjects.filter(subName => {
+                              const subObj = subjectsList.find(s => s.name.toLowerCase().trim() === subName.toLowerCase().trim());
+                              if (subObj) {
+                                const sDept = (subObj.department || "").trim().toLowerCase();
+                                const cLower = camAcadDeptFilter.trim().toLowerCase();
+                                const cCodeLower = (courseObj?.code || "").trim().toLowerCase();
+                                return sDept === cLower || sDept.startsWith(cLower) || (cCodeLower && sDept === cCodeLower);
+                              }
+                              return true;
+                            });
+                          }
+
+                          // Scope subjects by selected semester if filtered
+                          if (camAcadSemFilter !== "all") {
+                            availableSubjects = availableSubjects.filter(subName => {
+                              const subObj = subjectsList.find(s => s.name.toLowerCase().trim() === subName.toLowerCase().trim());
+                              if (subObj && subObj.semester) {
+                                return subObj.semester.toLowerCase().trim() === camAcadSemFilter.toLowerCase().trim();
+                              }
+                              return true;
+                            });
+                          }
+
+                          // Filtered records
+                          const filteredLogs = campusLogs.filter(log => {
+                            if (camAcadDeptFilter !== "all") {
+                              const logClass = (log.class_group || "").toLowerCase().trim();
+                              const cLower = camAcadDeptFilter.toLowerCase().trim();
+                              const courseObj = collegeCourses.find(c => c.name.trim().toLowerCase() === cLower);
+                              const cCodeLower = (courseObj?.code || "").trim().toLowerCase();
+
+                              const matchesCourse = logClass === cLower ||
+                                                    logClass.replace(/^[ivx]+\s+/i, "") === cLower ||
+                                                    logClass.startsWith(cLower) ||
+                                                    logClass.includes(cLower) ||
+                                                    (cCodeLower && (logClass === cCodeLower || logClass.includes(cCodeLower)));
+                              if (!matchesCourse) return false;
+                            }
+                            if (camAcadCohortFilter !== "all") {
+                              if ((log.class_group || "").toLowerCase().trim() !== camAcadCohortFilter.toLowerCase().trim()) return false;
+                            }
+                            if (camAcadSemFilter !== "all") {
+                              const logSem = getSemesterFromClassGroup(log.class_group || "");
+                              if (logSem.toLowerCase() !== camAcadSemFilter.toLowerCase()) return false;
+                            }
+                            if (camAcadMentorFilter !== "all") {
+                              if (log.mentor_id !== camAcadMentorFilter) return false;
+                            }
+                            if (camAcadSubjectFilter !== "all") {
+                              if ((log.subject || "").toLowerCase().trim() !== camAcadSubjectFilter.toLowerCase().trim()) return false;
+                            }
+                            if (camAcadUnitFilter !== "all") {
+                              if (!(log.unit || "").toLowerCase().includes(camAcadUnitFilter.toLowerCase().trim())) return false;
+                            }
+                            if (camAcadStartDate && log.date < camAcadStartDate) return false;
+                            if (camAcadEndDate && log.date > camAcadEndDate) return false;
+                            if (camAcadSearch.trim()) {
+                              const q = camAcadSearch.toLowerCase().trim();
+                              const matchTopic = (log.topic || "").toLowerCase().includes(q);
+                              const matchRemarks = (log.comments || "").toLowerCase().includes(q);
+                              const matchMentor = (log.mentor_name || "").toLowerCase().includes(q);
+                              const matchSubject = (log.subject || "").toLowerCase().includes(q);
+                              const matchClass = (log.class_group || "").toLowerCase().includes(q);
+                              if (!matchTopic && !matchRemarks && !matchMentor && !matchSubject && !matchClass) return false;
+                            }
+                            return true;
+                          }).sort((a, b) => b.date.localeCompare(a.date));
+
+                          // KPIs
+                          const totalLogged = campusLogs.length;
+                          const filteredLogged = filteredLogs.length;
+                          const activeFacultyCount = new Set(campusLogs.map(l => l.mentor_id)).size;
+                          const subjectsTrackedCount = new Set(campusLogs.map(l => l.subject)).size;
+                          const unitsLoggedCount = new Set(campusLogs.map(l => l.unit)).size;
+
+                          // Pagination
+                          const totalPages = Math.ceil(filteredLogs.length / camAcadPageSize) || 1;
+                          const paginatedLogs = filteredLogs.slice((camAcadPage - 1) * camAcadPageSize, camAcadPage * camAcadPageSize);
+
+                          const exportCampusAcademicAudit = async () => {
+                            try {
+                              const XLSX = await import("xlsx");
+                              const headers = [
+                                "S.No",
+                                "Date",
+                                "Period / Slot",
+                                "Department & Class Group",
+                                "Academic Subject",
+                                "Faculty / Mentor Name",
+                                "Faculty ID",
+                                "Syllabus Unit",
+                                "Topic Covered",
+                                "Conduction Status",
+                                "Delivery Remarks / Homework",
+                                "Logged At"
+                              ];
+
+                              const rows = filteredLogs.map((l, idx) => {
+                                const mentorObj = collegeMentors.find(m => m.id === l.mentor_id);
+                                return [
+                                  idx + 1,
+                                  l.date,
+                                  l.period_slot,
+                                  l.class_group,
+                                  l.subject,
+                                  l.mentor_name || mentorObj?.name || l.mentor_id,
+                                  l.mentor_id,
+                                  l.unit,
+                                  l.topic,
+                                  l.status || "Conducted",
+                                  l.comments || "—",
+                                  l.updated_at ? new Date(l.updated_at).toLocaleString() : "—"
+                                ];
+                              });
+
+                              const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                              ws["!cols"] = [
+                                { wch: 6 }, { wch: 14 }, { wch: 26 }, { wch: 24 }, { wch: 28 },
+                                { wch: 24 }, { wch: 16 }, { wch: 14 }, { wch: 38 }, { wch: 16 },
+                                { wch: 35 }, { wch: 22 }
+                              ];
+                              const wb = XLSX.utils.book_new();
+                              XLSX.utils.book_append_sheet(wb, ws, "Campus_Academic_Audit");
+                              XLSX.writeFile(wb, `Campus_Academic_Syllabus_Tracker_${activeCollegeId}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                              toast("Campus syllabus audit exported to Excel!", "success");
+                            } catch (err: any) {
+                              toast("Export failed: " + err.message, "error");
+                            }
+                          };
+
+                          return (
+                            <div className="space-y-6 font-sans">
+                              {/* 4 Summary KPI Cards */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Periods Logged</span>
+                                  <div className="text-2xl font-black text-slate-900">{totalLogged}</div>
+                                  <span className="text-[9px] text-slate-400 font-semibold block">{filteredLogged} in active filter</span>
+                                </div>
+
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                                  <span className="text-[10px] text-[#D528A2] font-bold uppercase tracking-wider block">Active Faculty Loggers</span>
+                                  <div className="text-2xl font-black text-[#D528A2]">{activeFacultyCount} / {collegeMentors.length}</div>
+                                  <span className="text-[9px] text-slate-400 font-semibold block">Mentors recording lessons</span>
+                                </div>
+
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                                  <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block">Academic Courses</span>
+                                  <div className="text-2xl font-black text-indigo-900">{subjectsTrackedCount} Subjects</div>
+                                  <span className="text-[9px] text-indigo-500 font-semibold block">With documented lessons</span>
+                                </div>
+
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                                  <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">Syllabus Units</span>
+                                  <div className="text-2xl font-black text-emerald-900">{unitsLoggedCount} Units</div>
+                                  <span className="text-[9px] text-emerald-600 font-semibold block">Across all batches</span>
+                                </div>
                               </div>
 
-                              <div>
-                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Subject</label>
-                                <select
-                                  value={camAcadSubjectFilter}
-                                  onChange={(e) => setCamAcadSubjectFilter(e.target.value)}
-                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
-                                >
-                                  <option value="all">All Academic Subjects</option>
-                                  {Array.from(new Set(campusLogs.map(l => l.subject).filter(Boolean))).map(subj => (
-                                    <option key={subj} value={subj}>{subj}</option>
-                                  ))}
-                                </select>
-                              </div>
+                              {/* Multi-Filter Bar with Checkmark Dropdowns */}
+                              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3 relative z-30 overflow-visible">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs font-semibold relative z-40">
+                                  {/* Department Filter */}
+                                  <CheckmarkSelect
+                                    label="Department"
+                                    value={camAcadDeptFilter}
+                                    onChange={val => {
+                                      setCamAcadDeptFilter(val);
+                                      setCamAcadPage(1);
+                                    }}
+                                    options={[
+                                      { value: "all", label: "All Departments" },
+                                      ...availableDepts.map(d => ({ value: d, label: d }))
+                                    ]}
+                                  />
 
-                              <div>
-                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">From Date</label>
-                                <input
-                                  type="date"
-                                  value={camAcadStartDate}
-                                  onChange={(e) => setCamAcadStartDate(e.target.value)}
-                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
-                                />
-                              </div>
+                                  {/* Semester Filter */}
+                                  <CheckmarkSelect
+                                    label="Semester"
+                                    value={camAcadSemFilter}
+                                    onChange={val => {
+                                      setCamAcadSemFilter(val);
+                                      setCamAcadPage(1);
+                                    }}
+                                    options={[
+                                      { value: "all", label: "All Semesters" },
+                                      ...availableSemesters.map(s => ({ value: s, label: s }))
+                                    ]}
+                                  />
 
-                              <div>
-                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">To Date</label>
-                                <input
-                                  type="date"
-                                  value={camAcadEndDate}
-                                  onChange={(e) => setCamAcadEndDate(e.target.value)}
-                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
-                                />
-                              </div>
+                                  {/* Faculty / Mentor Filter */}
+                                  <CheckmarkSelect
+                                    label="Faculty Member"
+                                    value={camAcadMentorFilter}
+                                    searchable
+                                    onChange={val => {
+                                      setCamAcadMentorFilter(val);
+                                      setCamAcadPage(1);
+                                      if (val !== "all") {
+                                        setCamAcadSubjectFilter("all");
+                                      }
+                                    }}
+                                    options={[
+                                      { value: "all", label: `All Faculty (${collegeMentors.length})` },
+                                      ...availableFaculty.map(m => ({
+                                        value: m.id,
+                                        label: m.name,
+                                        subtext: m.mentor_group ? `${m.mentor_group} • ID: ${m.id}` : `ID: ${m.id}`
+                                      }))
+                                    ]}
+                                  />
 
-                              <div>
-                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Search Topic / Class</label>
-                                <input
-                                  type="text"
-                                  value={camAcadSearch}
-                                  onChange={(e) => setCamAcadSearch(e.target.value)}
-                                  placeholder="Keyword search..."
-                                  className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
-                                />
-                              </div>
-                            </div>
+                                  {/* Subject Filter (Reactively scoped to mentor when selected) */}
+                                  <CheckmarkSelect
+                                    label={camAcadMentorFilter !== "all" ? "Faculty's Subjects" : "Academic Subject"}
+                                    value={camAcadSubjectFilter}
+                                    searchable
+                                    onChange={val => {
+                                      setCamAcadSubjectFilter(val);
+                                      setCamAcadPage(1);
+                                    }}
+                                    options={[
+                                      {
+                                        value: "all",
+                                        label: camAcadMentorFilter !== "all"
+                                          ? `All Mentor's Subjects (${availableSubjects.length})`
+                                          : `All Subjects (${availableSubjects.length})`
+                                      },
+                                      ...availableSubjects.map(s => ({ value: s, label: s }))
+                                    ]}
+                                  />
 
-                            {/* Conduction Log Table */}
-                            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-xs scroll-touch">
-                              <table className="w-full border-collapse text-left text-xs font-semibold min-w-[950px]">
-                                <thead>
-                                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[9.5px] whitespace-nowrap">
-                                    <th className="p-3.5 w-12 text-center border-r border-slate-100">#</th>
-                                    <th className="p-3.5 border-r border-slate-100 w-[110px]">Date</th>
-                                    <th className="p-3.5 border-r border-slate-100 w-[140px]">Period Slot</th>
-                                    <th className="p-3.5 border-r border-slate-100 min-w-[140px]">Faculty</th>
-                                    <th className="p-3.5 border-r border-slate-100 min-w-[140px]">Class &amp; Subject</th>
-                                    <th className="p-3.5 border-r border-slate-100 w-[90px] text-center">Unit</th>
-                                    <th className="p-3.5 border-r border-slate-100 min-w-[220px]">Topic Covered</th>
-                                    <th className="p-3.5 w-[100px] text-center">Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                                  {filteredCampusLogs.length === 0 ? (
-                                    <tr>
-                                      <td colSpan={8} className="p-8 text-center text-xs text-slate-400 italic">
-                                        No teaching periods logged matching the current filter.
-                                      </td>
-                                    </tr>
-                                  ) : (
-                                    filteredCampusLogs.map((log, idx) => (
-                                      <tr key={log.id || idx} className="hover:bg-slate-50/60 transition-colors">
-                                        <td className="p-3 text-center font-bold text-slate-400 border-r border-slate-100">{idx + 1}</td>
-                                        <td className="p-3 border-r border-slate-100 font-mono font-bold text-slate-800">{log.date}</td>
-                                        <td className="p-3 border-r border-slate-100 text-slate-600 text-[11px]">{log.period_slot}</td>
-                                        <td className="p-3 border-r border-slate-100 font-bold text-slate-900">{log.mentor_name || campusMentors.find(m => m.id === log.mentor_id)?.name || "Faculty"}</td>
-                                        <td className="p-3 border-r border-slate-100">
-                                          <div className="font-bold text-slate-900">{log.subject}</div>
-                                          <div className="text-[10px] text-slate-400 font-semibold">{log.class_group}</div>
-                                        </td>
-                                        <td className="p-3 text-center border-r border-slate-100">
-                                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-extrabold rounded text-[10px]">{log.unit}</span>
-                                        </td>
-                                        <td className="p-3 border-r border-slate-100">
-                                          <div className="font-bold text-slate-800">{log.topic}</div>
-                                          {log.comments && <div className="text-[10px] text-slate-400 italic mt-0.5">{log.comments}</div>}
-                                        </td>
-                                        <td className="p-3 text-center">
-                                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-bold text-[10px]">
-                                            {log.status || "Delivered"}
-                                          </span>
-                                        </td>
-                                      </tr>
-                                    ))
+                                  {/* Unit Filter */}
+                                  <CheckmarkSelect
+                                    label="Syllabus Unit"
+                                    value={camAcadUnitFilter}
+                                    onChange={val => {
+                                      setCamAcadUnitFilter(val);
+                                      setCamAcadPage(1);
+                                    }}
+                                    options={[
+                                      { value: "all", label: "All Units" },
+                                      { value: "Unit 1", label: "Unit 1" },
+                                      { value: "Unit 2", label: "Unit 2" },
+                                      { value: "Unit 3", label: "Unit 3" },
+                                      { value: "Unit 4", label: "Unit 4" },
+                                      { value: "Unit 5", label: "Unit 5" },
+                                      { value: "Revision", label: "Revision / Problem Solving" }
+                                    ]}
+                                  />
+                                </div>
+
+                                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 relative z-10">
+                                  <div className="flex items-center gap-2 flex-1 min-w-[260px]">
+                                    {/* Search */}
+                                    <div className="relative flex-1">
+                                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                      <input
+                                        type="text"
+                                        placeholder="Search by topic, faculty name, notes, or class group..."
+                                        value={camAcadSearch}
+                                        onChange={e => {
+                                          setCamAcadSearch(e.target.value);
+                                          setCamAcadPage(1);
+                                        }}
+                                        className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-indigo-500 outline-none"
+                                      />
+                                    </div>
+
+                                    {/* Date Range */}
+                                    <div className="flex items-center gap-1.5 text-xs text-slate-500 font-bold">
+                                      <span>From:</span>
+                                      <input
+                                        type="date"
+                                        value={camAcadStartDate}
+                                        onChange={e => {
+                                          setCamAcadStartDate(e.target.value);
+                                          setCamAcadPage(1);
+                                        }}
+                                        className="p-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 outline-none"
+                                      />
+                                      <span>To:</span>
+                                      <input
+                                        type="date"
+                                        value={camAcadEndDate}
+                                        onChange={e => {
+                                          setCamAcadEndDate(e.target.value);
+                                          setCamAcadPage(1);
+                                        }}
+                                        className="p-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 outline-none"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {(camAcadDeptFilter !== "all" || camAcadCohortFilter !== "all" || camAcadSemFilter !== "all" || camAcadMentorFilter !== "all" || camAcadSubjectFilter !== "all" || camAcadUnitFilter !== "all" || camAcadStartDate || camAcadEndDate || camAcadSearch) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setCamAcadDeptFilter("all");
+                                        setCamAcadCohortFilter("all");
+                                        setCamAcadSemFilter("all");
+                                        setCamAcadMentorFilter("all");
+                                        setCamAcadSubjectFilter("all");
+                                        setCamAcadUnitFilter("all");
+                                        setCamAcadStartDate("");
+                                        setCamAcadEndDate("");
+                                        setCamAcadSearch("");
+                                        setCamAcadPage(1);
+                                      }}
+                                      className="px-3 py-1 text-xs text-rose-600 font-bold hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      Reset All Filters
+                                    </button>
                                   )}
-                                </tbody>
-                              </table>
+                                </div>
+                              </div>
+
+                              {/* Audit Ledger Table */}
+                              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs relative z-10">
+                                {/* Table Header Bar with Export in Corner */}
+                                <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="h-7 w-7 rounded-lg bg-[#D528A2]/10 flex items-center justify-center text-[#D528A2]">
+                                      <BookOpen className="w-3.5 h-3.5" />
+                                    </div>
+                                    <div>
+                                      <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                                        Academic Conduction Ledger
+                                      </h3>
+                                      <span className="text-[10px] text-slate-400 font-semibold">
+                                        {filteredLogs.length} matching period record{filteredLogs.length === 1 ? "" : "s"}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={exportCampusAcademicAudit}
+                                    disabled={filteredLogs.length === 0}
+                                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition-all cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed self-start sm:self-auto"
+                                  >
+                                    <FileSpreadsheet className="w-4 h-4" />
+                                    <span>Export Campus Audit (.xlsx)</span>
+                                  </button>
+                                </div>
+                                {paginatedLogs.length === 0 ? (
+                                  <div className="p-12 text-center space-y-3">
+                                    <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto">
+                                      <BookOpen className="w-6 h-6" />
+                                    </div>
+                                    <h3 className="text-sm font-bold text-slate-800">No academic log records found</h3>
+                                    <p className="text-xs text-slate-400">Try adjusting your filters or search terms.</p>
+                                  </div>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                      <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
+                                          <th className="p-3 w-12 text-center">#</th>
+                                          <th className="p-3">Date &amp; Slot</th>
+                                          <th className="p-3">Class Group</th>
+                                          <th className="p-3">Academic Subject</th>
+                                          <th className="p-3">Faculty Member</th>
+                                          <th className="p-3">Unit</th>
+                                          <th className="p-3">Topic Covered</th>
+                                          <th className="p-3">Status</th>
+                                          <th className="p-3">Delivery Remarks</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {paginatedLogs.map((log, idx) => {
+                                          const mentorObj = collegeMentors.find(m => m.id === log.mentor_id);
+                                          const rowNum = (camAcadPage - 1) * camAcadPageSize + idx + 1;
+                                          return (
+                                            <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
+                                              <td className="p-3 text-center font-bold text-slate-400 text-[11px]">{rowNum}</td>
+                                              <td className="p-3 whitespace-nowrap">
+                                                <div className="font-extrabold text-slate-900">{log.date}</div>
+                                                <div className="text-[10px] text-slate-500 font-semibold">{log.period_slot}</div>
+                                              </td>
+                                              <td className="p-3 font-bold text-slate-700 whitespace-nowrap">
+                                                {log.class_group}
+                                              </td>
+                                              <td className="p-3">
+                                                <div className="font-black text-slate-900">{log.subject}</div>
+                                              </td>
+                                              <td className="p-3 whitespace-nowrap">
+                                                <div className="font-bold text-slate-800">{log.mentor_name || mentorObj?.name || log.mentor_id}</div>
+                                                <div className="text-[10px] text-slate-400 font-mono">{log.mentor_id}</div>
+                                              </td>
+                                              <td className="p-3 whitespace-nowrap">
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                                  {log.unit || "Unit 1"}
+                                                </span>
+                                              </td>
+                                              <td className="p-3 max-w-xs">
+                                                <div className="font-semibold text-slate-800 text-[11px] leading-relaxed">
+                                                  {log.topic}
+                                                </div>
+                                              </td>
+                                              <td className="p-3 whitespace-nowrap">
+                                                {(() => {
+                                                  const isNotDelivered = (log.status || "").toLowerCase().includes("not") || (log.status || "").toLowerCase().includes("missed");
+                                                  return (
+                                                    <span className={`px-2.5 py-0.5 rounded-full text-[9.5px] font-black uppercase border ${
+                                                      isNotDelivered
+                                                        ? "bg-rose-100 text-rose-800 border-rose-200"
+                                                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                    }`}>
+                                                      {isNotDelivered ? "Not Delivered" : "Delivered"}
+                                                    </span>
+                                                  );
+                                                })()}
+                                              </td>
+                                              <td className="p-3 max-w-xs text-slate-500 italic text-[10.5px]">
+                                                {log.comments ? `"${log.comments}"` : "—"}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+
+                                {/* Pagination Footer */}
+                                {filteredLogs.length > camAcadPageSize && (
+                                  <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                                    <span>Showing {(camAcadPage - 1) * camAcadPageSize + 1} to {Math.min(camAcadPage * camAcadPageSize, filteredLogs.length)} of {filteredLogs.length} logs</span>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        disabled={camAcadPage === 1}
+                                        onClick={() => setCamAcadPage(prev => Math.max(1, prev - 1))}
+                                        className="px-2.5 py-1 border border-slate-200 rounded-lg font-bold hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                                      >
+                                        Previous
+                                      </button>
+                                      <span className="px-2 font-bold text-slate-700">Page {camAcadPage} of {totalPages}</span>
+                                      <button
+                                        type="button"
+                                        disabled={camAcadPage === totalPages}
+                                        onClick={() => setCamAcadPage(prev => Math.min(totalPages, prev + 1))}
+                                        className="px-2.5 py-1 border border-slate-200 rounded-lg font-bold hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                                      >
+                                        Next
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     );
                   })()}
@@ -15077,571 +15525,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       )}
                     </div>
                   )}
-
-                  {/* Tab: Academic Tracker (Campus-Wide Syllabus & Period Conduction Audit) */}
-                  {activeTab === "academic_tracker" && (() => {
-                    // Campus scoped records
-                    const campusMentorIds = new Set(collegeMentors.map(m => m.id));
-                    const campusLogs = (academicTracker || []).filter(log => {
-                      if (log.college_id && log.college_id === activeCollegeId) return true;
-                      if (campusMentorIds.has(log.mentor_id)) return true;
-                      return false;
-                    });
-
-                    // Unique course/department names directly from Batch Creation module for active campus
-                    const availableDepts = Array.from(
-                      new Set(
-                        (collegeCourses.length > 0
-                          ? collegeCourses
-                          : departmentsList.filter(d => !activeCollegeId || d.college_id === activeCollegeId)
-                        )
-                          .map(c => c.name.trim())
-                          .filter(Boolean)
-                      )
-                    ).sort();
-
-                    const availableCohorts = Array.from(new Set([
-                      ...campusLogs.map(l => l.class_group),
-                      ...(collegeSlots || []).map(s => s.classGroup),
-                      ...(collegeStudents || []).map(st => st.classGroup)
-                    ].filter(Boolean))).sort();
-
-                    const availableSemesters = [
-                      "Semester 1",
-                      "Semester 2",
-                      "Semester 3",
-                      "Semester 4",
-                      "Semester 5",
-                      "Semester 6",
-                      "Semester 7",
-                      "Semester 8"
-                    ];
-
-                    const availableFaculty = collegeMentors.sort((a, b) => a.name.localeCompare(b.name));
-
-                    // Collect available academic subjects dynamically based on selected mentor
-                    let availableSubjects: string[] = [];
-
-                    if (camAcadMentorFilter !== "all") {
-                      const selectedMentor = collegeMentors.find(m => m.id === camAcadMentorFilter);
-                      const mentorAssignedSubs: string[] = [];
-                      if (selectedMentor) {
-                        if (Array.isArray(selectedMentor.subjects)) {
-                          mentorAssignedSubs.push(...selectedMentor.subjects);
-                        } else if (typeof selectedMentor.subjects === "string") {
-                          mentorAssignedSubs.push(...selectedMentor.subjects.split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean));
-                        }
-                        if ((selectedMentor as any).specialization) {
-                          mentorAssignedSubs.push((selectedMentor as any).specialization.trim());
-                        }
-                      }
-
-                      const mentorSlotSubs = (slots || [])
-                        .filter(s => s.mentorId === camAcadMentorFilter && s.course && (!activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId))
-                        .map(s => s.course.trim());
-
-                      const mentorLogSubs = campusLogs
-                        .filter(l => l.mentor_id === camAcadMentorFilter)
-                        .map(l => l.subject?.trim())
-                        .filter(Boolean);
-
-                      const mentorCandidates = [
-                        ...mentorAssignedSubs,
-                        ...mentorSlotSubs,
-                        ...mentorLogSubs
-                      ];
-
-                      availableSubjects = Array.from(
-                        new Set(
-                          mentorCandidates.filter(s => {
-                            if (!s) return false;
-                            const subObj = subjectsList.find(sub => sub.name.toLowerCase().trim() === s.toLowerCase().trim());
-                            return isAcademicSubject(subObj || s);
-                          })
-                        )
-                      ).sort((a, b) => a.localeCompare(b));
-                    } else {
-                      // All faculty scope — collect all campus academic subjects from Batch Creation
-                      const subjectsFromList = (subjectsList || [])
-                        .filter(s => (!activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId) && isAcademicSubject(s))
-                        .map(s => s.name?.trim())
-                        .filter(Boolean);
-
-                      const subjectsFromLogs = campusLogs.map(l => l.subject?.trim()).filter(s => s && isAcademicSubject(s));
-
-                      const allSubjectCandidates = [
-                        ...subjectsFromList,
-                        ...subjectsFromLogs
-                      ];
-
-                      availableSubjects = Array.from(
-                        new Set(
-                          allSubjectCandidates.filter(s => {
-                            if (!s) return false;
-                            const subObj = subjectsList.find(sub => sub.name.toLowerCase().trim() === s.toLowerCase().trim());
-                            return isAcademicSubject(subObj || s);
-                          })
-                        )
-                      ).sort((a, b) => a.localeCompare(b));
-                    }
-
-                    // Scope subjects by selected department if filtered
-                    if (camAcadDeptFilter !== "all") {
-                      const courseObj = collegeCourses.find(c => c.name.trim().toLowerCase() === camAcadDeptFilter.toLowerCase().trim());
-                      availableSubjects = availableSubjects.filter(subName => {
-                        const subObj = subjectsList.find(s => s.name.toLowerCase().trim() === subName.toLowerCase().trim());
-                        if (subObj) {
-                          const sDept = (subObj.department || "").trim().toLowerCase();
-                          const cLower = camAcadDeptFilter.trim().toLowerCase();
-                          const cCodeLower = (courseObj?.code || "").trim().toLowerCase();
-                          return sDept === cLower || sDept.startsWith(cLower) || (cCodeLower && sDept === cCodeLower);
-                        }
-                        return true;
-                      });
-                    }
-
-                    // Scope subjects by selected semester if filtered
-                    if (camAcadSemFilter !== "all") {
-                      availableSubjects = availableSubjects.filter(subName => {
-                        const subObj = subjectsList.find(s => s.name.toLowerCase().trim() === subName.toLowerCase().trim());
-                        if (subObj && subObj.semester) {
-                          return subObj.semester.toLowerCase().trim() === camAcadSemFilter.toLowerCase().trim();
-                        }
-                        return true;
-                      });
-                    }
-
-                    // Filtered records
-                    const filteredLogs = campusLogs.filter(log => {
-                      if (camAcadDeptFilter !== "all") {
-                        const logClass = (log.class_group || "").toLowerCase().trim();
-                        const cLower = camAcadDeptFilter.toLowerCase().trim();
-                        const courseObj = collegeCourses.find(c => c.name.trim().toLowerCase() === cLower);
-                        const cCodeLower = (courseObj?.code || "").trim().toLowerCase();
-
-                        const matchesCourse = logClass === cLower ||
-                                              logClass.replace(/^[ivx]+\s+/i, "") === cLower ||
-                                              logClass.startsWith(cLower) ||
-                                              logClass.includes(cLower) ||
-                                              (cCodeLower && (logClass === cCodeLower || logClass.includes(cCodeLower)));
-                        if (!matchesCourse) return false;
-                      }
-                      if (camAcadCohortFilter !== "all") {
-                        if ((log.class_group || "").toLowerCase().trim() !== camAcadCohortFilter.toLowerCase().trim()) return false;
-                      }
-                      if (camAcadSemFilter !== "all") {
-                        const logSem = getSemesterFromClassGroup(log.class_group || "");
-                        if (logSem.toLowerCase() !== camAcadSemFilter.toLowerCase()) return false;
-                      }
-                      if (camAcadMentorFilter !== "all") {
-                        if (log.mentor_id !== camAcadMentorFilter) return false;
-                      }
-                      if (camAcadSubjectFilter !== "all") {
-                        if ((log.subject || "").toLowerCase().trim() !== camAcadSubjectFilter.toLowerCase().trim()) return false;
-                      }
-                      if (camAcadUnitFilter !== "all") {
-                        if (!(log.unit || "").toLowerCase().includes(camAcadUnitFilter.toLowerCase().trim())) return false;
-                      }
-                      if (camAcadStartDate && log.date < camAcadStartDate) return false;
-                      if (camAcadEndDate && log.date > camAcadEndDate) return false;
-                      if (camAcadSearch.trim()) {
-                        const q = camAcadSearch.toLowerCase().trim();
-                        const matchTopic = (log.topic || "").toLowerCase().includes(q);
-                        const matchRemarks = (log.comments || "").toLowerCase().includes(q);
-                        const matchMentor = (log.mentor_name || "").toLowerCase().includes(q);
-                        const matchSubject = (log.subject || "").toLowerCase().includes(q);
-                        const matchClass = (log.class_group || "").toLowerCase().includes(q);
-                        if (!matchTopic && !matchRemarks && !matchMentor && !matchSubject && !matchClass) return false;
-                      }
-                      return true;
-                    }).sort((a, b) => b.date.localeCompare(a.date));
-
-                    // KPIs
-                    const totalLogged = campusLogs.length;
-                    const filteredLogged = filteredLogs.length;
-                    const activeFacultyCount = new Set(campusLogs.map(l => l.mentor_id)).size;
-                    const subjectsTrackedCount = new Set(campusLogs.map(l => l.subject)).size;
-                    const unitsLoggedCount = new Set(campusLogs.map(l => l.unit)).size;
-
-                    // Pagination
-                    const totalPages = Math.ceil(filteredLogs.length / camAcadPageSize) || 1;
-                    const paginatedLogs = filteredLogs.slice((camAcadPage - 1) * camAcadPageSize, camAcadPage * camAcadPageSize);
-
-                    const exportCampusAcademicAudit = async () => {
-                      try {
-                        const XLSX = await import("xlsx");
-                        const headers = [
-                          "S.No",
-                          "Date",
-                          "Period / Slot",
-                          "Department & Class Group",
-                          "Academic Subject",
-                          "Faculty / Mentor Name",
-                          "Faculty ID",
-                          "Syllabus Unit",
-                          "Topic Covered",
-                          "Conduction Status",
-                          "Delivery Remarks / Homework",
-                          "Logged At"
-                        ];
-
-                        const rows = filteredLogs.map((l, idx) => {
-                          const mentorObj = collegeMentors.find(m => m.id === l.mentor_id);
-                          return [
-                            idx + 1,
-                            l.date,
-                            l.period_slot,
-                            l.class_group,
-                            l.subject,
-                            l.mentor_name || mentorObj?.name || l.mentor_id,
-                            l.mentor_id,
-                            l.unit,
-                            l.topic,
-                            l.status || "Conducted",
-                            l.comments || "—",
-                            l.updated_at ? new Date(l.updated_at).toLocaleString() : "—"
-                          ];
-                        });
-
-                        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-                        ws["!cols"] = [
-                          { wch: 6 }, { wch: 14 }, { wch: 26 }, { wch: 24 }, { wch: 28 },
-                          { wch: 24 }, { wch: 16 }, { wch: 14 }, { wch: 38 }, { wch: 16 },
-                          { wch: 35 }, { wch: 22 }
-                        ];
-                        const wb = XLSX.utils.book_new();
-                        XLSX.utils.book_append_sheet(wb, ws, "Campus_Academic_Audit");
-                        XLSX.writeFile(wb, `Campus_Academic_Syllabus_Tracker_${activeCollegeId}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-                        toast("Campus syllabus audit exported to Excel!", "success");
-                      } catch (err: any) {
-                        toast("Export failed: " + err.message, "error");
-                      }
-                    };
-
-                    return (
-                      <div className="space-y-6 font-sans">
-                        {/* 4 Summary KPI Cards */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Periods Logged</span>
-                            <div className="text-2xl font-black text-slate-900">{totalLogged}</div>
-                            <span className="text-[9px] text-slate-400 font-semibold block">{filteredLogged} in active filter</span>
-                          </div>
-
-                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                            <span className="text-[10px] text-[#D528A2] font-bold uppercase tracking-wider block">Active Faculty Loggers</span>
-                            <div className="text-2xl font-black text-[#D528A2]">{activeFacultyCount} / {collegeMentors.length}</div>
-                            <span className="text-[9px] text-slate-400 font-semibold block">Mentors recording lessons</span>
-                          </div>
-
-                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                            <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block">Academic Courses</span>
-                            <div className="text-2xl font-black text-indigo-900">{subjectsTrackedCount} Subjects</div>
-                            <span className="text-[9px] text-indigo-500 font-semibold block">With documented lessons</span>
-                          </div>
-
-                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                            <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">Syllabus Units</span>
-                            <div className="text-2xl font-black text-emerald-900">{unitsLoggedCount} Units</div>
-                            <span className="text-[9px] text-emerald-600 font-semibold block">Across all batches</span>
-                          </div>
-                        </div>
-
-                        {/* Multi-Filter Bar with Checkmark Dropdowns */}
-                        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3 relative z-30 overflow-visible">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs font-semibold relative z-40">
-                            {/* Department Filter */}
-                            <CheckmarkSelect
-                              label="Department"
-                              value={camAcadDeptFilter}
-                              onChange={val => {
-                                setCamAcadDeptFilter(val);
-                                setCamAcadPage(1);
-                              }}
-                              options={[
-                                { value: "all", label: "All Departments" },
-                                ...availableDepts.map(d => ({ value: d, label: d }))
-                              ]}
-                            />
-
-                            {/* Semester Filter */}
-                            <CheckmarkSelect
-                              label="Semester"
-                              value={camAcadSemFilter}
-                              onChange={val => {
-                                setCamAcadSemFilter(val);
-                                setCamAcadPage(1);
-                              }}
-                              options={[
-                                { value: "all", label: "All Semesters" },
-                                ...availableSemesters.map(s => ({ value: s, label: s }))
-                              ]}
-                            />
-
-                            {/* Faculty / Mentor Filter */}
-                            <CheckmarkSelect
-                              label="Faculty Member"
-                              value={camAcadMentorFilter}
-                              searchable
-                              onChange={val => {
-                                setCamAcadMentorFilter(val);
-                                setCamAcadPage(1);
-                                if (val !== "all") {
-                                  setCamAcadSubjectFilter("all");
-                                }
-                              }}
-                              options={[
-                                { value: "all", label: `All Faculty (${collegeMentors.length})` },
-                                ...availableFaculty.map(m => ({
-                                  value: m.id,
-                                  label: m.name,
-                                  subtext: m.mentor_group ? `${m.mentor_group} • ID: ${m.id}` : `ID: ${m.id}`
-                                }))
-                              ]}
-                            />
-
-                            {/* Subject Filter (Reactively scoped to mentor when selected) */}
-                            <CheckmarkSelect
-                              label={camAcadMentorFilter !== "all" ? "Faculty's Subjects" : "Academic Subject"}
-                              value={camAcadSubjectFilter}
-                              searchable
-                              onChange={val => {
-                                setCamAcadSubjectFilter(val);
-                                setCamAcadPage(1);
-                              }}
-                              options={[
-                                {
-                                  value: "all",
-                                  label: camAcadMentorFilter !== "all"
-                                    ? `All Mentor's Subjects (${availableSubjects.length})`
-                                    : `All Subjects (${availableSubjects.length})`
-                                },
-                                ...availableSubjects.map(s => ({ value: s, label: s }))
-                              ]}
-                            />
-
-                            {/* Unit Filter */}
-                            <CheckmarkSelect
-                              label="Syllabus Unit"
-                              value={camAcadUnitFilter}
-                              onChange={val => {
-                                setCamAcadUnitFilter(val);
-                                setCamAcadPage(1);
-                              }}
-                              options={[
-                                { value: "all", label: "All Units" },
-                                { value: "Unit 1", label: "Unit 1" },
-                                { value: "Unit 2", label: "Unit 2" },
-                                { value: "Unit 3", label: "Unit 3" },
-                                { value: "Unit 4", label: "Unit 4" },
-                                { value: "Unit 5", label: "Unit 5" },
-                                { value: "Revision", label: "Revision / Problem Solving" }
-                              ]}
-                            />
-                          </div>
-
-                          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 relative z-10">
-                            <div className="flex items-center gap-2 flex-1 min-w-[260px]">
-                              {/* Search */}
-                              <div className="relative flex-1">
-                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                <input
-                                  type="text"
-                                  placeholder="Search by topic, faculty name, notes, or class group..."
-                                  value={camAcadSearch}
-                                  onChange={e => {
-                                    setCamAcadSearch(e.target.value);
-                                    setCamAcadPage(1);
-                                  }}
-                                  className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-indigo-500 outline-none"
-                                />
-                              </div>
-
-                              {/* Date Range */}
-                              <div className="flex items-center gap-1.5 text-xs text-slate-500 font-bold">
-                                <span>From:</span>
-                                <input
-                                  type="date"
-                                  value={camAcadStartDate}
-                                  onChange={e => {
-                                    setCamAcadStartDate(e.target.value);
-                                    setCamAcadPage(1);
-                                  }}
-                                  className="p-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 outline-none"
-                                />
-                                <span>To:</span>
-                                <input
-                                  type="date"
-                                  value={camAcadEndDate}
-                                  onChange={e => {
-                                    setCamAcadEndDate(e.target.value);
-                                    setCamAcadPage(1);
-                                  }}
-                                  className="p-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 outline-none"
-                                />
-                              </div>
-                            </div>
-
-                            {(camAcadDeptFilter !== "all" || camAcadCohortFilter !== "all" || camAcadSemFilter !== "all" || camAcadMentorFilter !== "all" || camAcadSubjectFilter !== "all" || camAcadUnitFilter !== "all" || camAcadStartDate || camAcadEndDate || camAcadSearch) && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCamAcadDeptFilter("all");
-                                  setCamAcadCohortFilter("all");
-                                  setCamAcadSemFilter("all");
-                                  setCamAcadMentorFilter("all");
-                                  setCamAcadSubjectFilter("all");
-                                  setCamAcadUnitFilter("all");
-                                  setCamAcadStartDate("");
-                                  setCamAcadEndDate("");
-                                  setCamAcadSearch("");
-                                  setCamAcadPage(1);
-                                }}
-                                className="px-3 py-1 text-xs text-rose-600 font-bold hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              >
-                                Reset All Filters
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Audit Ledger Table */}
-                        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs relative z-10">
-                          {/* Table Header Bar with Export in Corner */}
-                          <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60">
-                            <div className="flex items-center gap-2.5">
-                              <div className="h-7 w-7 rounded-lg bg-[#D528A2]/10 flex items-center justify-center text-[#D528A2]">
-                                <BookOpen className="w-3.5 h-3.5" />
-                              </div>
-                              <div>
-                                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                                  Academic Conduction Ledger
-                                </h3>
-                                <span className="text-[10px] text-slate-400 font-semibold">
-                                  {filteredLogs.length} matching period record{filteredLogs.length === 1 ? "" : "s"}
-                                </span>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={exportCampusAcademicAudit}
-                              disabled={filteredLogs.length === 0}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition-all cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed self-start sm:self-auto"
-                            >
-                              <FileSpreadsheet className="w-4 h-4" />
-                              <span>Export Campus Audit (.xlsx)</span>
-                            </button>
-                          </div>
-                          {paginatedLogs.length === 0 ? (
-                            <div className="p-12 text-center space-y-3">
-                              <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto">
-                                <BookOpen className="w-6 h-6" />
-                              </div>
-                              <h3 className="text-sm font-bold text-slate-800">No academic log records found</h3>
-                              <p className="text-xs text-slate-400">Try adjusting your filters or search terms.</p>
-                            </div>
-                          ) : (
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left text-xs border-collapse">
-                                <thead>
-                                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
-                                    <th className="p-3 w-12 text-center">#</th>
-                                    <th className="p-3">Date & Slot</th>
-                                    <th className="p-3">Class Group</th>
-                                    <th className="p-3">Academic Subject</th>
-                                    <th className="p-3">Faculty Member</th>
-                                    <th className="p-3">Unit</th>
-                                    <th className="p-3">Topic Covered</th>
-                                    <th className="p-3">Status</th>
-                                    <th className="p-3">Delivery Remarks</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                  {paginatedLogs.map((log, idx) => {
-                                    const mentorObj = collegeMentors.find(m => m.id === log.mentor_id);
-                                    const rowNum = (camAcadPage - 1) * camAcadPageSize + idx + 1;
-                                    return (
-                                      <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
-                                        <td className="p-3 text-center font-bold text-slate-400 text-[11px]">{rowNum}</td>
-                                        <td className="p-3 whitespace-nowrap">
-                                          <div className="font-extrabold text-slate-900">{log.date}</div>
-                                          <div className="text-[10px] text-slate-500 font-semibold">{log.period_slot}</div>
-                                        </td>
-                                        <td className="p-3 font-bold text-slate-700 whitespace-nowrap">
-                                          {log.class_group}
-                                        </td>
-                                        <td className="p-3">
-                                          <div className="font-black text-slate-900">{log.subject}</div>
-                                        </td>
-                                        <td className="p-3 whitespace-nowrap">
-                                          <div className="font-bold text-slate-800">{log.mentor_name || mentorObj?.name || log.mentor_id}</div>
-                                          <div className="text-[10px] text-slate-400 font-mono">{log.mentor_id}</div>
-                                        </td>
-                                        <td className="p-3 whitespace-nowrap">
-                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                            {log.unit || "Unit 1"}
-                                          </span>
-                                        </td>
-                                        <td className="p-3 max-w-xs">
-                                          <div className="font-semibold text-slate-800 text-[11px] leading-relaxed">
-                                            {log.topic}
-                                          </div>
-                                        </td>
-                                        <td className="p-3 whitespace-nowrap">
-                                          {(() => {
-                                            const isNotDelivered = (log.status || "").toLowerCase().includes("not") || (log.status || "").toLowerCase().includes("missed");
-                                            return (
-                                              <span className={`px-2.5 py-0.5 rounded-full text-[9.5px] font-black uppercase border ${
-                                                isNotDelivered
-                                                  ? "bg-rose-100 text-rose-800 border-rose-200"
-                                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                              }`}>
-                                                {isNotDelivered ? "Not Delivered" : "Delivered"}
-                                              </span>
-                                            );
-                                          })()}
-                                        </td>
-                                        <td className="p-3 max-w-xs text-slate-500 italic text-[10.5px]">
-                                          {log.comments ? `"${log.comments}"` : "—"}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-
-                          {/* Pagination Footer */}
-                          {filteredLogs.length > camAcadPageSize && (
-                            <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                              <span>Showing {(camAcadPage - 1) * camAcadPageSize + 1} to {Math.min(camAcadPage * camAcadPageSize, filteredLogs.length)} of {filteredLogs.length} logs</span>
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  disabled={camAcadPage === 1}
-                                  onClick={() => setCamAcadPage(prev => Math.max(1, prev - 1))}
-                                  className="px-2.5 py-1 border border-slate-200 rounded-lg font-bold hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-                                >
-                                  Previous
-                                </button>
-                                <span className="px-2 font-bold text-slate-700">Page {camAcadPage} of {totalPages}</span>
-                                <button
-                                  type="button"
-                                  disabled={camAcadPage === totalPages}
-                                  onClick={() => setCamAcadPage(prev => Math.min(totalPages, prev + 1))}
-                                  className="px-2.5 py-1 border border-slate-200 rounded-lg font-bold hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-                                >
-                                  Next
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
 
                   {/* Tab: Exam Schedules & Marks Studio */}
                   {activeTab === "exams_and_marks" && (
