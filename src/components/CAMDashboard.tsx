@@ -8141,13 +8141,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             </div>
           )}
 
-          {/* EXAMS & MARKS PERFORMANCE STUDIO */}
-          {activeTab === "exams_and_marks" && (
-            <div className="space-y-6 animate-fadeIn">
-              <ExamScheduleManager />
-            </div>
-          )}
-
           {/* 1. OPERATIONS HUB / KAM OVERVIEW */}
           {activeTab === "overview" && isKAMView && activeCollegeId === "all" && kamOverviewData && (
             <div className="space-y-6 animate-fadeIn pb-12">

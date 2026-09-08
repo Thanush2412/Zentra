@@ -658,7 +658,8 @@ export const ExamScheduleManager: React.FC = () => {
         if (!matches) return;
       }
 
-      const key = `${ex.exam_type}_${ex.department}_${ex.semester}`;
+      const canonicalDept = ex.department.replace(/^b\.?sc\.?\s+/i, "").trim();
+      const key = `${ex.exam_type.trim()}_${canonicalDept.toLowerCase()}_${ex.semester.trim()}`;
       if (!groups[key]) {
         groups[key] = {
           key,
@@ -670,9 +671,15 @@ export const ExamScheduleManager: React.FC = () => {
           maxDate: ex.exam_date
         };
       }
-      groups[key].slots.push(ex);
-      if (ex.exam_date < groups[key].minDate) groups[key].minDate = ex.exam_date;
-      if (ex.exam_date > groups[key].maxDate) groups[key].maxDate = ex.exam_date;
+
+      const isDuplicateSlot = groups[key].slots.some(
+        (s) => s.id === ex.id || (s.subject_name.toLowerCase().trim() === ex.subject_name.toLowerCase().trim() && s.exam_date === ex.exam_date)
+      );
+      if (!isDuplicateSlot) {
+        groups[key].slots.push(ex);
+        if (ex.exam_date < groups[key].minDate) groups[key].minDate = ex.exam_date;
+        if (ex.exam_date > groups[key].maxDate) groups[key].maxDate = ex.exam_date;
+      }
     });
 
     // Sort slots inside each group by exam_date
@@ -747,27 +754,50 @@ export const ExamScheduleManager: React.FC = () => {
     return { total, evaluated, passed, arrears, absent, passRate, avgScore };
   }, [campusMarksList]);
 
-  // Export CSV of Scheduled Exams
+  // Export CSV of Scheduled Exams (Filtered & Deduplicated)
   const handleExportCSV = () => {
-    const headers = ["Department", "Semester", "Exam_Name", "Subject_Name", "Exam_Date", "Session_Time", "Hall_Room"];
-    const rows = exams.map((ex) => [
-      ex.department,
-      ex.semester,
-      ex.exam_type,
-      ex.subject_name,
-      ex.exam_date,
-      ex.session_time,
-      ex.hall_room
+    // Gather all currently filtered exam slots from grouped batches
+    const activeSlots = groupedExamBatches.flatMap((b) => b.slots);
+    if (activeSlots.length === 0) {
+      toast("No scheduled exams to export", "warning");
+      return;
+    }
+
+    // Deduplicate by composite key
+    const seen = new Set<string>();
+    const deduplicatedSlots: ExamSchedule[] = [];
+    for (const ex of activeSlots) {
+      const key = `${ex.exam_type}__${ex.department}__${ex.semester}__${ex.subject_name}__${ex.exam_date}__${ex.session_time || ex.start_time}`.toLowerCase().trim();
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduplicatedSlots.push(ex);
+      }
+    }
+
+    const headers = ["Department", "Semester", "Exam_Name", "Subject_Name", "Exam_Date", "Day_Order", "Session_Time", "Hall_Room", "Max_Marks"];
+    const rows = deduplicatedSlots.map((ex) => [
+      `"${(ex.department || "").replace(/"/g, '""')}"`,
+      `"${(ex.semester || "").replace(/"/g, '""')}"`,
+      `"${(ex.exam_type || "").replace(/"/g, '""')}"`,
+      `"${(ex.subject_name || "").replace(/"/g, '""')}"`,
+      `"${(ex.exam_date || "").replace(/"/g, '""')}"`,
+      `"${(ex.day_order || "Day 1").replace(/"/g, '""')}"`,
+      `"${(ex.session_time || `${ex.start_time} - ${ex.end_time}`).replace(/"/g, '""')}"`,
+      `"${(ex.hall_room || "").replace(/"/g, '""')}"`,
+      `"${ex.max_marks || 50}"`
     ]);
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((e) => e.join(","))].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `exam_schedules_${collegeId}.csv`);
+    link.href = url;
+    link.download = `exam_schedules_${collegeId}_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast("Exam schedules exported to CSV", "success");
+    URL.revokeObjectURL(url);
+    toast(`Exported ${deduplicatedSlots.length} exam schedules to CSV`, "success");
   };
 
   // Export CSV of Campus Exam Marksheets
