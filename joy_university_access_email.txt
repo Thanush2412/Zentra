@@ -1,0 +1,46 @@
+﻿Subject: FACE Prep Operations - JOY University Platform Links & PIN
+
+To: Sathana C (sathana.chidambaram@faceprep.in)
+Campus: JOY University
+Role: Campus Manager
+
+Hi Sathana,
+
+Welcome! Here are your access links and PIN for all JOY University operations portals:
+
+--------------------------------------------------
+YOUR LOGIN CREDENTIALS
+--------------------------------------------------
+Role: Campus Manager
+College: JOY University
+CM PIN: 747474
+
+--------------------------------------------------
+PLATFORM LINKS
+--------------------------------------------------
+1. Operations Dashboard (Daily Logs, Snaps, Reports, Tickets, Audit):
+   https://operationsfpc.github.io/admin-dashboard/?role=manager&college=JOY+University
+
+2. Campus E-Audit:
+   https://operationsfpc.github.io/campus-eaudit/
+
+3. Student Helpdesk (For Students):
+   https://operationsfpc.github.io/student-portal/
+
+4. Ticketing Insights:
+   https://operationsfpc.github.io/ticketing-insights/
+
+5. Placement Portal:
+   https://operationsfpc.github.io/placement-portal/
+
+6. Project Tracker:
+   https://operationsfpc.github.io/project-tracker/
+
+7. B2L Central Panel:
+   https://operationsfpc.github.io/b2l-admin-panel/
+
+--------------------------------------------------
+Please use your PIN (747474) to log in. Reach out if you need any help!
+
+Best regards,
+FACE Prep Operations

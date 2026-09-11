@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FACE Prep Campus Help Desk — Student Portal</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --gold:        #D1A054;
+    --gold-deep:   #A87C30;
+    --gold-light:  #E8BC78;
+    --gold-pale:   #F5E4C0;
+    --walnut:      #2D2C2A;
+    --walnut-deep: #1A1918;
+    --walnut-mid:  #3E3D3A;
+    --cream:       #F7F1E8;
+    --paper:       #FDFAF5;
+    --line:        #D4B878;
+    --line-soft:   #E8DFC8;
+    --ink:         #F5E4C0;
+    --ink-body:    #C8A85A;
+    --ink-dark:    #1A1918;
+    --ink-dark-lt: #5A5248;
+    --accent:      #1A3A6B;
+    --accent-mid:  #2563EB;
+    --accent-lt:   #3B82F6;
+    --accent-pale: #DBEAFE;
+    --accent-xpale:#EFF6FF;
+    --page:        #F8F5F0;
+    --surface:     #FFFFFF;
+    --surface-mid: #F0EBE3;
+    --border:      #DDD6CC;
+    --border-soft: #EDE9E2;
+    --text:        #1C1C1E;
+    --text-mid:    #3A3A3C;
+    --text-body:   #5A5A6A;
+    --text-muted:  #8A8A9A;
+    --success:     #15803D;
+    --error:       #B91C1C;
+  }
+
+  body { font-family: 'DM Sans', sans-serif; color: var(--text); background: var(--page); min-height: 100vh; }
+  .font-display { font-family: 'Cormorant Garamond', serif; }
+  .font-mono    { font-family: 'DM Mono', monospace; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+
+  @keyframes fadeUp    { from{opacity:0;transform:translateY(22px);}to{opacity:1;transform:translateY(0);} }
+  @keyframes slideIn   { from{opacity:0;transform:translateX(-14px);}to{opacity:1;transform:translateX(0);} }
+  @keyframes pop       { from{opacity:0;transform:scale(0.82);}to{opacity:1;transform:scale(1);} }
+  @keyframes stampIn   { from{opacity:0;transform:scale(0.65) rotate(-5deg);}to{opacity:1;transform:scale(1) rotate(0deg);} }
+  @keyframes tabSlide  { from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);} }
+  @keyframes staggerIn { from{opacity:0;transform:translateX(-12px);}to{opacity:1;transform:translateX(0);} }
+  @keyframes successPop{ 0%{opacity:0;transform:scale(0.8);}60%{transform:scale(1.06);}100%{opacity:1;transform:scale(1);} }
+  @keyframes drift     { from{transform:translateY(0) scale(1);}to{transform:translateY(32px) scale(1.04);} }
+  @keyframes float1    { 0%,100%{transform:translate(0,0) scale(1);}33%{transform:translate(8px,-12px) scale(1.05);}66%{transform:translate(-6px,8px) scale(0.96);} }
+  @keyframes typeIn    { from{width:0;border-color:var(--accent-mid);}to{width:100%;border-color:transparent;} }
+
+  .auth-box { animation: fadeUp 0.55s ease both; }
+  .success-msg.show { animation: successPop 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+  .stamp { animation: stampIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+  .panel.active { animation: tabSlide 0.25s ease both; }
+
+  .stamp { display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border:1.5px solid currentColor;border-radius:3px;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;white-space:nowrap;flex-shrink:0; }
+  .stamp-open     { color:var(--accent);    background:rgba(26,58,107,0.07); }
+  .stamp-progress { color:var(--accent-mid);background:rgba(37,99,235,0.08); }
+  .stamp-resolved { color:var(--success);   background:rgba(21,128,61,0.09); }
+
+  .ticket-stub { position:relative;border-top:1.5px dashed rgba(26,58,107,0.18); }
+  .ticket-stub::before,.ticket-stub::after{content:'';position:absolute;top:-8px;width:14px;height:14px;border-radius:50%;background:var(--surface-mid);}
+  .ticket-stub::before{left:-2px;}.ticket-stub::after{right:-2px;}
+
+  .header-outer{background:var(--accent);position:relative;overflow:hidden;}
+  .header-orb1{position:absolute;width:380px;height:380px;border-radius:50%;background:var(--accent-mid);top:-200px;right:20px;filter:blur(120px);opacity:0.20;pointer-events:none;}
+
+  header{position:relative;z-index:2;}
+  .header-top{backdrop-filter:blur(20px) saturate(1.3);-webkit-backdrop-filter:blur(20px) saturate(1.3);background:rgba(15,30,70,0.55);border-bottom:1px solid rgba(255,255,255,0.12);padding:10px 12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;gap:8px;}
+  @media(min-width:480px){.header-top{padding:14px 24px;gap:12px;}}
+  .header-brand{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 auto;overflow:hidden;}
+ .header-logo{height:34px;width:auto;max-width:140px;object-fit:contain;display:block;border-radius:6px;flex-shrink:0;background:#FFFFFF;border:1px solid rgba(255,255,255,0.20);padding:4px 9px;}
+@media(min-width:480px){.header-logo{height:46px;max-width:185px;border-radius:8px;padding:5px 11px;}}
+  .header-brand .title{font-family:'Cormorant Garamond',serif;font-size:15px;line-height:1.2;font-weight:600;color:#FFFFFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .header-brand .sub-title{font-size:10px;color:rgba(255,255,255,0.50);letter-spacing:0.07em;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;font-family:'DM Mono',monospace;text-transform:uppercase;}
+  @media(min-width:480px){.header-brand .title{font-size:21px;}.header-brand .sub-title{max-width:none;}}
+  .header-right{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+  @media(min-width:480px){.header-right{gap:10px;}}
+  .btn-logout{display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;min-width:44px;min-height:44px;padding:7px;border-radius:4px;background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.20);color:rgba(255,255,255,0.75);cursor:pointer;font-family:'DM Mono',monospace;transition:opacity .15s,background .15s;white-space:nowrap;flex-shrink:0;letter-spacing:0.05em;text-transform:uppercase;}
+  @media(min-width:480px){.btn-logout{padding:7px 13px;}}
+  .btn-logout:hover{opacity:0.75;}
+  .btn-logout .logout-text{display:none;}
+  @media(min-width:480px){.btn-logout .logout-text{display:inline;}}
+  .header-tabs{background:rgba(10,24,60,0.40);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.10);padding:0 8px;display:flex;align-items:center;overflow-x:auto;}
+  @media(min-width:480px){.header-tabs{padding:0 24px;gap:4px;}}
+  .nav-tab{display:flex;align-items:center;gap:7px;padding:0 12px;height:44px;min-height:44px;font-size:12px;color:rgba(255,255,255,0.40);border:none;background:transparent;border-bottom:2px solid transparent;cursor:pointer;font-family:'DM Sans',sans-serif;transition:color .2s,border-color .25s ease;white-space:nowrap;flex-shrink:0;}
+  @media(min-width:480px){.nav-tab{padding:0 18px;font-size:13px;}}
+  .nav-tab:hover{color:rgba(255,255,255,0.75);}
+  .nav-tab.active{color:#FFFFFF;border-bottom-color:#93C5FD;font-weight:500;}
+  .nav-tab svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
+  .panel{display:none;}.panel.active{display:block;}
+  main{max-width:960px;margin:0 auto;padding:28px 16px 56px;}
+  @media(min-width:480px){main{padding:36px 24px 56px;}}
+  .section-title{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:600;margin-bottom:4px;color:var(--accent);}
+  .section-sub{font-size:13px;color:var(--text-body);margin-bottom:20px;}
+  .section-rule{width:32px;height:2px;background:var(--accent-mid);border-radius:2px;margin-bottom:14px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:20px;max-width:680px;box-shadow:0 2px 16px rgba(26,58,107,0.08);animation:fadeUp 0.5s ease both;}
+  @media(min-width:480px){.card{padding:28px;}}
+  label.field-label{display:block;font-family:'DM Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-body);margin-bottom:6px;}
+  .field{margin-bottom:18px;}
+  input,select,textarea{width:100%;padding:11px 14px;background:var(--page);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:16px;outline:none;transition:border-color .15s,box-shadow .15s;}
+  @media(min-width:480px){input,select,textarea{font-size:14px;padding:10px 14px;}}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent-mid);box-shadow:0 0 0 3px rgba(37,99,235,0.12);}
+  input::placeholder,textarea::placeholder{color:var(--text-muted);}
+  select option{background:var(--surface);color:var(--text);}
+  textarea{resize:none;}
+  select:disabled{opacity:0.5;cursor:not-allowed;}
+  .btn-primary{width:100%;padding:14px 12px;background:var(--accent);color:#FFFFFF;border:none;border-radius:4px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:background .15s,transform .15s;letter-spacing:0.04em;min-height:44px;}
+  .btn-primary:hover{background:var(--accent-mid);}
+  .btn-primary:active{transform:scale(0.98);}
+  .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
+  .error-msg{font-size:13px;color:var(--error);margin-bottom:10px;}
+  .success-msg{font-size:13px;color:var(--success);text-align:center;margin-top:8px;}
+
+  /* ===================== AUTH SCREEN ===================== */
+  .auth-wrap{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    padding:32px 16px;position:relative;overflow:hidden;
+    background:linear-gradient(160deg,#EEF4FF 0%,#F8F5F0 45%,#FDF6EC 100%);
+  }
+  .grid-bg{
+    position:absolute;inset:0;
+    background-image:
+      linear-gradient(rgba(37,99,235,0.04) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(37,99,235,0.04) 1px,transparent 1px);
+    background-size:40px 40px;
+    pointer-events:none;
+  }
+  .auth-orb{position:absolute;border-radius:50%;filter:blur(80px);pointer-events:none;}
+  .auth-orb1{width:480px;height:480px;background:rgba(37,99,235,0.10);top:-200px;right:-80px;animation:float1 12s ease-in-out infinite;}
+
+  .auth-box{width:100%;max-width:460px;position:relative;z-index:2;animation:fadeUp 0.65s ease both;}
+  .auth-header{text-align:center;margin-bottom:24px;}
+
+  .logo-wrap{
+    display:inline-flex;flex-direction:row;align-items:center;
+    gap:0;margin-bottom:22px;
+    background:rgba(255,255,255,0.92);border:1px solid rgba(37,99,235,0.13);
+    border-radius:14px;padding:16px 28px;
+    backdrop-filter:blur(16px);
+    animation:fadeUp 0.5s ease 0.1s both;
+    box-shadow:0 6px 32px rgba(26,58,107,0.11);
+  }
+  .auth-logo-img{height:46px;width:auto;max-width:202px;object-fit:contain;display:block;flex-shrink:0;}
+  .logo-divider{width:1px;height:40px;background:rgba(37,99,235,0.18);margin:0 20px;flex-shrink:0;}
+  .logo-support-wrap{display:flex;flex-direction:column;align-items:flex-start;gap:2px;}
+  .logo-support-eyebrow{font-family:'DM Mono',monospace;font-size:9px;font-weight:500;letter-spacing:0.18em;text-transform:uppercase;color:var(--text-muted);}
+  .logo-support-label{font-family:'DM Mono',monospace;font-size:12px;font-weight:500;letter-spacing:0.10em;text-transform:uppercase;color:var(--accent);}
+
+  .hero-headline{font-family:'Cormorant Garamond',serif;font-size:36px;line-height:1.16;font-weight:600;color:var(--accent);margin-bottom:12px;white-space:nowrap;animation:fadeUp 0.6s ease 0.2s both;}
+  .hero-headline em{font-style:italic;color:var(--accent-mid);}
+  .underline-anim{position:relative;display:inline-block;}
+  .underline-anim::after{content:'';position:absolute;bottom:-2px;left:0;height:2px;background:var(--gold-light);border-radius:2px;width:0;animation:typeIn 1.2s ease 0.8s forwards;}
+  .hero-sub{font-size:13.5px;color:var(--text-body);line-height:1.65;max-width:340px;margin:0 auto;animation:fadeUp 0.6s ease 0.35s both;}
+
+  .auth-mode-tabs{display:flex;background:rgba(26,58,107,0.08);border-radius:8px;padding:4px;gap:2px;margin-bottom:20px;}
+  .auth-mode-tab{flex:1;padding:9px 0;border:none;background:transparent;border-radius:5px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:var(--text-body);cursor:pointer;transition:background .15s,color .15s;min-height:36px;}
+  .auth-mode-tab.active{background:var(--surface);color:var(--accent);box-shadow:0 1px 4px rgba(26,58,107,0.12);}
+  .auth-mode-tab:hover:not(.active){color:var(--accent);}
+
+  .auth-panel{
+    background:rgba(255,255,255,0.90);border:1px solid var(--border);border-radius:10px;
+    padding:24px 22px;box-shadow:0 8px 40px rgba(26,58,107,0.12);
+    backdrop-filter:blur(20px);
+    margin-top:22px;
+    animation:fadeUp 0.65s ease 0.45s both;
+  }
+  .auth-panel input,.auth-panel select{background:var(--page);border-color:var(--border);color:var(--text);}
+  .auth-panel input::placeholder{color:var(--text-muted);}
+  .auth-btn-primary{
+    width:100%;padding:14px 12px;background:var(--accent);color:#FFFFFF;
+    border:none;border-radius:5px;font-family:'DM Sans',sans-serif;font-size:15px;
+    font-weight:600;cursor:pointer;display:flex;align-items:center;
+    justify-content:center;gap:8px;transition:background .2s,transform .15s;
+    letter-spacing:0.04em;margin-top:4px;min-height:44px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .auth-btn-primary:hover{background:var(--accent-mid);transform:translateY(-1px);}
+  .auth-btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
+
+  .secure-note{display:flex;align-items:center;gap:8px;margin-top:18px;}
+  .feature-row{display:flex;gap:8px;justify-content:center;margin-top:18px;flex-wrap:wrap;animation:fadeUp 0.5s ease 0.85s both;}
+  .fpill{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:var(--text-muted);background:rgba(255,255,255,0.70);border:1px solid var(--border-soft);border-radius:50px;padding:5px 12px;backdrop-filter:blur(6px);}
+  .auth-error{font-size:13px;color:var(--error);margin-bottom:10px;}
+  .auth-error.is-success{color:var(--success);}
+
+  .pass-wrap{position:relative;}
+  .pass-wrap input{padding-right:44px;}
+  .pass-toggle{position:absolute;right:0;top:0;height:100%;width:44px;background:transparent;border:none;cursor:pointer;color:var(--text-muted);display:flex;align-items:center;justify-content:center;padding:0;transition:color .15s;}
+  .pass-toggle:hover{color:var(--accent);}
+  .pass-toggle svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
+
+  .char-counter{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);text-align:right;margin-top:4px;}
+  .char-counter.warn{color:var(--error);}
+  .field-hint{font-size:12px;color:var(--text-muted);margin-top:4px;line-height:1.5;}
+
+  /* ===================== RECOVERY PANEL ===================== */
+  .recovery-divider{border:none;border-top:1px solid var(--border);margin:18px 0 16px;}
+  .recovery-section-label{font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--text-muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+  .recovery-section-label::after{content:'';flex:1;height:1px;background:var(--border-soft);}
+  .recovery-result-box{background:var(--accent-xpale);border:1px solid rgba(37,99,235,0.20);border-radius:6px;padding:14px 16px;margin-bottom:12px;display:none;}
+  .recovery-result-box.show{display:block;animation:fadeUp 0.3s ease both;}
+  .recovery-passcode-display{font-family:'DM Mono',monospace;font-size:28px;letter-spacing:0.35em;color:var(--accent);font-weight:600;margin:6px 0 4px;}
+  .recovery-row{display:flex;gap:8px;align-items:stretch;}
+  .btn-secondary{flex:0 0 auto;padding:0 16px;border-radius:5px;border:1px solid var(--border);background:transparent;cursor:pointer;color:var(--text-body);font-family:'DM Sans',sans-serif;font-size:13px;min-height:44px;transition:background .15s,border-color .15s;}
+  .btn-secondary:hover{background:var(--surface-mid);border-color:var(--accent-mid);}
+
+  /* ===================== TICKET LIST ===================== */
+  .ticket-card{background:var(--surface);border:1px solid var(--border-soft);border-radius:6px;overflow:hidden;margin-bottom:10px;max-width:760px;box-shadow:0 1px 8px rgba(26,58,107,0.07);transition:box-shadow .2s,transform .2s;}
+  .ticket-card:hover{box-shadow:0 4px 20px rgba(26,58,107,0.14);transform:translateY(-1px);}
+  .ticket-toggle{width:100%;text-align:left;padding:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;background:transparent;border:none;cursor:pointer;flex-wrap:wrap;min-height:44px;}
+  .ticket-toggle .meta{font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:5px;}
+  .ticket-toggle .subject{font-size:14.5px;font-weight:500;color:var(--text);}
+  .ticket-toggle .time{font-size:11px;color:var(--text-muted);margin-top:4px;font-family:'DM Mono',monospace;}
+  .ticket-body{padding:0 16px 16px;}
+  @media(min-width:480px){.ticket-toggle{padding:20px;gap:16px;flex-wrap:nowrap;}.ticket-body{padding:0 20px 20px;}}
+  .ticket-body .desc{font-size:14px;white-space:pre-wrap;padding-top:16px;line-height:1.7;color:var(--text-mid);}
+  .admin-note{margin-top:16px;padding:14px 16px;background:var(--accent-xpale);border-left:3px solid var(--accent-mid);border-radius:0 4px 4px 0;font-size:14px;line-height:1.65;color:var(--text-mid);}
+  .admin-note .note-label{font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-body);margin-bottom:6px;}
+
+  .tickets-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px;max-width:760px;}
+  .tickets-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+  .active-badge{font-family:'DM Mono',monospace;font-size:11px;color:var(--text-body);background:var(--surface);border:1px solid var(--border);padding:4px 10px;border-radius:3px;letter-spacing:0.05em;}
+  .ticket-search{flex:1;min-width:160px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;outline:none;transition:border-color .15s,box-shadow .15s;}
+  .ticket-search:focus{border-color:var(--accent-mid);box-shadow:0 0 0 3px rgba(37,99,235,0.12);}
+  .ticket-search::placeholder{color:var(--text-muted);}
+  .filter-pills{display:flex;gap:6px;flex-wrap:wrap;}
+  .filter-pill{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.07em;text-transform:uppercase;padding:6px 12px;border-radius:50px;border:1px solid var(--border);background:var(--surface);color:var(--text-body);cursor:pointer;transition:background .15s,color .15s,border-color .15s;min-height:32px;display:flex;align-items:center;}
+  .filter-pill:hover{border-color:var(--accent-mid);color:var(--accent);}
+  .filter-pill.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+  .expand-toggle{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);background:transparent;border:none;cursor:pointer;letter-spacing:0.07em;text-transform:uppercase;padding:0;text-decoration:underline;text-underline-offset:3px;}
+  .expand-toggle:hover{color:var(--accent);}
+
+  .empty-state{background:var(--surface);border:1px dashed var(--border);border-radius:6px;padding:36px 20px;text-align:center;color:var(--text-body);font-size:14px;max-width:760px;line-height:1.6;animation:fadeUp 0.4s ease both;}
+
+  .img-drop{border:1.5px dashed rgba(26,58,107,0.25);border-radius:5px;padding:20px;text-align:center;cursor:pointer;background:var(--page);transition:border-color .15s,background .15s;}
+  .img-drop:hover,.img-drop.drag-over{border-color:var(--accent-mid);background:var(--accent-xpale);}
+  .img-drop .img-drop-label{font-size:13px;color:var(--text-body);}
+  .img-drop .img-drop-label b{color:var(--text);font-weight:500;}
+  .img-drop .img-drop-sub{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);margin-top:5px;}
+  .img-preview-wrap{position:relative;display:inline-block;margin-top:12px;animation:pop 0.3s cubic-bezier(0.34,1.56,0.64,1) both;}
+  .img-preview-wrap img{display:block;max-width:100%;max-height:180px;border-radius:5px;border:1px solid var(--border);}
+  .img-remove-btn{position:absolute;top:-8px;right:-8px;width:28px;height:28px;border-radius:3px;background:var(--accent);color:#FFFFFF;border:1.5px solid var(--surface);cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:700;transition:background .15s;}
+  .img-remove-btn:hover{background:var(--accent-mid);}
+  .img-meta{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);margin-top:6px;}
+  .img-compressing{font-size:13px;color:var(--text-body);text-align:center;padding:10px;}
+  .ticket-attachment{margin-top:14px;}
+  .ticket-attachment img{max-width:100%;max-height:240px;border-radius:5px;border:1px solid var(--border);cursor:zoom-in;display:block;transition:opacity .15s;}
+  .ticket-attachment img:hover{opacity:0.9;}
+  .lightbox{position:fixed;inset:0;background:rgba(15,25,60,0.92);display:flex;align-items:center;justify-content:center;padding:24px;z-index:100;cursor:zoom-out;animation:fadeUp 0.2s ease both;}
+  .lightbox img{max-width:100%;max-height:100%;border-radius:6px;animation:pop 0.25s cubic-bezier(0.34,1.56,0.64,1) both;}
+  .loading{min-height:100vh;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--accent);font-family:'DM Mono',monospace;letter-spacing:0.1em;background:var(--page);}
+  .hidden{display:none!important;}
+  #tab-badge{background:#1A3A6B;color:#FFFFFF;font-size:10px;border-radius:3px;padding:2px 7px;font-family:'DM Mono',monospace;letter-spacing:0.05em;font-weight:600;animation:pop 0.3s cubic-bezier(0.34,1.56,0.64,1) both;}
+
+  .submit-success-box{background:var(--accent-xpale);border:1px solid rgba(37,99,235,0.18);border-radius:5px;padding:14px 16px;margin-top:14px;display:none;}
+  .submit-success-box.show{display:block;animation:fadeUp 0.3s ease both;}
+  .submit-success-title{font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px;}
+  .submit-success-id{font-family:'DM Mono',monospace;font-size:12px;color:var(--accent-mid);letter-spacing:0.06em;}
+  .submit-success-note{font-size:12px;color:var(--text-body);margin-top:4px;}
+
+  .forgot-hint{font-size:12px;color:var(--text-muted);text-align:center;margin-top:10px;line-height:1.5;}
+  .forgot-hint button{background:none;border:none;color:var(--accent-mid);cursor:pointer;font-size:12px;padding:0;text-decoration:underline;text-underline-offset:2px;font-family:'DM Sans',sans-serif;}
+  .forgot-hint button:hover{color:var(--accent);}
+
+  .cat-hint{font-size:12px;color:var(--text-body);margin-top:4px;padding:8px 10px;background:var(--accent-xpale);border-radius:4px;display:none;line-height:1.5;}
+
+  .ticket-toggle .time[title]{cursor:help;text-decoration:underline dotted;text-underline-offset:2px;}
+
+  @media(max-width:480px){
+    .auth-wrap{padding:20px 14px;align-items:flex-start;padding-top:36px;}
+    .auth-box{max-width:100%;}
+    .auth-orb1{width:300px;height:300px;top:-140px;right:-100px;}
+    .logo-wrap{padding:11px 16px;margin-bottom:16px;border-radius:12px;gap:0;}
+    .auth-logo-img{height:38px;max-width:165px;}
+    .logo-divider{height:28px;margin:0 14px;}
+    .logo-support-eyebrow{font-size:8px;}
+    .logo-support-label{font-size:10px;}
+    .hero-headline{font-size:22px;white-space:normal;}
+    .hero-sub{font-size:13px;max-width:100%;padding:0 6px;}
+    .auth-panel{padding:20px 16px;margin-top:18px;border-radius:8px;}
+    .secure-note span{font-size:11.5px;}
+    .feature-row{gap:6px;margin-top:16px;}
+    .fpill{font-size:9.5px;padding:4px 10px;}
+    .tickets-toolbar{flex-direction:column;align-items:stretch;}
+  }
+  @media(max-width:360px){
+    .auth-logo-img{height:32px;max-width:140px;}
+    .logo-divider{height:24px;margin:0 10px;}
+    .logo-support-label{font-size:9px;}
+    .hero-headline{font-size:20px;}
+    .auth-panel{padding:18px 14px;}
+  }
+</style>
+</head>
+<body>
+
+<div id="loading-screen" class="loading">Loading the help desk…</div>
+
+<div id="auth-screen" class="auth-wrap hidden">
+  <div class="grid-bg"></div>
+  <div class="auth-orb auth-orb1"></div>
+
+  <div class="auth-box">
+    <div class="auth-header">
+      <div class="logo-wrap">
+        <img src="data:image/png;base64,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" alt="FACE Prep Campus" class="auth-logo-img" />
+        <div class="logo-divider"></div>
+        <div class="logo-support-wrap">
+          <span class="logo-support-label">Student's</span>
+          <span class="logo-support-label">Help Desk</span>
+        </div>
+      </div>
+      <h1 class="hero-headline">One desk. <em>Every answer.</em></h1>
+      <p class="hero-sub">Create Your account & Log in with your roll number to raise a query or to track the one you've already filed.</p>
+    </div>
+
+    <div class="auth-panel">
+      <!-- Login / Register tab toggle -->
+      <div class="auth-mode-tabs" role="tablist" aria-label="Authentication mode">
+        <button class="auth-mode-tab active" id="tab-login-btn" role="tab" aria-selected="true" onclick="setMode('login')">Log in</button>
+        <button class="auth-mode-tab" id="tab-register-btn" role="tab" aria-selected="false" onclick="setMode('register')">Create account</button>
+      </div>
+
+      <!-- Register-only fields -->
+      <div id="a-college-wrap" class="field hidden">
+        <label class="field-label" for="a-college">College</label>
+        <select id="a-college" onchange="handleCollegeChange()">
+          <option value="">Select your college</option>
+          <option>JOY University</option>
+          <option>Kamaraj College</option>
+          <option>Kamaraj Women's College</option>
+          <option>SDNB Vaishnav College for Women</option>
+          <option>TERF's College of Arts and Science</option>
+          <option>Sree Saraswathi Thyagaraja College</option>
+          <option>TJS College of Arts and Science</option>
+          <option>Bharathidasan College of Arts &amp; Science</option>
+          <option>Nagarathinam Angalammal Arts &amp; Science College</option>
+          <option>Vinayaga Mission's Research Foundation School of Arts &amp; Science</option>
+          <option>Sri Amaraavathi College of Arts &amp; Science</option>
+          <option>Takshashila University</option>
+          <option>Study World Group of Institution</option>
+          <option>Rathinam College of Arts &amp; Science</option>
+          <option>Noorul Islam Centre for Higher Education (NICHE)</option>
+          <option>AMET University</option>
+          <option>Sasurie College of Arts and Science</option>
+          <option>Alliance University</option>
+          <option>Kristu Jayanti (Deemed to be University)</option>
+          <option>S-VYASA University</option>
+          <option>Asian School of Business</option>
+          <option>Hindusthan College of Arts &amp; Science</option>
+          <option>VLB Janakiammal College of Arts and Science</option>
+          <option>Kongunadu College of Arts and Science</option>
+          <option>Sri Ramakrishna College of Arts and Science for Women</option>
+          <option>St. Agnes College (Autonomous)</option>
+          <option>Yenepoya (Deemed to be University)</option>
+        </select>
+      </div>
+      <div id="a-dept-wrap" class="field hidden">
+        <label class="field-label" for="a-dept">Department</label>
+        <select id="a-dept" disabled>
+          <option value="">First select your college</option>
+        </select>
+      </div>
+
+      <!-- Common fields -->
+      <div class="field">
+        <label class="field-label" for="a-roll">Roll Number</label>
+        <input id="a-roll" type="text" placeholder="e.g. 23CS045" autocomplete="username" />
+      </div>
+      <div id="a-name-wrap" class="field hidden">
+        <label class="field-label" for="a-name">Full Name</label>
+        <input id="a-name" type="text" placeholder="Your name" autocomplete="name" oninput="this.value=this.value.replace(/[^a-zA-Z\s]/g,'')" />
+      </div>
+
+      <!-- Security question (register only) -->
+      <div id="a-secq-wrap" class="field hidden">
+        <label class="field-label" for="a-secq">Security Question</label>
+        <select id="a-secq">
+          <option value="">Select a question</option>
+          <option>What was the name of your first school?</option>
+          <option>What is your favorite subject?</option>
+          <option>What is your father's first name?</option>
+          <option>What city were you born in?</option>
+          <option>What is the name of your best friend in school?</option>
+          <option>What was your first pet's name?</option>
+        </select>
+      </div>
+      <div id="a-seca-wrap" class="field hidden">
+        <label class="field-label" for="a-seca">Answer</label>
+        <input id="a-seca" type="text" placeholder="Your answer" autocomplete="off" />
+        <div class="field-hint">You'll need this to recover your passcode later — remember it exactly.</div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="a-pass">Passcode</label>
+        <div class="pass-wrap">
+          <input id="a-pass" type="password" placeholder="4-digit PIN" maxlength="4" inputmode="numeric" autocomplete="current-password" oninput="this.value=this.value.replace(/[^0-9]/g,'')" />
+          <button type="button" class="pass-toggle" onclick="togglePass('a-pass','eye-pass')" aria-label="Show passcode">
+            <svg id="eye-pass" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="a-confirm-wrap" class="field hidden">
+        <label class="field-label" for="a-confirm">Confirm Passcode</label>
+        <div class="pass-wrap">
+          <input id="a-confirm" type="password" placeholder="Re-enter 4-digit PIN" maxlength="4" inputmode="numeric" autocomplete="new-password" oninput="this.value=this.value.replace(/[^0-9]/g,'')" />
+          <button type="button" class="pass-toggle" onclick="togglePass('a-confirm','eye-confirm')" aria-label="Show confirm passcode">
+            <svg id="eye-confirm" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="a-error" class="auth-error hidden"></div>
+
+      <button class="auth-btn-primary" id="a-submit-btn" onclick="submitStudent()">
+        <span id="a-btn-label">Log in</span> →
+      </button>
+
+      <!-- ── Forgot passcode link (login mode only) ── -->
+      <p id="forgot-hint" class="forgot-hint">
+        Forgot your passcode?
+        <button type="button" onclick="openRecovery()">Recover it here</button>
+      </p>
+
+      <!-- ══════════════════════════════════════════
+           PASSCODE RECOVERY SECTION
+           3-step flow: roll number → security question → set new passcode
+           Shows inline below the login form when
+           the student clicks "Recover it here".
+      ══════════════════════════════════════════ -->
+      <div id="recovery-panel" style="display:none;">
+        <hr class="recovery-divider" />
+        <div class="recovery-section-label">Passcode recovery</div>
+
+        <!-- STEP 1: roll number -->
+        <div id="rec-step1">
+          <div class="field">
+            <label class="field-label" for="rec-roll">Roll Number</label>
+            <input id="rec-roll" type="text" placeholder="e.g. 23CS045" autocomplete="off"
+                   oninput="this.value=this.value.toUpperCase().trim()" />
+          </div>
+          <div id="rec-error1" class="auth-error hidden"></div>
+          <button class="auth-btn-primary" id="rec-btn1" onclick="fetchSecurityQuestion()">
+            <span id="rec-btn1-label">Continue</span>
+          </button>
+        </div>
+
+        <!-- STEP 2: answer the security question -->
+        <div id="rec-step2" class="hidden">
+          <div class="field">
+            <label class="field-label">Security Question</label>
+            <div id="rec-question-text" style="font-size:14px;color:var(--text-mid);margin-bottom:10px;line-height:1.5;"></div>
+            <input id="rec-answer" type="text" placeholder="Your answer" autocomplete="off" />
+          </div>
+          <div id="rec-error2" class="auth-error hidden"></div>
+          <button class="auth-btn-primary" id="rec-btn2" onclick="verifySecurityAnswer()">
+            <span id="rec-btn2-label">Verify</span>
+          </button>
+        </div>
+
+        <!-- STEP 3: set a new passcode -->
+        <div id="rec-step3" class="hidden">
+          <div class="field">
+            <label class="field-label" for="rec-newpass">New Passcode</label>
+            <div class="pass-wrap">
+              <input id="rec-newpass" type="password" maxlength="4" inputmode="numeric" placeholder="4-digit PIN"
+                     oninput="this.value=this.value.replace(/[^0-9]/g,'')" />
+              <button type="button" class="pass-toggle" onclick="togglePass('rec-newpass','eye-recnew')" aria-label="Show passcode">
+                <svg id="eye-recnew" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="rec-newpass2">Confirm New Passcode</label>
+            <div class="pass-wrap">
+              <input id="rec-newpass2" type="password" maxlength="4" inputmode="numeric" placeholder="Re-enter PIN"
+                     oninput="this.value=this.value.replace(/[^0-9]/g,'')" />
+              <button type="button" class="pass-toggle" onclick="togglePass('rec-newpass2','eye-recnew2')" aria-label="Show passcode">
+                <svg id="eye-recnew2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div id="rec-error3" class="auth-error hidden"></div>
+          <div id="rec-success3" class="auth-error is-success hidden"></div>
+          <button class="auth-btn-primary" id="rec-btn3" onclick="submitNewPasscode()">
+            <span id="rec-btn3-label">Set new passcode</span>
+          </button>
+        </div>
+
+        <div class="recovery-row" style="margin-top:10px;">
+          <button type="button" class="btn-secondary" onclick="closeRecovery()" style="flex:1;">Cancel</button>
+        </div>
+      </div>
+      <!-- ══════════════════════════════════════════ -->
+
+      <div class="secure-note" style="margin-top:16px;">
+        <svg style="width:14px;height:14px;stroke:var(--text-muted);fill:none;stroke-width:1.7;stroke-linecap:round;flex-shrink:0;" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span style="font-size:12px;color:var(--text-muted);">Your data is encrypted and accessible only to you and campus admin.</span>
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <span class="fpill">Academics</span>
+      <span class="fpill">Fees &amp; Accounts</span>
+      <span class="fpill">Infrastructure</span>
+      <span class="fpill">Placements</span>
+      <span class="fpill">+ more</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     STUDENT DASHBOARD
+══════════════════════════════════════════════════════ -->
+<div id="student-screen" class="hidden">
+  <div class="header-outer">
+    <div class="header-orb1"></div>
+    <header>
+      <div class="header-top">
+        <div class="header-brand">
+          <img src="data:image/png;base64,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" alt="FACE Prep" class="header-logo" />
+          <div>
+            <div class="title">FACE Prep Campus Help Desk</div>
+            <div class="sub-title" id="s-college"></div>
+          </div>
+        </div>
+        <div class="header-right"><a href="admin.html" style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.7);text-decoration:none;padding:6px 12px;border:1px solid rgba(255,255,255,0.2);border-radius:4px;letter-spacing:0.05em;text-transform:uppercase;margin-left:auto;white-space:nowrap;">Staff Login &rarr;</a>
+          <button class="btn-logout" onclick="logout()" aria-label="Log out">↩ <span class="logout-text">Log out</span></button>
+        </div>
+      </div>
+      <div class="header-tabs" role="tablist">
+        <button class="nav-tab active" id="tab-raise" onclick="switchTab('raise')" role="tab" aria-selected="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Raise a query
+        </button>
+        <button class="nav-tab" id="tab-tickets" onclick="switchTab('tickets')" role="tab" aria-selected="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1a1 1 0 0 0 0 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a1 1 0 0 0 0-2Z"/><path d="M7 13v-2"/><path d="M12 13v-2"/><path d="M17 13v-2"/></svg>My tickets
+          <span id="tab-badge" style="display:none;"></span>
+        </button>
+      </div>
+    </header>
+  </div>
+
+  <!-- RAISE A QUERY panel -->
+  <div id="panel-raise" class="panel active" role="tabpanel">
+    <main>
+      <div class="section-rule"></div>
+      <div class="section-title font-display">Raise a Query</div>
+      <div class="section-sub">Tell us what's wrong — we'll route it to the right desk.</div>
+      <div class="card">
+        <div class="field">
+          <label class="field-label" for="f-cat">Category</label>
+         <select id="f-cat" onchange="showCatHint()">
+  <option value="" disabled selected>Select the Category</option>
+  <option value="Academics">Academics</option>
+          <option value="Attendance">Attendance</option>
+            <option value="Teaching Issue">Teaching Issue</option>
+            <option value="Examinations">Examinations</option>
+            <option value="Fees &amp; Accounts">Fees &amp; Accounts</option>
+            <option value="Scholarship &amp; Financial Aid">Scholarship &amp; Financial Aid</option>
+            <option value="Hostel &amp; Mess">Hostel &amp; Mess</option>
+            <option value="Infrastructure">Infrastructure</option>
+            <option value="Library">Library</option>
+            <option value="Transport">Transport</option>
+            <option value="Placement &amp; Internships">Placement &amp; Internships</option>
+            <option value="Certificates &amp; Documents">Certificates &amp; Documents</option>
+            <option value="Health &amp; Wellness">Health &amp; Wellness</option>
+            <option value="Sports &amp; Extracurricular">Sports &amp; Extracurricular</option>
+            <option value="Ragging / Harassment">Ragging / Harassment</option>
+            <option value="Technical / Portal">Technical / Portal</option>
+            <option value="Other">Other</option>
+          </select>
+          <div id="cat-hint" class="cat-hint"></div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="f-subject">Query subject</label>
+          <input id="f-subject" type="text" placeholder="Short summary of your query" />
+        </div>
+        <div class="field">
+          <label class="field-label" for="f-desc">Description</label>
+          <textarea id="f-desc" rows="5" placeholder="Explain the issue in detail — include dates, names, or error messages if relevant…" oninput="updateCharCount()"></textarea>
+          <div class="char-counter" id="char-counter">0 characters · Type atleast 20 words for better understanding of your problem</div>
+        </div>
+        <div class="field">
+          <label class="field-label">Attach a screenshot (optional)</label>
+          <div id="img-drop" class="img-drop" onclick="document.getElementById('img-file-input').click()" role="button" aria-label="Upload screenshot attachment" tabindex="0">
+            <div class="img-drop-label"><b>Tap to upload</b> a photo or screenshot</div>
+            <div class="img-drop-sub">JPG / PNG · auto-compressed to ~200–300 KB</div>
+          </div>
+          <input id="img-file-input" type="file" accept="image/*" class="hidden" onchange="handleImageSelect(event)" aria-label="Choose image file" />
+          <div id="img-compressing" class="img-compressing hidden">Compressing image…</div>
+          <div id="img-preview-wrap" class="img-preview-wrap hidden">
+            <img id="img-preview" src="" alt="Attachment preview" />
+            <button type="button" class="img-remove-btn" onclick="removeImage()" aria-label="Remove attached image">✕</button>
+          </div>
+          <div id="img-meta" class="img-meta hidden"></div>
+        </div>
+        <button class="btn-primary" id="f-submit-btn" onclick="submitTicket()">+ Submit ticket</button>
+        <div id="f-error" class="error-msg hidden"></div>
+        <div id="submit-success-box" class="submit-success-box">
+          <div class="submit-success-title">✓ Ticket raised successfully</div>
+          <div class="submit-success-id" id="submit-success-id"></div>
+          <div class="submit-success-note">Save this ID — you can quote it when following up in person.</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- MY TICKETS panel -->
+  <div id="panel-tickets" class="panel" role="tabpanel">
+    <main>
+      <div class="tickets-header-row">
+        <div><div class="section-rule"></div><div class="section-title font-display">My tickets</div></div>
+        <span class="active-badge" id="active-count"></span>
+      </div>
+      <div class="section-sub">Everything you've raised, newest first.</div>
+
+      <div class="tickets-toolbar">
+        <input type="search" class="ticket-search" id="ticket-search" placeholder="Search by subject or ticket ID…" oninput="renderTickets()" aria-label="Search tickets" />
+        <div class="filter-pills" role="group" aria-label="Filter by status">
+          <button class="filter-pill active" data-filter="all" onclick="setFilter('all')">All</button>
+          <button class="filter-pill" data-filter="open" onclick="setFilter('open')">Open</button>
+          <button class="filter-pill" data-filter="progress" onclick="setFilter('progress')">In progress</button>
+          <button class="filter-pill" data-filter="resolved" onclick="setFilter('resolved')">Resolved</button>
+        </div>
+        <button class="expand-toggle" id="expand-toggle" onclick="toggleExpandAll()">Expand all</button>
+      </div>
+
+      <div id="ticket-list"></div>
+    </main>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════ -->
+<script>
+const SUPABASE_URL     = 'https://scuvqabxqqtvibjutoyj.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_wptvdh6rVvEy2uSppa4Ckw_ozPuC6L4';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const IMAGE_BUCKET  = 'ticket-images';
+const TARGET_MIN_KB = 200, TARGET_MAX_KB = 300;
+
+let tickets = [], currentRoll = null, currentStudent = null;
+let authMode = 'login';
+let pendingImageBlob = null, pendingImageExt = 'jpg';
+let activeFilter = 'all', allExpanded = false;
+let refreshTimer = null;
+let openCards = {};
+let recStudentRoll = null; // holds the verified roll number between recovery steps
+
+/* ── Category hints ── */
+const CAT_HINTS = {
+  'Select the  Query':         '',
+  'Academics':                 'Course materials, syllabus, attendance, grades, or academic performance issues.',
+   'Attendance':                'Attendance shortage, correction requests, or condonation queries.',
+  'Teaching Issue':            'Concerns about teaching quality, faculty availability, or classroom conduct.',
+  'Examinations':              'Exam scheduling, hall tickets, results, re-evaluation requests.',
+  'Fees & Accounts':           'Fee payment, receipts, pending dues, or billing discrepancies.',
+  'Scholarship & Financial Aid':'Scholarship applications, disbursement delays, or eligibility queries.',
+  'Hostel & Mess':             'Accommodation, food quality, hostel facilities, or warden concerns.',
+  'Infrastructure':            'Classrooms, labs, toilets, electricity, Wi-Fi, or campus facilities.',
+  'Library':                   'Book availability, borrowing issues, library access, or digital resources.',
+  'Transport':                 'Bus routes, timing, driver conduct, or transport pass queries.',
+  'Placement & Internships':   'Placement drives, company visits, internship support, or career guidance.',
+  'Certificates & Documents':  'Bonafide, TC, migration, degree, or other document requests.',
+  'Health & Wellness':         'Medical emergencies, health center access, or mental wellness support.',
+  'Sports & Extracurricular':  'Sports facilities, club activities, events, or cultural programs.',
+  'Ragging / Harassment':      'Report ragging, bullying, or any form of harassment. Treated with strict confidentiality.',
+  'Technical / Portal':        'Issues with student portal login, apps, or online systems.',
+  'Other':                     "Anything that doesn't fit the above categories.",
+};
+
+/* ── College → Department map ── */
+const COLLEGE_DEPARTMENTS = {
+  "JOY University": ["General", "I BCA", "II BCA", "I B.Sc.", "II B.Sc.", "I BBA", "II BBA", "I B.Com.", "II B.Com.", "I B.Tech", "II B.Tech", "MCA", "MBA"],
+  "Kamaraj College": ["I BCA -A","I BCA - B","II BCA - A","II BCA - B","III BCA","I BBA Digital Marketing","II BBA Digital Marketing","I B.Com. (Hons.)","II B.Com. (Hons.)"],
+  "Kamaraj Women's College": ["II - B.Sc. Computer Science with Artificial Intelligence"],
+  "SDNB Vaishnav College for Women": ["I- B.Sc. Computer Science with Artificial Intelligence Shift-1","I- B.Sc. Computer Science with Artificial Intelligence Shift-2","II - B.Sc. Computer Science with Artificial Intelligence Shift-1","II - B.Sc. Computer Science with Artificial Intelligence Shift-2","III- B.Sc. Computer Science with Artificial Intelligence","I - B.Sc Data Science and Artificial Intelligence","II- B.Sc Data Science and Artificial Intelligence","I - B.Sc Computer Science with Cloud Computing","I- BBA Digital Marketing and Business Analytics","II- BBA Digital Marketing and Business Analytics","I - B.Com. FinTech with Artificial Intelligence","II - B.Com. FinTech with Artificial Intelligence","I - B.com Banking and FinTech","I- BBA Airline and Airport Management","I- BBA Fashion Management"],
+  "Sree Saraswathi Thyagaraja College": ["I BBA","II BBA","I- BCOM","I MCA","II MCA"],
+  "TERF's College of Arts and Science": ["III BSC IT"],
+  "TJS College of Arts and Science": ["III - B.Sc. Computer Science with Artificial Intelligence"],
+  "Bharathidasan College of Arts & Science": ["II B.Sc. CT","III B.Sc. CT","II- BBA CA"],
+  "Nagarathinam Angalammal Arts & Science College": ["I- B.Sc Artificial Intelligence","II- B.Sc Artificial Intelligence","III- B.Sc Artificial Intelligence","I- B.Sc Cloud Computing With CyberSecurity","II- B.Sc Cloud Computing With CyberSecurity","I- B.Com Blockchain & Fintech","II- B.Com Blockchain & Fintech","II- BBA Digital Marketing"],
+  "Vinayaga Mission's Research Foundation School of Arts & Science": ["I- B.Sc. Artificial Intelligence and Machine Learning","II- B.Sc. Artificial Intelligence and Machine Learning","I B.Com. FinTech with Artificial Intelligence","II B.Com. FinTech with Artificial Intelligence"],
+  "Sri Amaraavathi College of Arts & Science": ["II B.Sc. Artificial Intelligence and Machine Learning","III BCA","II BCA","II - Bcom"],
+  "Takshashila University": ["I- B.Sc. Artificial Intelligence and Machine Learning","II- B.Sc. Artificial Intelligence and Machine Learning","III- B.Sc. Artificial Intelligence and Machine Learning","I B.Com. FinTech with Artificial Intelligence","II B.Com. FinTech with Artificial Intelligence"],
+  "Study World Group of Institution": ["I BCA","II BCA"],
+  "Rathinam College of Arts & Science": ["I BCA (AI)","II BCA (AI)","I BSc CT (GEN AI)","II BSc CT (GEN AI)"],
+  "Noorul Islam Centre for Higher Education (NICHE)": ["B.Sc. Artificial Intelligence and Machine Learning"],
+  "AMET University": ["II B.Sc. Artificial Intelligence and Machine Learning","III B.Sc. Artificial Intelligence and Machine Learning","I B.Sc. Artificial Intelligence and Data Science","II B.Sc. Artificial Intelligence and Data Science","I B.Tech Artificial Intelligence and Data Science","II BBA Digital Marketing and E-Commerce","I B.Com. FinTech with Artificial Intelligence","II B.Com. FinTech with Artificial Intelligence"],
+  "Sasurie College of Arts and Science": ["II B.Sc. CS AI & DS","II B.Sc. IT","II BSC CS","II- B.Com. PA","II - BBA CA"],
+  "S-VYASA University": ["BCA"],
+  "Alliance University": ["BCA (Hons.) I YEAR","BCA II YEAR","BCA III YEAR","MCA I ST YEAR","MCA II nd YEAR"],
+  "Kristu Jayanti (Deemed to be University)": ["I BBA Aritificial Intelligence and Data Sciece","II BBA Aritificial Intelligence and Data Sciece","I - BBA FinTech","II- BBA FinTech"],
+  "Asian School of Business": ["I- BCA Data Science and Artificial Intelligence","II- BCA Data Science and Artificial Intelligence","I- BBA Digital Marketing and E-Commerce","II- BBA Digital Marketing and E-Commerce","I - B.Com. FinTech with AI","II - B.Com. FinTech with AI"],
+  "Hindusthan College of Arts & Science": ["I- BSC CT","I Bcom Fin tech With AI"],
+  "VLB Janakiammal College of Arts and Science": ["I- BSC CS AI & DS","I-BCOM (SCM & AI)"],
+  "Kongunadu College of Arts and Science": ["I BSC AI ML"],
+  "Sri Ramakrishna College of Arts and Science for Women": ["I- BCA","I- BBA DM"],
+  "St. Agnes College (Autonomous)": ["I BCom AIML"],
+  "Yenepoya (Deemed to be University)": ["General"]
+};/* ═══════════════════════════════════════════
+   UTILITY HELPERS
+═══════════════════════════════════════════ */
+function norm(s)   { return (s||'').trim().toUpperCase(); }
+function genId()   { return 'TKT-'+Date.now().toString(36).toUpperCase().slice(-5)+Math.random().toString(36).slice(2,5).toUpperCase(); }
+function show(id)  { document.getElementById(id).classList.remove('hidden'); }
+function hide(id)  { document.getElementById(id).classList.add('hidden'); }
+function escHTML(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function fmtRel(iso) {
+  const diff = Date.now() - new Date(iso).getTime(), m = Math.floor(diff/60000);
+  if(m < 1)  return 'just now';
+  if(m < 60) return m+'m ago';
+  const h = Math.floor(m/60);
+  if(h < 24) return h+'h ago';
+  const d = Math.floor(h/24);
+  if(d < 30) return d+'d ago';
+  return new Date(iso).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+}
+function fmtAbs(iso){ return new Date(iso).toLocaleString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+
+function setBtnLoading(btnId, loading, idleText) {
+  const btn = document.getElementById(btnId);
+  btn.disabled = loading;
+  if(btnId === 'a-submit-btn') {
+    document.getElementById('a-btn-label').textContent = loading ? 'Please wait…' : idleText;
+  } else {
+    btn.querySelector ? (btn.querySelector('span') || btn).textContent = loading ? 'Please wait…' : idleText
+                      : btn.textContent = loading ? 'Please wait…' : idleText;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   PASSWORD TOGGLE
+═══════════════════════════════════════════ */
+function togglePass(inputId, iconId) {
+  const inp = document.getElementById(inputId);
+  const ico = document.getElementById(iconId);
+  const showing = inp.type === 'text';
+  inp.type = showing ? 'password' : 'text';
+  ico.innerHTML = showing
+    ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
+    : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+  inp.nextElementSibling.setAttribute('aria-label', showing ? 'Show passcode' : 'Hide passcode');
+}
+
+/* ═══════════════════════════════════════════
+   CATEGORY HINT
+═══════════════════════════════════════════ */
+function showCatHint() {
+  const cat  = document.getElementById('f-cat').value;
+  const hint = document.getElementById('cat-hint');
+  if(CAT_HINTS[cat]) { hint.textContent = CAT_HINTS[cat]; hint.style.display = 'block'; }
+  else               { hint.style.display = 'none'; }
+}
+
+/* ═══════════════════════════════════════════
+   CHARACTER COUNTER
+═══════════════════════════════════════════ */
+function updateCharCount() {
+  const val = document.getElementById('f-desc').value;
+  const counter = document.getElementById('char-counter');
+  const len = val.length;
+  counter.textContent = len + ' character' + (len !== 1 ? 's' : '') + (len < 30 ? ' · aim for at least 30' : ' ✓');
+  counter.className = 'char-counter' + (len > 0 && len < 15 ? ' warn' : '');
+}
+
+/* ═══════════════════════════════════════════
+   COLLEGE → DEPARTMENT HANDLER
+═══════════════════════════════════════════ */
+function handleCollegeChange() {
+  const college  = document.getElementById('a-college').value;
+  const deptSel  = document.getElementById('a-dept');
+  const deptWrap = document.getElementById('a-dept-wrap');
+  deptSel.innerHTML = '<option value="">Select your department</option>';
+  if(college && COLLEGE_DEPARTMENTS[college]) {
+    COLLEGE_DEPARTMENTS[college].forEach(dept => {
+      const opt = document.createElement('option');
+      opt.value = dept; opt.textContent = dept;
+      deptSel.appendChild(opt);
+    });
+    deptSel.disabled = false;
+    deptWrap.classList.remove('hidden');
+  } else {
+    deptSel.disabled = true;
+    deptWrap.classList.add('hidden');
+  }
+}
+
+/* ═══════════════════════════════════════════
+   AUTH MODE (Login ↔ Register)
+═══════════════════════════════════════════ */
+function setMode(mode) {
+  authMode = mode;
+  document.getElementById('tab-login-btn').classList.toggle('active', mode === 'login');
+  document.getElementById('tab-register-btn').classList.toggle('active', mode === 'register');
+  document.getElementById('tab-login-btn').setAttribute('aria-selected', mode === 'login');
+  document.getElementById('tab-register-btn').setAttribute('aria-selected', mode === 'register');
+  document.getElementById('a-btn-label').textContent = mode === 'register' ? 'Create account' : 'Log in';
+
+  const forgotEl = document.getElementById('forgot-hint');
+  if(forgotEl) forgotEl.style.display = mode === 'login' ? '' : 'none';
+
+  if(mode === 'register') {
+    show('a-college-wrap'); show('a-name-wrap'); show('a-confirm-wrap');
+    show('a-secq-wrap'); show('a-seca-wrap');
+    closeRecovery(); // hide recovery if switching to register
+  } else {
+    hide('a-college-wrap'); hide('a-dept-wrap'); hide('a-name-wrap'); hide('a-confirm-wrap');
+    hide('a-secq-wrap'); hide('a-seca-wrap');
+    document.getElementById('a-college').value = '';
+    document.getElementById('a-dept').innerHTML = '<option value="">First select your college</option>';
+    document.getElementById('a-dept').disabled = true;
+  }
+  hide('a-error');
+}
+
+/* ═══════════════════════════════════════════
+   PASSCODE RECOVERY — 3-step flow
+   1) roll number  2) security question  3) set new passcode
+═══════════════════════════════════════════ */
+function openRecovery() {
+  const panel = document.getElementById('recovery-panel');
+  panel.style.display = 'block';
+  resetRecoveryFlow();
+
+  // Pre-fill roll number if already typed in login form
+  const existingRoll = document.getElementById('a-roll').value.trim();
+  document.getElementById('rec-roll').value = existingRoll ? norm(existingRoll) : '';
+
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeRecovery() {
+  document.getElementById('recovery-panel').style.display = 'none';
+  resetRecoveryFlow();
+}
+
+function resetRecoveryFlow() {
+  recStudentRoll = null;
+  ['rec-step1','rec-step2','rec-step3'].forEach(id => document.getElementById(id).classList.add('hidden'));
+  document.getElementById('rec-step1').classList.remove('hidden');
+  ['rec-error1','rec-error2','rec-error3','rec-success3'].forEach(id => hide(id));
+  document.getElementById('rec-roll').value = '';
+  document.getElementById('rec-answer').value = '';
+  document.getElementById('rec-newpass').value = '';
+  document.getElementById('rec-newpass2').value = '';
+  document.getElementById('rec-question-text').textContent = '';
+}
+
+function showStepError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'auth-error';
+  show(id);
+}
+
+/* STEP 1 → fetch the student's security question */
+async function fetchSecurityQuestion() {
+  const roll = norm(document.getElementById('rec-roll').value);
+  hide('rec-error1');
+  if(!roll) { showStepError('rec-error1', 'Enter your roll number.'); return; }
+
+  const btn = document.getElementById('rec-btn1');
+  btn.disabled = true;
+  document.getElementById('rec-btn1-label').textContent = 'Checking…';
+
+  try {
+    const { data, error } = await sb.from('helpdesk_students')
+      .select('roll_number, security_question')
+      .eq('roll_number', roll)
+      .maybeSingle();
+    if(error) throw error;
+    if(!data) { showStepError('rec-error1', 'No account found for this roll number.'); return; }
+    if(!data.security_question) {
+      showStepError('rec-error1', 'No security question is set on this account. Please contact campus admin to reset your passcode.');
+      return;
+    }
+    recStudentRoll = roll;
+    document.getElementById('rec-question-text').textContent = data.security_question;
+    document.getElementById('rec-step1').classList.add('hidden');
+    document.getElementById('rec-step2').classList.remove('hidden');
+  } catch(e) {
+    console.error(e);
+    showStepError('rec-error1', 'Could not reach the server. Try again.');
+  } finally {
+    btn.disabled = false;
+    document.getElementById('rec-btn1-label').textContent = 'Continue';
+  }
+}
+
+/* STEP 2 → verify the answer */
+async function verifySecurityAnswer() {
+  const answer = document.getElementById('rec-answer').value.trim();
+  hide('rec-error2');
+  if(!answer) { showStepError('rec-error2', 'Enter your answer.'); return; }
+
+  const btn = document.getElementById('rec-btn2');
+  btn.disabled = true;
+  document.getElementById('rec-btn2-label').textContent = 'Verifying…';
+
+  try {
+    const { data, error } = await sb.from('helpdesk_students')
+      .select('security_answer')
+      .eq('roll_number', recStudentRoll)
+      .maybeSingle();
+    if(error) throw error;
+    if(!data || (data.security_answer || '').trim().toLowerCase() !== answer.toLowerCase()) {
+      showStepError('rec-error2', "That answer doesn't match our records.");
+      return;
+    }
+    document.getElementById('rec-step2').classList.add('hidden');
+    document.getElementById('rec-step3').classList.remove('hidden');
+  } catch(e) {
+    console.error(e);
+    showStepError('rec-error2', 'Could not reach the server. Try again.');
+  } finally {
+    btn.disabled = false;
+    document.getElementById('rec-btn2-label').textContent = 'Verify';
+  }
+}
+
+/* STEP 3 → set the new passcode */
+async function submitNewPasscode() {
+  const p1 = document.getElementById('rec-newpass').value;
+  const p2 = document.getElementById('rec-newpass2').value;
+  hide('rec-error3'); hide('rec-success3');
+
+  if(!/^\d{4}$/.test(p1)) { showStepError('rec-error3', 'Passcode must be exactly 4 digits.'); return; }
+  if(p1 !== p2) { showStepError('rec-error3', 'Passcodes do not match.'); return; }
+
+  const btn = document.getElementById('rec-btn3');
+  btn.disabled = true;
+  document.getElementById('rec-btn3-label').textContent = 'Saving…';
+
+  try {
+    const { error } = await sb.from('helpdesk_students')
+      .update({ passcode: p1 })
+      .eq('roll_number', recStudentRoll);
+    if(error) throw error;
+
+    const successEl = document.getElementById('rec-success3');
+    successEl.textContent = 'Passcode updated! You can log in now.';
+    show('rec-success3');
+    setTimeout(() => { closeRecovery(); }, 1800);
+  } catch(e) {
+    console.error(e);
+    showStepError('rec-error3', 'Could not update your passcode. Try again.');
+  } finally {
+    btn.disabled = false;
+    document.getElementById('rec-btn3-label').textContent = 'Set new passcode';
+  }
+}
+
+/* ═══════════════════════════════════════════
+   MAIN AUTH SUBMIT (Login / Register)
+═══════════════════════════════════════════ */
+function showAuthError(msg, isSuccess) {
+  const el = document.getElementById('a-error');
+  el.textContent = msg;
+  el.className = 'auth-error' + (isSuccess ? ' is-success' : '');
+  show('a-error');
+}
+
+async function submitStudent() {
+  hide('a-error');
+  const roll = norm(document.getElementById('a-roll').value);
+  const pass = document.getElementById('a-pass').value;
+
+  if(!roll || !pass) { showAuthError('Enter your roll number and passcode.'); return; }
+
+  setBtnLoading('a-submit-btn', true, authMode === 'register' ? 'Create account' : 'Log in');
+
+  try {
+    if(authMode === 'register') {
+      const college = document.getElementById('a-college').value;
+      const dept    = document.getElementById('a-dept').value;
+      const name    = document.getElementById('a-name').value.trim();
+      const confirm = document.getElementById('a-confirm').value;
+      const secQ    = document.getElementById('a-secq').value;
+      const secA    = document.getElementById('a-seca').value.trim();
+
+      if(!college)               { showAuthError('Select your college.'); return; }
+      if(!dept)                  { showAuthError('Select your department.'); return; }
+      if(!name)                  { showAuthError('Enter your full name.'); return; }
+      if(!secQ)                  { showAuthError('Select a security question.'); return; }
+      if(!secA)                  { showAuthError('Enter an answer to your security question.'); return; }
+      if(!/^\d{4}$/.test(pass)) { showAuthError('Passcode must be exactly 4 digits (numbers only).'); return; }
+      if(pass !== confirm)       { showAuthError('Passcodes do not match.'); return; }
+
+      const { data: existing, error: checkErr } = await sb.from('helpdesk_students').select('roll_number').eq('roll_number', roll).maybeSingle();
+      if(checkErr) throw checkErr;
+      if(existing) { showAuthError('This roll number is already registered. Log in instead.'); return; }
+
+      const { error: insertErr } = await sb.from('helpdesk_students').insert({
+        roll_number: roll, name, passcode: pass, college, department: dept,
+        security_question: secQ, security_answer: secA
+      });
+      if(insertErr) throw insertErr;
+
+      ['a-name','a-pass','a-confirm','a-seca'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('a-secq').value = '';
+      document.getElementById('a-college').value = '';
+      document.getElementById('a-dept').innerHTML = '<option value="">First select your college</option>';
+      document.getElementById('a-dept').disabled = true;
+      setMode('login');
+      showAuthError('Account created! Log in with your roll number and passcode.', true);
+
+    } else {
+      const { data: rec, error } = await sb.from('helpdesk_students').select('*').eq('roll_number', roll).maybeSingle();
+      if(error) throw error;
+      if(!rec) { showAuthError('No account found for this roll number. Use "Create account" to register.'); return; }
+      if(rec.passcode !== pass) { showAuthError('Incorrect passcode. Check your PIN and try again.'); return; }
+
+      currentRoll = roll;
+      currentStudent = rec;
+      closeRecovery();
+      await showDashboard();
+    }
+  } catch(e) {
+    console.error(e);
+    if(e.message && e.message.toLowerCase().includes('network')) {
+      showAuthError('Cannot reach the server. Check your internet connection and try again.');
+    } else {
+      showAuthError('Something went wrong. Please try again in a moment.');
+    }
+  } finally {
+    setBtnLoading('a-submit-btn', false, authMode === 'register' ? 'Create account' : 'Log in');
+  }
+}
+
+/* ═══════════════════════════════════════════
+   DASHBOARD
+═══════════════════════════════════════════ */
+async function showDashboard() {
+  hide('auth-screen');
+  show('student-screen');
+  document.getElementById('s-college').textContent = currentStudent
+    ? currentStudent.college + (currentStudent.department ? ' — ' + currentStudent.department : '')
+    : '';
+  await loadTickets();
+  showCatHint();
+}
+
+function logout() {
+  currentRoll = null; currentStudent = null;
+  stopAutoRefresh();
+  hide('student-screen'); show('auth-screen');
+  ['a-roll','a-name','a-pass','a-confirm','a-seca'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('a-secq').value = '';
+  document.getElementById('a-college').value = '';
+  document.getElementById('a-dept').innerHTML = '<option value="">First select your college</option>';
+  document.getElementById('a-dept').disabled = true;
+  hide('a-error');
+  setMode('login');
+  removeImage();
+  switchTab('raise');
+  document.getElementById('char-counter').textContent = '0 characters · Type atleast 20 words for better understanding of your problem';
+}
+
+/* ═══════════════════════════════════════════
+   TAB SWITCHING
+═══════════════════════════════════════════ */
+function switchTab(tab) {
+  ['raise','tickets'].forEach(t => {
+    document.getElementById('tab-'+t).classList.toggle('active', t === tab);
+    document.getElementById('tab-'+t).setAttribute('aria-selected', t === tab);
+    const p = document.getElementById('panel-'+t);
+    p.classList.remove('active');
+    void p.offsetWidth;
+  });
+  document.getElementById('panel-'+tab).classList.add('active');
+  if(tab === 'tickets') { loadTickets(); startAutoRefresh(); }
+  else                  { stopAutoRefresh(); }
+}
+
+/* ═══════════════════════════════════════════
+   AUTO-REFRESH
+═══════════════════════════════════════════ */
+function startAutoRefresh() {
+  stopAutoRefresh();
+  refreshTimer = setInterval(() => { if(currentRoll) silentRefresh(); }, 60000);
+}
+function stopAutoRefresh() {
+  if(refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+}
+async function silentRefresh() {
+  try {
+    const { data, error } = await sb.from('tickets').select('*').eq('roll_number', currentRoll).order('created_at', { ascending: false });
+    if(!error && data) { tickets = data; renderTickets(); }
+  } catch(e) { /* silent */ }
+}
+
+/* ═══════════════════════════════════════════
+   TICKET FILTER / SEARCH
+═══════════════════════════════════════════ */
+function setFilter(f) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-pill').forEach(p => p.classList.toggle('active', p.dataset.filter === f));
+  renderTickets();
+}
+
+function getFilteredTickets() {
+  const query = (document.getElementById('ticket-search')?.value || '').toLowerCase().trim();
+  return tickets.filter(t => {
+    const matchFilter =
+      activeFilter === 'all' ||
+      (activeFilter === 'open'     && t.status === 'open') ||
+      (activeFilter === 'progress' && t.status === 'progress') ||
+      (activeFilter === 'resolved' && t.status === 'resolved');
+    const matchSearch =
+      !query ||
+      t.subject.toLowerCase().includes(query) ||
+      t.id.toLowerCase().includes(query) ||
+      t.category.toLowerCase().includes(query);
+    return matchFilter && matchSearch;
+  });
+}
+
+function toggleExpandAll() {
+  allExpanded = !allExpanded;
+  getFilteredTickets().forEach(t => { openCards[t.id] = allExpanded; });
+  document.getElementById('expand-toggle').textContent = allExpanded ? 'Collapse all' : 'Expand all';
+  renderTickets();
+}
+
+/* ═══════════════════════════════════════════
+   IMAGE COMPRESSION
+═══════════════════════════════════════════ */
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => resolve(img);
+    img.onerror = e => { URL.revokeObjectURL(url); reject(e); };
+    img.src = url;
+  });
+}
+function canvasToBlob(canvas, quality) {
+  return new Promise(resolve => canvas.toBlob(blob => resolve(blob), 'image/jpeg', quality));
+}
+async function compressImage(file) {
+  const img = await loadImageFromFile(file);
+  const MAX_EDGE = 1600;
+  let { width, height } = img;
+  if(width > MAX_EDGE || height > MAX_EDGE) {
+    const scale = MAX_EDGE / Math.max(width, height);
+    width = Math.round(width * scale); height = Math.round(height * scale);
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+  URL.revokeObjectURL(img.src);
+  const targetMin = TARGET_MIN_KB * 1024, targetMax = TARGET_MAX_KB * 1024;
+  let lo = 0.3, hi = 0.95, bestBlob = await canvasToBlob(canvas, hi);
+  if(bestBlob.size <= targetMax) return bestBlob;
+  for(let i = 0; i < 7; i++) {
+    const mid = (lo + hi) / 2, blob = await canvasToBlob(canvas, mid);
+    if(blob.size > targetMax)      hi = mid;
+    else if(blob.size < targetMin) { lo = mid; bestBlob = blob; }
+    else return blob;
+    bestBlob = blob.size <= targetMax ? blob : bestBlob;
+  }
+  if(bestBlob.size > targetMax) {
+    const c2 = document.createElement('canvas');
+    c2.width = Math.round(width * 0.7); c2.height = Math.round(height * 0.7);
+    c2.getContext('2d').drawImage(canvas, 0, 0, c2.width, c2.height);
+    bestBlob = await canvasToBlob(c2, 0.7);
+  }
+  return bestBlob;
+}
+
+async function handleImageSelect(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if(!file) return;
+  if(!file.type.startsWith('image/')) { alert('Please choose an image file.'); return; }
+  hide('img-preview-wrap'); hide('img-meta'); show('img-compressing');
+  try {
+    const compressed = await compressImage(file);
+    pendingImageBlob = compressed; pendingImageExt = 'jpg';
+    document.getElementById('img-preview').src = URL.createObjectURL(compressed);
+    const pw = document.getElementById('img-preview-wrap');
+    pw.classList.remove('hidden'); void pw.offsetWidth; show('img-preview-wrap');
+    document.getElementById('img-meta').textContent = `Ready to attach · ${(compressed.size/1024).toFixed(0)} KB`;
+    show('img-meta');
+  } catch(e) {
+    console.error(e);
+    alert('Could not process that image.');
+    pendingImageBlob = null;
+  } finally {
+    hide('img-compressing');
+  }
+}
+
+function removeImage() {
+  pendingImageBlob = null;
+  document.getElementById('img-preview').src = '';
+  hide('img-preview-wrap'); hide('img-meta');
+}
+
+async function uploadTicketImage(ticketId) {
+  if(!pendingImageBlob) return null;
+  const path = `${currentRoll}/${ticketId}.${pendingImageExt}`;
+  const { error } = await sb.storage.from(IMAGE_BUCKET).upload(path, pendingImageBlob, { contentType: 'image/jpeg', upsert: true });
+  if(error) throw error;
+  const { data: pub } = sb.storage.from(IMAGE_BUCKET).getPublicUrl(path);
+  return pub ? pub.publicUrl : null;
+}
+
+/* ═══════════════════════════════════════════
+   SUBMIT TICKET
+═══════════════════════════════════════════ */
+async function submitTicket() {
+  const cat  = document.getElementById('f-cat').value;
+  const subj = document.getElementById('f-subject').value.trim();
+  const desc = document.getElementById('f-desc').value.trim();
+  hide('f-error');
+
+if(!cat) {
+  document.getElementById('f-error').textContent = 'Please select a category.';
+  show('f-error'); return;
+}
+if(!subj || !desc) {
+    document.getElementById('f-error').textContent = 'Please fill in the subject and description.';
+    show('f-error'); return;
+  }
+  if(desc.length < 15) {
+    document.getElementById('f-error').textContent = 'Description is too short. Please add more detail so we can help you better.';
+    show('f-error'); return;
+  }
+
+  const btn = document.getElementById('f-submit-btn');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+
+  const succBox = document.getElementById('submit-success-box');
+  succBox.classList.remove('show'); succBox.style.display = 'none';
+
+  try {
+    const nowIso   = new Date().toISOString();
+    const ticketId = genId();
+    let imageUrl   = null;
+    if(pendingImageBlob) imageUrl = await uploadTicketImage(ticketId);
+
+    const ticket = {
+      id: ticketId, roll_number: currentRoll,
+      student_name: currentStudent ? currentStudent.name : currentRoll,
+      college:      currentStudent ? currentStudent.college    : null,
+      department:   currentStudent ? currentStudent.department : null,
+      category: cat, subject: subj, description: desc,
+      image_url: imageUrl, status: 'open', admin_note: '',
+      created_at: nowIso, updated_at: nowIso
+    };
+
+    const { error } = await sb.from('tickets').insert(ticket);
+    if(error) throw error;
+
+    document.getElementById('f-subject').value = '';
+    document.getElementById('f-desc').value = '';
+    updateCharCount();
+    removeImage();
+
+    document.getElementById('submit-success-id').textContent = 'Ticket ID: ' + ticketId;
+    succBox.style.display = 'block'; void succBox.offsetWidth; succBox.classList.add('show');
+    setTimeout(() => { succBox.classList.remove('show'); setTimeout(() => succBox.style.display = 'none', 300); }, 8000);
+
+    await loadTickets();
+  } catch(e) {
+    console.error(e);
+    document.getElementById('f-error').textContent = 'Could not submit the ticket. Please check your connection and try again.';
+    show('f-error');
+  } finally {
+    btn.disabled = false; btn.textContent = '+ Submit ticket';
+  }
+}
+
+/* ═══════════════════════════════════════════
+   TICKET LIST RENDERING
+═══════════════════════════════════════════ */
+function stampHTML(status) {
+  const labels = { open: 'Open', progress: 'In Progress', resolved: 'Resolved' };
+  return `<span class="stamp stamp-${status}" aria-label="Status: ${labels[status]||status}">${labels[status]||status}</span>`;
+}
+
+function toggleCard(id) {
+  openCards[id] = openCards[id] === false ? true : !openCards[id];
+  renderTickets();
+}
+
+function openLightbox(url) {
+  const box = document.createElement('div');
+  box.className = 'lightbox';
+  box.setAttribute('role','dialog');
+  box.setAttribute('aria-label','Attachment full view');
+  box.onclick = () => box.remove();
+  const img = document.createElement('img');
+  img.src = url; img.alt = 'Ticket attachment enlarged';
+  box.appendChild(img);
+  document.body.appendChild(box);
+}
+
+async function loadTickets() {
+  const list = document.getElementById('ticket-list');
+  list.innerHTML = `<div class="empty-state">Loading your tickets…</div>`;
+  try {
+    const { data, error } = await sb.from('tickets').select('*').eq('roll_number', currentRoll).order('created_at', { ascending: false });
+    if(error) throw error;
+    tickets = data || [];
+  } catch(e) {
+    console.error(e);
+    list.innerHTML = `<div class="empty-state">Couldn't load tickets. Please refresh the page.</div>`;
+    return;
+  }
+  renderTickets();
+}
+
+function renderTickets() {
+  const filtered   = getFilteredTickets();
+  const openCount  = tickets.filter(t => t.status !== 'resolved').length;
+  document.getElementById('active-count').textContent = openCount + ' active';
+
+  const badge = document.getElementById('tab-badge');
+  if(openCount > 0) { badge.textContent = openCount; badge.style.display = 'inline'; }
+  else              { badge.style.display = 'none'; }
+
+  const list = document.getElementById('ticket-list');
+  if(tickets.length === 0) {
+    list.innerHTML = `<div class="empty-state">No tickets yet — raise your first query from the tab above.</div>`;
+    return;
+  }
+  if(filtered.length === 0) {
+    list.innerHTML = `<div class="empty-state">No tickets match your search or filter. Try changing the filter above.</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map((t, i) => {
+    const expanded = openCards[t.id] !== false;
+    const bodyHTML = expanded
+      ? `<div class="ticket-body ticket-stub">
+           <p class="desc">${escHTML(t.description)}</p>
+           ${t.image_url ? `<div class="ticket-attachment"><img src="${escHTML(t.image_url)}" alt="Ticket attachment screenshot" onclick="event.stopPropagation();openLightbox('${escHTML(t.image_url)}')" /></div>` : ''}
+           ${t.admin_note ? `<div class="admin-note"><div class="note-label">Response from desk</div>${escHTML(t.admin_note)}</div>` : ''}
+         </div>` : '';
+    return `<div class="ticket-card" style="animation:staggerIn 0.35s ease ${i*70}ms both;">
+      <button class="ticket-toggle" onclick="toggleCard('${t.id}')" aria-expanded="${expanded}">
+        <div style="min-width:0">
+          <div class="meta">${escHTML(t.category)} · ${escHTML(t.id)}</div>
+          <div class="subject">${escHTML(t.subject)}</div>
+          <div class="time" title="${fmtAbs(t.created_at)}">${fmtRel(t.created_at)}</div>
+        </div>
+        ${stampHTML(t.status)}
+      </button>
+      ${bodyHTML}
+    </div>`;
+  }).join('');
+}
+
+/* ═══════════════════════════════════════════
+   BOOT
+═══════════════════════════════════════════ */
+function boot() {
+  hide('loading-screen');
+  show('auth-screen');
+
+  // Enter key on auth inputs
+  ['a-roll','a-name','a-pass','a-confirm','a-seca'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('keydown', e => { if(e.key === 'Enter') { e.preventDefault(); submitStudent(); } });
+  });
+
+  // Enter key on recovery inputs
+  const recEnterMap = {
+    'rec-roll':     fetchSecurityQuestion,
+    'rec-answer':   verifySecurityAnswer,
+    'rec-newpass':  submitNewPasscode,
+    'rec-newpass2': submitNewPasscode
+  };
+  Object.keys(recEnterMap).forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('keydown', e => { if(e.key === 'Enter') { e.preventDefault(); recEnterMap[id](); } });
+  });
+
+  // Keyboard activation for image drop zone
+  document.addEventListener('keydown', e => {
+    if(e.target.id === 'img-drop' && e.key === 'Enter') document.getElementById('img-file-input').click();
+  });
+
+  // Drag-and-drop for image
+  const dropZone = document.getElementById('img-drop');
+  ['dragenter','dragover'].forEach(evt => dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.add('drag-over'); }));
+  ['dragleave','drop'].forEach(evt => dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.remove('drag-over'); }));
+  dropZone.addEventListener('drop', e => {
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(file) handleImageSelect({ target: { files: [file], value: '' } });
+  });
+
+  showCatHint();
+}
+boot();
+</script>
+</body>
+</html>

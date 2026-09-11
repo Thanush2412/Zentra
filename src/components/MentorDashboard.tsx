@@ -3776,7 +3776,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     });
     const mentorSubjectNames = new Set(mentorSubjects.map(s => s.toLowerCase().trim()));
     const mentorFilteredSubjectObjs = subjectObjs.filter(s => mentorSubjectNames.has(s.name.toLowerCase().trim()));
-    const subjectOptions = mentorFilteredSubjectObjs.length > 0 ? mentorFilteredSubjectObjs.map(s => s.name) : subjectObjs.length > 0 ? subjectObjs.map(s => s.name) : mentorSubjects.length > 0 ? mentorSubjects : ["General Subject"];
+    const subjectOptions = Array.from(new Set(
+      mentorFilteredSubjectObjs.length > 0
+        ? mentorFilteredSubjectObjs.map(s => s.name?.trim()).filter(Boolean)
+        : subjectObjs.length > 0
+          ? subjectObjs.map(s => s.name?.trim()).filter(Boolean)
+          : mentorSubjects.length > 0
+            ? mentorSubjects.map(s => s?.trim()).filter(Boolean)
+            : ["General Subject"]
+    ));
     const activeSubj = trackerSubject || subjectOptions[0] || "";
 
     const assignedWeeksCount = Array.from({ length: 15 }, (_, i) => i + 1).filter(wk =>
@@ -7055,11 +7063,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           });
           const mentorFilteredSubjectObjs = subjectObjs.filter(s => mentorSubjectNames.has(s.name.toLowerCase().trim()) && isSkillSubject(s));
 
-          const subjectOptions: string[] = mentorFilteredSubjectObjs.length > 0
-            ? mentorFilteredSubjectObjs.map(s => s.name)
-            : mentorSkillSubjects.length > 0
-              ? mentorSkillSubjects
-              : [];
+          const subjectOptions: string[] = Array.from(new Set(
+            mentorFilteredSubjectObjs.length > 0
+              ? mentorFilteredSubjectObjs.map(s => s.name?.trim()).filter(Boolean)
+              : mentorSkillSubjects.length > 0
+                ? mentorSkillSubjects.map(s => s?.trim()).filter(Boolean)
+                : []
+          ));
 
           const activeSubj = trackerSubject && subjectOptions.includes(trackerSubject)
             ? trackerSubject
@@ -8684,11 +8694,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 const mentorAcadSubjects = explicitMentorSubjects.filter(s => !isSkillSubject(s));
 
                 // STRICT: ONLY show the mentor's own assigned subjects
-                const subjectOptions = mentorFilteredSubjectObjs.length > 0
-                  ? mentorFilteredSubjectObjs.map(s => s.name)
-                  : mentorAcadSubjects.length > 0
-                    ? mentorAcadSubjects
-                    : (explicitMentorSubjects.length > 0 ? explicitMentorSubjects : ["Assigned Academic Subject"]);
+                const subjectOptions = Array.from(new Set(
+                  mentorFilteredSubjectObjs.length > 0
+                    ? mentorFilteredSubjectObjs.map(s => s.name?.trim()).filter(Boolean)
+                    : mentorAcadSubjects.length > 0
+                      ? mentorAcadSubjects.map(s => s?.trim()).filter(Boolean)
+                      : (explicitMentorSubjects.length > 0 ? explicitMentorSubjects.map(s => s?.trim()).filter(Boolean) : ["Assigned Academic Subject"])
+                ));
 
                 const activeWeeklySubj = acadWeeklySubject && subjectOptions.includes(acadWeeklySubject)
                   ? acadWeeklySubject

@@ -12753,7 +12753,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       ? allDeptSemSubjects
                       : subjectsList.filter(s => matchesCollege(s.college_id) && matchesCourseName(s.department || "", activeDept, selectedCourseObj?.code) && isAcademicSubject(s));
 
-                    const subjectOptions = acadSubjectObjs.map(s => s.name);
+                    const subjectOptions = Array.from(
+                      new Set(
+                        acadSubjectObjs
+                          .map(s => (s.name || "").trim())
+                          .filter(Boolean)
+                      )
+                    );
                     const activeSubject = (camAcadWeeklySubj && subjectOptions.includes(camAcadWeeklySubj))
                       ? camAcadWeeklySubj
                       : subjectOptions[0] || "";

@@ -318,18 +318,26 @@ export async function DELETE(request: Request) {
 
     const placeholders = cleanIds.map(() => "?").join(",");
 
-    // Atomic batch delete — all 5 deletes succeed together or all rollback (no orphaned rows)
+    // Atomic batch delete — child tables deleted first to satisfy foreign keys, then users and students
     await db.client.batch([
       {
-        sql: `DELETE FROM students WHERE id IN (${placeholders})`,
+        sql: `DELETE FROM student_attendance WHERE studentId IN (${placeholders})`,
         args: cleanIds
       },
       {
-        sql: `DELETE FROM users WHERE role = 'student' AND (id IN (${placeholders}) OR reference_id IN (${placeholders}))`,
-        args: [...cleanIds, ...cleanIds]
+        sql: `DELETE FROM student_exam_marks WHERE student_id IN (${placeholders})`,
+        args: cleanIds
       },
       {
-        sql: `DELETE FROM student_attendance WHERE studentId IN (${placeholders})`,
+        sql: `DELETE FROM interview_evaluations WHERE student_id IN (${placeholders})`,
+        args: cleanIds
+      },
+      {
+        sql: `DELETE FROM fee_payments WHERE student_id IN (${placeholders})`,
+        args: cleanIds
+      },
+      {
+        sql: `DELETE FROM student_fees WHERE student_id IN (${placeholders})`,
         args: cleanIds
       },
       {
@@ -338,6 +346,26 @@ export async function DELETE(request: Request) {
       },
       {
         sql: `DELETE FROM student_tracker WHERE student_id IN (${placeholders})`,
+        args: cleanIds
+      },
+      {
+        sql: `DELETE FROM student_academic_tracker WHERE student_id IN (${placeholders})`,
+        args: cleanIds
+      },
+      {
+        sql: `DELETE FROM student_interviews WHERE student_id IN (${placeholders})`,
+        args: cleanIds
+      },
+      {
+        sql: `DELETE FROM student_interview_slots WHERE student_id IN (${placeholders})`,
+        args: cleanIds
+      },
+      {
+        sql: `DELETE FROM users WHERE role = 'student' AND (id IN (${placeholders}) OR reference_id IN (${placeholders}))`,
+        args: [...cleanIds, ...cleanIds]
+      },
+      {
+        sql: `DELETE FROM students WHERE id IN (${placeholders})`,
         args: cleanIds
       }
     ], "write");
