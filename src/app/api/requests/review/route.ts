@@ -138,10 +138,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: `Exam mark modification request ${status} successfully!` });
     }
 
+    const isMetaOrCamRequest =
+      handoverRequest.targetStaffId === "cam_approval" ||
+      handoverRequest.targetStaffId === "CAM-APPROVAL" ||
+      (typeof handoverRequest.targetStaffId === "string" && handoverRequest.targetStaffId.toLowerCase().includes("cam")) ||
+      (handoverRequest.targetStaffName && handoverRequest.targetStaffName.includes("CAM Approval")) ||
+      (handoverRequest.reason && handoverRequest.reason.includes("Late Attendance")) ||
+      (handoverRequest.slotId && handoverRequest.slotId.startsWith("mentor_daily_punch_")) ||
+      (handoverRequest.slotId && handoverRequest.slotId.startsWith("acad_log_edit_"));
+
     let targetStatus = status; // e.g. "approved" or "rejected"
     if (handoverRequest.status === "pending_cam") {
-      if (status === "approved") {
-        targetStatus = "pending"; // Escalate to receiver
+      if (isMetaOrCamRequest) {
+        // Direct CAM requests (late attendance edit, punch request, acad log edit) are directly approved or rejected by CAM
+        targetStatus = status === "approved" ? "approved" : "rejected";
+      } else if (status === "approved") {
+        targetStatus = "pending"; // Escalate normal emergency peer handover to receiver
       } else {
         targetStatus = "rejected"; // Reject outright
       }

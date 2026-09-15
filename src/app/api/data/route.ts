@@ -201,7 +201,7 @@ export async function GET(request: Request) {
       { sql: (isStudent && userId) ? "SELECT * FROM student_tracker WHERE student_id = ? OR student_id IN (SELECT id FROM students WHERE id = ? OR email = ?) ORDER BY updated_at DESC LIMIT 500" : (collegeId && (isCAM || isMentor) ? "SELECT * FROM student_tracker WHERE student_id IN (SELECT id FROM students WHERE college_id = ?) OR graded_by = ? ORDER BY updated_at DESC LIMIT 500" : (isAdminOrKAM ? "SELECT * FROM student_tracker ORDER BY updated_at DESC LIMIT 500" : "SELECT 1 WHERE 1=0")), params: (isStudent && userId) ? [userId, userId, userId] : (collegeId && (isCAM || isMentor) ? [collegeId, userId || ""] : []) },
       { sql: needsDemo ? "SELECT * FROM sme_users" : "SELECT 1 WHERE 1=0", params: [] },
       { sql: needsDemo ? "SELECT * FROM demo_sessions ORDER BY created_at DESC LIMIT 200" : "SELECT 1 WHERE 1=0", params: [] },
-      { sql: needsDemo ? "SELECT * FROM subject_groups ORDER BY name ASC" : "SELECT 1 WHERE 1=0", params: [] },
+      { sql: !isStudent ? "SELECT * FROM subject_groups ORDER BY name ASC" : "SELECT 1 WHERE 1=0", params: [] },
       { sql: needsDemo ? "SELECT * FROM demo_rules ORDER BY created_at DESC" : "SELECT 1 WHERE 1=0", params: [] },
       { sql: isAdmin ? "SELECT * FROM signup_requests ORDER BY created_at DESC LIMIT 40" : "SELECT 1 WHERE 1=0", params: [] },
       { sql: needsDemo ? "SELECT * FROM demo_swap_requests ORDER BY created_at DESC LIMIT 100" : "SELECT 1 WHERE 1=0", params: [] },

@@ -6836,8 +6836,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 selectedCell.slot!.id,
                 selectedCell.dateStr,
                 selectedCell.dateFormatted,
-                "CAM-APPROVAL", // Special targetStaffId marker
-                `Late Attendance Edit Request: ${camRequestReason.trim()}`
+                "cam_approval", // Normalized targetStaffId marker
+                `Late Attendance Edit Request: ${camRequestReason.trim()}`,
+                selectedCell.slot?.course,
+                selectedCell.slot?.classGroup,
+                "CAM Approval (Late Attendance Edit)"
               );
 
               setIsCamEditRequestModalOpen(false);

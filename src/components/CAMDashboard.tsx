@@ -12230,11 +12230,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                               type="button"
                                               disabled={loadingActions[`approve_req_${req.id}`]}
                                               onClick={async () => {
-                                                if (await showConfirm({ message: "Approve this Emergency Handover Request? It will be forwarded to the cover staff.", confirmLabel: "Approve", title: "Approve Emergency Handover" })) {
+                                                const isLateAttendance = req.reason?.includes("Late Attendance") || req.targetStaffName?.includes("CAM Approval");
+                                                const confirmMessage = isLateAttendance
+                                                  ? "Approve Late Attendance Edit Permission for this faculty member? They will be allowed to mark attendance for this session."
+                                                  : "Approve this Emergency Handover Request? It will be forwarded to the cover staff.";
+                                                const title = isLateAttendance ? "Approve Late Attendance Edit" : "Approve Emergency Handover";
+                                                if (await showConfirm({ message: confirmMessage, confirmLabel: "Approve", title })) {
                                                   setActionLoading(`approve_req_${req.id}`, true);
                                                   try {
                                                     await handleRequest(req.id, "approved", "", "Campus Manager");
-                                                    toast("Emergency request approved and forwarded to the cover staff.", "success");
+                                                    toast(isLateAttendance ? "Late attendance edit permission approved!" : "Emergency request approved and forwarded to the cover staff.", "success");
                                                   } finally {
                                                     setActionLoading(`approve_req_${req.id}`, false);
                                                   }
@@ -12247,7 +12252,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                   <Loader2 className="h-3 w-3 animate-spin" />
                                                   Approving...
                                                 </>
-                                              ) : "Approve Emergency"}
+                                              ) : (req.reason?.includes("Late Attendance") || req.targetStaffName?.includes("CAM Approval")) ? "Approve Permission" : "Approve Emergency"}
                                             </button>
                                             <button
                                               type="button"

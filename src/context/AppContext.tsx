@@ -403,7 +403,9 @@ interface AppContextProps {
     dateFormatted: string,
     targetStaffId: string,
     reason: string,
-    subjectName?: string
+    subjectName?: string,
+    classGroup?: string,
+    targetStaffName?: string
   ) => Promise<void>;
   requestSwapCompensate: (
     requestorId: string,
@@ -1237,12 +1239,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     dateFormatted: string,
     targetStaffId: string,
     reason: string,
-    subjectName?: string
+    subjectName?: string,
+    classGroup?: string,
+    targetStaffName?: string
   ) => {
     const res = await fetch("/api/requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mentorId, slotId, dateStr, dateFormatted, targetStaffId, reason, subjectName })
+      body: JSON.stringify({ mentorId, slotId, dateStr, dateFormatted, targetStaffId, reason, subjectName, classGroup, targetStaffName })
     });
     const data = await res.json();
     if (data.success) {
@@ -1250,22 +1254,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const targetMentor = mentors.find(m => m.id === targetStaffId);
       const requestorMentor = mentors.find(m => m.id === mentorId);
       const reqSlot = slots.find(s => s.id === slotId);
+      const isCamTarget = targetStaffId.toLowerCase().includes("cam") || reason.includes("Late Attendance");
       const newRequest: HandoverRequest = {
-        id: data.requestId || `req_${Date.now()}`,
+        id: data.requestId || data.request?.id || `req_${Date.now()}`,
         requestorId: mentorId,
         requestorName: requestorMentor?.name || currentMentor?.name || "",
         slotId,
         dateStr,
         dateFormatted,
         targetStaffId,
-        targetStaffName: targetMentor?.name || "",
+        targetStaffName: data.request?.targetStaffName || targetMentor?.name || (isCamTarget ? "CAM Approval" : ""),
         reason,
-        course: subjectName || reqSlot?.course || "",
-        classGroup: reqSlot?.classGroup || "",
-        day: reqSlot?.day || "",
-        time: reqSlot?.time || "",
-        status: "pending",
-        timestamp: new Date().toISOString()
+        course: subjectName || data.request?.course || reqSlot?.course || "",
+        classGroup: classGroup || data.request?.classGroup || reqSlot?.classGroup || "",
+        day: data.request?.day || reqSlot?.day || "",
+        time: data.request?.time || reqSlot?.time || "",
+        status: data.request?.status || (isCamTarget ? "pending_cam" : "pending"),
+        timestamp: data.request?.timestamp || new Date().toISOString()
       };
       setRequests(prev => [newRequest, ...prev]);
     } else {

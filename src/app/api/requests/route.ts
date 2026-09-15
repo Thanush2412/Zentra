@@ -81,13 +81,17 @@ export async function POST(request: Request) {
     }
 
     // ─── Meta-Request Fast Path ───────────────────────────────────────────────
-    // Handles synthetic slot IDs (mentor_daily_punch_, acad_log_edit_) with
-    // targetStaffId="cam_approval". These bypass the normal slot/coverStaff
-    // lookup and are stored directly as pending_cam requests for CAM review.
+    // Handles synthetic slot IDs (mentor_daily_punch_, acad_log_edit_) or CAM-directed
+    // approval requests (late attendance edit requests, targetStaffId="cam_approval" / "CAM-APPROVAL").
+    // These bypass the normal slot/coverStaff lookup and are stored directly as pending_cam requests for CAM review.
+    const normalizedTargetStaffId = typeof targetStaffId === "string" ? targetStaffId.trim() : "";
     const isMetaRequest =
-      targetStaffId === "cam_approval" ||
+      normalizedTargetStaffId.toLowerCase() === "cam_approval" ||
+      normalizedTargetStaffId.toLowerCase() === "cam-approval" ||
+      normalizedTargetStaffId.toLowerCase().includes("cam") ||
       slotId.startsWith("mentor_daily_punch_") ||
-      slotId.startsWith("acad_log_edit_");
+      slotId.startsWith("acad_log_edit_") ||
+      (typeof reason === "string" && reason.toLowerCase().includes("late attendance"));
 
     if (isMetaRequest) {
       const requestor = await db.get("SELECT * FROM mentors WHERE id = ?", mentorId);
@@ -95,10 +99,16 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "Mentor not found." }, { status: 404 });
       }
 
+      // If slotId corresponds to a real slot, fetch its details
+      const slot = await db.get("SELECT * FROM slots WHERE id = ?", slotId);
+
       const newId = "r_" + Date.now();
-      const metaCourse = course || subjectName || slotId;
-      const metaClassGroup = classGroup || requestor.department || "Faculty";
-      const metaTargetStaffName = targetStaffName || "CAM Approval";
+      const metaCourse = course || subjectName || slot?.course || slotId;
+      const metaClassGroup = classGroup || slot?.classGroup || requestor.department || "Faculty";
+      const metaTargetStaffName = targetStaffName || (normalizedTargetStaffId.toLowerCase().includes("cam") ? "CAM Approval" : "CAM Approval");
+      const metaDay = slot?.day || "";
+      const metaTime = slot?.time || "";
+      const storedTargetStaffId = normalizedTargetStaffId.toLowerCase() === "cam-approval" ? "cam_approval" : normalizedTargetStaffId;
 
       try {
         await db.run(
@@ -111,11 +121,11 @@ export async function POST(request: Request) {
           requestor.name,
           slotId,
           metaCourse,
-          "",
-          "",
+          metaDay,
+          metaTime,
           dateStr,
           dateFormatted,
-          targetStaffId,
+          storedTargetStaffId,
           metaTargetStaffName,
           reason,
           new Date().toISOString(),
@@ -184,17 +194,18 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
+        requestId: newId,
         request: {
           id: newId,
           requestorId: mentorId,
           requestorName: requestor.name,
           slotId,
           course: metaCourse,
-          day: "",
-          time: "",
+          day: metaDay,
+          time: metaTime,
           dateStr,
           dateFormatted,
-          targetStaffId,
+          targetStaffId: storedTargetStaffId,
           targetStaffName: metaTargetStaffName,
           reason,
           status: "pending_cam",
