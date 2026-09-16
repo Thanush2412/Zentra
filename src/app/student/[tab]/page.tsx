@@ -20,7 +20,6 @@ export const VALID_STUDENT_TABS = [
   "dashboard",
   "schedule",
   "interviews",
-  "leave",
   "tracker",
   "exams",
   "materials",

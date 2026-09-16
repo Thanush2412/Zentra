@@ -11,6 +11,8 @@ export async function GET(request: Request) {
     const department = searchParams.get("department");
     const semester = searchParams.get("semester");
     const dateStr = searchParams.get("dateStr");
+    // class_group is used by student view to narrow results to their cohort's department
+    const classGroup = searchParams.get("class_group");
 
     const db = await getDb();
     let query = "SELECT * FROM exam_schedules WHERE 1=1";
@@ -20,10 +22,19 @@ export async function GET(request: Request) {
       query += " AND (LOWER(college_id) = LOWER(?) OR college_id IS NULL)";
       args.push(collegeId);
     }
+
+    // Department filter: prefer explicit department param, fall back to class_group prefix
+    // e.g. classGroup "CSE-A" should match department "CSE" or "Computer Science Engineering"
     if (department && department !== "all") {
       query += " AND (LOWER(department) = LOWER(?) OR LOWER(department) LIKE ?)";
       args.push(department, `%${department.toLowerCase()}%`);
+    } else if (classGroup) {
+      // Extract the department code from classGroup (everything before the first dash/space)
+      const deptPrefix = classGroup.split(/[-\s]/)[0].toLowerCase();
+      query += " AND (LOWER(department) = LOWER(?) OR LOWER(department) LIKE ? OR LOWER(department) LIKE ?)";
+      args.push(classGroup, `%${classGroup.toLowerCase()}%`, `%${deptPrefix}%`);
     }
+
     if (semester && semester !== "all") {
       query += " AND (LOWER(semester) = LOWER(?) OR LOWER(semester) LIKE ?)";
       args.push(semester, `%${semester.toLowerCase()}%`);

@@ -459,7 +459,7 @@ interface AppContextProps {
     previewSlots?: any[]; 
     unscheduled?: Array<{ subject: string; hours: number }> 
   }>;
-  clearTimetable: (classGroup: string) => Promise<{ success: boolean; message: string }>;
+  clearTimetable: (classGroup: string) => Promise<{ success: boolean; message: string; count?: number }>;
   createSubject: (subject: Omit<Subject, "id">) => Promise<{ success: boolean; message: string }>;
   updateSubject: (subject: Subject) => Promise<{ success: boolean; message: string }>;
   deleteSubject: (id: string) => Promise<{ success: boolean; message: string }>;
@@ -497,8 +497,6 @@ interface AppContextProps {
   ) => Promise<{ success: boolean; message: string }>;
   leaveRequests: any[];
   holidays: Holiday[];
-  requestLeave: (type: "leave" | "od", dateStr: string, reason: string) => Promise<{ success: boolean; message?: string }>;
-  handleLeaveRequest: (requestId: string, status: "approved" | "rejected") => Promise<{ success: boolean; message?: string }>;
   updateStudent: (student: Student) => Promise<{ success: boolean; message: string }>;
   deleteStudent: (id: string) => Promise<{ success: boolean; message: string }>;
   bulkDeleteStudents: (ids: string[]) => Promise<{ success: boolean; message: string; count?: number }>;
@@ -1960,70 +1958,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const requestLeave = async (type: "leave" | "od", dateStr: string, reason: string): Promise<{ success: boolean; message?: string }> => {
-    try {
-      if (!currentStudent) return { success: false, message: "No student session" };
-      const res = await fetch("/api/requests/leave", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId: currentStudent.id,
-          studentName: currentStudent.name,
-          classGroup: currentStudent.classGroup,
-          type,
-          dateStr,
-          reason,
-          college_id: currentStudent.college_id
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        const newReq = {
-          id: data.requestId || `lr_${Date.now()}`,
-          studentId: currentStudent.id,
-          studentName: currentStudent.name,
-          classGroup: currentStudent.classGroup,
-          type,
-          dateStr,
-          reason,
-          status: "pending",
-          timestamp: new Date().toISOString()
-        };
-        setLeaveRequests(prev => [newReq, ...prev]);
-        return { success: true };
-      } else {
-        return { success: false, message: data.message || "Failed to submit leave request" };
-      }
-    } catch (e: any) {
-      console.error("Error submitting leave request:", e);
-      return { success: false, message: e.message };
-    }
-  };
-
-  const handleLeaveRequest = async (requestId: string, status: "approved" | "rejected"): Promise<{ success: boolean; message?: string }> => {
-    try {
-      const actorName = currentCAM?.name || currentKAM?.name || "System Admin";
-      const res = await fetch("/api/requests/leave", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requestId,
-          status,
-          approvedBy: actorName
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setLeaveRequests(prev => prev.map(r => r.id === requestId ? { ...r, status, approvedBy: actorName } : r));
-        return { success: true };
-      } else {
-        return { success: false, message: data.message || "Failed to resolve leave request" };
-      }
-    } catch (e: any) {
-      console.error("Error resolving leave request:", e);
-      return { success: false, message: e.message };
-    }
-  };
 
   const clearAllData = async (): Promise<{ success: boolean; message: string }> => {
     const res = await fetch("/api/data", {
@@ -2401,7 +2335,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const clearTimetable = async (classGroup: string): Promise<{ success: boolean; message: string }> => {
+  const clearTimetable = async (classGroup: string): Promise<{ success: boolean; message: string; count?: number }> => {
     try {
       const actorName = currentCAM?.name || currentKAM?.name || "System";
       const actorRole = currentRole === "cam" ? "Campus Manager" : "Key Account Manager";
@@ -2411,14 +2345,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: "DELETE"
       });
       const data = await res.json();
-      if (data.success && (data.count === undefined || data.count > 0)) {
-        setSlots(prev => prev.filter(s => !(s.classGroup && (s.classGroup.toLowerCase() === classGroup.toLowerCase() || isCohortMatch(s.classGroup, classGroup)) && (!targetCollegeId || s.college_id === targetCollegeId))));
-        return { success: true, message: data.message || `Timetable for ${classGroup} cleared successfully.` };
+      if (data.success) {
+        if (data.count === undefined || data.count > 0) {
+          setSlots(prev => prev.filter(s => !(s.classGroup && (s.classGroup.toLowerCase() === classGroup.toLowerCase() || isCohortMatch(s.classGroup, classGroup)) && (!targetCollegeId || s.college_id === targetCollegeId))));
+        }
+        return { success: true, count: data.count ?? 0, message: data.message || `Timetable for ${classGroup} cleared successfully.` };
       } else {
-        return { success: false, message: data.message || "Failed to clear timetable." };
+        return { success: false, count: 0, message: data.message || "Failed to clear timetable." };
       }
     } catch (e: any) {
-      return { success: false, message: e.message };
+      return { success: false, count: 0, message: e.message };
     }
   };
 
@@ -3507,8 +3443,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     markAttendance,
     leaveRequests,
     holidays,
-    requestLeave,
-    handleLeaveRequest,
     weeklyTasks,
     studentTracker,
     academicTracker,

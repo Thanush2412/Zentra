@@ -324,6 +324,21 @@ export async function POST(request: Request) {
       effectiveCollegeId = mentor?.college_id || "general";
     }
 
+    // Prevent mentors from changing status once punched (self-punch is locked)
+    const isSelf = markedBy === "self" || !markedBy;
+    if (isSelf) {
+      const existing = await db.get(
+        `SELECT id, status, punch_in_time FROM mentor_attendance WHERE mentor_id = ? AND date_str = ?`,
+        [mentorId, effectiveDate]
+      );
+      if (existing && existing.status && existing.status !== "Not Punched") {
+        return NextResponse.json({
+          success: false,
+          message: `Attendance is already marked as '${existing.status}' for today. Status cannot be changed.`
+        }, { status: 400 });
+      }
+    }
+
     const punchTime = punchInTime || currentTime;
 
     await db.run(

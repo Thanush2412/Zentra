@@ -6667,7 +6667,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       try {
         const res = await clearTimetable(targetGroup);
         if (res.success) {
-          toast(`Successfully cleared all slots for ${targetGroup}.`, "success");
+          if (res.count === 0) {
+            toast(`No timetable slots found to clear for ${targetGroup}.`, "info");
+          } else {
+            toast(`Successfully cleared ${res.count || "all"} slots for ${targetGroup}.`, "success");
+          }
           // clearTimetable already surgically filters slots state — no refreshData needed
         } else {
           toast(`Error clearing timetable: ${res.message}`, "error");
@@ -7209,7 +7213,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setIsImportSubmitting(true);
     try {
       const clearRes = await clearTimetable(targetCG);
-      if (!clearRes.success) {
+      if (!clearRes.success && !clearRes.message?.toLowerCase().includes("no timetable slots found")) {
         toast(`Error clearing old timetable: ${clearRes.message}`, "error");
         setIsImportSubmitting(false);
         return;

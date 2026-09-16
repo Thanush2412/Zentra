@@ -196,22 +196,22 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     }
 
     if (fullText.includes("leave") || fullText.includes("on-duty") || fullText.includes("on duty") || fullText.includes(" od ") || fullText.includes("handover") || fullText.includes("permission") || fullText.includes("approval")) {
-      if (role === "student") return { url: `/student/leave`, isExternal: false, targetDate, actionLabel: "View Leave & OD" };
+      if (role === "student") return { url: `/student/dashboard`, isExternal: false, targetDate, actionLabel: "View Dashboard" };
       if (role === "mentor") return { url: `/mentor/leaves`, isExternal: false, targetDate, actionLabel: "View Leaves" };
       if (role === "cam") return { url: `/cam/leave-approvals`, isExternal: false, targetDate, actionLabel: "Review Approvals" };
       if (role === "admin") return { url: `/admin/approvals`, isExternal: false, targetDate, actionLabel: "View Approvals" };
       if (role === "hr") return { url: `/hr`, isExternal: false, targetDate, actionLabel: "View HR Portal" };
     }
 
-    if (fullText.includes("exam") || fullText.includes("hall ticket") || fullText.includes("seating")) {
-      if (role === "student") return { url: `/student/exams`, isExternal: false, targetDate, actionLabel: "View Exam Schedule" };
+    if (fullText.includes("exam") || fullText.includes("test") || fullText.includes("assessment")) {
+      if (role === "student") return { url: `/student/exams`, isExternal: false, targetDate, actionLabel: "View Test Marks" };
       if (role === "mentor") return { url: `/mentor/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
       if (role === "cam") return { url: `/cam/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
       if (role === "admin") return { url: `/admin/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
     }
 
     if (fullText.includes("mark") || fullText.includes("cia") || fullText.includes("grade") || fullText.includes("score")) {
-      if (role === "student") return { url: `/student/marks`, isExternal: false, targetDate, actionLabel: "View Marks" };
+      if (role === "student") return { url: `/student/exams`, isExternal: false, targetDate, actionLabel: "View Test Marks" };
       if (role === "mentor") return { url: `/mentor/marks`, isExternal: false, targetDate, actionLabel: "View Marks" };
     }
 

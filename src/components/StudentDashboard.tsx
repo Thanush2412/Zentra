@@ -23,7 +23,6 @@ import {
   Book,
   FileText,
   CreditCard,
-  Plus,
   Sparkles,
   Award,
   Activity,
@@ -38,7 +37,9 @@ import {
   Edit2,
   Loader2,
   Video,
-  ExternalLink
+  ExternalLink,
+  Percent,
+  AlertTriangle
 } from "lucide-react";
 import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatch, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate, isSlotOverlappingExamWindow } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
@@ -56,8 +57,8 @@ interface BookItem {
 }
 
 export interface StudentDashboardProps {
-  activeTab?: "dashboard" | "schedule" | "leave" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu";
-  onTabChange?: (tab: "dashboard" | "schedule" | "leave" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu") => void;
+  activeTab?: "dashboard" | "schedule" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu";
+  onTabChange?: (tab: "dashboard" | "schedule" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu") => void;
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({
@@ -67,8 +68,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const {
     slots,
     studentAttendance,
-    leaveRequests,
-    requestLeave,
     currentStudent,
     timeSlots,
     daysOfWeek,
@@ -95,7 +94,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   } = useApp();
   const { toast } = useToast();
 
-  const [localActiveTab, setLocalActiveTab] = useState<"dashboard" | "schedule" | "leave" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu">("dashboard");
+  const [localActiveTab, setLocalActiveTab] = useState<"dashboard" | "schedule" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu">("dashboard");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
@@ -185,7 +184,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         setWeekOffset(offset);
         setHighlightedDate(dateParam);
         setActiveTab("schedule");
-        
+
         // Auto scroll to target date row after render
         setTimeout(() => {
           const el = document.getElementById(`date-row-${dateParam}`);
@@ -197,7 +196,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         setTimeout(() => {
           setHighlightedDate(null);
         }, 6000);
-      } else if (tabParam && ["dashboard", "schedule", "marks", "leave", "exams", "library", "fees", "profile", "tracker", "interviews"].includes(tabParam)) {
+      } else if (tabParam && ["dashboard", "schedule", "marks", "exams", "library", "fees", "profile", "tracker", "interviews"].includes(tabParam)) {
         setActiveTab(tabParam as any);
       }
     };
@@ -247,15 +246,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [studentUploadType, setStudentUploadType] = useState<Record<number, "url" | "file">>({});
   const [editSubmissionMode, setEditSubmissionMode] = useState<Record<number, boolean>>({});
 
-  // State for Leave Submission Form
-  const [leaveType, setLeaveType] = useState<"leave" | "od">("leave");
-  const [leaveDate, setLeaveDate] = useState("");
-  const [leaveReason, setLeaveReason] = useState("");
-  const [submittingLeave, setSubmittingLeave] = useState(false);
-
   // State for OPAC library search
   const [librarySearch, setLibrarySearch] = useState("");
-  
+
   // State for Dues payment
   const [paidFees, setPaidFees] = useState<Record<string, boolean>>({});
 
@@ -263,15 +256,26 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [studentExamsList, setStudentExamsList] = useState<any[]>([]);
   const [studentMarksList, setStudentMarksList] = useState<any[]>([]);
   const [examsLoading, setExamsLoading] = useState<boolean>(false);
-  const [examSubTab, setExamSubTab] = useState<"schedule" | "results">("schedule");
+  const [examSubTab, setExamSubTab] = useState<"schedule" | "results">("results");
+  const [marksTypeFilter, setMarksTypeFilter] = useState<string>("all");
+  const [marksSearchTerm, setMarksSearchTerm] = useState<string>("");
 
   const fetchStudentExamsAndMarks = async () => {
     if (!currentStudent?.college_id) return;
     setExamsLoading(true);
     try {
       const dept = currentStudent.department || "";
+      const classGroup = currentStudent.classGroup || "";
+      const semester = currentStudent.semester || "";
+      const params = new URLSearchParams({
+        college_id: currentStudent.college_id,
+        department: dept,
+      });
+      if (classGroup) params.set("class_group", classGroup);
+      if (semester) params.set("semester", semester);
+
       const [examsRes, marksRes] = await Promise.all([
-        fetch(`/api/exams?college_id=${encodeURIComponent(currentStudent.college_id)}&department=${encodeURIComponent(dept)}`),
+        fetch(`/api/exams?${params.toString()}`),
         fetch(`/api/exams/marks?student_id=${encodeURIComponent(currentStudent.id)}`)
       ]);
       const examsData = await examsRes.json();
@@ -311,7 +315,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             setDailyConfigsList(data.configs);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     };
 
     window.addEventListener("fp_exams_updated", handleUpdates);
@@ -321,6 +325,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       window.removeEventListener("fp_schedule_updated", handleUpdates);
     };
   }, [currentStudent?.college_id, currentStudent?.department, currentStudent?.id]);
+
+  // Re-fetch exams & marks whenever the student navigates to the exams tab
+  useEffect(() => {
+    if (activeTab === "exams") {
+      fetchStudentExamsAndMarks();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   const [payingFeeId, setPayingFeeId] = useState<string | null>(null);
 
   // Profile edit state
@@ -357,8 +370,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // Pagination states
   const [booksPage, setBooksPage] = useState(1);
   const [booksPageSize, setBooksPageSize] = useState(25);
-  const [leavePage, setLeavePage] = useState(1);
-  const [leavePageSize, setLeavePageSize] = useState(25);
 
   // State for Class Attendance Calendar Month Navigation
   const [attendanceMonthOffset, setAttendanceMonthOffset] = useState<number>(0);
@@ -374,7 +385,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             setStudentInterviews(data.interviews || []);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [currentStudent?.id, currentStudent?.classGroup, currentStudent?.college_id, activeTab]);
 
@@ -384,7 +395,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       if (saved) {
         setAllowedProfileEditClasses(JSON.parse(saved));
       }
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
   useEffect(() => {
@@ -503,7 +514,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // Helper to parse student's classGroup into clean components
   const getStudentClassDetails = (classGroup?: string) => {
     if (!classGroup) return { course: "", shift: "", sem: "", year: "" };
-    
+
     const { department, semester, year } = resolveClassGroupDetailsFromState(
       classGroup,
       subjectsList,
@@ -561,7 +572,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
     if (studentDept && slotDept && studentSem && slotSem) {
       const dMatch = studentDept.toLowerCase().trim() === slotDept.toLowerCase().trim() ||
-                     getDeptFromClassGroup(studentDept).toLowerCase() === getDeptFromClassGroup(slotDept).toLowerCase();
+        getDeptFromClassGroup(studentDept).toLowerCase() === getDeptFromClassGroup(slotDept).toLowerCase();
       const sMatch = studentSem.toLowerCase().trim() === slotSem.toLowerCase().trim();
       if (dMatch && sMatch) return true;
     }
@@ -588,7 +599,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         studentShift = "shift_2";
       }
     }
-    
+
     if (studentShift && currentShift !== studentShift) {
       setCurrentShift(studentShift);
     }
@@ -604,11 +615,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const myAttendance = useMemo(() => {
     return studentAttendance.filter((a) => a.studentId === currentStudent.id);
   }, [studentAttendance, currentStudent.id]);
-
-  // 3. Filter leave requests for this student (Memoized)
-  const myLeaveRequests = useMemo(() => {
-    return (leaveRequests || []).filter((r) => r.studentId === currentStudent.id);
-  }, [leaveRequests, currentStudent.id]);
 
   // Daily-evaluated Stats Calculations (1 period absent = full day absent, exam day single marking is enough)
   const evaluatedDailyStats = useMemo(() => {
@@ -652,7 +658,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // Compute Bunk / Attendance Projection calculations (Memoized)
   const bunkStats = useMemo(() => {
     if (totalClasses === 0) return { status: "no_data", value: 0 };
-    
+
     if (overallPercentage >= bunkTarget) {
       const targetRatio = bunkTarget / 100;
       const maxTotal = Math.floor(presentClasses / targetRatio);
@@ -676,7 +682,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // Group attendance by Course (Memoized)
   const courseStats = useMemo(() => {
     const statsObj: Record<string, { present: number; absent: number; total: number }> = {};
-    
+
     myClassSlots.forEach((slot) => {
       if (slot.course && !statsObj[slot.course]) {
         statsObj[slot.course] = { present: 0, absent: 0, total: 0 };
@@ -796,7 +802,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   // Cohort Weekly Tasks for Dashboard View
   const dashboardCohortTasks = useMemo(() => {
-    return (weeklyTasks || []).filter(task => 
+    return (weeklyTasks || []).filter(task =>
       isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
       (currentStudent?.department && task.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))
     ).slice(0, 4);
@@ -804,15 +810,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   // Subjects with mentor-assigned weekly tasks or marked as skill subjects for this student's class group
   const assignedMentorSubjects = useMemo(() => {
-    const matchingTasks = (weeklyTasks || []).filter(task => 
+    const matchingTasks = (weeklyTasks || []).filter(task =>
       isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
       (currentStudent?.department && task.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))
     );
     const taskSubjects = Array.from(new Set(matchingTasks.map(t => t.subject).filter(Boolean)));
-    
+
     // Also include enrolled semester subjects that are explicitly marked as skill subjects
     const skillEnrolledSubjects = (studentSubjects || []).filter(s => isSkillSubject(s)).map(s => s.name);
-    
+
     const combined = Array.from(new Set([...taskSubjects, ...skillEnrolledSubjects])).filter(Boolean);
     return combined;
   }, [weeklyTasks, currentStudent, coursesList, subjectsList, studentSubjects]);
@@ -874,7 +880,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // Helper to resolve the active day for a calendar date, accounting for CAM Day Order overrides
   const getMappedDayForDate = (dateStr: string, defaultDay: string) => {
     const dailyConfig = dailyConfigsList.find((c: any) => c.dateStr === dateStr);
-    
+
     // If it's a holiday, return a special holiday flag
     if (dailyConfig && dailyConfig.day_type === "holiday") {
       return "holiday";
@@ -905,7 +911,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // Helper to find slot attendance for a specific day/date and time slot
   const getAttendanceForCell = (day: string, dateStr: string, time: string) => {
     const dailyConfig = dailyConfigsList.find((c: any) => c.dateStr === dateStr);
-    
+
     // 1. Holiday handling
     if (dailyConfig && dailyConfig.day_type === "holiday") {
       return {
@@ -983,9 +989,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     const handover = (approvedHandovers || []).find((h) => h.slotId === slot.id && h.dateStr === dateStr);
 
     // Find if student has an attendance marked for this slot on this date or day-level attendance
-    const att = myAttendance.find((a) => a.slotId === slot.id && a.dateStr === dateStr) || 
-                (dailyConfig?.day_type === "event" ? dayAttendance : null);
-    
+    const att = myAttendance.find((a) => a.slotId === slot.id && a.dateStr === dateStr) ||
+      (dailyConfig?.day_type === "event" ? dayAttendance : null);
+
     return {
       type: "slot" as const,
       slot,
@@ -1004,7 +1010,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   const collegeObj = colleges.find(c => c.id === currentStudent.college_id);
   const details = getStudentClassDetails(currentStudent.classGroup);
-  
+
   const getCleanSemesterKey = (sem?: string) => {
     if (!sem) return "";
     const clean = sem.toLowerCase().trim();
@@ -1030,7 +1036,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       if (!activeParams && parsed.custom_shift_params?.[currentShift]) {
         activeParams = parsed.custom_shift_params[currentShift];
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   let scheduleItems: any[] = [];
@@ -1101,22 +1107,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       }
     });
   }
-
-  // Handle leave request submit
-  const handleLeaveSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!leaveDate || !leaveReason) return;
-    setSubmittingLeave(true);
-    const res = await requestLeave(leaveType, leaveDate, leaveReason);
-    if (res.success) {
-      toast("Leave request submitted successfully.", "success");
-    } else {
-      toast(res.message || "Failed to submit leave request.", "error");
-    }
-    setLeaveDate("");
-    setLeaveReason("");
-    setSubmittingLeave(false);
-  };
 
   // Dynamically map library resources from active DB subjectsList
   const libraryBooks: BookItem[] = useMemo(() => {
@@ -1247,9 +1237,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   { id: "dashboard", label: "Dashboard", icon: Activity },
                   { id: "schedule", label: "Schedule", icon: Calendar },
                   { id: "interviews", label: "My Interviews", icon: Award },
-                  { id: "leave", label: "Leave & OD", icon: FileText },
                   { id: "tracker", label: "Skill Development", icon: GraduationCap },
-                  { id: "exams", label: "Exams", icon: BookOpen },
+                  { id: "exams", label: "Exams & Marks", icon: BookOpen },
                   { id: "materials", label: "Subject Materials", icon: Book },
                   { id: "fees", label: "Fees", icon: CreditCard },
                   { id: "profile", label: "My Profile", icon: User }
@@ -1269,13 +1258,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         }
                         window.location.href = `/student/${tab.id}`;
                       }}
-                      className={`w-full flex items-center rounded-md text-xs font-bold tracking-tight transition-all duration-200 cursor-pointer ${
-                        isCollapsed ? "justify-center px-0 py-3" : "justify-start gap-3 px-4 py-3 text-left"
-                      } ${
-                        isActive
+                      className={`w-full flex items-center rounded-md text-xs font-bold tracking-tight transition-all duration-200 cursor-pointer ${isCollapsed ? "justify-center px-0 py-3" : "justify-start gap-3 px-4 py-3 text-left"
+                        } ${isActive
                           ? "sidebar-active-item"
                           : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
-                      }`}
+                        }`}
                     >
                       <div className="relative flex items-center justify-center">
                         <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-[#4F46E5]" : "text-slate-400 group-hover:text-slate-650"}`} />
@@ -1327,14 +1314,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             { id: "more_menu", label: "More", icon: Menu },
           ].map(t => {
             const Icon = t.icon;
-            const isActive = activeTab === t.id || (t.id === "materials" && activeTab === "library") || (t.id === "more_menu" && ["leave", "exams", "fees", "profile"].includes(activeTab));
+            const isActive = activeTab === t.id || (t.id === "materials" && activeTab === "library") || (t.id === "more_menu" && ["exams", "fees", "profile"].includes(activeTab));
             const pendingCount = t.id === "tracker"
               ? weeklyTasks.filter(task => {
-                  const isMatch = isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList);
-                  if (!isMatch) return false;
-                  const entry = studentTracker.find(e => e.student_id === currentStudent?.id && e.week_number === task.week_number && e.subject.toLowerCase().trim() === task.subject.toLowerCase().trim());
-                  return !entry || !entry.submission_url;
-                }).length
+                const isMatch = isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList);
+                if (!isMatch) return false;
+                const entry = studentTracker.find(e => e.student_id === currentStudent?.id && e.week_number === task.week_number && e.subject.toLowerCase().trim() === task.subject.toLowerCase().trim());
+                return !entry || !entry.submission_url;
+              }).length
               : t.id === "fees" ? (feeData?.stats?.unpaidCount || 0) : 0;
             return (
               <a
@@ -1348,9 +1335,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   }
                   window.location.href = `/student/${t.id}`;
                 }}
-                className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 py-1.5 rounded-xl transition-all cursor-pointer ${
-                  isActive ? "text-indigo-600" : "text-slate-400"
-                }`}
+                className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 py-1.5 rounded-xl transition-all cursor-pointer ${isActive ? "text-indigo-600" : "text-slate-400"
+                  }`}
               >
                 <div className="relative">
                   <Icon className={`h-4.5 w-4.5 transition-transform ${isActive ? "scale-110" : ""}`} />
@@ -1378,9 +1364,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               {activeTab === "dashboard" && "Dashboard"}
               {activeTab === "schedule" && "Weekly Class Timetable"}
               {activeTab === "interviews" && "Academic Mock Interviews"}
-              {activeTab === "leave" && "Student Leave & OD Tracker"}
               {activeTab === "tracker" && "Skill Development & Lab Evaluations"}
-              {activeTab === "exams" && "Semester Exams Seating"}
+              {activeTab === "exams" && "Examinations & Test Marks"}
               {(activeTab === "materials" || activeTab === "library") && "Subject Materials & Study Resources"}
               {activeTab === "fees" && "Online Dues & Fees Administration"}
               {activeTab === "profile" && "My Profile Portal"}
@@ -1419,24 +1404,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
               <a
-                href="/student/leave"
-                onClick={(e) => {
-                  if (e.ctrlKey || e.metaKey || e.button === 1) return;
-                  e.preventDefault();
-                  window.location.href = "/student/leave";
-                }}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
-              >
-                <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/25 flex items-center justify-center text-indigo-500 shrink-0 group-hover:scale-105 transition-transform">
-                  <FileText className="h-5 w-5" />
-                </div>
-                <div>
-                  <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Leave & OD</span>
-                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Apply and track requests</span>
-                </div>
-              </a>
-
-              <a
                 href="/student/exams"
                 onClick={(e) => {
                   if (e.ctrlKey || e.metaKey || e.button === 1) return;
@@ -1449,8 +1416,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <BookOpen className="h-5 w-5" />
                 </div>
                 <div>
-                  <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Exams Seating</span>
-                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Seating and hall tickets</span>
+                  <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Examinations & Test Marks</span>
+                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">View test marks, scorecards & timetables</span>
                 </div>
               </a>
 
@@ -1498,198 +1465,195 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeIn">
             {/* Left Columns (Col Span 2) */}
             <div className="lg:col-span-2 space-y-6">
-                
-                {/* Real-Time Overview Cards Row */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-                  {/* 3. Academic Mock Interviews Summary Tile */}
-                  {(() => {
-                    const upcomingInterview = (studentInterviews || []).find((inv: any) => inv.status !== "evaluated") || (studentInterviews || [])[0];
-                    const evaluatedCount = (studentInterviews || []).filter((inv: any) => inv.status === "evaluated").length;
+              {/* Real-Time Overview Cards Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-                    return (
-                      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs relative flex flex-col justify-between group hover:shadow-md transition-all">
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Mock Interviews</span>
-                            <span className="text-lg font-black text-slate-900">
-                              {upcomingInterview ? upcomingInterview.subject || "Interview Round" : "No Pending Rounds"}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setActiveTab("interviews")}
-                            className="p-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-full shrink-0 shadow-2xs hover:bg-slate-100 cursor-pointer"
-                            title="Open Interviews"
-                          >
-                            <ArrowUpRight className="h-3.5 w-3.5 text-slate-600" />
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
-                          <span className="text-[10.5px] font-bold text-slate-500">
-                            {upcomingInterview?.target_date ? `Date: ${upcomingInterview.target_date}` : `${evaluatedCount} Evaluated`}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-100">
-                            {upcomingInterview ? upcomingInterview.status || "Scheduled" : "Active"}
+                {/* 3. Academic Mock Interviews Summary Tile */}
+                {(() => {
+                  const upcomingInterview = (studentInterviews || []).find((inv: any) => inv.status !== "evaluated") || (studentInterviews || [])[0];
+                  const evaluatedCount = (studentInterviews || []).filter((inv: any) => inv.status === "evaluated").length;
+
+                  return (
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs relative flex flex-col justify-between group hover:shadow-md transition-all">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Mock Interviews</span>
+                          <span className="text-lg font-black text-slate-900">
+                            {upcomingInterview ? upcomingInterview.subject || "Interview Round" : "No Pending Rounds"}
                           </span>
                         </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* 4. Fees & Dues Standing Tile */}
-                  {(() => {
-                    const unpaidAmt = feeData?.stats?.totalUnpaidAmount || feeData?.stats?.pendingAmount || 0;
-                    const isClear = unpaidAmt === 0;
-
-                    return (
-                      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs relative flex flex-col justify-between group hover:shadow-md transition-all">
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Semester Fees</span>
-                            <span className="text-xl font-black text-slate-900">
-                              {isClear ? "All Dues Cleared" : `₹${unpaidAmt.toLocaleString("en-IN")}`}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setActiveTab("fees")}
-                            className="p-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-full shrink-0 shadow-2xs hover:bg-slate-100 cursor-pointer"
-                            title="Open Fees"
-                          >
-                            <ArrowUpRight className="h-3.5 w-3.5 text-slate-600" />
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
-                          <span className="text-[10.5px] font-bold text-slate-500">
-                            {isClear ? "Receipts available" : "Pending installment"}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                            isClear ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
-                          }`}>
-                            {isClear ? "Clear" : "Unpaid"}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                </div>
-
-                {/* Curriculum Tasks & Weekly Submissions */}
-                <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-5">
-                  <div className="flex items-center justify-between border-b border-slate-100/80 pb-4">
-                    <div>
-                      <h2 className="text-base font-extrabold text-slate-900 tracking-tight">Curriculum Tasks & Submissions</h2>
-                      <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Assigned weekly practicals, lab exercises, and term evaluations</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.location.href = "/student/tracker?category=skill";
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-extrabold cursor-pointer shadow-xs transition-all hover:scale-105"
-                    >
-                      <span>Open Tracker</span>
-                      <ArrowUpRight className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-
-                  {/* Tasks List from DB / Context */}
-                  <div className="space-y-3.5">
-                    {dashboardCohortTasks.length > 0 ? (
-                      dashboardCohortTasks.map((task) => {
-                        const studentSub = (studentTracker || []).find(
-                          (st) =>
-                            st.student_id === currentStudent.id &&
-                            st.week_number === task.week_number &&
-                            st.subject.toLowerCase().trim() === task.subject.toLowerCase().trim()
-                        );
-                        const isGraded = typeof studentSub?.marks === "number";
-                        const isSubmitted = !!studentSub?.submission_url;
-                        const formattedDate = task.created_at ? parseDbDate(task.created_at).toLocaleDateString() : undefined;
-
-                        return (
-                          <div
-                            key={task.id || `${task.subject}-${task.week_number}`}
-                            className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-xl hover:bg-slate-50 hover:shadow-xs transition-all duration-200"
-                          >
-                            <div className="flex items-start gap-3.5 min-w-0">
-                              <div className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-black uppercase ${
-                                isGraded
-                                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                  : isSubmitted
-                                  ? "bg-indigo-100 text-indigo-800 border border-indigo-200"
-                                  : "bg-amber-100 text-amber-800 border border-amber-200"
-                              }`}>
-                                W{task.week_number}
-                              </div>
-                              <div className="min-w-0">
-                                <span className="text-xs font-bold text-slate-800 block truncate leading-tight">
-                                  {task.task_name}
-                                </span>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-[9.5px] text-slate-400 font-extrabold uppercase tracking-wider">
-                                    {task.subject}
-                                  </span>
-                                  {formattedDate && (
-                                    <span className="text-[9.5px] text-slate-400 font-medium flex items-center gap-0.5">
-                                      • Assigned: {formattedDate}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-3 shrink-0">
-                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-wider select-none ${
-                                isGraded
-                                  ? "bg-emerald-100 text-emerald-805 border border-emerald-200/50"
-                                  : isSubmitted
-                                  ? "bg-indigo-50 text-indigo-700 border border-indigo-200/50"
-                                  : "bg-amber-50 text-amber-700 border border-amber-200/50"
-                              }`}>
-                                {isGraded ? `Score: ${studentSub.marks}/10` : isSubmitted ? "Submitted" : "Pending"}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  window.location.href = `/student/tracker?category=skill&subject=${encodeURIComponent(task.subject)}&week=${task.week_number}`;
-                                }}
-                                className="p-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 cursor-pointer shadow-2xs transition-colors"
-                                title="Go to submission"
-                              >
-                                <ArrowUpRight className="h-3.5 w-3.5 text-slate-500" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="text-center py-8 px-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                        <FileText className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                        <p className="text-xs font-bold text-slate-700">No active weekly submissions</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Assigned faculty tasks and lab practicals will appear here.</p>
                         <button
                           type="button"
-                          onClick={() => {
-                            window.location.href = "/student/tracker?category=skill";
-                          }}
-                          className="mt-3 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs cursor-pointer inline-flex items-center gap-1.5"
+                          onClick={() => setActiveTab("interviews")}
+                          className="p-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-full shrink-0 shadow-2xs hover:bg-slate-100 cursor-pointer"
+                          title="Open Interviews"
                         >
-                          <span>View Skill Tracker</span>
-                          <ArrowUpRight className="h-3 w-3" />
+                          <ArrowUpRight className="h-3.5 w-3.5 text-slate-600" />
                         </button>
                       </div>
-                    )}
-                  </div>
-                </div>
+                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+                        <span className="text-[10.5px] font-bold text-slate-500">
+                          {upcomingInterview?.target_date ? `Date: ${upcomingInterview.target_date}` : `${evaluatedCount} Evaluated`}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-100">
+                          {upcomingInterview ? upcomingInterview.status || "Scheduled" : "Active"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 4. Fees & Dues Standing Tile */}
+                {(() => {
+                  const unpaidAmt = feeData?.stats?.totalUnpaidAmount || feeData?.stats?.pendingAmount || 0;
+                  const isClear = unpaidAmt === 0;
+
+                  return (
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs relative flex flex-col justify-between group hover:shadow-md transition-all">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Semester Fees</span>
+                          <span className="text-xl font-black text-slate-900">
+                            {isClear ? "All Dues Cleared" : `₹${unpaidAmt.toLocaleString("en-IN")}`}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("fees")}
+                          className="p-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-full shrink-0 shadow-2xs hover:bg-slate-100 cursor-pointer"
+                          title="Open Fees"
+                        >
+                          <ArrowUpRight className="h-3.5 w-3.5 text-slate-600" />
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+                        <span className="text-[10.5px] font-bold text-slate-500">
+                          {isClear ? "Receipts available" : "Pending installment"}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${isClear ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
+                          }`}>
+                          {isClear ? "Clear" : "Unpaid"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
               </div>
 
-              {/* Right Column (Col Span 1) */}
-              <div className="lg:col-span-1 space-y-6">
-              
+              {/* Curriculum Tasks & Weekly Submissions */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-5">
+                <div className="flex items-center justify-between border-b border-slate-100/80 pb-4">
+                  <div>
+                    <h2 className="text-base font-extrabold text-slate-900 tracking-tight">Curriculum Tasks & Submissions</h2>
+                    <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Assigned weekly practicals, lab exercises, and term evaluations</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.location.href = "/student/tracker?category=skill";
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-extrabold cursor-pointer shadow-xs transition-all hover:scale-105"
+                  >
+                    <span>Open Tracker</span>
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                {/* Tasks List from DB / Context */}
+                <div className="space-y-3.5">
+                  {dashboardCohortTasks.length > 0 ? (
+                    dashboardCohortTasks.map((task) => {
+                      const studentSub = (studentTracker || []).find(
+                        (st) =>
+                          st.student_id === currentStudent.id &&
+                          st.week_number === task.week_number &&
+                          st.subject.toLowerCase().trim() === task.subject.toLowerCase().trim()
+                      );
+                      const isGraded = typeof studentSub?.marks === "number";
+                      const isSubmitted = !!studentSub?.submission_url;
+                      const formattedDate = task.created_at ? parseDbDate(task.created_at).toLocaleDateString() : undefined;
+
+                      return (
+                        <div
+                          key={task.id || `${task.subject}-${task.week_number}`}
+                          className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-xl hover:bg-slate-50 hover:shadow-xs transition-all duration-200"
+                        >
+                          <div className="flex items-start gap-3.5 min-w-0">
+                            <div className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-black uppercase ${isGraded
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                : isSubmitted
+                                  ? "bg-indigo-100 text-indigo-800 border border-indigo-200"
+                                  : "bg-amber-100 text-amber-800 border border-amber-200"
+                              }`}>
+                              W{task.week_number}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-slate-800 block truncate leading-tight">
+                                {task.task_name}
+                              </span>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[9.5px] text-slate-400 font-extrabold uppercase tracking-wider">
+                                  {task.subject}
+                                </span>
+                                {formattedDate && (
+                                  <span className="text-[9.5px] text-slate-400 font-medium flex items-center gap-0.5">
+                                    • Assigned: {formattedDate}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-wider select-none ${isGraded
+                                ? "bg-emerald-100 text-emerald-805 border border-emerald-200/50"
+                                : isSubmitted
+                                  ? "bg-indigo-50 text-indigo-700 border border-indigo-200/50"
+                                  : "bg-amber-50 text-amber-700 border border-amber-200/50"
+                              }`}>
+                              {isGraded ? `Score: ${studentSub.marks}/10` : isSubmitted ? "Submitted" : "Pending"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                window.location.href = `/student/tracker?category=skill&subject=${encodeURIComponent(task.subject)}&week=${task.week_number}`;
+                              }}
+                              className="p-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 cursor-pointer shadow-2xs transition-colors"
+                              title="Go to submission"
+                            >
+                              <ArrowUpRight className="h-3.5 w-3.5 text-slate-500" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-8 px-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                      <FileText className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs font-bold text-slate-700">No active weekly submissions</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Assigned faculty tasks and lab practicals will appear here.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.location.href = "/student/tracker?category=skill";
+                        }}
+                        className="mt-3 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        <span>View Skill Tracker</span>
+                        <ArrowUpRight className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Right Column (Col Span 1) */}
+            <div className="lg:col-span-1 space-y-6">
+
               {/* Class Attendance Calendar Card with Dates & Ticks */}
               <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-xs space-y-5">
                 <div className="flex items-center justify-between">
@@ -1711,11 +1675,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => setAttendanceMonthOffset(0)}
-                      className={`px-2 py-1 text-[9px] font-black rounded-lg border transition-all cursor-pointer ${
-                        attendanceMonthOffset === 0
+                      className={`px-2 py-1 text-[9px] font-black rounded-lg border transition-all cursor-pointer ${attendanceMonthOffset === 0
                           ? "bg-slate-900 text-white border-slate-900"
                           : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                      }`}
+                        }`}
                     >
                       Current
                     </button>
@@ -1867,7 +1830,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     const todayInterview = studentInterviews.find(inv => inv.target_date === todayStr);
                     if (!todayInterview) return null;
 
-                    const mySlot = (todayInterview.student_slots || []).find((s: any) => 
+                    const mySlot = (todayInterview.student_slots || []).find((s: any) =>
                       s.student_id === currentStudent?.id || s.roll_number === currentStudent?.roll_number
                     );
                     const meetLink = mySlot?.gmeet_link || todayInterview.gmeet_link;
@@ -1911,7 +1874,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     const mentor = mentors.find(m => m.id === slot.mentorId);
                     const teacherName = mentor?.name || (slot.department ? `${slot.department} Faculty` : "Faculty Instructor");
                     const initial = teacherName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "FA";
-                    
+
                     return (
                       <div key={slot.id || index} className="p-4 bg-slate-50/50 border border-slate-100 rounded-xl flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3 min-w-0">
@@ -1938,7 +1901,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     </div>
                   )}
                 </div>
-            </div>
+              </div>
 
             </div>
 
@@ -1954,7 +1917,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Weekly Class Timetable</h2>
                 <p className="text-[11px] text-slate-450 mt-1">Displays scheduled courses and period attendance status for the selected week.</p>
               </div>
-              
+
               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/60 shadow-inner shrink-0">
                 <button
                   type="button"
@@ -2014,14 +1977,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     const isHighlighted = highlightedDate === date.dateStr;
 
                     return (
-                      <tr 
-                        key={date.day} 
+                      <tr
+                        key={date.day}
                         id={`date-row-${date.dateStr}`}
-                        className={`h-24 transition-all duration-500 ${
-                          isHighlighted 
-                            ? "bg-indigo-50/80 dark:bg-indigo-950/40 ring-2 ring-indigo-500 ring-inset shadow-md" 
+                        className={`h-24 transition-all duration-500 ${isHighlighted
+                            ? "bg-indigo-50/80 dark:bg-indigo-950/40 ring-2 ring-indigo-500 ring-inset shadow-md"
                             : "hover:bg-slate-55/10 dark:hover:bg-white/[0.02]"
-                        }`}
+                          }`}
                       >
                         {/* First Cell: Day / Date */}
                         <td className="sticky left-0 z-10 p-3 text-xs font-bold text-slate-705 border-r border-slate-200 bg-slate-50/95 dark:bg-[#141419] dark:border-white/5 backdrop-blur-xs align-middle">
@@ -2065,8 +2027,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         {rows.map((col, cIdx) => {
                           if (col.type === "break" || col.type === "lunch") {
                             return (
-                              <td 
-                                key={`break-${cIdx}`} 
+                              <td
+                                key={`break-${cIdx}`}
                                 className="p-2 text-center text-xs font-extrabold text-slate-455 bg-slate-50/5 uppercase tracking-widest italic select-none border-r border-slate-150 last:border-r-0 align-middle"
                               >
                                 {col.label}
@@ -2085,10 +2047,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             const slotTimeNorm = time.replace(/\s+/g, "").toLowerCase();
                             const prefTimeNorm = prefTime.replace(/\s+/g, "").toLowerCase();
                             if (slotTimeNorm.includes(prefTimeNorm) || prefTimeNorm.includes(slotTimeNorm)) return true;
-                            
+
                             // Check student slots
-                            if (inv.student_slots && inv.student_slots.some((s: any) => 
-                              (s.student_id === currentStudent?.id || s.roll_number === currentStudent?.roll_number) && 
+                            if (inv.student_slots && inv.student_slots.some((s: any) =>
+                              (s.student_id === currentStudent?.id || s.roll_number === currentStudent?.roll_number) &&
                               (s.slot_start_time?.includes(time) || time.includes(s.slot_start_time))
                             )) return true;
 
@@ -2105,7 +2067,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                           if (interviewForSlot) {
                             const isCompleted = interviewForSlot.status === "completed";
-                            const mySlot = (interviewForSlot.student_slots || []).find((s: any) => 
+                            const mySlot = (interviewForSlot.student_slots || []).find((s: any) =>
                               s.student_id === currentStudent?.id || s.roll_number === currentStudent?.roll_number
                             );
                             const meetLink = mySlot?.gmeet_link || interviewForSlot.gmeet_link;
@@ -2114,11 +2076,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                             return (
                               <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-white dark:bg-[#101015]">
-                                <div className={`h-full flex flex-col justify-between p-2 rounded-xl border text-xs shadow-xs transition-all ${
-                                  isCompleted
+                                <div className={`h-full flex flex-col justify-between p-2 rounded-xl border text-xs shadow-xs transition-all ${isCompleted
                                     ? "bg-emerald-50/80 border-emerald-300 text-emerald-950"
                                     : "bg-purple-50/80 border-purple-300 text-purple-950 hover:shadow-sm"
-                                }`}>
+                                  }`}>
                                   <div>
                                     <div className="flex flex-wrap items-center gap-1 mb-1 max-w-full">
                                       <span className="px-1.5 py-0.5 rounded bg-purple-200/80 border border-purple-300 text-[7.5px] font-black text-purple-800 uppercase tracking-wide">
@@ -2146,11 +2107,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                     ) : (
                                       <span className="text-purple-600 font-mono">{slotTiming}</span>
                                     )}
-                                    <span className={`px-1.5 py-0.5 rounded text-[7.5px] ${
-                                      isCompleted
+                                    <span className={`px-1.5 py-0.5 rounded text-[7.5px] ${isCompleted
                                         ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
                                         : "bg-purple-100 text-purple-800 border border-purple-300"
-                                    }`}>
+                                      }`}>
                                       {isCompleted ? "Evaluated" : "Scheduled"}
                                     </span>
                                   </div>
@@ -2185,11 +2145,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                   <div className="flex items-center justify-between text-[8px] mt-1 pt-1 border-t border-amber-200/60 font-black uppercase">
                                     <span className="text-amber-700">Event Session</span>
                                     {cellData.attendance ? (
-                                      <span className={`px-1.5 py-0.5 rounded ${
-                                        cellData.attendance.status === "present"
+                                      <span className={`px-1.5 py-0.5 rounded ${cellData.attendance.status === "present"
                                           ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
                                           : "bg-rose-100 text-rose-800 border border-rose-300"
-                                      }`}>
+                                        }`}>
                                         {cellData.attendance.status}
                                       </span>
                                     ) : (
@@ -2226,11 +2185,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                       {examInfo?.session_time || formatTimeLabel(time)}
                                     </span>
                                     {cellData.attendance ? (
-                                      <span className={`px-1.5 py-0.5 rounded text-[7.5px] ${
-                                        cellData.attendance.status === "present"
+                                      <span className={`px-1.5 py-0.5 rounded text-[7.5px] ${cellData.attendance.status === "present"
                                           ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
                                           : "bg-rose-100 text-rose-800 border border-rose-300"
-                                      }`}>
+                                        }`}>
                                         {cellData.attendance.status}
                                       </span>
                                     ) : (
@@ -2271,11 +2229,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                                     {cellData.attendance ? (
                                       <span
-                                        className={`px-1 py-0.5 rounded text-[8px] font-black uppercase ${
-                                          cellData.attendance.status === "present"
+                                        className={`px-1 py-0.5 rounded text-[8px] font-black uppercase ${cellData.attendance.status === "present"
                                             ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
                                             : "bg-rose-50 border border-rose-200 text-rose-700"
-                                        }`}
+                                          }`}
                                       >
                                         {cellData.attendance.status}
                                       </span>
@@ -2399,11 +2356,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           {myEval ? (
                             <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2.5">
                               <div className="flex items-center justify-between">
-                                <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-                                  myEval.status === "Cleared" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
-                                  myEval.status === "Needs Improvement" ? "bg-amber-50 text-amber-700 border border-amber-200" :
-                                  "bg-rose-50 text-rose-700 border border-rose-200"
-                                }`}>
+                                <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${myEval.status === "Cleared" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                                    myEval.status === "Needs Improvement" ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                                      "bg-rose-50 text-rose-700 border border-rose-200"
+                                  }`}>
                                   {isVerified ? `✓ Conducted & Verified — ${myEval.status}` : `Conducted — Pending CAM Verification`}
                                 </span>
                                 <span className="text-xs font-black text-indigo-700">Total Score: {myEval.total_score || 0}/100</span>
@@ -2442,154 +2398,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           </div>
         )}
 
-        {/* Tab 4: Leave & OD Applications */}
-        {activeTab === "leave" && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Submission Form */}
-            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
-              <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Apply for Leave / OD</h2>
-              
-              <form onSubmit={handleLeaveSubmit} className="space-y-3.5">
-                <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Request Type</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setLeaveType("leave")}
-                      className={`py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                        leaveType === "leave"
-                          ? "bg-slate-100 border-indigo-200 text-indigo-700 font-extrabold"
-                          : "bg-white border-slate-200 text-slate-500 hover:text-slate-700"
-                      }`}
-                    >
-                      Medical / Sick
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeaveType("od")}
-                      className={`py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                        leaveType === "od"
-                          ? "bg-slate-100 border-indigo-200 text-indigo-700 font-extrabold"
-                          : "bg-white border-slate-200 text-slate-500 hover:text-slate-700"
-                      }`}
-                    >
-                      On-Duty (OD)
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Target Date</label>
-                  <input
-                    type="date"
-                    required
-                    value={leaveDate}
-                    onChange={(e) => setLeaveDate(e.target.value)}
-                    className="w-full p-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Reason / Explanation</label>
-                  <textarea
-                    required
-                    rows={3}
-                    placeholder="Enter reason for leave/OD request..."
-                    value={leaveReason}
-                    onChange={(e) => setLeaveReason(e.target.value)}
-                    className="w-full p-2.5 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white outline-none focus:ring-1 focus:ring-indigo-500 leading-normal"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={submittingLeave}
-                  className="w-full py-2 btn-gradient text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-sm transition-all hover:scale-[1.01] cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
-                >
-                  {submittingLeave ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin shrink-0 text-white" />
-                      <span>Submitting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-4 w-4" />
-                      <span>Submit Request</span>
-                    </>
-                  )}
-                </button>
-              </form>
-            </div>
-
-            {/* Applications History log */}
-            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4 md:col-span-2">
-              <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Leave & OD Requests History</h2>
-              
-              {myLeaveRequests.length === 0 ? (
-                <div className="text-center py-12 text-slate-400 italic text-xs">
-                  No submitted leave or OD applications found.
-                </div>
-              ) : (() => {
-                const paginatedLeaveRequests = myLeaveRequests.slice((leavePage - 1) * leavePageSize, leavePage * leavePageSize);
-                return (
-                  <div className="overflow-x-auto rounded-xl border border-slate-150 scroll-touch">
-                    <table className="w-full border-collapse text-left text-xs min-w-[600px]">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9px] whitespace-nowrap">
-                          <th className="p-3">Date</th>
-                          <th className="p-3">Type</th>
-                          <th className="p-3">Reason</th>
-                          <th className="p-3">Status</th>
-                          <th className="p-3">Action By</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                        {paginatedLeaveRequests.map((req) => (
-                          <tr key={req.id} className="hover:bg-slate-50/30 transition-colors">
-                            <td className="p-3 text-slate-700">{req.dateStr}</td>
-                            <td className="p-3">
-                              <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase ${
-                                req.type === "od" ? "bg-sky-50 text-sky-700 border border-sky-200" : "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                              }`}>
-                                {req.type === "od" ? "On-Duty" : "Leave"}
-                              </span>
-                            </td>
-                            <td className="p-3 text-slate-650 max-w-[200px] truncate" title={req.reason}>
-                              {req.reason}
-                            </td>
-                            <td className="p-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
-                                req.status === "approved"
-                                  ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                                  : req.status === "rejected"
-                                  ? "bg-rose-50 border border-rose-200 text-rose-700"
-                                  : "bg-amber-50 border border-amber-200 text-amber-700"
-                              }`}>
-                                {req.status}
-                              </span>
-                            </td>
-                            <td className="p-3 text-slate-450 font-mono text-[9px]">{req.approvedBy || "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <Pagination
-                      currentPage={leavePage}
-                      totalItems={myLeaveRequests.length}
-                      pageSize={leavePageSize}
-                      onPageChange={setLeavePage}
-                      onPageSizeChange={setLeavePageSize}
-                    />
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        )}
-
-        {/* Tab 5: Exams, Tickets & Assessment Scorecards */}
+        {/* Tab 5: Examinations, Test Marks & Assessment Hub */}
         {activeTab === "exams" && (() => {
-          const displayExams = studentExamsList || [];
+          const todayStr = new Date().toISOString().slice(0, 10);
+          const allExams = studentExamsList || [];
+          const pastExams = allExams.filter((ex: any) => ex.exam_date < todayStr);
+          const upcomingExams = allExams.filter((ex: any) => ex.exam_date >= todayStr);
           const displayMarks = studentMarksList || [];
 
           // Compute summary stats for student results
@@ -2614,6 +2428,23 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
           const overallPct = totalMaxMarks > 0 ? ((totalMarks / totalMaxMarks) * 100).toFixed(1) : "—";
 
+          const availableExamTypes = Array.from(
+            new Set(displayMarks.map((m: any) => m.exam_type).filter(Boolean))
+          );
+
+          const filteredMarks = displayMarks.filter((m: any) => {
+            if (marksTypeFilter !== "all" && m.exam_type !== marksTypeFilter) return false;
+            if (marksSearchTerm.trim()) {
+              const q = marksSearchTerm.toLowerCase();
+              const subName = (m.subject_name || "").toLowerCase();
+              const subCode = (m.subject_code || "").toLowerCase();
+              const examType = (m.exam_type || "").toLowerCase();
+              const evalBy = (m.evaluated_by || "").toLowerCase();
+              return subName.includes(q) || subCode.includes(q) || examType.includes(q) || evalBy.includes(q);
+            }
+            return true;
+          });
+
           return (
             <div className="space-y-5 font-sans">
               {/* Header Navigation & Sub-Tabs */}
@@ -2625,7 +2456,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     </div>
                     <div>
                       <h2 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                        Assessments & Exam Hub
+                        Examinations & Test Marks Hub
                         <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-black uppercase inline-flex items-center gap-1">
                           <span>{currentStudent?.department || "Department"}</span>
                           {currentStudent?.department && (
@@ -2634,7 +2465,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         </span>
                       </h2>
                       <p className="text-[11px] text-slate-450 mt-0.5">
-                        Track upcoming schedules, download hall tickets, and review evaluated subject scorecards.
+                        Track your test marks, evaluated scores, pass/fail status, evaluator feedback, and upcoming assessment timetables.
                       </p>
                     </div>
                   </div>
@@ -2644,261 +2475,422 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <div className="flex items-center p-1 bg-slate-100 rounded-xl">
                       <button
                         type="button"
-                        onClick={() => setExamSubTab("schedule")}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                          examSubTab === "schedule"
+                        onClick={() => setExamSubTab("results")}
+                        className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${examSubTab === "results"
                             ? "bg-white text-indigo-700 shadow-xs"
                             : "text-slate-500 hover:text-slate-800"
-                        }`}
+                          }`}
                       >
-                        Timetable & Hall Tickets ({displayExams.length})
+                        Test Marks & Scorecard ({displayMarks.length})
                       </button>
                       <button
                         type="button"
-                        onClick={() => setExamSubTab("results")}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                          examSubTab === "results"
+                        onClick={() => setExamSubTab("schedule")}
+                        className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${examSubTab === "schedule"
                             ? "bg-white text-indigo-700 shadow-xs"
                             : "text-slate-500 hover:text-slate-800"
-                        }`}
+                          }`}
                       >
-                        Results & Scorecard ({displayMarks.length})
+                        Upcoming Tests Schedule ({upcomingExams.length})
                       </button>
                     </div>
-
-                    {examSubTab === "schedule" && displayExams.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          toast(`Official Hall Ticket generated for ${currentStudent.name} (${currentStudent.roll_number || currentStudent.register_number || currentStudent.id}).`, "success");
-                        }}
-                        className="py-2 px-3.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                      >
-                        <Download className="h-4 w-4" />
-                        <span>Download Hall Ticket (PDF)</span>
-                      </button>
-                    )}
                   </div>
                 </div>
 
                 {/* Scorecard Quick KPIs (When on results view) */}
                 {examSubTab === "results" && displayMarks.length > 0 && (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                    <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl text-center">
-                      <span className="text-[9px] font-black uppercase text-indigo-800 block">Evaluated Papers</span>
-                      <span className="text-lg font-black text-indigo-900">{displayMarks.length}</span>
+                    <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-indigo-800">Evaluated Tests</span>
+                        <Award className="h-4 w-4 text-indigo-500" />
+                      </div>
+                      <span className="text-xl font-black text-indigo-950 mt-1 block">{displayMarks.length}</span>
+                      <span className="text-[10px] text-indigo-600 font-medium">Recorded scorecards</span>
                     </div>
-                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
-                      <span className="text-[9px] font-black uppercase text-emerald-700 block">Passed</span>
-                      <span className="text-lg font-black text-emerald-800">{passedCount}</span>
+                    <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800">Passed</span>
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      </div>
+                      <span className="text-xl font-black text-emerald-950 mt-1 block">{passedCount}</span>
+                      <span className="text-[10px] text-emerald-700 font-medium">Cleared cutoff</span>
                     </div>
-                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-center">
-                      <span className="text-[9px] font-black uppercase text-rose-700 block">Arrears / Re-Appear</span>
-                      <span className="text-lg font-black text-rose-800">{arrearsCount}</span>
+                    <div className={`p-3.5 rounded-xl border ${arrearsCount > 0 ? "bg-rose-50 border-rose-200" : "bg-teal-50 border-teal-200"}`}>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[9px] font-black uppercase tracking-wider ${arrearsCount > 0 ? "text-rose-800" : "text-teal-800"}`}>
+                          Arrears / Re-Appear
+                        </span>
+                        {arrearsCount > 0 ? (
+                          <AlertTriangle className="h-4 w-4 text-rose-500" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4 text-teal-600" />
+                        )}
+                      </div>
+                      <span className={`text-xl font-black mt-1 block ${arrearsCount > 0 ? "text-rose-950" : "text-teal-950"}`}>
+                        {arrearsCount > 0 ? arrearsCount : "0 (All Cleared)"}
+                      </span>
+                      <span className={`text-[10px] font-medium ${arrearsCount > 0 ? "text-rose-600" : "text-teal-700"}`}>
+                        {arrearsCount > 0 ? "Needs re-assessment" : "All tests passed"}
+                      </span>
                     </div>
-                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-center">
-                      <span className="text-[9px] font-black uppercase text-purple-700 block">Cumulative Score</span>
-                      <span className="text-lg font-black text-purple-900">{overallPct}%</span>
+                    <div className="p-3.5 bg-purple-50/80 border border-purple-200 rounded-xl">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-purple-800">Cumulative Score</span>
+                        <Percent className="h-4 w-4 text-purple-500" />
+                      </div>
+                      <span className="text-xl font-black text-purple-950 mt-1 block">{overallPct}%</span>
+                      <span className="text-[10px] text-purple-700 font-medium">
+                        {totalMarks.toFixed(0)} / {totalMaxMarks.toFixed(0)} Total Marks
+                      </span>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* VIEW 1: EXAMINATION SCHEDULE & TICKETS */}
-              {examSubTab === "schedule" && (
-                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto scroll-touch">
-                    <table className="w-full border-collapse text-left text-xs min-w-[650px]">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
-                          <th className="p-3">Exam / Assessment</th>
-                          <th className="p-3">Subject Name</th>
-                          <th className="p-3">Exam Date & Day Order</th>
-                          <th className="p-3">Session & Timings</th>
-                          <th className="p-3">Hall / Block</th>
-                          <th className="p-3 text-center">Seat Number</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                        {examsLoading ? (
-                          <tr>
-                            <td colSpan={6} className="p-8 text-center text-slate-400 font-bold">
-                              Loading your assessment schedule...
-                            </td>
-                          </tr>
-                        ) : displayExams.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="p-8 text-center text-slate-400 italic">
-                              No examination schedules published for your enrolled courses at this time.
-                            </td>
-                          </tr>
-                        ) : (
-                          displayExams.map((ex: any, idx: number) => {
-                            const seatNo = currentStudent.roll_number || currentStudent.register_number ? `${currentStudent.roll_number || currentStudent.register_number}` : `S-${100 + idx}`;
-                            return (
-                              <tr key={ex.id || idx} className="hover:bg-slate-50/60 transition-colors">
-                                <td className="p-3">
-                                  <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10.5px] font-extrabold">
-                                    {ex.exam_type}
-                                  </span>
-                                </td>
-                                <td className="p-3 font-extrabold text-slate-900 truncate max-w-[200px]">{ex.subject_name}</td>
-                                <td className="p-3 text-slate-700 font-bold">
-                                  <div className="flex flex-col gap-1">
-                                    <div className="flex items-center gap-1.5">
-                                      <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                                      <span>{ex.exam_date}</span>
-                                    </div>
-                                    {ex.day_order && ex.day_order !== "None" ? (
-                                      <span className="inline-flex items-center w-max px-2 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-[9.5px] font-black uppercase">
-                                        {ex.day_order}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </td>
-                                <td className="p-3 text-slate-650">
-                                  <div className="flex items-center gap-1.5 text-[10.5px]">
-                                    <Clock className="h-3 w-3 text-slate-400 shrink-0" />
-                                    <span className="font-semibold text-slate-800">{ex.session_time || `${ex.start_time} - ${ex.end_time}`}</span>
-                                  </div>
-                                </td>
-                                <td className="p-3">
-                                  <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px] text-slate-700 font-bold">
-                                    <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
-                                    {ex.hall_room || "Main Examination Hall"}
-                                  </span>
-                                </td>
-                                <td className="p-3 text-center font-bold text-indigo-700 font-mono">{seatNo}</td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* VIEW 2: ASSESSMENT RESULTS & SCORECARD */}
+              {/* VIEW 1: ASSESSMENT RESULTS & SCORECARD */}
               {examSubTab === "results" && (
-                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto scroll-touch">
-                    <table className="w-full border-collapse text-left text-xs min-w-[700px]">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
-                          <th className="p-3">Exam Type</th>
-                          <th className="p-3">Subject Name</th>
-                          <th className="p-3">Exam Date</th>
-                          <th className="p-3 text-center">Marks Scored</th>
-                          <th className="p-3 text-center">Score %</th>
-                          <th className="p-3 text-center">Grade</th>
-                          <th className="p-3 text-center">Status</th>
-                          <th className="p-3">Evaluator / Remarks</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                        {examsLoading ? (
-                          <tr>
-                            <td colSpan={8} className="p-8 text-center text-slate-400 font-bold">
-                              Loading evaluated assessment scores...
-                            </td>
-                          </tr>
-                        ) : displayMarks.length === 0 ? (
-                          <tr>
-                            <td colSpan={8} className="p-10 text-center text-slate-400 italic">
-                              No marks published by faculty yet. As subject mentors evaluate papers, your results will appear here in real-time.
-                            </td>
-                          </tr>
-                        ) : (
-                          displayMarks.map((m: any, idx: number) => {
-                            const isAbs = Boolean(m.is_absent);
-                            const marksNum = m.marks_obtained !== null && m.marks_obtained !== undefined ? parseFloat(m.marks_obtained) : null;
-                            const maxM = parseFloat(m.max_marks || 50);
-                            const passM = parseFloat(m.passing_marks || (maxM * 0.4) || 20);
-                            const pct = marksNum !== null ? Math.round((marksNum / maxM) * 100) : 0;
-                            const isPass = marksNum !== null && marksNum >= passM;
+                <div className="space-y-3">
+                  {/* Filter and search bar */}
+                  {displayMarks.length > 0 && (
+                    <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-extrabold uppercase text-slate-400 mr-1">Filter Test:</span>
+                        <button
+                          type="button"
+                          onClick={() => setMarksTypeFilter("all")}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                            marksTypeFilter === "all"
+                              ? "bg-indigo-600 text-white shadow-2xs"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                        >
+                          All ({displayMarks.length})
+                        </button>
+                        {availableExamTypes.map((t: any) => {
+                          const count = displayMarks.filter((m: any) => m.exam_type === t).length;
+                          return (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => setMarksTypeFilter(t)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                                marksTypeFilter === t
+                                  ? "bg-indigo-600 text-white shadow-2xs"
+                                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              }`}
+                            >
+                              {t} ({count})
+                            </button>
+                          );
+                        })}
+                      </div>
 
-                            return (
-                              <tr key={m.id || idx} className="hover:bg-slate-50/60 transition-colors">
-                                <td className="p-3">
-                                  <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10.5px] font-extrabold">
-                                    {m.exam_type}
-                                  </span>
-                                </td>
-                                <td className="p-3">
-                                  <div className="font-extrabold text-slate-900">{m.subject_name}</div>
-                                  {m.subject_code && (
-                                    <div className="text-[10px] text-slate-400 font-mono">{m.subject_code}</div>
-                                  )}
-                                </td>
-                                <td className="p-3 text-slate-700 font-bold">
-                                  {m.exam_date}
-                                </td>
-                                <td className="p-3 text-center font-extrabold">
-                                  {isAbs ? (
-                                    <span className="text-rose-600 font-mono">ABSENT</span>
-                                  ) : marksNum !== null ? (
-                                    <span className="text-slate-900 font-mono">
-                                      {marksNum} <span className="text-slate-400 font-normal text-[11px]">/ {maxM}</span>
+                      <div className="relative min-w-[200px] flex-1 sm:flex-initial">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                        <input
+                          type="text"
+                          placeholder="Search subject or test..."
+                          value={marksSearchTerm}
+                          onChange={(e) => setMarksSearchTerm(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 focus:bg-white transition-all"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto scroll-touch">
+                      <table className="w-full border-collapse text-left text-xs min-w-[700px]">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
+                            <th className="p-3">Exam / Test Type</th>
+                            <th className="p-3">Subject Details</th>
+                            <th className="p-3">Test Date</th>
+                            <th className="p-3 text-center">Marks Scored</th>
+                            <th className="p-3 text-center">Score %</th>
+                            <th className="p-3 text-center">Grade</th>
+                            <th className="p-3 text-center">Status</th>
+                            <th className="p-3">Evaluator & Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                          {examsLoading ? (
+                            <tr>
+                              <td colSpan={8} className="p-8 text-center text-slate-400 font-bold">
+                                Loading evaluated test scores...
+                              </td>
+                            </tr>
+                          ) : filteredMarks.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="p-10 text-center text-slate-400">
+                                {displayMarks.length === 0 ? (
+                                  <div className="flex flex-col items-center justify-center gap-2">
+                                    <BookOpen className="h-8 w-8 text-slate-300" />
+                                    <p className="font-bold text-slate-600 text-sm">No Test Marks Published Yet</p>
+                                    <p className="text-xs text-slate-400 max-w-md">
+                                      As your subject mentors evaluate your test papers, your marks, percentages, and feedback will be posted here in real-time.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="text-slate-500 text-xs">
+                                    No test marks matching your current filter.{" "}
+                                    <button
+                                      onClick={() => {
+                                        setMarksTypeFilter("all");
+                                        setMarksSearchTerm("");
+                                      }}
+                                      className="text-indigo-600 underline font-bold cursor-pointer"
+                                    >
+                                      Reset filters
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredMarks.map((m: any, idx: number) => {
+                              const isAbs = Boolean(m.is_absent);
+                              const marksNum = m.marks_obtained !== null && m.marks_obtained !== undefined ? parseFloat(m.marks_obtained) : null;
+                              const maxM = parseFloat(m.max_marks || 50);
+                              const passM = parseFloat(m.passing_marks || (maxM * 0.4) || 20);
+                              const pct = marksNum !== null && maxM > 0 ? Math.round((marksNum / maxM) * 100) : 0;
+                              const isPass = marksNum !== null && marksNum >= passM;
+
+                              return (
+                                <tr key={m.id || idx} className="hover:bg-slate-50/60 transition-colors">
+                                  <td className="p-3">
+                                    <span className="px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-150 text-indigo-700 text-[10.5px] font-extrabold shadow-2xs">
+                                      {m.exam_type}
                                     </span>
-                                  ) : (
-                                    <span className="text-amber-600 italic">Pending</span>
-                                  )}
-                                </td>
-                                <td className="p-3 text-center">
-                                  {isAbs || marksNum === null ? (
-                                    <span className="text-slate-400">—</span>
-                                  ) : (
-                                    <div className="flex flex-col items-center gap-1">
-                                      <span className="font-black text-slate-800 text-[11px]">{pct}%</span>
-                                      <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                        <div
-                                          className={`h-full rounded-full ${pct >= 75 ? "bg-emerald-500" : pct >= 50 ? "bg-indigo-500" : "bg-rose-500"}`}
-                                          style={{ width: `${Math.min(pct, 100)}%` }}
-                                        />
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="font-extrabold text-slate-900">{m.subject_name}</div>
+                                    {m.subject_code && (
+                                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">{m.subject_code}</div>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-slate-700 font-bold whitespace-nowrap">
+                                    {m.exam_date}
+                                  </td>
+                                  <td className="p-3 text-center font-extrabold">
+                                    {isAbs ? (
+                                      <span className="px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-600 font-mono text-[11px] font-black">
+                                        ABSENT
+                                      </span>
+                                    ) : marksNum !== null ? (
+                                      <div className="inline-flex items-baseline gap-1 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
+                                        <span className={`font-mono text-sm font-black ${isPass ? "text-slate-900" : "text-rose-600"}`}>
+                                          {marksNum}
+                                        </span>
+                                        <span className="text-slate-400 font-medium text-[10.5px]">/ {maxM}</span>
                                       </div>
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="p-3 text-center">
-                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                                    isAbs
-                                      ? "bg-slate-100 text-slate-600"
-                                      : m.grade === "O" || m.grade === "A+" || m.grade === "A"
-                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                      : m.grade === "B+" || m.grade === "B"
-                                      ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                                      : isPass
-                                      ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                      : "bg-rose-50 text-rose-700 border border-rose-200"
-                                  }`}>
-                                    {isAbs ? "AB" : m.grade || (isPass ? "PASS" : "RA")}
-                                  </span>
-                                </td>
-                                <td className="p-3 text-center">
-                                  <span className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase ${
-                                    isAbs
-                                      ? "bg-rose-50 text-rose-700 border border-rose-200"
-                                      : isPass
-                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                      : "bg-rose-50 text-rose-700 border border-rose-200"
-                                  }`}>
-                                    {isAbs ? "Absent" : isPass ? "Passed" : "Re-Appear"}
-                                  </span>
-                                </td>
-                                <td className="p-3 text-[11px] text-slate-600">
-                                  <div className="font-semibold text-slate-800">{m.evaluated_by || "Subject Mentor"}</div>
-                                  {m.remarks && <div className="text-slate-400 text-[10px] italic mt-0.5">{m.remarks}</div>}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
+                                    ) : (
+                                      <span className="text-amber-600 italic text-[11px]">Pending evaluation</span>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {isAbs || marksNum === null ? (
+                                      <span className="text-slate-400">—</span>
+                                    ) : (
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span className="font-black text-slate-800 text-[11px]">{pct}%</span>
+                                        <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                          <div
+                                            className={`h-full rounded-full transition-all ${
+                                              pct >= 75 ? "bg-emerald-500" : pct >= passM ? "bg-indigo-500" : "bg-rose-500"
+                                            }`}
+                                            style={{ width: `${Math.min(pct, 100)}%` }}
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                        isAbs
+                                          ? "bg-slate-100 text-slate-600"
+                                          : m.grade === "O" || m.grade === "A+" || m.grade === "A"
+                                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                          : m.grade === "B+" || m.grade === "B"
+                                          ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                          : isPass
+                                          ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                          : "bg-rose-50 text-rose-700 border border-rose-200"
+                                      }`}
+                                    >
+                                      {isAbs ? "AB" : m.grade || (isPass ? "PASS" : "RA")}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[9.5px] font-black uppercase ${
+                                        isAbs
+                                          ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                          : isPass
+                                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                          : "bg-rose-50 text-rose-700 border border-rose-200"
+                                      }`}
+                                    >
+                                      {isAbs ? "Absent" : isPass ? "Passed" : "Re-Appear"}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-[11px] text-slate-600 max-w-[200px]">
+                                    <div className="font-bold text-slate-800">{m.evaluated_by || "Subject Mentor"}</div>
+                                    {m.remarks ? (
+                                      <div className="text-slate-500 text-[10px] italic mt-0.5 line-clamp-2">{m.remarks}</div>
+                                    ) : (
+                                      <div className="text-slate-400 text-[10px] italic">Verified</div>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
+
+              {/* VIEW 2: UPCOMING TESTS SCHEDULE */}
+              {examSubTab === "schedule" && (() => {
+                const examTableRows = (exams: any[], isPast: boolean) =>
+                  exams.map((ex: any, idx: number) => {
+                    return (
+                      <tr key={ex.id || idx} className={`hover:bg-slate-50/60 transition-colors ${isPast ? "opacity-60" : ""}`}>
+                        <td className="p-3">
+                          <div className="flex flex-col gap-1">
+                            <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10.5px] font-extrabold w-max">
+                              {ex.exam_type}
+                            </span>
+                            {isPast && (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-500 text-[8.5px] font-black uppercase w-max">
+                                Completed
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <div className="font-extrabold text-slate-900 truncate max-w-[240px]">{ex.subject_name}</div>
+                          {ex.subject_code && (
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">{ex.subject_code}</div>
+                          )}
+                        </td>
+                        <td className="p-3 text-slate-700 font-bold whitespace-nowrap">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                              <span>{ex.exam_date}</span>
+                            </div>
+                            {ex.day_order && ex.day_order !== "None" ? (
+                              <span className="inline-flex items-center w-max px-2 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-[9.5px] font-black uppercase">
+                                {ex.day_order}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="p-3 text-slate-650">
+                          <div className="flex items-center gap-1.5 text-[10.5px]">
+                            <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                            <span className="font-semibold text-slate-800">{ex.session_time || `${ex.start_time} - ${ex.end_time}`}</span>
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10.5px] text-slate-700 font-bold">
+                            Target: Out of {ex.max_marks || 50} Marks
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          {isPast ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-black uppercase">
+                              <Check className="h-3 w-3" />
+                              Concluded
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-black uppercase">
+                              <Clock className="h-3 w-3" />
+                              Scheduled
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  });
+
+                return (
+                  <div className="space-y-4">
+                    {/* Upcoming exams */}
+                    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                      <div className="px-4 py-2.5 bg-indigo-50/60 border-b border-indigo-100 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase text-indigo-700 tracking-wider">Upcoming Scheduled Tests</span>
+                          <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[9px] font-black">{upcomingExams.length}</span>
+                        </div>
+                        <span className="text-[11px] text-indigo-600 font-bold">Prepare well for your assessments!</span>
+                      </div>
+                      <div className="overflow-x-auto scroll-touch">
+                        <table className="w-full border-collapse text-left text-xs min-w-[650px]">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
+                              <th className="p-3">Exam / Assessment</th>
+                              <th className="p-3">Subject Details</th>
+                              <th className="p-3">Exam Date & Day Order</th>
+                              <th className="p-3">Session & Timings</th>
+                              <th className="p-3">Total Marks</th>
+                              <th className="p-3 text-center">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                            {examsLoading ? (
+                              <tr>
+                                <td colSpan={6} className="p-8 text-center text-slate-400 font-bold">
+                                  Loading your assessment schedule...
+                                </td>
+                              </tr>
+                            ) : upcomingExams.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="p-8 text-center text-slate-400 italic">
+                                  No upcoming examination schedules published for your enrolled courses.
+                                </td>
+                              </tr>
+                            ) : examTableRows(upcomingExams, false)}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Past exams — only shown if any exist */}
+                    {pastExams.length > 0 && (
+                      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                        <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Past Tests & Examinations</span>
+                          <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[9px] font-black">{pastExams.length}</span>
+                        </div>
+                        <div className="overflow-x-auto scroll-touch">
+                          <table className="w-full border-collapse text-left text-xs min-w-[650px]">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
+                                <th className="p-3">Exam / Assessment</th>
+                                <th className="p-3">Subject Details</th>
+                                <th className="p-3">Exam Date & Day Order</th>
+                                <th className="p-3">Session & Timings</th>
+                                <th className="p-3">Total Marks</th>
+                                <th className="p-3 text-center">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                              {examTableRows(pastExams, true)}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
@@ -2956,11 +2948,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         key={subj.id || subj.name}
                         type="button"
                         onClick={() => setSelectedMaterialSubject(subj.name)}
-                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border shadow-xs ${
-                          isSelected
+                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border shadow-xs ${isSelected
                             ? "bg-slate-900 border-slate-900 text-white ring-2 ring-indigo-200 scale-105"
                             : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
-                        }`}
+                          }`}
                       >
                         <GraduationCap className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-indigo-300" : "text-slate-400"}`} />
                         <span>{subj.name}</span>
@@ -2979,11 +2970,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => setSelectedMaterialUnit("all")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                      selectedMaterialUnit === "all"
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${selectedMaterialUnit === "all"
                         ? "bg-white text-slate-900 shadow-xs"
                         : "text-slate-500 hover:text-slate-900"
-                    }`}
+                      }`}
                   >
                     All Units
                   </button>
@@ -2992,11 +2982,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       key={`unit_tab_${unitNum}`}
                       type="button"
                       onClick={() => setSelectedMaterialUnit(unitNum)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                        selectedMaterialUnit === unitNum
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${selectedMaterialUnit === unitNum
                           ? "bg-white text-indigo-600 shadow-xs"
                           : "text-slate-500 hover:text-slate-900"
-                      }`}
+                        }`}
                     >
                       Unit {unitNum}
                     </button>
@@ -3029,11 +3018,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     key={t.id}
                     type="button"
                     onClick={() => setMaterialTypeFilter(t.id)}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
-                      materialTypeFilter === t.id
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border ${materialTypeFilter === t.id
                         ? "bg-indigo-50 border-indigo-200 text-indigo-700"
                         : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
-                    }`}
+                      }`}
                   >
                     {t.label}
                   </button>
@@ -3099,13 +3087,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                               <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-wider shadow-2xs">
                                 Unit {mat.unit_number}
                               </span>
-                              <span className={`px-2.5 py-1 rounded-xl text-[9.5px] font-black uppercase tracking-wider border ${
-                                isPPT
+                              <span className={`px-2.5 py-1 rounded-xl text-[9.5px] font-black uppercase tracking-wider border ${isPPT
                                   ? "bg-amber-50 text-amber-800 border-amber-200"
                                   : isQuestionBank
-                                  ? "bg-purple-50 text-purple-800 border-purple-200"
-                                  : "bg-indigo-50 text-indigo-800 border-indigo-200"
-                              }`}>
+                                    ? "bg-purple-50 text-purple-800 border-purple-200"
+                                    : "bg-indigo-50 text-indigo-800 border-indigo-200"
+                                }`}>
                                 {isPPT ? "Lecture PPT" : isQuestionBank ? "Question Bank" : "PDF Notes"}
                               </span>
                             </div>
@@ -3327,12 +3314,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         {activeTab === "tracker" && (() => {
           // Helper to calculate task stats and new indicator for any subject
           const getSubjectTaskStats = (subjName: string) => {
-            const matchingTasks = (weeklyTasks || []).filter(task => 
+            const matchingTasks = (weeklyTasks || []).filter(task =>
               (isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
-              (currentStudent?.department && task.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
+                (currentStudent?.department && task.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
               task.subject.toLowerCase().trim() === subjName.toLowerCase().trim()
             );
-            
+
             const entries = (studentTracker || []).filter(
               e => e.student_id === currentStudent?.id && e.subject.toLowerCase().trim() === subjName.toLowerCase().trim()
             );
@@ -3404,8 +3391,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             const studentId = (currentStudent?.id || "").toLowerCase().trim();
             const entries = (studentAcademicTracker || []).filter(
               e => ((e.student_email && e.student_email.toLowerCase().trim() === studentEmail) ||
-                    (e.student_id && e.student_id.toLowerCase().trim() === studentId)) &&
-                   isSubjMatch(e.subject, subjName)
+                (e.student_id && e.student_id.toLowerCase().trim() === studentId)) &&
+                isSubjMatch(e.subject, subjName)
             );
 
             const evaluatedEntries = entries.filter(e => e.total_marks !== null || e.quiz_marks !== null || e.assessment_marks !== null || e.assignment_marks !== null);
@@ -3428,11 +3415,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => setStudentTrackerCategory("academic")}
-                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
-                      studentTrackerCategory === "academic"
+                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${studentTrackerCategory === "academic"
                         ? "bg-white text-indigo-650 shadow-xs"
                         : "text-slate-500 hover:text-slate-800"
-                    }`}
+                      }`}
                   >
                     <BookOpen className="h-4 w-4 text-indigo-600" />
                     <span>Academic Subjects (Quiz, Assessment, Assignment)</span>
@@ -3441,11 +3427,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => setStudentTrackerCategory("skill")}
-                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
-                      studentTrackerCategory === "skill"
+                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${studentTrackerCategory === "skill"
                         ? "bg-white text-slate-900 shadow-xs"
                         : "text-slate-500 hover:text-slate-800"
-                    }`}
+                      }`}
                   >
                     <GraduationCap className="h-4 w-4 text-indigo-600" />
                     <span>Skill Development Tasks</span>
@@ -3483,11 +3468,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             key={sub.id || sub.name}
                             type="button"
                             onClick={() => setStudentAcadSubject(sub.name)}
-                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 border ${
-                              isSelected
+                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 border ${isSelected
                                 ? "bg-indigo-600 border-indigo-600 text-white shadow-xs"
                                 : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
-                            }`}
+                              }`}
                           >
                             <BookOpen className={`h-3.5 w-3.5 ${isSelected ? "text-white" : "text-slate-400"}`} />
                             <span>{sub.name}</span>
@@ -3558,7 +3542,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       const studentId = (currentStudent?.id || "").toLowerCase().trim();
                       const entry = (studentAcademicTracker || []).find(
                         e => ((e.student_email && e.student_email.toLowerCase().trim() === studentEmail) ||
-                              (e.student_id && e.student_id.toLowerCase().trim() === studentId)) &&
+                          (e.student_id && e.student_id.toLowerCase().trim() === studentId)) &&
                           isSubjMatch(e.subject, activeAcadSubjName) &&
                           e.week_number === wk
                       );
@@ -3568,8 +3552,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       const agMarks = entry?.assignment_marks;
                       const totalMarks = entry?.total_marks ?? (
                         (qMarks !== undefined && qMarks !== null) ||
-                        (asMarks !== undefined && asMarks !== null) ||
-                        (agMarks !== undefined && agMarks !== null)
+                          (asMarks !== undefined && asMarks !== null) ||
+                          (agMarks !== undefined && agMarks !== null)
                           ? ((Number(qMarks) || 0) + (Number(asMarks) || 0) + (Number(agMarks) || 0))
                           : null
                       );
@@ -3581,11 +3565,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         <div
                           key={`acad_wk_${wk}`}
                           id={`acad-task-week-${wk}`}
-                          className={`bg-white border rounded-xl p-5 shadow-xs space-y-4 hover:shadow-sm transition-all duration-300 scroll-mt-24 ${
-                            highlightedWeek === wk
+                          className={`bg-white border rounded-xl p-5 shadow-xs space-y-4 hover:shadow-sm transition-all duration-300 scroll-mt-24 ${highlightedWeek === wk
                               ? "border-indigo-500 ring-4 ring-indigo-100 shadow-md scale-[1.01]"
                               : "border-slate-200"
-                          }`}
+                            }`}
                         >
                           {/* Week Card Header */}
                           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
@@ -3616,15 +3599,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                     }
 
                                     return (
-                                      <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase border ${
-                                        liveAtt === "Absent"
+                                      <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase border ${liveAtt === "Absent"
                                           ? "bg-rose-50 text-rose-700 border-rose-200"
                                           : liveAtt === "OD"
                                             ? "bg-blue-50 text-blue-700 border-blue-200"
                                             : liveAtt === "Present"
                                               ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                                               : "bg-slate-100 text-slate-500 border-slate-200"
-                                      }`}>
+                                        }`}>
                                         {liveAtt}
                                       </span>
                                     );
@@ -3638,13 +3620,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                               {isEvaluated ? (
                                 <div className="flex items-center gap-2">
                                   <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">Evaluated</span>
-                                  <span className={`inline-flex items-center px-3 py-1 rounded-lg border text-xs font-black ${
-                                    totalMarks! >= 24
+                                  <span className={`inline-flex items-center px-3 py-1 rounded-lg border text-xs font-black ${totalMarks! >= 24
                                       ? "bg-emerald-50 border-emerald-200 text-emerald-800"
                                       : totalMarks! >= 15
                                         ? "bg-amber-50 border-amber-200 text-amber-800"
                                         : "bg-rose-50 border-rose-200 text-rose-800"
-                                  }`}>
+                                    }`}>
                                     Total Score: {totalMarks} / 30
                                   </span>
                                 </div>
@@ -3862,27 +3843,24 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                               onClick={() => {
                                 setStudentTrackerSubject(subName);
                               }}
-                              className={`relative px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border shadow-xs ${
-                                isSelected
+                              className={`relative px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border shadow-xs ${isSelected
                                   ? "bg-slate-900 border-slate-900 text-white ring-2 ring-indigo-200 scale-105"
                                   : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
-                              }`}
+                                }`}
                             >
                               <GraduationCap className={`h-4 w-4 shrink-0 ${isSelected ? "text-indigo-300" : "text-slate-400"}`} />
                               <span>{subName}</span>
 
                               {subStats.hasNew && (
-                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
-                                  isSelected ? "bg-rose-500 text-white" : "bg-rose-100 text-rose-700"
-                                }`}>
+                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${isSelected ? "bg-rose-500 text-white" : "bg-rose-100 text-rose-700"
+                                  }`}>
                                   NEW
                                 </span>
                               )}
 
                               {subStats.pendingCount > 0 && (
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
-                                  isSelected ? "bg-white/20 text-white" : "bg-amber-100 text-amber-800"
-                                }`}>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${isSelected ? "bg-white/20 text-white" : "bg-amber-100 text-amber-800"
+                                  }`}>
                                   {subStats.pendingCount} Pending
                                 </span>
                               )}
@@ -3918,15 +3896,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     {allWeeks.map(wk => {
                       const task = weeklyTasks.find(
                         t => (isCohortMatching(t.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
-                              (currentStudent?.department && t.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
-                             (isSubjectNameMatch(t.subject, studentTrackerSubject) || t.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim()) &&
-                             t.week_number === wk
+                          (currentStudent?.department && t.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))) &&
+                          (isSubjectNameMatch(t.subject, studentTrackerSubject) || t.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim()) &&
+                          t.week_number === wk
                       );
 
                       const entry = studentTracker.find(
                         e => e.student_id === currentStudent?.id &&
-                             (isSubjectNameMatch(e.subject, studentTrackerSubject) || e.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim()) &&
-                             e.week_number === wk
+                          (isSubjectNameMatch(e.subject, studentTrackerSubject) || e.subject.toLowerCase().trim() === studentTrackerSubject.toLowerCase().trim()) &&
+                          e.week_number === wk
                       );
 
                       const currentUrl = entry?.submission_url || "";
@@ -3941,13 +3919,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         <div
                           key={wk}
                           id={`skill-task-week-${wk}`}
-                          className={`bg-white border rounded-xl p-5 shadow-xs space-y-4 transition-all duration-300 scroll-mt-24 ${
-                            highlightedWeek === wk
+                          className={`bg-white border rounded-xl p-5 shadow-xs space-y-4 transition-all duration-300 scroll-mt-24 ${highlightedWeek === wk
                               ? "border-indigo-500 ring-4 ring-indigo-100 shadow-md scale-[1.01]"
                               : isNewTask
-                              ? "border-rose-300 ring-1 ring-rose-100"
-                              : "border-slate-200"
-                          }`}
+                                ? "border-rose-300 ring-1 ring-rose-100"
+                                : "border-slate-200"
+                            }`}
                         >
                           {/* Task Card Header */}
                           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
@@ -3977,13 +3954,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                               {isGraded ? (
                                 <div className="flex items-center gap-2">
                                   <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wide">Evaluated</span>
-                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg border text-xs font-bold uppercase tracking-wider ${
-                                    entry.marks! >= 8
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg border text-xs font-bold uppercase tracking-wider ${entry.marks! >= 8
                                       ? "bg-emerald-50 border-emerald-200 text-emerald-700"
                                       : entry.marks! >= 5
                                         ? "bg-amber-50 border-amber-200 text-amber-700"
                                         : "bg-rose-50 border-rose-200 text-rose-700"
-                                  }`}>
+                                    }`}>
                                     Score: {entry.marks} / 10
                                   </span>
                                 </div>
@@ -4109,11 +4085,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                               type="button"
                                               disabled={isSubmitting}
                                               onClick={() => setStudentUploadType(prev => ({ ...prev, [wk]: "url" }))}
-                                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                                                (studentUploadType[wk] || "url") === "url"
+                                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${(studentUploadType[wk] || "url") === "url"
                                                   ? "bg-indigo-50 border-indigo-300 text-indigo-700"
                                                   : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                                              }`}
+                                                }`}
                                             >
                                               Web Link / URL
                                             </button>
@@ -4121,11 +4096,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                               type="button"
                                               disabled={isSubmitting}
                                               onClick={() => setStudentUploadType(prev => ({ ...prev, [wk]: "file" }))}
-                                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                                                studentUploadType[wk] === "file"
+                                              className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${studentUploadType[wk] === "file"
                                                   ? "bg-indigo-50 border-indigo-300 text-indigo-700"
                                                   : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                                              }`}
+                                                }`}
                                             >
                                               Upload Document
                                             </button>
@@ -4281,13 +4255,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       {isProfileEditAllowed ? "Profile Editing Access Enabled" : "Profile Editing Access Locked"}
                     </h3>
                     <p className="text-[10px] text-slate-455 mt-0.5 font-semibold">
-                      {isProfileEditAllowed 
-                        ? "You are permitted to modify your academic and personal registration credentials." 
+                      {isProfileEditAllowed
+                        ? "You are permitted to modify your academic and personal registration credentials."
                         : "Editing has been disabled by your Campus Manager (CM) for your class group."}
                     </p>
                   </div>
                 </div>
-                
+
                 {isProfileEditAllowed && !isEditingProfile && (
                   <button
                     type="button"
@@ -4303,7 +4277,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               {isEditingProfile && (
                 <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-150 p-4.5 rounded-xl justify-end flex-wrap">
                   <span className="text-xs font-bold text-indigo-850 mr-auto">
-                     You are in editing mode. Save your changes to persist them to the database.
+                    You are in editing mode. Save your changes to persist them to the database.
                   </span>
                   <button
                     type="button"
@@ -4323,7 +4297,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
               {/* Main Profile Info Row */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                
+
                 {/* Section 1: Personal & Primary Identity */}
                 <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-5">
                   <div className="flex items-center gap-2 pb-3 border-b border-slate-100">

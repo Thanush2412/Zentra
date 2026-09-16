@@ -19,10 +19,14 @@ export async function POST(request: Request) {
     const validSlotsToInsert: any[] = [];
 
     for (const slot of slots) {
-      const { mentorId, day, time, course, location, shift, classGroup } = slot;
+      const { mentorId, day, time, course, location, shift, classGroup, college_id, collegeId: slotColId } = slot;
       const cleanLocation = location?.trim() || "";
       const activeShift = shift || "general";
       const cleanClassGroup = classGroup ? classGroup.trim() : "General Class";
+
+      const mentorObj = await db.get("SELECT college_id FROM mentors WHERE id = ?", mentorId);
+      const firstCol = !mentorObj?.college_id ? await db.get("SELECT id FROM colleges ORDER BY id ASC LIMIT 1") : null;
+      const targetCollegeId = college_id || slotColId || mentorObj?.college_id || firstCol?.id || null;
 
       // Check mentor collision
       const mentorCollision = await db.get(
@@ -34,24 +38,26 @@ export async function POST(request: Request) {
       );
       if (mentorCollision) continue;
 
-      // Check room collision
-      const allSlots = await db.all("SELECT * FROM slots WHERE day = ? AND time = ? AND shift = ?", day, time, activeShift);
+      // Check room collision (scoped to college)
+      const allSlots = targetCollegeId
+        ? await db.all("SELECT * FROM slots WHERE day = ? AND time = ? AND shift = ? AND college_id = ?", day, time, activeShift, targetCollegeId)
+        : await db.all("SELECT * FROM slots WHERE day = ? AND time = ? AND shift = ?", day, time, activeShift);
+
       const roomCollision = allSlots.find(
-        (s) => s.location.toLowerCase() === cleanLocation.toLowerCase()
+        (s) => s.location && s.location.toLowerCase() === cleanLocation.toLowerCase()
       );
       if (roomCollision) continue;
 
-      // Check class group collision
+      // Check class group collision (scoped to college)
       const classCollision = allSlots.find(
-        (s) => s.classGroup && s.classGroup.toLowerCase() === cleanClassGroup.toLowerCase()
+        (s) => {
+          const cg = s.classGroup || s.classgroup;
+          return cg && cg.toLowerCase() === cleanClassGroup.toLowerCase();
+        }
       );
       if (classCollision) continue;
 
       const { department, semester, year } = await resolveClassGroupDetails(db, cleanClassGroup);
-
-      const mentorObj = await db.get("SELECT college_id FROM mentors WHERE id = ?", mentorId);
-      const firstCol = !mentorObj?.college_id ? await db.get("SELECT id FROM colleges ORDER BY id ASC LIMIT 1") : null;
-      const collegeId = mentorObj?.college_id || firstCol?.id || null;
 
       const newId = "s_csv_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
       validSlotsToInsert.push({
@@ -66,7 +72,7 @@ export async function POST(request: Request) {
         semester,
         year,
         department,
-        collegeId
+        collegeId: targetCollegeId
       });
     }
 

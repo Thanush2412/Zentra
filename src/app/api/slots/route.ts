@@ -153,8 +153,9 @@ export async function DELETE(request: Request) {
         : await db.all("SELECT id, classGroup, course, college_id FROM slots");
 
       const matchedSlotIds = allSlots.filter(s => {
-        if (!s.classGroup) return false;
-        const sCG = s.classGroup.toLowerCase().trim();
+        const cg = s.classGroup || (s as any).classgroup;
+        if (!cg) return false;
+        const sCG = cg.toLowerCase().trim();
         const sNorm = sCG.replace(/[^a-z0-9]/g, "");
         const sBase = sCG.replace(/\s*\([^)]*\)/g, "").trim();
         const sNormBase = sBase.replace(/[^a-z0-9]/g, "");
@@ -165,13 +166,13 @@ export async function DELETE(request: Request) {
           sNorm === normCG ||
           sBase === baseCG ||
           sNormBase === normBaseCG ||
-          isCohortMatch(s.classGroup, classGroup)
+          isCohortMatch(cg, classGroup)
         );
       }).map(s => s.id);
 
       if (matchedSlotIds.length === 0) {
         return NextResponse.json({
-          success: false,
+          success: true,
           count: 0,
           message: `No timetable slots found matching class group "${classGroup}".`
         });

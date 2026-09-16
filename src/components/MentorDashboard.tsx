@@ -157,6 +157,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   }, [requests, mentor.id, todayStr]);
 
   const isPunchLocked = isDeadlinePassed && punchStatus === "Not Punched" && !approvedLateCamReq && attendanceLockEnabled;
+  const isAlreadyPunched = punchStatus !== "Not Punched";
 
   const fetchMyAttendance = async () => {
     setLoading(true);
@@ -216,6 +217,10 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   };
 
   const triggerPunchClick = (status: "Present" | "OD" | "Leave") => {
+    if (isAlreadyPunched) {
+      toast(`Attendance is already marked as ${punchStatus} for today and cannot be changed.`, "warning");
+      return;
+    }
     if (isPunchLocked) {
       toast("30-Minute Daily Punch Deadline Expired. Please submit an explanation to CAM for approval.", "warning");
       return;
@@ -256,7 +261,15 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
                   "Record presence or OD status within 30m of college start."
                 )
               ) : (
-                <>Punched as <span className="font-bold text-slate-800">{punchStatus}</span> at <span className="font-mono font-bold text-slate-700">{punchTime || "Today"}</span></>
+                <span className="flex items-center gap-1.5 text-slate-600">
+                  <CheckCircle className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  <span>
+                    Punched as <span className="font-bold text-slate-800">{punchStatus}</span> at <span className="font-mono font-bold text-slate-700">{punchTime || "Today"}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                    <Lock className="h-2.5 w-2.5" /> Status Locked
+                  </span>
+                </span>
               )}
             </p>
           </div>
@@ -265,41 +278,47 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            disabled={submitting || isPunchLocked}
+            disabled={submitting || isPunchLocked || isAlreadyPunched}
             onClick={() => triggerPunchClick("Present")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${punchStatus === "Present"
-                ? "bg-emerald-600 text-white shadow-xs"
-                : isPunchLocked
-                  ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
-                  : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-              }`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              punchStatus === "Present"
+                ? "bg-emerald-600 text-white shadow-xs cursor-default ring-2 ring-emerald-600/30"
+                : isAlreadyPunched || isPunchLocked
+                  ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-50"
+                  : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 cursor-pointer"
+            }`}
           >
+            {punchStatus === "Present" && <Check className="h-3 w-3 inline mr-1 -mt-0.5" />}
             Present
           </button>
           <button
             type="button"
-            disabled={submitting || isPunchLocked}
+            disabled={submitting || isPunchLocked || isAlreadyPunched}
             onClick={() => triggerPunchClick("OD")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${punchStatus === "OD"
-                ? "bg-indigo-600 text-white shadow-xs"
-                : isPunchLocked
-                  ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
-                  : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
-              }`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              punchStatus === "OD"
+                ? "bg-indigo-600 text-white shadow-xs cursor-default ring-2 ring-indigo-600/30"
+                : isAlreadyPunched || isPunchLocked
+                  ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-50"
+                  : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 cursor-pointer"
+            }`}
           >
+            {punchStatus === "OD" && <Check className="h-3 w-3 inline mr-1 -mt-0.5" />}
             OD (On Duty)
           </button>
           <button
             type="button"
-            disabled={submitting || isPunchLocked}
+            disabled={submitting || isPunchLocked || isAlreadyPunched}
             onClick={() => triggerPunchClick("Leave")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${punchStatus === "Leave"
-                ? "bg-amber-500 text-white shadow-xs"
-                : isPunchLocked
-                  ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
-                  : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
-              }`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              punchStatus === "Leave"
+                ? "bg-amber-500 text-white shadow-xs cursor-default ring-2 ring-amber-500/30"
+                : isAlreadyPunched || isPunchLocked
+                  ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-50"
+                  : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 cursor-pointer"
+            }`}
           >
+            {punchStatus === "Leave" && <Check className="h-3 w-3 inline mr-1 -mt-0.5" />}
             On Leave
           </button>
         </div>
@@ -374,7 +393,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
         )
       )}
 
-      {showReasonInput && !isPunchLocked && (
+      {showReasonInput && !isPunchLocked && !isAlreadyPunched && (
         <div className="pt-2.5 border-t border-slate-100 flex flex-col sm:flex-row items-center gap-2">
           <input
             type="text"
@@ -1449,51 +1468,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
   const [dailyConfigsList, setDailyConfigsList] = useState<any[]>([]);
 
-  const [studentLeaveRequests, setStudentLeaveRequests] = useState<any[]>([]);
-  const [isFetchingLeaveReqs, setIsFetchingLeaveReqs] = useState(false);
-  const [mentorLeaveActiveSubTab, setMentorLeaveActiveSubTab] = useState<"student_leaves" | "faculty_leaves">("student_leaves");
-  const [studentLeaveStatusFilter, setStudentLeaveStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
-  const [studentLeaveSearch, setStudentLeaveSearch] = useState("");
-
-  const fetchStudentLeaveRequests = useCallback(async () => {
-    setIsFetchingLeaveReqs(true);
-    try {
-      const params = new URLSearchParams();
-      if (currentMentor?.college_id) params.set("college_id", currentMentor.college_id);
-      const res = await fetch(`/api/requests/leave?${params.toString()}`);
-      const data = await res.json();
-      if (data.success) {
-        setStudentLeaveRequests(data.requests || []);
-      }
-    } catch (err) {
-      console.error("Failed to fetch student leave requests:", err);
-    } finally {
-      setIsFetchingLeaveReqs(false);
-    }
-  }, [currentMentor?.college_id]);
-
-  const handleResolveStudentLeave = async (requestId: string, status: "approved" | "rejected") => {
-    try {
-      const res = await fetch("/api/requests/leave", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requestId,
-          status,
-          approvedBy: currentMentor?.name || "Class Teacher"
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast(`Student request ${status} successfully!`, "success");
-        setStudentLeaveRequests(prev => prev.map(r => r.id === requestId ? { ...r, status, approvedBy: currentMentor?.name || "Class Teacher" } : r));
-      } else {
-        toast(data.message || "Failed to update request.", "error");
-      }
-    } catch (err: any) {
-      toast("Error: " + err.message, "error");
-    }
-  };
 
   const handleRemindCm = async (dateStr: string, dateFormatted: string) => {
     if (!currentMentor?.college_id) {
@@ -1536,10 +1510,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       setIsRemindingCm(false);
     }
   };
-
-  useEffect(() => {
-    fetchStudentLeaveRequests();
-  }, [fetchStudentLeaveRequests]);
 
   // Reset week offset on mount
   useEffect(() => {
@@ -3852,9 +3822,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           if (tabId === "handovers" && currentMentor) {
             return sidebarNotificationCount;
           }
-          if (tabId === "leave_requests") {
-            return (studentLeaveRequests || []).filter(r => r.status === "pending").length;
-          }
           return 0;
         };
 
@@ -5571,99 +5538,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               )}
             </div>
 
-            {/* Section 3: Student Leave & OD Requests (Class Teacher Review) */}
-            <div className="space-y-3 pt-6 border-t border-slate-200">
-              <div className="flex justify-between items-center flex-wrap gap-2">
-                <div>
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <ClipboardList className="h-4 w-4 text-[#D528A2]" />
-                    Student Leave & OD Approvals (Class Teacher Review)
-                  </h3>
-                  <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
-                    Review Leave and On Duty (OD) applications submitted by your assigned students. Approving automatically updates their attendance grid status.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={fetchStudentLeaveRequests}
-                  disabled={isFetchingLeaveReqs}
-                  className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
-                >
-                  Refresh List
-                </button>
-              </div>
 
-              {studentLeaveRequests.length === 0 ? (
-                <div className="text-center py-6 border border-slate-200 rounded-xl bg-slate-50/50">
-                  <p className="text-xs text-slate-500 font-medium">No student leave or OD requests submitted yet.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs">
-                  <table className="w-full border-collapse text-left text-xs">
-                    <thead>
-                      <tr className="bg-slate-100 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
-                        <th className="p-3">Student Name</th>
-                        <th className="p-3">Class Group</th>
-                        <th className="p-3">Type</th>
-                        <th className="p-3">Leave Date</th>
-                        <th className="p-3">Reason</th>
-                        <th className="p-3">Status</th>
-                        <th className="p-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {studentLeaveRequests.map((req) => (
-                        <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="p-3 font-extrabold text-slate-900">
-                            {req.studentName}
-                            <span className="text-slate-400 block text-[10px] font-normal">{req.studentEmail}</span>
-                          </td>
-                          <td className="p-3 font-bold text-[#D528A2]">{req.classGroup}</td>
-                          <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase border ${req.type?.toLowerCase() === "od" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
-                              }`}>
-                              {req.type?.toUpperCase()}
-                            </span>
-                          </td>
-                          <td className="p-3 font-bold text-slate-800">{req.dateStr}</td>
-                          <td className="p-3 text-slate-600 max-w-[200px] truncate" title={req.reason}>{req.reason}</td>
-                          <td className="p-3">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9.5px] font-black uppercase ${req.status === "approved" ? "bg-emerald-100 text-emerald-800" :
-                                req.status === "rejected" ? "bg-rose-100 text-rose-800" :
-                                  "bg-amber-100 text-amber-800"
-                              }`}>
-                              {req.status}
-                            </span>
-                          </td>
-                          <td className="p-3 text-right">
-                            {req.status === "pending" ? (
-                              <div className="flex justify-end gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleResolveStudentLeave(req.id, "approved")}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold shadow-xs transition-all cursor-pointer"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleResolveStudentLeave(req.id, "rejected")}
-                                  className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[10px] font-bold shadow-xs transition-all cursor-pointer"
-                                >
-                                  Reject
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-[10px] text-slate-400 font-semibold italic">Resolved ({req.approvedBy})</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
           </div>
         )}
 
@@ -10537,239 +10412,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         {/* Tab: Leave & Permissions */}
         {activeTab === "leave_requests" && currentMentor && (
           <div className="space-y-6 font-sans">
-            {/* Top Sub-Tab Switcher */}
-            <div className="flex items-center justify-between flex-wrap gap-3 pb-2 border-b border-slate-200">
-              <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-                <button
-                  type="button"
-                  onClick={() => setMentorLeaveActiveSubTab("student_leaves")}
-                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
-                    mentorLeaveActiveSubTab === "student_leaves"
-                      ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  <Users className="h-4 w-4" />
-                  <span>Student Leave & OD Requests</span>
-                  {studentLeaveRequests.filter(r => r.status === "pending").length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white">
-                      {studentLeaveRequests.filter(r => r.status === "pending").length}
-                    </span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMentorLeaveActiveSubTab("faculty_leaves")}
-                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
-                    mentorLeaveActiveSubTab === "faculty_leaves"
-                      ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  <UserCheck className="h-4 w-4" />
-                  <span>My Faculty Applications & Covers</span>
-                </button>
-              </div>
-
-              {mentorLeaveActiveSubTab === "student_leaves" && (
-                <button
-                  type="button"
-                  onClick={fetchStudentLeaveRequests}
-                  disabled={isFetchingLeaveReqs}
-                  className="px-3.5 py-2 text-xs font-bold rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${isFetchingLeaveReqs ? "animate-spin" : ""}`} />
-                  <span>Refresh List</span>
-                </button>
-              )}
-            </div>
-
-            {/* Sub-tab 1: Student Leave & OD Approvals */}
-            {mentorLeaveActiveSubTab === "student_leaves" && (
-              <div className="space-y-4">
-                {/* Header with Stats & Filter Toolbar */}
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-                  <div className="flex justify-between items-center flex-wrap gap-3">
-                    <div>
-                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                        <ClipboardList className="h-5 w-5 text-indigo-600" />
-                        Student Leave & On-Duty (OD) Approvals
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-1 font-medium">
-                        Review leave applications submitted by students. Approved requests automatically update student attendance records as Excused/OD.
-                      </p>
-                    </div>
-
-                    {/* Filter Pills */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {(['all', 'pending', 'approved', 'rejected'] as const).map((st) => {
-                        const count = st === 'all'
-                          ? studentLeaveRequests.length
-                          : studentLeaveRequests.filter(r => r.status === st).length;
-                        return (
-                          <button
-                            key={st}
-                            type="button"
-                            onClick={() => setStudentLeaveStatusFilter(st)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                              studentLeaveStatusFilter === st
-                                ? 'bg-indigo-600 text-white shadow-xs'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                          >
-                            <span className="capitalize">{st === 'all' ? 'All' : st}</span>
-                            <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                              studentLeaveStatusFilter === st ? 'bg-white/20 text-white' : 'bg-white text-slate-700'
-                            }`}>
-                              {count}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Search Bar */}
-                  <div className="relative">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Search by student name, roll number, class group, or reason..."
-                      value={studentLeaveSearch}
-                      onChange={(e) => setStudentLeaveSearch(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-indigo-500 font-medium"
-                    />
-                  </div>
-                </div>
-
-                {/* Requests Table */}
-                {(() => {
-                  const filtered = studentLeaveRequests.filter((req) => {
-                    const matchStatus = studentLeaveStatusFilter === 'all' || req.status === studentLeaveStatusFilter;
-                    const q = studentLeaveSearch.toLowerCase().trim();
-                    const matchSearch = !q ||
-                      req.studentName?.toLowerCase().includes(q) ||
-                      req.classGroup?.toLowerCase().includes(q) ||
-                      req.reason?.toLowerCase().includes(q) ||
-                      req.studentEmail?.toLowerCase().includes(q) ||
-                      req.studentRollNo?.toLowerCase().includes(q);
-                    return matchStatus && matchSearch;
-                  });
-
-                  if (filtered.length === 0) {
-                    return (
-                      <div className="text-center py-12 border border-slate-200 rounded-2xl bg-white shadow-xs space-y-3">
-                        <div className="h-12 w-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
-                          <CheckCircle className="h-6 w-6" />
-                        </div>
-                        <p className="text-xs text-slate-500 font-bold">
-                          {studentLeaveSearch || studentLeaveStatusFilter !== 'all'
-                            ? 'No requests match your current filters.'
-                            : 'No student leave or OD requests submitted yet.'}
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
-                      <table className="w-full border-collapse text-left text-xs">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px]">
-                            <th className="p-3.5">Student</th>
-                            <th className="p-3.5">Class Group</th>
-                            <th className="p-3.5">Type</th>
-                            <th className="p-3.5">Leave Date</th>
-                            <th className="p-3.5">Reason</th>
-                            <th className="p-3.5">Submitted</th>
-                            <th className="p-3.5">Status</th>
-                            <th className="p-3.5 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 bg-white">
-                          {filtered.map((req) => (
-                            <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="p-3.5">
-                                <span className="font-black text-slate-900 block">{req.studentName}</span>
-                                <span className="text-slate-400 text-[10px] font-medium block">
-                                  {req.studentEmail || req.studentRollNo || req.studentId}
-                                </span>
-                              </td>
-                              <td className="p-3.5 font-bold text-indigo-600">
-                                {req.classGroup}
-                              </td>
-                              <td className="p-3.5">
-                                <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase border ${
-                                  req.type?.toLowerCase() === 'od'
-                                    ? 'bg-sky-50 text-sky-700 border-sky-200'
-                                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                                }`}>
-                                  {req.type?.toUpperCase() === 'OD' ? 'On-Duty' : 'Leave'}
-                                </span>
-                              </td>
-                              <td className="p-3.5 font-bold text-slate-800 whitespace-nowrap">
-                                {req.dateStr}
-                              </td>
-                              <td className="p-3.5 text-slate-600 max-w-[240px] truncate font-medium" title={req.reason}>
-                                {req.reason}
-                              </td>
-                              <td className="p-3.5 text-slate-400 text-[10px] whitespace-nowrap">
-                                {formatDate(req.timestamp)}
-                              </td>
-                              <td className="p-3.5">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase ${
-                                  req.status === 'approved'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : req.status === 'rejected'
-                                      ? 'bg-rose-100 text-rose-800'
-                                      : 'bg-amber-100 text-amber-800'
-                                }`}>
-                                  {req.status}
-                                </span>
-                                {req.approvedBy && (
-                                  <span className="block text-[9px] text-slate-400 font-medium mt-0.5">
-                                    By: {req.approvedBy}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="p-3.5 text-right whitespace-nowrap">
-                                {req.status === 'pending' ? (
-                                  <div className="flex justify-end gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleResolveStudentLeave(req.id, 'approved')}
-                                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black shadow-xs transition-all cursor-pointer"
-                                    >
-                                      Approve
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleResolveStudentLeave(req.id, 'rejected')}
-                                      className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-black shadow-xs transition-all cursor-pointer"
-                                    >
-                                      Reject
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400 font-medium italic">
-                                    Resolved
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* Sub-tab 2: Faculty Leave Panel */}
-            {mentorLeaveActiveSubTab === "faculty_leaves" && (
-              <MentorFacultyLeavePanel mentor={currentMentor} slots={slots} />
-            )}
+            <MentorFacultyLeavePanel mentor={currentMentor} slots={slots} />
           </div>
         )}
 
