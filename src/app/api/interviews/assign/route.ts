@@ -9,9 +9,46 @@ import { dispatchExternalInterviewNotifications } from "@/lib/interview-notifica
 import { checkMentorAvailability } from "@/lib/availability";
 import { generateStudentGCalUrl } from "@/lib/google-calendar";
 
+// Helper to ensure table schema and columns exist in PostgreSQL
+async function ensureInterviewTables(db: any) {
+  try {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS student_interview_slots (
+        id VARCHAR(255) PRIMARY KEY,
+        interview_id VARCHAR(255) NOT NULL,
+        allocation_id VARCHAR(255) NOT NULL,
+        student_id VARCHAR(255),
+        student_name VARCHAR(255),
+        mentor_id VARCHAR(255) NOT NULL,
+        mentor_name VARCHAR(255) NOT NULL,
+        college_id VARCHAR(255) NOT NULL,
+        slot_start_time VARCHAR(100) NOT NULL,
+        slot_end_time VARCHAR(100) NOT NULL,
+        status VARCHAR(100) DEFAULT 'scheduled',
+        subject VARCHAR(255),
+        target_date VARCHAR(50),
+        gmeet_link TEXT,
+        gcal_link TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (_) {}
+  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS assigned_mentor_ids TEXT"); } catch (_) {}
+  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS accepted_capacity INTEGER DEFAULT 0"); } catch (_) {}
+  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS allocated_students INTEGER DEFAULT 0"); } catch (_) {}
+  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS remaining_students INTEGER DEFAULT 0"); } catch (_) {}
+  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS preferred_start_time VARCHAR(100) DEFAULT '09:00 AM'"); } catch (_) {}
+  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS gmeet_link TEXT"); } catch (_) {}
+  try { await db.run("ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS gmeet_link TEXT"); } catch (_) {}
+  try { await db.run("ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS gcal_link TEXT"); } catch (_) {}
+  try { await db.run("ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS subject VARCHAR(255)"); } catch (_) {}
+  try { await db.run("ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS target_date VARCHAR(50)"); } catch (_) {}
+}
+
 export async function POST(request: Request) {
   try {
     const db = await getDb();
+    await ensureInterviewTables(db);
     const body = await request.json();
 
     const {
@@ -36,19 +73,23 @@ export async function POST(request: Request) {
 
     // Validate mentor availability on target date and time
     for (const mId of mapped_mentor_ids) {
-      const avail = await checkMentorAvailability(db, {
-        mentorId: mId,
-        dateStr: interview.target_date,
-        timeSlot: assignedTimeSlot,
-        excludeInterviewId: interview_id
-      });
-      if (!avail.available) {
-        const mInfo = await db.get("SELECT name FROM mentors WHERE id = ?", [mId]);
-        const mName = mInfo?.name || mId;
-        return NextResponse.json({
-          success: false,
-          message: `Cannot assign mentor ${mName}: ${avail.reason}`
-        }, { status: 400 });
+      try {
+        const avail = await checkMentorAvailability(db, {
+          mentorId: mId,
+          dateStr: interview.target_date,
+          timeSlot: assignedTimeSlot,
+          excludeInterviewId: interview_id
+        });
+        if (!avail.available) {
+          const mInfo = await db.get("SELECT name FROM mentors WHERE id = ?", [mId]);
+          const mName = mInfo?.name || mId;
+          return NextResponse.json({
+            success: false,
+            message: `Cannot assign mentor ${mName}: ${avail.reason}`
+          }, { status: 400 });
+        }
+      } catch (availErr) {
+        console.warn("Mentor availability check warning:", availErr);
       }
     }
 
@@ -75,13 +116,14 @@ export async function POST(request: Request) {
     }
 
     const assignedIdsStr = JSON.stringify(combinedMentorIds);
+    const remainingCount = Math.max(0, (Number(interview.student_count) || 0) - totalAccepted);
 
     await db.run(
       `UPDATE student_interviews 
        SET assigned_mentor_ids = ?, 
            accepted_capacity = ?, 
            allocated_students = ?,
-           remaining_students = MAX(0, student_count - ?),
+           remaining_students = ?,
            status = ?, 
            gmeet_link = COALESCE(?, gmeet_link), 
            preferred_start_time = ?, 
@@ -91,7 +133,7 @@ export async function POST(request: Request) {
         assignedIdsStr, 
         totalAccepted, 
         totalAllocated, 
-        totalAccepted, 
+        remainingCount, 
         finalStatus, 
         interview.type === "internal" ? null : (gmeet_link || interview.gmeet_link || null), 
         assignedTimeSlot, 
@@ -104,37 +146,54 @@ export async function POST(request: Request) {
     const mentorSchedule = Array.isArray(body.mentor_schedule) ? body.mentor_schedule : [];
     if (mentorSchedule.length > 0) {
       const isInternal = interview.type === "internal";
-      const cleanCG = (interview.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
-      const colId = interview.college_id || null;
-      let enrolledStudents = [];
-      if (colId) {
-        enrolledStudents = await db.all(
-          `SELECT id, name, email, register_number FROM students 
-           WHERE college_id = ? AND (LOWER(classGroup) = LOWER(?) OR LOWER(department) = LOWER(?) OR classGroup LIKE ? OR department LIKE ?)
-           ORDER BY register_number ASC, id ASC`,
-          [colId, cleanCG, cleanCG, `%${cleanCG}%`, `%${cleanCG}%`]
-        );
-      }
-      if (enrolledStudents.length === 0) {
-        enrolledStudents = await db.all(
-          `SELECT id, name, email, register_number FROM students 
-           WHERE (LOWER(classGroup) = LOWER(?) OR LOWER(department) = LOWER(?) OR classGroup LIKE ? OR department LIKE ?)
-           ORDER BY register_number ASC, id ASC`,
-          [cleanCG, cleanCG, `%${cleanCG}%`, `%${cleanCG}%`]
-        );
+      const selectedStudentIds = Array.isArray(body.selected_student_ids) ? body.selected_student_ids.filter(Boolean) : [];
+      let enrolledStudents: any[] = [];
+
+      // 1. Fetch CAM-selected students by ID first (maintains exact selection)
+      if (selectedStudentIds.length > 0) {
+        try {
+          const placeholders = selectedStudentIds.map(() => "?").join(",");
+          const fetched = await db.all(
+            `SELECT id, name, email, register_number, classGroup, department FROM students WHERE id IN (${placeholders})`,
+            selectedStudentIds
+          );
+          enrolledStudents = selectedStudentIds
+            .map((id: any) => fetched.find((s: any) => s.id === id))
+            .filter(Boolean);
+        } catch (_) {}
       }
 
-      // Priority ordering: if selected_student_ids were passed, order them first
-      const selectedStudentIds = Array.isArray(body.selected_student_ids) ? body.selected_student_ids : [];
-      if (selectedStudentIds.length > 0) {
-        enrolledStudents.sort((a: any, b: any) => {
-          const aIndex = selectedStudentIds.indexOf(a.id);
-          const bIndex = selectedStudentIds.indexOf(b.id);
-          if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-          if (aIndex !== -1) return -1;
-          if (bIndex !== -1) return 1;
-          return 0;
-        });
+      // 2. Supplement with cohort query if needed
+      if (enrolledStudents.length < assigningStudentCount) {
+        const cleanCG = (interview.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
+        const colId = interview.college_id || null;
+        let cohortStudents: any[] = [];
+        try {
+          if (colId) {
+            cohortStudents = await db.all(
+              `SELECT id, name, email, register_number, classGroup, department FROM students 
+               WHERE college_id = ? AND (LOWER(classGroup) = LOWER(?) OR LOWER(department) = LOWER(?) OR classGroup LIKE ? OR department LIKE ?)
+               ORDER BY register_number ASC, id ASC`,
+              [colId, cleanCG, cleanCG, `%${cleanCG}%`, `%${cleanCG}%`]
+            );
+          }
+          if (cohortStudents.length === 0) {
+            cohortStudents = await db.all(
+              `SELECT id, name, email, register_number, classGroup, department FROM students 
+               WHERE (LOWER(classGroup) = LOWER(?) OR LOWER(department) = LOWER(?) OR classGroup LIKE ? OR department LIKE ?)
+               ORDER BY register_number ASC, id ASC`,
+              [cleanCG, cleanCG, `%${cleanCG}%`, `%${cleanCG}%`]
+            );
+          }
+        } catch (_) {}
+
+        const existingIds = new Set(enrolledStudents.map(s => s.id));
+        for (const cs of cohortStudents) {
+          if (!existingIds.has(cs.id)) {
+            enrolledStudents.push(cs);
+            existingIds.add(cs.id);
+          }
+        }
       }
 
       // Helper to increment minutes and format e.g. "09:15 AM"
@@ -152,6 +211,11 @@ export async function POST(request: Request) {
         return { start: toTimeStr(startMins), end: toTimeStr(endMins) };
       };
 
+      // Clean up previous slots for this interview before re-dispatching
+      try {
+        await db.run("DELETE FROM student_interview_slots WHERE interview_id = ?", [interview_id]);
+      } catch (_) {}
+
       let sIndex = 0;
       let slotRunningIndex = 0;
       for (const ms of mentorSchedule) {
@@ -163,8 +227,13 @@ export async function POST(request: Request) {
 
         for (let k = 0; k < count; k++) {
           const slotId = `slot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-          const st = enrolledStudents[sIndex] || { id: `std_${sIndex + 1}`, name: `Student #${sIndex + 1}`, email: undefined };
+          const st = enrolledStudents[sIndex] || null;
           sIndex++;
+
+          // Use real student ID, or null (to satisfy foreign key constraints)
+          const stId = st ? st.id : null;
+          const stName = st ? st.name : `Candidate #${slotRunningIndex + 1}`;
+          const stEmail = st?.email || undefined;
 
           const slotTiming = formatTimeSlotWindow(baseTime, slotRunningIndex);
           slotRunningIndex++;
@@ -172,8 +241,8 @@ export async function POST(request: Request) {
           // Internal interviews do NOT use Google Meet (in-person physical on campus)
           const effectiveMeetLink = isInternal ? null : (gmeet_link || interview.gmeet_link || null);
           const studentGCalUrl = isInternal || !effectiveMeetLink ? null : generateStudentGCalUrl({
-            studentName: st.name,
-            studentEmail: st.email,
+            studentName: stName,
+            studentEmail: stEmail,
             subject: interview.subject || "Interview",
             targetDate: interview.target_date || new Date().toISOString().slice(0, 10),
             slotStartTime: slotTiming.start,
@@ -192,8 +261,8 @@ export async function POST(request: Request) {
               slotId,
               interview_id,
               "alloc_direct",
-              st.id,
-              st.name,
+              stId,
+              stName,
               ms.mentor_id,
               mName,
               mCol,
@@ -201,8 +270,8 @@ export async function POST(request: Request) {
               slotTiming.end,
               effectiveMeetLink,
               studentGCalUrl,
-              interview.subject,
-              interview.target_date,
+              interview.subject || "Interview",
+              interview.target_date || now.slice(0, 10),
               "scheduled",
               now
             ]
