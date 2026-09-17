@@ -2418,21 +2418,49 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                   }`}>
                                   {isVerified ? `✓ Conducted & Verified — ${myEval.status}` : `Conducted — Pending CAM Verification`}
                                 </span>
-                                <span className="text-xs font-black text-indigo-700">Total Score: {myEval.total_score || 0}/100</span>
+                                <span className="text-xs font-black text-indigo-700">Total Score: {myEval.total_score || 0}/10 ({Math.round((Number(myEval.total_score) || 0) * 10)}%)</span>
                               </div>
 
                               <div className="grid grid-cols-4 gap-2 text-center text-[10px] bg-slate-50 p-2 rounded-lg font-bold border border-slate-100">
-                                <div><span className="text-slate-400 block text-[8px]">COMM.</span>{myEval.communication_score}</div>
-                                <div><span className="text-slate-400 block text-[8px]">CONTENT</span>{myEval.content_score}</div>
-                                <div><span className="text-slate-400 block text-[8px]">TECH</span>{myEval.technical_score}</div>
-                                <div><span className="text-slate-400 block text-[8px]">CONF.</span>{myEval.confidence_score}</div>
+                                <div><span className="text-slate-400 block text-[8px]">COMM.</span>{myEval.communication_score}/10</div>
+                                <div><span className="text-slate-400 block text-[8px]">CONTENT</span>{myEval.content_score}/10</div>
+                                <div><span className="text-slate-400 block text-[8px]">TECH</span>{myEval.technical_score}/10</div>
+                                <div><span className="text-slate-400 block text-[8px]">CONF.</span>{myEval.confidence_score}/10</div>
                               </div>
 
-                              {myEval.questions_asked && (
-                                <div className="text-[10.5px] text-slate-600">
-                                  <strong>Questions Asked:</strong> &ldquo;{myEval.questions_asked}&rdquo;
-                                </div>
-                              )}
+                              {myEval.questions_asked && (() => {
+                                let qList: any[] = [];
+                                try {
+                                  const parsed = typeof myEval.questions_asked === "string" ? JSON.parse(myEval.questions_asked) : myEval.questions_asked;
+                                  if (Array.isArray(parsed)) qList = parsed;
+                                } catch (_) {}
+
+                                if (qList.length > 0) {
+                                  return (
+                                    <div className="space-y-1.5 pt-1">
+                                      <span className="text-[10px] font-black uppercase text-slate-400 block">Questions &amp; Ratings:</span>
+                                      <div className="space-y-1">
+                                        {qList.map((q: any, qi: number) => (
+                                          <div key={q.id || qi} className="text-[10.5px] bg-slate-50 p-2 rounded-lg border border-slate-200/80 flex items-center justify-between gap-2">
+                                            <span className="text-slate-700 font-semibold truncate">
+                                              <strong className="text-indigo-600 font-mono">Q{qi + 1}:</strong> {q.question || "Technical Question"}
+                                            </span>
+                                            <span className="text-[10px] font-black text-indigo-700 bg-white px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                                              {q.score ?? 7}/10
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div className="text-[10.5px] text-slate-600">
+                                    <strong>Questions Asked:</strong> &ldquo;{myEval.questions_asked}&rdquo;
+                                  </div>
+                                );
+                              })()}
                               {myEval.remarks && (
                                 <div className="text-[10.5px] text-indigo-700 italic">
                                   <strong>Evaluator Remarks:</strong> &ldquo;{myEval.remarks}&rdquo;

@@ -57,7 +57,27 @@ export async function POST(request: Request) {
     const contScore = isAbsent ? 0 : (Number(content_score) || 0);
     const techScore = isAbsent ? 0 : (Number(technical_score) || 0);
     const confScore = isAbsent ? 0 : (Number(confidence_score) || 0);
-    const totalScore = isAbsent ? 0 : Math.round((commScore + contScore + techScore + confScore) / 4);
+
+    let qAvg = 0;
+    let hasQuestions = false;
+    try {
+      const parsedQ = typeof questions_asked === "string" ? JSON.parse(questions_asked) : questions_asked;
+      if (Array.isArray(parsedQ) && parsedQ.length > 0) {
+        hasQuestions = true;
+        const validScores = parsedQ.map((q: any) => Number(q.score) || 0);
+        qAvg = validScores.reduce((a: number, b: number) => a + b, 0) / validScores.length;
+      }
+    } catch (_) {}
+
+    const metricsAvg = (commScore + contScore + techScore + confScore) / 4;
+    const computedTotalScore = isAbsent 
+      ? 0 
+      : hasQuestions 
+        ? Math.round(((qAvg + metricsAvg) / 2) * 10) / 10 
+        : Math.round(metricsAvg * 10) / 10;
+    const totalScore = body.total_score !== undefined && body.total_score !== null && !isNaN(Number(body.total_score))
+      ? Number(body.total_score)
+      : computedTotalScore;
     const now = new Date().toISOString();
 
     await db.run(

@@ -98,6 +98,7 @@ export async function GET(request: Request) {
     const interviews = await db.all(query, params);
 
     let interviewsWithDetails: any[] = [];
+    const evalsMap = new Map<string, any[]>();
 
     if (interviews.length > 0) {
       const interviewIds = interviews.map((i: any) => i.id);
@@ -107,7 +108,7 @@ export async function GET(request: Request) {
         db.all(`SELECT * FROM interview_allocations WHERE interview_id IN (${placeholders}) ORDER BY start_time ASC`, ...interviewIds),
         db.all(`SELECT * FROM cam_capacity_responses WHERE interview_id IN (${placeholders}) ORDER BY created_at ASC`, ...interviewIds),
         db.all(`SELECT * FROM student_interview_slots WHERE interview_id IN (${placeholders}) ORDER BY slot_start_time ASC`, ...interviewIds),
-        db.all(`SELECT id, interview_id, student_id, student_name, attendance, total_score, status, remarks FROM interview_evaluations WHERE interview_id IN (${placeholders})`, ...interviewIds)
+        db.all(`SELECT * FROM interview_evaluations WHERE interview_id IN (${placeholders}) ORDER BY created_at DESC`, ...interviewIds)
       ]);
 
       const allocsMap = new Map<string, any[]>();
@@ -128,7 +129,6 @@ export async function GET(request: Request) {
         studentSlotsMap.get(s.interview_id)!.push(s);
       }
 
-      const evalsMap = new Map<string, any[]>();
       for (const e of allEvals) {
         if (!evalsMap.has(e.interview_id)) evalsMap.set(e.interview_id, []);
         evalsMap.get(e.interview_id)!.push(e);
@@ -211,9 +211,11 @@ export async function GET(request: Request) {
       });
     }
 
-    // Fetch evaluations — scoped if mentor
+    // Fetch evaluations — returns all evaluations for visible interviews
     let evaluations: any[] = [];
-    if (role === "mentor" && mentorId) {
+    if (interviewsWithDetails.length > 0) {
+      evaluations = Array.from(evalsMap.values()).flat();
+    } else if (role === "mentor" && mentorId) {
       evaluations = await db.all(
         "SELECT * FROM interview_evaluations WHERE mentor_id = ? ORDER BY created_at DESC",
         [mentorId]

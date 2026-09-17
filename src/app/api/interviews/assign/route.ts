@@ -166,24 +166,44 @@ export async function POST(request: Request) {
       // 2. Supplement with cohort query if needed
       if (enrolledStudents.length < assigningStudentCount) {
         const cleanCG = (interview.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
-        const colId = interview.college_id || null;
+        const hostColId = interview.origin_college_id || interview.college_id || null;
         let cohortStudents: any[] = [];
         try {
-          if (colId) {
-            cohortStudents = await db.all(
-              `SELECT id, name, email, register_number, classGroup, department FROM students 
-               WHERE college_id = ? AND (LOWER(classGroup) = LOWER(?) OR LOWER(department) = LOWER(?) OR classGroup LIKE ? OR department LIKE ?)
+          let allCampusStudents: any[] = [];
+          if (hostColId) {
+            allCampusStudents = await db.all(
+              `SELECT id, name, email, register_number, classgroup as "classGroup", department 
+               FROM students 
+               WHERE college_id = ? 
                ORDER BY register_number ASC, id ASC`,
-              [colId, cleanCG, cleanCG, `%${cleanCG}%`, `%${cleanCG}%`]
+              [hostColId]
             );
           }
-          if (cohortStudents.length === 0) {
-            cohortStudents = await db.all(
-              `SELECT id, name, email, register_number, classGroup, department FROM students 
-               WHERE (LOWER(classGroup) = LOWER(?) OR LOWER(department) = LOWER(?) OR classGroup LIKE ? OR department LIKE ?)
-               ORDER BY register_number ASC, id ASC`,
-              [cleanCG, cleanCG, `%${cleanCG}%`, `%${cleanCG}%`]
+          if (allCampusStudents.length === 0) {
+            allCampusStudents = await db.all(
+              `SELECT id, name, email, register_number, classgroup as "classGroup", department 
+               FROM students 
+               ORDER BY register_number ASC, id ASC LIMIT 300`
             );
+          }
+
+          // Fuzzy and token matching against class_group, department, and base course
+          const deptPrefix = cleanCG.split(/[-–—(]/)[0].trim().toLowerCase();
+          const cleanTokens = cleanCG.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter((t: string) => t.length > 2);
+
+          cohortStudents = allCampusStudents.filter((st: any) => {
+            const sCG = (st.classGroup || "").toLowerCase().trim();
+            const sDept = (st.department || "").toLowerCase().trim();
+            if (sCG === cleanCG.toLowerCase() || sDept === cleanCG.toLowerCase()) return true;
+            if (deptPrefix && (sDept.includes(deptPrefix) || deptPrefix.includes(sDept))) return true;
+            if (deptPrefix && (sCG.includes(deptPrefix) || deptPrefix.includes(sCG))) return true;
+            const matchCount = cleanTokens.filter((tok: string) => sCG.includes(tok) || sDept.includes(tok)).length;
+            return matchCount >= Math.min(2, cleanTokens.length);
+          });
+
+          // If no department string match, fallback to students from the host campus
+          if (cohortStudents.length === 0) {
+            cohortStudents = allCampusStudents;
           }
         } catch (_) {}
 

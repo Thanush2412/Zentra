@@ -255,6 +255,7 @@ const StudentConductedRosterDrawer = ({
   const [activeTab, setActiveTab] = useState<"mentors" | "students" | "logs">("mentors");
   const [studentSearch, setStudentSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "evaluated" | "pending" | "cleared" | "needs_work">("all");
+  const [selectedEvaluationDetail, setSelectedEvaluationDetail] = useState<any | null>(null);
 
   const reqCount = Number(interview.required_students || interview.student_count || 10);
   const slots = interview.student_slots || [];
@@ -288,16 +289,18 @@ const StudentConductedRosterDrawer = ({
         }
       }
 
+      const isPlaceholderName = (name?: string) => !name || /^Candidate\s*#?\d*$/i.test(name.trim()) || /^Student\s*#?\d*$/i.test(name.trim());
+
       return relevantSlots.map((sl: any, sIdx: number) => {
         const found = cohortStudents.find(cs => 
-          cs.id === sl.student_id || 
-          cs.id === sl.studentId || 
-          (cs.roll_number && (cs.roll_number === sl.student_id || cs.roll_number === sl.studentId)) ||
-          (cs.email && (cs.email === sl.student_id || cs.email === sl.studentId)) ||
-          (cs.name && cs.name.toLowerCase() === (sl.student_name || sl.studentName || sl.name || "").toLowerCase())
-        ) || (cohortStudents.length > 0 ? cohortStudents[sIdx % cohortStudents.length] : null);
+          (sl.student_id && (cs.id === sl.student_id || cs.register_number === sl.student_id)) ||
+          (sl.student_name && !isPlaceholderName(sl.student_name) && cs.name?.toLowerCase().trim() === sl.student_name?.toLowerCase().trim())
+        );
 
-        const resolvedName = sl.student_name || sl.studentName || sl.name || found?.name || (sl.student_id ? `Student ${sl.student_id}` : `Student #${sIdx + 1}`);
+        const resolvedName = (!isPlaceholderName(sl.student_name) ? sl.student_name : null) ||
+          found?.name ||
+          sl.student_name ||
+          (sl.student_id ? `Student ${sl.student_id}` : `Student #${sIdx + 1}`);
 
         return {
           id: sl.student_id || sl.studentId || found?.id || `slot_std_${sIdx + 1}`,
@@ -692,14 +695,26 @@ const StudentConductedRosterDrawer = ({
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    {(interview.cam_responses || []).map((cr: any) => (
-                      <div key={cr.id} className="bg-white p-2 rounded-lg border border-purple-200 text-xs font-semibold">
-                        <div className="font-bold text-slate-800 truncate">{cr.college_name}</div>
-                        <div className="text-[10px] text-purple-700 font-bold mt-0.5">
-                          Capacity: {cr.accepted_student_capacity || 0} students ({cr.status})
+                    {(() => {
+                      const hostId = interview.college_id || interview.origin_college_id;
+                      const hostCol = allColleges.find(c => c.id === hostId);
+                      const hostKamId = hostCol?.kam_id || (hostCol as any)?.kamId;
+                      const validResponses = (interview.cam_responses || []).filter((cr: any) => {
+                        if (cr.college_id === hostId) return false;
+                        if (!hostKamId) return true;
+                        const crCol = allColleges.find(c => c.id === cr.college_id);
+                        const crKam = crCol?.kam_id || (crCol as any)?.kamId;
+                        return !crKam || crKam === hostKamId;
+                      });
+                      return validResponses.map((cr: any) => (
+                        <div key={cr.id} className="bg-white p-2 rounded-lg border border-purple-200 text-xs font-semibold">
+                          <div className="font-bold text-slate-800 truncate">{cr.college_name}</div>
+                          <div className="text-[10px] text-purple-700 font-bold mt-0.5">
+                            Capacity: {cr.accepted_student_capacity || 0} students ({cr.status})
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ));
+                    })()}
                   </div>
                 )}
               </div>
@@ -761,14 +776,17 @@ const StudentConductedRosterDrawer = ({
                   {filteredStudents.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-xs font-semibold">
-                        No candidate slots allocated for your campus in this session yet.
+                        No candidate slots found matching filter.
                       </td>
                     </tr>
                   ) : (
                     filteredStudents.map((st: any, idx: number) => {
                       const isAssignedToSlot = assignedSlotStudentIds.includes(st.id) || (idx < displayStudents.length && (interview.status === "assigned" || interview.status === "completed" || interview.status === "pending_verification"));
                       const slot = slots.find((s: any) => s.student_id === st.id);
-                      const evaluation = sessionEvals.find(e => e.student_id === st.id);
+                      const evaluation = sessionEvals.find(e => 
+                        (st.id && e.student_id === st.id) || 
+                        (e.student_name && st.name && e.student_name.toLowerCase().trim() === st.name.toLowerCase().trim())
+                      );
                       const isEval = Boolean(evaluation);
 
                       return (
@@ -776,7 +794,7 @@ const StudentConductedRosterDrawer = ({
                           <td className="px-3 py-2 text-slate-400 font-mono text-[10px]">{idx + 1}</td>
                           <td className="px-3 py-2">
                             <div className="font-bold text-slate-900">{st.name}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">{st.roll_number || st.id}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{st.roll_number || st.register_number || st.id}</div>
                           </td>
                           <td className="px-3 py-2 text-[11px] font-semibold text-slate-700">
                             {isAssignedToSlot ? (slot?.mentor_name || st.mentor_name || interview.mentor_name || "Faculty Mentor") : "—"}
@@ -809,31 +827,54 @@ const StudentConductedRosterDrawer = ({
                           </td>
                           <td className="px-3 py-2">
                             {isEval ? (
-                              <span className="font-black text-indigo-700 text-xs">
-                                {evaluation.total_score} / 100
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedEvaluationDetail({ student: st, eval: evaluation })}
+                                className="flex flex-col text-left group cursor-pointer"
+                                title="Click to view full evaluation questions and marks"
+                              >
+                                <span className="font-black text-indigo-700 text-xs group-hover:underline flex items-center gap-1">
+                                  {evaluation.total_score} / 10
+                                  <Eye className="w-3 h-3 text-indigo-500 opacity-60 group-hover:opacity-100 transition-opacity" />
+                                </span>
+                                <span className="text-[9px] text-slate-400 font-semibold">
+                                  {Math.round((Number(evaluation.total_score) || 0) * 10)}%
+                                </span>
+                              </button>
                             ) : (
                               <span className="text-amber-600 font-semibold text-[10px]">⏳ Pending</span>
                             )}
                           </td>
                           <td className="px-3 py-2">
-                            {isEval ? (
-                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
-                                (evaluation.status || "").toLowerCase().includes("clear")
-                                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                                  : "bg-amber-100 text-amber-800 border-amber-300"
-                              }`}>
-                                {evaluation.status || "Evaluated"}
-                              </span>
-                            ) : isAssignedToSlot ? (
-                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                                Scheduled
-                              </span>
-                            ) : (
-                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
-                                Unallocated
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1.5">
+                              {isEval ? (
+                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
+                                  (evaluation.status || "").toLowerCase().includes("clear")
+                                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                    : "bg-amber-100 text-amber-800 border-amber-300"
+                                }`}>
+                                  {evaluation.status || "Evaluated"}
+                                </span>
+                              ) : isAssignedToSlot ? (
+                                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                  Scheduled
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
+                                  Unallocated
+                                </span>
+                              )}
+                              {isEval && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedEvaluationDetail({ student: st, eval: evaluation })}
+                                  className="p-1 rounded bg-slate-100 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 border border-slate-200 transition-all cursor-pointer"
+                                  title="View questions and marks breakdown"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -899,11 +940,23 @@ const StudentConductedRosterDrawer = ({
                         </p>
                         {interview.cam_responses && interview.cam_responses.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 pt-1">
-                            {interview.cam_responses.map((cr: any) => (
-                              <span key={cr.id} className="text-[10px] font-bold bg-white text-purple-900 px-2 py-0.5 rounded border border-purple-200">
-                                {cr.college_name}: {cr.accepted_student_capacity} students
-                              </span>
-                            ))}
+                            {(() => {
+                              const hostId = interview.college_id || interview.origin_college_id;
+                              const hostCol = allColleges.find(c => c.id === hostId);
+                              const hostKamId = hostCol?.kam_id || (hostCol as any)?.kamId;
+                              const validResponses = (interview.cam_responses || []).filter((cr: any) => {
+                                if (cr.college_id === hostId) return false;
+                                if (!hostKamId) return true;
+                                const crCol = allColleges.find(c => c.id === cr.college_id);
+                                const crKam = crCol?.kam_id || (crCol as any)?.kamId;
+                                return !crKam || crKam === hostKamId;
+                              });
+                              return validResponses.map((cr: any) => (
+                                <span key={cr.id} className="text-[10px] font-bold bg-white text-purple-900 px-2 py-0.5 rounded border border-purple-200">
+                                  {cr.college_name}: {cr.accepted_student_capacity} students
+                                </span>
+                              ));
+                            })()}
                           </div>
                         )}
                       </>
@@ -1006,6 +1059,168 @@ const StudentConductedRosterDrawer = ({
                 </div>
               </div>
 
+            </div>
+          </div>
+        )}
+
+        {/* Full Evaluation Inspection Modal */}
+        {selectedEvaluationDetail && (
+          <div className="fixed inset-0 z-[120] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+              {/* Header */}
+              <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+                <div className="min-w-0">
+                  <span className="text-[10px] font-mono uppercase text-indigo-300 font-extrabold block">
+                    Candidate Evaluation Details
+                  </span>
+                  <h3 className="text-sm font-black truncate">{selectedEvaluationDetail.student?.name}</h3>
+                  <p className="text-[11px] text-slate-300 font-mono">
+                    {selectedEvaluationDetail.student?.roll_number || selectedEvaluationDetail.student?.register_number || selectedEvaluationDetail.student?.id} • {selectedEvaluationDetail.student?.classGroup || interview.class_group}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedEvaluationDetail(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 overflow-y-auto space-y-4 flex-1 text-xs">
+                {/* Score & Status Highlight */}
+                <div className="p-3.5 rounded-xl bg-indigo-50/80 border border-indigo-200 flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-indigo-500 block">Overall Score</span>
+                    <div className="text-2xl font-black text-indigo-700">
+                      {selectedEvaluationDetail.eval?.total_score} <span className="text-sm text-indigo-400 font-bold">/ 10</span>
+                      <span className="text-xs font-extrabold text-indigo-500 ml-2">({Math.round((Number(selectedEvaluationDetail.eval?.total_score) || 0) * 10)}%)</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-black uppercase text-slate-400 block mb-0.5">Status</span>
+                    <span className={`inline-block text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${
+                      (selectedEvaluationDetail.eval?.status || "").toLowerCase().includes("clear")
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-amber-100 text-amber-800 border-amber-300"
+                    }`}>
+                      {selectedEvaluationDetail.eval?.status || "Evaluated"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4 Core Skills Rubric Breakdown */}
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                    Core Skills Rubric Ratings
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {[
+                      { label: "Communication", score: selectedEvaluationDetail.eval?.communication_score ?? 0, color: "text-[#D528A2] bg-pink-50 border-pink-200" },
+                      { label: "Content Knowledge", score: selectedEvaluationDetail.eval?.content_score ?? 0, color: "text-amber-700 bg-amber-50 border-amber-200" },
+                      { label: "Technical Skills", score: selectedEvaluationDetail.eval?.technical_score ?? 0, color: "text-indigo-700 bg-indigo-50 border-indigo-200" },
+                      { label: "Confidence", score: selectedEvaluationDetail.eval?.confidence_score ?? 0, color: "text-emerald-700 bg-emerald-50 border-emerald-200" },
+                    ].map(rubric => (
+                      <div key={rubric.label} className={`p-2.5 rounded-xl border ${rubric.color}`}>
+                        <span className="text-[10px] font-bold text-slate-600 block">{rubric.label}</span>
+                        <div className="text-base font-black mt-0.5">
+                          {rubric.score} <span className="text-[10px] text-slate-400 font-semibold">/ 10</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Questions Asked by Mentor */}
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center justify-between">
+                    <span>Questions Asked by Mentor</span>
+                    <HelpCircle className="w-3.5 h-3.5 text-[#D528A2]" />
+                  </h4>
+
+                  {(() => {
+                    const rawQ = selectedEvaluationDetail.eval?.questions_asked;
+                    let qList: any[] = [];
+                    if (rawQ) {
+                      try {
+                        const parsed = typeof rawQ === "string" ? JSON.parse(rawQ) : rawQ;
+                        if (Array.isArray(parsed)) qList = parsed;
+                      } catch (_) {}
+                    }
+
+                    if (qList.length > 0) {
+                      return (
+                        <div className="space-y-2">
+                          {qList.map((qItem: any, qIdx: number) => (
+                            <div key={qItem.id || qIdx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-mono font-black text-[9px] shrink-0">
+                                  Q{qIdx + 1}
+                                </span>
+                                <p className="font-bold text-slate-800 text-xs flex-1">
+                                  {qItem.question || <span className="italic text-slate-400">Technical Question</span>}
+                                </p>
+                                <span className="text-xs font-black text-[#D528A2] bg-white px-2 py-0.5 rounded-md border border-slate-200 shrink-0">
+                                  {qItem.score ?? 7} / 10
+                                </span>
+                              </div>
+                              {qItem.notes && (
+                                <p className="text-[11px] text-slate-500 italic pl-6">{qItem.notes}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }
+
+                    if (rawQ && typeof rawQ === "string" && rawQ.trim() !== "[]") {
+                      return (
+                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700">
+                          {rawQ}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="p-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 italic text-xs">
+                        No specific questions recorded for this session.
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Evaluator Remarks & Metadata */}
+                <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 font-bold">Evaluator Faculty:</span>
+                    <span className="font-extrabold text-slate-800">{selectedEvaluationDetail.eval?.mentor_name || "Faculty Mentor"}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 font-bold">Actual Duration:</span>
+                    <span className="font-mono font-extrabold text-indigo-700">
+                      {selectedEvaluationDetail.eval?.actual_duration_minutes || 15} minutes
+                    </span>
+                  </div>
+                  {selectedEvaluationDetail.eval?.remarks && (
+                    <div className="pt-1 border-t border-slate-200/80">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Remarks</span>
+                      <p className="text-xs text-slate-700 italic mt-0.5">
+                        &ldquo;{selectedEvaluationDetail.eval.remarks}&rdquo;
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-3 border-t border-slate-100 bg-slate-50 flex justify-end">
+                <button
+                  onClick={() => setSelectedEvaluationDetail(null)}
+                  className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold cursor-pointer transition-all"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1216,15 +1431,18 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     if (selectedStudent && expandedRequest) {
       const req = interviewsList.find(i => i.id === expandedRequest);
       const existingEval = evaluationsList.find(
-        ev => ev.interview_id === expandedRequest && ev.student_id === selectedStudent.id
+        ev => ev.interview_id === expandedRequest && (
+          ev.student_id === selectedStudent.id ||
+          (ev.student_name && selectedStudent.name && ev.student_name.toLowerCase().trim() === selectedStudent.name.toLowerCase().trim())
+        )
       );
 
       if (existingEval) {
         setEvalAttendance(existingEval.attendance || "present");
-        setCommScore(existingEval.communication_score || 7);
-        setContentScore(existingEval.content_score || 7);
-        setTechScore(existingEval.technical_score || 7);
-        setConfidenceScore(existingEval.confidence_score || 7);
+        setCommScore(existingEval.communication_score ?? 7);
+        setContentScore(existingEval.content_score ?? 7);
+        setTechScore(existingEval.technical_score ?? 7);
+        setConfidenceScore(existingEval.confidence_score ?? 7);
         setRemarks(existingEval.remarks || "");
         setActualStartTime(existingEval.actual_start_time || "");
         setActualEndTime(existingEval.actual_end_time || "");
@@ -1233,16 +1451,21 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         // Parse structured questions if JSON, else wrap string
         if (existingEval.questions_asked) {
           try {
-            const parsed = JSON.parse(existingEval.questions_asked);
-            if (Array.isArray(parsed)) {
+            const parsed = typeof existingEval.questions_asked === "string"
+              ? JSON.parse(existingEval.questions_asked)
+              : existingEval.questions_asked;
+            if (Array.isArray(parsed) && parsed.length > 0) {
               setEvalQuestions(parsed);
               return;
             }
           } catch (_) {}
           // Single text fallback
           setEvalQuestions([
-            { id: "q1", question: existingEval.questions_asked, maxScore: 10, score: 7, notes: "" }
+            { id: "q1", question: String(existingEval.questions_asked), maxScore: 10, score: 7, notes: "" }
           ]);
+          return;
+        } else {
+          setEvalQuestions(getSubjectQuestionsPreset(req?.subject || ""));
           return;
         }
       }
@@ -1256,7 +1479,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       setActualEndTime(mySlot?.slot_end_time || "");
       setActualDuration(15);
     }
-  }, [selectedStudent, expandedRequest]);
+  }, [selectedStudent, expandedRequest, evaluationsList]);
 
   // ── Calendar Grid Calculations ──────────────────────────────────────────────
 
@@ -1466,11 +1689,27 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     }));
 
     const targetReq = interviewsList.find(i => i.id === interviewId);
+    const hostColId = targetReq?.origin_college_id || targetReq?.college_id || defaultCollegeId;
     const cleanCG = (targetReq?.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
-    const cohortStudents = students.filter(s =>
-      (s.classGroup && (s.classGroup.toLowerCase() === cleanCG.toLowerCase() || s.classGroup.toLowerCase().includes(cleanCG.toLowerCase()))) ||
-      (s.department && (s.department.toLowerCase() === cleanCG.toLowerCase() || s.department.toLowerCase().includes(cleanCG.toLowerCase())))
-    );
+    const deptPrefix = cleanCG.split(/[-–—(]/)[0].trim().toLowerCase();
+    const cleanTokens = cleanCG.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter((t: string) => t.length > 2);
+
+    const campusPool = students.filter(s => !hostColId || !s.college_id || s.college_id === hostColId);
+    const pool = campusPool.length > 0 ? campusPool : students;
+
+    let cohortStudents = pool.filter(s => {
+      const sCG = (s.classGroup || "").toLowerCase().trim();
+      const sDept = (s.department || "").toLowerCase().trim();
+      if (sCG === cleanCG.toLowerCase() || sDept === cleanCG.toLowerCase()) return true;
+      if (deptPrefix && (sDept.includes(deptPrefix) || deptPrefix.includes(sDept))) return true;
+      if (deptPrefix && (sCG.includes(deptPrefix) || deptPrefix.includes(sCG))) return true;
+      const matchCount = cleanTokens.filter((tok: string) => sCG.includes(tok) || sDept.includes(tok)).length;
+      return matchCount >= Math.min(2, cleanTokens.length);
+    });
+
+    if (cohortStudents.length === 0) {
+      cohortStudents = pool;
+    }
     const selectedIds = cohortStudents.slice(0, camStudentCount).map(s => s.id);
 
     setIsAssigning(true);
@@ -1856,6 +2095,8 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
     // 1. If student_slots exist in the interview object:
     if (req.student_slots && req.student_slots.length > 0) {
+      const isPlaceholderName = (name?: string) => !name || /^Candidate\s*#?\d*$/i.test(name.trim()) || /^Student\s*#?\d*$/i.test(name.trim());
+
       // If a mentor is logged in as an evaluator:
       if (isMentor && currentMentor?.id) {
         const mySlots = req.student_slots.filter((s: any) => s.mentor_id === currentMentor.id);
@@ -1864,25 +2105,22 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         if (mySlots.length > 0) {
           return mySlots.map((slot: any, idx: number) => {
             const enrolled = students.find(st => 
-              st.id === slot.student_id || 
-              st.id === slot.studentId || 
-              (st.register_number && (st.register_number === slot.student_id || st.register_number === slot.studentId || st.register_number === slot.roll_number)) ||
-              (st.roll_number && (st.roll_number === slot.student_id || st.roll_number === slot.studentId || st.roll_number === slot.roll_number)) ||
-              ((st as any).roll_no && ((st as any).roll_no === slot.student_id || (st as any).roll_no === slot.studentId || (st as any).roll_no === slot.roll_number)) ||
-              (st.email && (st.email === slot.student_id || st.email === slot.studentId)) ||
-              (st.name && slot.student_name && st.name.toLowerCase().trim() === slot.student_name.toLowerCase().trim())
-            ) || (students.length > 0 ? students[idx % students.length] : null);
+              (slot.student_id && (st.id === slot.student_id || st.register_number === slot.student_id || (st as any).roll_no === slot.student_id)) ||
+              (slot.student_name && !isPlaceholderName(slot.student_name) && st.name?.toLowerCase().trim() === slot.student_name?.toLowerCase().trim())
+            );
 
-            const cName = slot.student_name || slot.studentName || slot.name || enrolled?.name || (slot.student_id ? `Candidate ${slot.student_id}` : `Candidate #${idx + 1}`);
-            const regNo = enrolled?.register_number || enrolled?.roll_number || (enrolled as any)?.roll_no || slot.register_number || slot.roll_number || slot.student_id || enrolled?.id || `REG-${1000 + idx}`;
+            const cName = (!isPlaceholderName(slot.student_name) ? slot.student_name : null) || 
+              enrolled?.name || 
+              (slot.student_id ? `Student ${slot.student_id}` : `Student #${idx + 1}`);
+            const regNo = enrolled?.register_number || enrolled?.roll_number || (enrolled as any)?.roll_no || slot.register_number || slot.roll_number || slot.student_id || `REG-${1000 + idx}`;
 
             return {
               id: slot.student_id || slot.studentId || enrolled?.id || `slot_std_${idx + 1}`,
               name: cName,
               register_number: regNo,
               roll_number: regNo,
-              classGroup: enrolled?.classGroup || req.class_group || "BCA - Semester 5",
-              department: enrolled?.department || req.class_group || "BCA",
+              classGroup: enrolled?.classGroup || req.class_group || "Cohort",
+              department: enrolled?.department || req.class_group || "Cohort",
               slotTime: slot.slot_start_time ? `${slot.slot_start_time} - ${slot.slot_end_time}` : undefined,
               gmeetLink: slot.gmeet_link || req.gmeet_link,
               mentorId: slot.mentor_id,
@@ -1895,25 +2133,22 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       // If Raiser or CAM/Admin: return all allocated student slots
       return req.student_slots.map((slot: any, idx: number) => {
         const enrolled = students.find(st => 
-          st.id === slot.student_id || 
-          st.id === slot.studentId || 
-          (st.register_number && (st.register_number === slot.student_id || st.register_number === slot.studentId || st.register_number === slot.roll_number)) ||
-          (st.roll_number && (st.roll_number === slot.student_id || st.roll_number === slot.studentId || st.roll_number === slot.roll_number)) ||
-          ((st as any).roll_no && ((st as any).roll_no === slot.student_id || (st as any).roll_no === slot.studentId || (st as any).roll_no === slot.roll_number)) ||
-          (st.email && (st.email === slot.student_id || st.email === slot.studentId)) ||
-          (st.name && slot.student_name && st.name.toLowerCase().trim() === slot.student_name.toLowerCase().trim())
-        ) || (students.length > 0 ? students[idx % students.length] : null);
+          (slot.student_id && (st.id === slot.student_id || st.register_number === slot.student_id || (st as any).roll_no === slot.student_id)) ||
+          (slot.student_name && !isPlaceholderName(slot.student_name) && st.name?.toLowerCase().trim() === slot.student_name?.toLowerCase().trim())
+        );
 
-        const cName = slot.student_name || slot.studentName || slot.name || enrolled?.name || (slot.student_id ? `Candidate ${slot.student_id}` : `Candidate #${idx + 1}`);
-        const regNo = enrolled?.register_number || enrolled?.roll_number || (enrolled as any)?.roll_no || slot.register_number || slot.roll_number || slot.student_id || enrolled?.id || `REG-${1000 + idx}`;
+        const cName = (!isPlaceholderName(slot.student_name) ? slot.student_name : null) || 
+          enrolled?.name || 
+          (slot.student_id ? `Student ${slot.student_id}` : `Student #${idx + 1}`);
+        const regNo = enrolled?.register_number || enrolled?.roll_number || (enrolled as any)?.roll_no || slot.register_number || slot.roll_number || slot.student_id || `REG-${1000 + idx}`;
 
         return {
           id: slot.student_id || slot.studentId || enrolled?.id || `slot_std_${idx + 1}`,
           name: cName,
           register_number: regNo,
           roll_number: regNo,
-          classGroup: enrolled?.classGroup || req.class_group || "BCA - Semester 5",
-          department: enrolled?.department || req.class_group || "BCA",
+          classGroup: enrolled?.classGroup || req.class_group || "Cohort",
+          department: enrolled?.department || req.class_group || "Cohort",
           slotTime: slot.slot_start_time ? `${slot.slot_start_time} - ${slot.slot_end_time}` : undefined,
           gmeetLink: slot.gmeet_link || req.gmeet_link,
           mentorId: slot.mentor_id,
@@ -1970,8 +2205,13 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       (m.subjects || "").toLowerCase().includes((req?.subject || "").toLowerCase().trim())
     );
 
-  const getEvalForStudent = (interviewId: string, studentId: string) =>
-    evaluationsList.find(ev => ev.interview_id === interviewId && ev.student_id === studentId);
+  const getEvalForStudent = (interviewId: string, studentId?: string, studentName?: string) =>
+    evaluationsList.find(ev => 
+      ev.interview_id === interviewId && (
+        (studentId && ev.student_id === studentId) ||
+        (studentName && ev.student_name && ev.student_name.toLowerCase().trim() === studentName.toLowerCase().trim())
+      )
+    );
 
   // Filtered student list for Evaluation drawer
   const activeReq = interviewsList.find(i => i.id === expandedRequest);
@@ -2810,7 +3050,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                 <p className="text-xs text-slate-400 italic py-4 text-center">No students match filter.</p>
                               ) : (
                                 activeStudentsList.map((st: any) => {
-                                  const evl = getEvalForStudent(req.id, st.id);
+                                  const evl = getEvalForStudent(req.id, st.id, st.name);
                                   const isSelected = selectedStudent?.id === st.id;
                                   return (
                                     <div
@@ -3348,8 +3588,11 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                 </div>
                                 <p className="text-[11px] text-purple-700">
                                   Faculty mentor <strong>{req.mentor_name}</strong> requested external evaluation for {req.student_count || 10} students. Approve to broadcast this request to all Zone Partner Colleges{(() => {
+                                    const originId = req.origin_college_id || req.college_id || defaultCollegeId;
+                                    const originCol = activeCollegesList.find(c => c.id === originId);
+                                    const originKamId = originCol?.kam_id || (originCol as any)?.kamId || currentKAM?.id;
                                     const partnerNames = activeCollegesList
-                                      .filter(c => c.id !== (req.origin_college_id || defaultCollegeId))
+                                      .filter(c => c.id !== originId && (originKamId ? (c.kam_id === originKamId || (c as any).kamId === originKamId) : false))
                                       .map(c => c.name)
                                       .join(", ");
                                     return partnerNames ? ` (${partnerNames})` : "";
@@ -3374,18 +3617,31 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                               {(() => {
                                 const originId = req.origin_college_id || req.college_id || defaultCollegeId;
-                                const partnerCols = activeCollegesList.filter(c => c.id !== originId);
+                                const originCol = activeCollegesList.find(c => c.id === originId);
+                                const originKamId = originCol?.kam_id || (originCol as any)?.kamId || currentKAM?.id;
+                                
+                                // Strictly include only colleges managed by the SAME KAM zone (excluding host campus)
+                                const partnerCols = activeCollegesList.filter(c => 
+                                  c.id !== originId && 
+                                  (originKamId ? (c.kam_id === originKamId || (c as any).kamId === originKamId) : false)
+                                );
                                 
                                 (req.cam_responses || []).forEach((resp: any) => {
                                   if (resp.college_id && resp.college_id !== originId && !partnerCols.some(c => c.id === resp.college_id)) {
-                                    partnerCols.push({ id: resp.college_id, name: resp.college_name || resp.college_id });
+                                    const colObj = activeCollegesList.find(c => c.id === resp.college_id);
+                                    const colKam = colObj?.kam_id || (colObj as any)?.kamId;
+                                    // Exclude colleges belonging to other KAM zones
+                                    if (originKamId && colKam && colKam !== originKamId) {
+                                      return;
+                                    }
+                                    partnerCols.push({ id: resp.college_id, name: resp.college_name || colObj?.name || resp.college_id });
                                   }
                                 });
 
                                 if (partnerCols.length === 0) {
                                   return (
                                     <div className="col-span-full p-4 bg-white border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-500 font-medium">
-                                      No other partner colleges found in database.
+                                      No other partner colleges found under this KAM zone.
                                     </div>
                                   );
                                 }
