@@ -18,7 +18,7 @@ import {
   AreaChart, Area, CartesianGrid, ReferenceLine
 } from "recharts";
 import dynamic from "next/dynamic";
-import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, mapDayOrderToDayName } from "../lib/utils";
+import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, mapDayOrderToDayName, matchCanonicalCourse } from "../lib/utils";
 import { ECAMPUS_LOGO_BASE64 } from "../lib/brandLogoBase64";
 
 const InterviewModule = dynamic(() => import("./InterviewModule").then(mod => mod.InterviewModule), {
@@ -9100,10 +9100,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
   // Download Student Excel Template matching requested headers
   const handleDownloadStudentTemplate = async (classGroupOverride?: string, shiftOverride?: string, deptOverride?: string) => {
-    const campusDepts = Array.from(new Set([
-      ...(collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name?.trim()).filter(Boolean),
-      ...collegeStudents.map(s => s.department?.trim()).filter(Boolean)
-    ])).sort();
+    const allCourses = collegeCourses.length > 0 ? collegeCourses : coursesList;
+    const fromCourses = allCourses.map(c => c.name.trim()).filter(Boolean);
+    const fromStudents = collegeStudents.map(s => s.department?.trim()).filter(Boolean) as string[];
+    const unmappedStudents = fromStudents.filter(d => !matchCanonicalCourse(d, allCourses));
+    const campusDepts = Array.from(new Set([...fromCourses, ...unmappedStudents])).sort();
 
     let extractedDept = "";
     if (classGroupOverride) {
@@ -9113,12 +9114,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       }
     }
 
-    const resolvedDept = (deptOverride && deptOverride.trim())
+    const rawResolvedDept = (deptOverride && deptOverride.trim())
       || (templateDept && templateDept.trim())
       || extractedDept
       || (studentDirDeptFilter && studentDirDeptFilter !== "all" ? studentDirDeptFilter : "")
       || campusDepts[0]
       || "General";
+
+    const matchedCourse = matchCanonicalCourse(rawResolvedDept, allCourses);
+    const resolvedDept = matchedCourse ? matchedCourse.name : rawResolvedDept;
 
     const resolvedShift = shiftOverride || templateShift || "General";
     const resolvedSem = templateSem || "Semester 1";
@@ -9133,7 +9137,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       "Roll No",
       "Department",
       "Shift",
-      "Section",
       "Name",
       "Hire Score",
       "EFSET Score",
@@ -9164,7 +9167,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "21CS001",
         resolvedDept,
         resolvedShift,
-        "A",
         "Anitha R",
         "85",
         "C2",
@@ -9193,7 +9195,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "21CS002",
         resolvedDept,
         resolvedShift,
-        "B",
         "Bala Kumar M",
         "78",
         "B2",
@@ -9273,26 +9274,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       else if (norm === "classgroup" || norm === "class" || norm === "cohort") mapped.classGroup = val;
     });
 
-    // 1. Resolve Department
-    const rawDept = mapped.department || (defaultCG ? defaultCG.split(" - ")[0]?.trim() : "") || templateDept || "General";
-    const normRawDept = rawDept.toLowerCase().replace(/[^a-z0-9]/g, "");
+    // 1. Resolve Department cleanly against registered campus courses
     const allAvailableCourses = collegeCourses.length > 0 ? collegeCourses : coursesList;
-    let matchedKnownDept = allAvailableCourses.find(c => {
-      const normC = c.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-      return normC === normRawDept;
-    });
-    if (!matchedKnownDept) {
-      matchedKnownDept = allAvailableCourses.find(c => {
-        const normC = c.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-        return normRawDept.startsWith(normC) && normC.length >= 3;
-      });
-    }
-    if (!matchedKnownDept && normRawDept.length >= 4) {
-      matchedKnownDept = allAvailableCourses.find(c => {
-        const normC = c.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-        return normC.startsWith(normRawDept) && normRawDept.length >= normC.length * 0.7;
-      });
-    }
+    const rawDept = mapped.department || (defaultCG ? defaultCG.split(" - ")[0]?.trim() : "") || templateDept || "General";
+    const matchedKnownDept = matchCanonicalCourse(rawDept, allAvailableCourses);
     const finalDept = matchedKnownDept ? matchedKnownDept.name : rawDept;
     mapped.department = finalDept;
 
@@ -9322,17 +9307,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
     mapped.semester = rawSem;
 
-    // 4. Resolve Section
+    // 4. Resolve Section (optional legacy storage only)
     if (mapped.section) {
       mapped.section = mapped.section.toString().replace(/^sec(tion)?\s*/i, "").trim().toUpperCase();
     }
 
-    // 5. Construct Class Group directly from row components
-    const secPart = mapped.section ? ` - Sec ${mapped.section}` : "";
+    // 5. Construct Class Group directly from department, shift and semester (NO section!)
     if (mapped.shift && mapped.shift !== "General") {
-      mapped.classGroup = `${mapped.department} - ${mapped.shift} - ${mapped.semester}${secPart}`;
+      mapped.classGroup = `${mapped.department} - ${mapped.shift} - ${mapped.semester}`;
     } else {
-      mapped.classGroup = `${mapped.department} - ${mapped.semester}${secPart}`;
+      mapped.classGroup = `${mapped.department} - ${mapped.semester}`;
     }
 
     // Set college ID
@@ -9361,14 +9345,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         }
 
         const defaultCG = (() => {
-          const fromCourses = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name.trim()).filter(Boolean);
+          const allCourses = collegeCourses.length > 0 ? collegeCourses : coursesList;
+          const fromCourses = allCourses.map(c => c.name.trim()).filter(Boolean);
           const fromStudents = collegeStudents.map(s => s.department?.trim()).filter(Boolean) as string[];
-          const campusDepts = Array.from(new Set([...fromCourses, ...fromStudents])).sort();
-          const dept = (studentDirDeptFilter && studentDirDeptFilter !== "all" && campusDepts.includes(studentDirDeptFilter))
-            ? studentDirDeptFilter
-            : (templateDept && campusDepts.includes(templateDept))
-              ? templateDept
-              : (campusDepts[0] || "General");
+          const unmappedStudents = fromStudents.filter(d => !matchCanonicalCourse(d, allCourses));
+          const campusDepts = Array.from(new Set([...fromCourses, ...unmappedStudents])).sort();
+          const matchedFilterCourse = studentDirDeptFilter && studentDirDeptFilter !== "all"
+            ? matchCanonicalCourse(studentDirDeptFilter, allCourses)
+            : null;
+          const dept = matchedFilterCourse ? matchedFilterCourse.name
+            : (studentDirDeptFilter && studentDirDeptFilter !== "all" && campusDepts.includes(studentDirDeptFilter))
+              ? studentDirDeptFilter
+              : (templateDept && (matchCanonicalCourse(templateDept, allCourses)?.name || templateDept))
+                ? (matchCanonicalCourse(templateDept, allCourses)?.name || templateDept)
+                : (campusDepts[0] || "General");
           const shift = templateShift || getDefaultShiftForCourse(dept);
           const sem = templateSem || "Semester 1";
           return (shift && shift !== "General") ? `${dept} - ${shift} - ${sem}` : `${dept} - ${sem}`;
@@ -10562,9 +10552,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const set = new Set<string>();
     fromCourses.forEach(name => set.add(name));
     fromStudents.forEach(name => {
-      const norm = name.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const exists = fromCourses.some(c => c.toLowerCase().replace(/[^a-z0-9]/g, "") === norm);
-      if (!exists) set.add(name);
+      const matched = matchCanonicalCourse(name, collegeCourses);
+      if (!matched) {
+        set.add(name);
+      }
     });
     return Array.from(set).sort();
   }, [collegeCourses, collegeStudents]);
@@ -20740,11 +20731,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                             const normDept = (str?: string) => (str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
                             const filterNorm = normDept(studentDirDeptFilter);
+                            const activeFilterCourse = studentDirDeptFilter !== "all"
+                              ? matchCanonicalCourse(studentDirDeptFilter, collegeCourses.length > 0 ? collegeCourses : coursesList)
+                              : null;
                             const matchDept = studentDirDeptFilter === "all" || 
                               normDept(s.department) === filterNorm ||
                               normDept(s.department).includes(filterNorm) ||
                               filterNorm.includes(normDept(s.department)) ||
-                              (s.classGroup && normDept(s.classGroup).includes(filterNorm));
+                              (s.classGroup && normDept(s.classGroup).includes(filterNorm)) ||
+                              (activeFilterCourse && (
+                                (s.department && matchCanonicalCourse(s.department, [activeFilterCourse]) !== null) ||
+                                (s.classGroup && matchCanonicalCourse(s.classGroup.split(" - ")[0]?.trim() || "", [activeFilterCourse]) !== null)
+                              ));
 
                             const stSemNum = extractSemNum(s.semester) || extractSemNum(s.classGroup);
                             const matchSem = targetSemNum === null || (stSemNum !== null && stSemNum === targetSemNum);
@@ -22481,21 +22479,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
               {/* Download Student Excel Template Selection Modal */}
               {showTemplateModal && (() => {
-                const fromCourses = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name.trim()).filter(Boolean);
+                const allCourses = collegeCourses.length > 0 ? collegeCourses : coursesList;
+                const fromCourses = allCourses.map(c => c.name.trim()).filter(Boolean);
                 const fromStudents = collegeStudents.map(s => s.department?.trim()).filter(Boolean) as string[];
-                const campusDeptNames = Array.from(new Set([...fromCourses, ...fromStudents])).sort();
-                const deptOptions = campusDeptNames;
+                const unmappedStudents = fromStudents.filter(d => !matchCanonicalCourse(d, allCourses));
+                const deptOptions = Array.from(new Set([...fromCourses, ...unmappedStudents])).sort();
                 const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+                const filterMatched = studentDirDeptFilter && studentDirDeptFilter !== "all"
+                  ? matchCanonicalCourse(studentDirDeptFilter, allCourses)
+                  : null;
                 const selectedDept = (templateDept && deptOptions.includes(templateDept))
                   ? templateDept
-                  : (studentDirDeptFilter && studentDirDeptFilter !== "all" && deptOptions.includes(studentDirDeptFilter))
+                  : (filterMatched ? filterMatched.name : (studentDirDeptFilter && studentDirDeptFilter !== "all" && deptOptions.includes(studentDirDeptFilter))
                     ? studentDirDeptFilter
-                    : (deptOptions[0] || "General");
+                    : (deptOptions[0] || "General"));
 
-                const normSelected = selectedDept.toLowerCase().replace(/[^a-z0-9]/g, "");
-                const selectedCourseObj = (collegeCourses.length > 0 ? collegeCourses : coursesList).find(
-                  c => c.name.toLowerCase().replace(/[^a-z0-9]/g, "") === normSelected
-                );
+                const selectedCourseObj = matchCanonicalCourse(selectedDept, allCourses);
 
                 const shiftOptions = getAvailableShiftsForCourse(selectedDept);
                 const selectedShift = shiftOptions.includes(templateShift) ? templateShift : (shiftOptions[0] || "General");
@@ -22678,22 +22677,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="p-3 bg-white border border-slate-200 rounded-xl flex flex-col justify-center gap-1.5 shadow-xs sm:col-span-1">
                           <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Target Class Cohort</label>
                           {(() => {
-                            const fromCourses = (collegeCourses.length > 0 ? collegeCourses : coursesList).map(c => c.name.trim()).filter(Boolean);
+                            const allCourses = collegeCourses.length > 0 ? collegeCourses : coursesList;
+                            const fromCourses = allCourses.map(c => c.name.trim()).filter(Boolean);
                             const fromStudents = collegeStudents.map(s => s.department?.trim()).filter(Boolean) as string[];
-                            const campusDeptNames = Array.from(new Set([...fromCourses, ...fromStudents])).sort();
-                            const deptOptions = campusDeptNames;
+                            const unmappedStudents = fromStudents.filter(d => !matchCanonicalCourse(d, allCourses));
+                            const deptOptions = Array.from(new Set([...fromCourses, ...unmappedStudents])).sort();
                             const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
                             const current = studentImportPreview.targetClassGroup || "";
 
-                            // Sort by length desc so longer matching department name is matched first
-                            const sortedDepts = [...deptOptions].sort((a, b) => b.length - a.length);
-                            const normCurrent = current.toLowerCase().replace(/[^a-z0-9]/g, "");
-                            const currentDept = sortedDepts.find(d => {
-                              const normD = d.toLowerCase().replace(/[^a-z0-9]/g, "");
-                              return normCurrent.startsWith(normD) || normD === normCurrent || normCurrent.includes(normD);
-                            }) || sortedDepts.find(d => current.toLowerCase().startsWith(d.toLowerCase())) ||
-                                                (deptOptions.includes(current.split(" - ")[0]?.trim()) ? current.split(" - ")[0]?.trim() : "") ||
-                                                deptOptions[0] || "General";
+                            // Resolve current department cleanly against registered courses
+                            const resolvedCurrentCourse = matchCanonicalCourse(current.split(" - ")[0]?.trim(), allCourses);
+                            const currentDept = resolvedCurrentCourse?.name || (deptOptions.includes(current.split(" - ")[0]?.trim()) ? current.split(" - ")[0]?.trim() : "") || deptOptions[0] || "General";
 
                             const shiftOptions: string[] = getAvailableShiftsForCourse(currentDept);
                             const currentShift = shiftOptions.find((s: string) => current.includes(s)) || shiftOptions[0] || "General";
@@ -22708,8 +22702,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 shift: shift,
                                 semester: sem,
                                 classGroup: (shift && shift !== "General")
-                                  ? `${dept} - ${shift} - ${sem}${st.section ? ` - Sec ${st.section}` : ""}`
-                                  : `${dept} - ${sem}${st.section ? ` - Sec ${st.section}` : ""}`
+                                  ? `${dept} - ${shift} - ${sem}`
+                                  : `${dept} - ${sem}`
                               }));
                               setStudentImportPreview({
                                 ...studentImportPreview,

@@ -1125,6 +1125,111 @@ export function isCohortMatching(cg1?: string, cg2?: string, coursesList: any[] 
 }
 
 /**
+ * Canonical course matcher that resolves raw course/department strings (e.g. "CSE", "B.Tech CSE",
+ * "B.Tech - Computer Science and Engineering", "IT", "Information Technology", "AI&DS", "ECE")
+ * to the matching registered course object in the campus courses list.
+ */
+export function matchCanonicalCourse(deptOrCode?: string, courses: any[] = []): any | null {
+  if (!deptOrCode || !courses || courses.length === 0) return null;
+  const raw = String(deptOrCode).trim();
+  if (!raw) return null;
+
+  const norm = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const cleanNorm = norm(raw);
+  if (!cleanNorm) return null;
+
+  // 1. Exact normalized match by name
+  for (const c of courses) {
+    if (c.name && norm(c.name) === cleanNorm) return c;
+  }
+
+  // 2. Exact normalized match by code (e.g. "CSE", "IT", "ECE")
+  for (const c of courses) {
+    if (c.code && norm(c.code) === cleanNorm) return c;
+  }
+
+  // Common aliases mapping
+  const aliasMap: Record<string, string[]> = {
+    cse: ["computer science", "cs", "comp sci", "cse", "computer science and engineering"],
+    it: ["information technology", "infotech", "it"],
+    ece: ["electronics and communication", "ece", "electronics & communication", "electronics and communication engineering"],
+    eee: ["electrical and electronics", "eee", "electrical & electronics", "electrical and electronics engineering"],
+    mech: ["mechanical", "mech", "mechanical engineering"],
+    civil: ["civil", "ce", "civil engineering"],
+    aids: ["artificial intelligence and data science", "ai & ds", "ai and data science", "aids", "ai ds", "artificial intelligence"],
+    ai: ["artificial intelligence"],
+    csbs: ["computer science and business systems", "csbs", "computer science and business"],
+    cyber: ["cyber security", "cyber"],
+    bca: ["bachelor of computer applications", "bca", "computer applications"],
+    mca: ["master of computer applications", "mca"],
+    bba: ["bachelor of business administration", "bba", "business administration"],
+    mba: ["master of business administration", "mba"],
+    biotech: ["biotechnology", "biotech"],
+    biomed: ["biomedical", "bme", "biomedical engineering"]
+  };
+
+  // Helper to strip degree prefix
+  const stripDegree = (s: string) => {
+    return (s || "")
+      .toLowerCase()
+      .replace(/^(b\.?\s*tech|b\.?\s*e|b\.?\s*sc|bachelor\s+of\s+(?:technology|engineering|science|arts|commerce|computer\s+applications|business\s+administration)|m\.?\s*tech|m\.?\s*e|m\.?\s*sc|master\s+of\s+(?:technology|engineering|science|arts|commerce|computer\s+applications|business\s+administration)|bba|mba|bca|mca)\s*[-–:]?\s*/i, "")
+      .replace(/[^a-z0-9]/g, "");
+  };
+
+  const strippedRaw = stripDegree(raw);
+  if (strippedRaw && strippedRaw.length >= 2) {
+    for (const c of courses) {
+      const strippedC = stripDegree(c.name || "");
+      if (strippedC && (strippedC === strippedRaw || strippedC.includes(strippedRaw) || strippedRaw.includes(strippedC))) {
+        return c;
+      }
+    }
+  }
+
+  // 3. Match code or initialism
+  for (const c of courses) {
+    const cCode = c.code ? norm(c.code) : "";
+    if (cCode && (cleanNorm === cCode || cleanNorm.includes(cCode) || cCode.includes(cleanNorm))) {
+      return c;
+    }
+
+    const words = (c.name || "").replace(/with|and|for|of|in|the/gi, " ").split(/[\s\-–&/]+/).filter(Boolean);
+    const initialism = words.map((w: string) => w[0]?.toLowerCase()).join("");
+    if (initialism && initialism.length >= 2) {
+      if (cleanNorm === initialism || cleanNorm.endsWith(initialism) || initialism.endsWith(cleanNorm)) {
+        return c;
+      }
+    }
+  }
+
+  // 4. Check alias map
+  for (const [key, aliases] of Object.entries(aliasMap)) {
+    const rawMatches = cleanNorm === key || aliases.some(a => cleanNorm === norm(a) || cleanNorm.includes(norm(a)));
+    if (rawMatches) {
+      for (const c of courses) {
+        const cNorm = norm(c.name || "");
+        const codeNorm = norm(c.code || "");
+        if (codeNorm === key || cNorm.includes(key) || aliases.some(a => cNorm.includes(norm(a)))) {
+          return c;
+        }
+      }
+    }
+  }
+
+  // 5. Substring containment if sufficiently specific
+  for (const c of courses) {
+    const cNorm = norm(c.name || "");
+    if (cNorm.length >= 4 && cleanNorm.length >= 4) {
+      if (cNorm.includes(cleanNorm) || cleanNorm.includes(cNorm)) {
+        return c;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Dynamically resolves all timetable period time slot ranges for a specific college
  * from its actual database timetable slots and configured shift parameters.
  */
