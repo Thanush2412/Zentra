@@ -790,7 +790,11 @@ const StudentConductedRosterDrawer = ({
                             })() : "—"}
                           </td>
                           <td className="px-3 py-2">
-                            {isAssignedToSlot && (slot?.gmeet_link || st.gmeet_link || sessionMeetLink) ? (
+                            {interview.type === "internal" ? (
+                              <span className="text-[9.5px] font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 inline-flex items-center gap-1">
+                                <User className="w-3 h-3 text-teal-600" /> In-Person
+                              </span>
+                            ) : isAssignedToSlot && (slot?.gmeet_link || st.gmeet_link || sessionMeetLink) ? (
                               <a
                                 href={slot?.gmeet_link || st.gmeet_link || sessionMeetLink}
                                 target="_blank"
@@ -927,8 +931,22 @@ const StudentConductedRosterDrawer = ({
                 </div>
               )}
 
-              {/* Event 4: Google Meet Generated */}
-              {interview.gmeet_link && (
+              {/* Event 4: Evaluation Mode / Google Meet */}
+              {interview.type === "internal" ? (
+                <div className="relative">
+                  <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-teal-600 border-2 border-white shadow-2xs" />
+                  <div className="bg-teal-50/60 border border-teal-200 rounded-xl p-3.5 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-teal-900 flex items-center gap-1">
+                        <User className="w-3.5 h-3.5 text-teal-600" /> 4. In-Person Campus Evaluation
+                      </span>
+                    </div>
+                    <p className="text-xs text-teal-800 font-medium">
+                      Conducted on campus in assigned faculty cabins/labs. No Google Meet required.
+                    </p>
+                  </div>
+                </div>
+              ) : interview.gmeet_link ? (
                 <div className="relative">
                   <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-emerald-600 border-2 border-white shadow-2xs" />
                   <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3.5 space-y-1">
@@ -953,7 +971,7 @@ const StudentConductedRosterDrawer = ({
                     </p>
                   </div>
                 </div>
-              )}
+              ) : null}
 
               {/* Event 5: Evaluations Activity */}
               {evalCount > 0 && (
@@ -1091,6 +1109,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   const [contentScore, setContentScore] = useState(7);
   const [techScore, setTechScore] = useState(7);
   const [confidenceScore, setConfidenceScore] = useState(7);
+  const [actualStartTime, setActualStartTime] = useState("");
+  const [actualEndTime, setActualEndTime] = useState("");
+  const [actualDuration, setActualDuration] = useState<number>(15);
 
   // Structured Questions State ("question should be")
   const [evalQuestions, setEvalQuestions] = useState<StructuredQuestion[]>([]);
@@ -1205,6 +1226,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         setTechScore(existingEval.technical_score || 7);
         setConfidenceScore(existingEval.confidence_score || 7);
         setRemarks(existingEval.remarks || "");
+        setActualStartTime(existingEval.actual_start_time || "");
+        setActualEndTime(existingEval.actual_end_time || "");
+        setActualDuration(existingEval.actual_duration_minutes ?? 15);
 
         // Parse structured questions if JSON, else wrap string
         if (existingEval.questions_asked) {
@@ -1224,9 +1248,13 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       }
 
       // Default preset questions based on subject
+      const mySlot = (req?.student_slots || []).find((s: any) => s.student_id === selectedStudent.id);
       setEvalQuestions(getSubjectQuestionsPreset(req?.subject || ""));
       setEvalAttendance("present");
       setCommScore(7); setContentScore(7); setTechScore(7); setConfidenceScore(7); setRemarks("");
+      setActualStartTime(mySlot?.slot_start_time || "");
+      setActualEndTime(mySlot?.slot_end_time || "");
+      setActualDuration(15);
     }
   }, [selectedStudent, expandedRequest]);
 
@@ -1376,11 +1404,12 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
     setIsSavingEval(true);
     try {
+      const isAbsent = evalAttendance === "absent";
       // Average score combines questions score + overall skill ratings
-      const qScoreSum = evalQuestions.reduce((acc, q) => acc + (Number(q.score) || 0), 0);
-      const qAvg = evalQuestions.length > 0 ? qScoreSum / evalQuestions.length : 7;
-      const metricsAvg = (commScore + contentScore + techScore + confidenceScore) / 4;
-      const combinedScore = Math.round((qAvg + metricsAvg) / 2);
+      const qScoreSum = isAbsent ? 0 : evalQuestions.reduce((acc, q) => acc + (Number(q.score) || 0), 0);
+      const qAvg = isAbsent ? 0 : (evalQuestions.length > 0 ? qScoreSum / evalQuestions.length : 7);
+      const metricsAvg = isAbsent ? 0 : ((commScore + contentScore + techScore + confidenceScore) / 4);
+      const combinedScore = isAbsent ? 0 : Math.round((qAvg + metricsAvg) / 2);
 
       const res = await fetch("/api/interviews/evaluate", {
         method: "POST",
@@ -1393,18 +1422,27 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           mentor_id: currentMentor?.id || "mentor_1",
           mentor_name: currentMentor?.name || currentUserName,
           attendance: evalAttendance,
-          communication_score: commScore,
-          content_score: contentScore,
-          technical_score: techScore,
-          confidence_score: confidenceScore,
-          questions_asked: JSON.stringify(evalQuestions), // Structured JSON questions
-          remarks,
-          status: combinedScore >= 6 ? "Cleared" : "Needs Improvement",
+          is_absent: isAbsent,
+          communication_score: isAbsent ? 0 : commScore,
+          content_score: isAbsent ? 0 : contentScore,
+          technical_score: isAbsent ? 0 : techScore,
+          confidence_score: isAbsent ? 0 : confidenceScore,
+          questions_asked: isAbsent ? "[]" : JSON.stringify(evalQuestions), // Structured JSON questions
+          remarks: isAbsent ? (remarks || "Candidate absent for interview") : remarks,
+          status: isAbsent ? "Absent" : (combinedScore >= 6 ? "Cleared" : "Needs Improvement"),
+          actual_start_time: isAbsent ? null : (actualStartTime || null),
+          actual_end_time: isAbsent ? null : (actualEndTime || null),
+          actual_duration_minutes: isAbsent ? 0 : actualDuration,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        toast(`Evaluation marks saved for ${selectedStudent.name}!`, "success");
+        toast(
+          isAbsent
+            ? `${selectedStudent.name} marked absent. Period attendance synchronized!`
+            : `Evaluation marks saved for ${selectedStudent.name}! Period attendance updated.`,
+          "success"
+        );
         setSelectedStudent(null);
         fetchInterviews();
       } else {
@@ -1427,6 +1465,14 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       student_count: mentorCountMap[id] || 3
     }));
 
+    const targetReq = interviewsList.find(i => i.id === interviewId);
+    const cleanCG = (targetReq?.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
+    const cohortStudents = students.filter(s =>
+      (s.classGroup && (s.classGroup.toLowerCase() === cleanCG.toLowerCase() || s.classGroup.toLowerCase().includes(cleanCG.toLowerCase()))) ||
+      (s.department && (s.department.toLowerCase() === cleanCG.toLowerCase() || s.department.toLowerCase().includes(cleanCG.toLowerCase())))
+    );
+    const selectedIds = cohortStudents.slice(0, camStudentCount).map(s => s.id);
+
     setIsAssigning(true);
     try {
       const res = await fetch("/api/interviews/assign", {
@@ -1439,7 +1485,8 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           time_slot: camTimeSlot,
           mentor_schedule: mentorSchedulePayload,
           cm_name: currentUserName,
-          gmeet_link: cmGmeetLink.trim(),
+          gmeet_link: targetReq?.type === "internal" ? "" : cmGmeetLink.trim(),
+          selected_student_ids: selectedIds,
         }),
       });
       const data = await res.json();
@@ -2422,7 +2469,11 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                             <div>Target Count: <strong className="text-slate-800">{inv.student_count || 10} Students</strong></div>
                             <div>Topics: <strong className="text-slate-800">{inv.topics || "General Review"}</strong></div>
                           </div>
-                          {inv.gmeet_link && (
+                          {inv.type === "internal" ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-teal-800 font-bold bg-teal-50 px-3 py-1.5 rounded-lg border border-teal-200">
+                              <User className="w-3.5 h-3.5 text-teal-600" /> In-Person Campus Evaluation
+                            </span>
+                          ) : inv.gmeet_link ? (
                             <a 
                               href={inv.gmeet_link} 
                               target="_blank" 
@@ -2431,7 +2482,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                             >
                               <Video className="w-3.5 h-3.5" /> Join Google Meet Link →
                             </a>
-                          )}
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -2637,11 +2688,15 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                           <span className="flex items-center gap-1"><Users className="w-3 h-3 text-[#D528A2]" />
                             {reqStudents.length > 0 ? `${evaluatedCount}/${reqStudents.length} Evaluated` : "Count Pending CM"}
                           </span>
-                          {req.gmeet_link && (
+                          {req.type === "internal" ? (
+                            <span className="flex items-center gap-1 text-teal-700 font-bold">
+                              <User className="w-3 h-3 text-teal-600" /> In-Person (Campus)
+                            </span>
+                          ) : req.gmeet_link ? (
                             <a href={req.gmeet_link} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-indigo-600 font-bold hover:underline">
                               <Video className="w-3 h-3" /> Meet Live
                             </a>
-                          )}
+                          ) : null}
                         </div>
                       </div>
 
@@ -2839,6 +2894,86 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                       >{att}</button>
                                     ))}
                                   </div>
+                                  {evalAttendance === "absent" && (
+                                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200/80 text-[11px] text-rose-800 flex items-start gap-2">
+                                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                                      <div>
+                                        <span className="font-extrabold block">Marking Candidate as Absent</span>
+                                        <span className="text-[10px] text-rose-700">This will automatically sync their timetable class period to Absent and log the audit record. Rubric scores will be zeroed.</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Scheduled Slot & Actual Timing Tracker */}
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                    <div className="flex items-center gap-1.5 text-slate-700 font-bold">
+                                      <Clock className="w-3.5 h-3.5 text-[#D528A2]" />
+                                      <span>Scheduled Window:</span>
+                                      <span className="font-mono text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
+                                        {(() => {
+                                          const mySlot = (req.student_slots || []).find((s: any) => s.student_id === selectedStudent.id);
+                                          return mySlot ? `${mySlot.slot_start_time} - ${mySlot.slot_end_time}` : (req.preferred_start_time || "15 min slot");
+                                        })()}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[10px] uppercase font-bold text-slate-400">Actual Duration:</span>
+                                      <span className="font-mono font-black text-xs text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                                        {evalAttendance === "absent" ? "0 mins (Absent)" : `${actualDuration} mins`}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {evalAttendance !== "absent" && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 border-t border-slate-200/60">
+                                      <div className="flex items-center gap-1.5">
+                                        <label className="text-[10px] text-slate-500 font-bold uppercase shrink-0">Actual Start:</label>
+                                        <input
+                                          type="text"
+                                          placeholder="e.g. 09:16 AM"
+                                          value={actualStartTime}
+                                          onChange={e => setActualStartTime(e.target.value)}
+                                          className="p-1 text-xs font-mono font-bold border border-slate-200 rounded-lg bg-white flex-1 outline-none"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const now = new Date();
+                                            const formatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                            setActualStartTime(formatted);
+                                          }}
+                                          className="text-[9px] font-extrabold px-1.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded transition-all cursor-pointer"
+                                        >
+                                          Now
+                                        </button>
+                                      </div>
+
+                                      <div className="flex items-center gap-1.5">
+                                        <label className="text-[10px] text-slate-500 font-bold uppercase shrink-0">Actual End:</label>
+                                        <input
+                                          type="text"
+                                          placeholder="e.g. 09:33 AM"
+                                          value={actualEndTime}
+                                          onChange={e => setActualEndTime(e.target.value)}
+                                          className="p-1 text-xs font-mono font-bold border border-slate-200 rounded-lg bg-white flex-1 outline-none"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const now = new Date();
+                                            const formatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                            setActualEndTime(formatted);
+                                          }}
+                                          className="text-[9px] font-extrabold px-1.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded transition-all cursor-pointer"
+                                        >
+                                          Now
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* ── QUESTION BY QUESTION EVALUATION SECTION ("question should be") ── */}
@@ -3425,21 +3560,31 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                           </p>
                         </div>
 
-                        {/* Google Meet Link */}
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 uppercase font-extrabold tracking-wider block">
-                            Google Meet Link <span className="text-slate-400 font-normal">(Optional for External)</span>
-                          </label>
-                          <input
-                            type="url" value={cmGmeetLink}
-                            onChange={e => setCmGmeetLink(e.target.value)}
-                            placeholder="https://meet.google.com/xxx-xxxx-xxx"
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-300"
-                          />
-                          <p className="text-[9px] text-slate-400 font-medium">
-                            Auto-dispatched in notification emails
-                          </p>
-                        </div>
+                        {/* Google Meet Link (Only for External) vs In-Person Campus Notice */}
+                        {req.type === "external" ? (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] text-slate-500 uppercase font-extrabold tracking-wider block">
+                              Google Meet Link <span className="text-slate-400 font-normal">(Virtual Cross-Campus Panel)</span>
+                            </label>
+                            <input
+                              type="url" value={cmGmeetLink}
+                              onChange={e => setCmGmeetLink(e.target.value)}
+                              placeholder="https://meet.google.com/xxx-xxxx-xxx"
+                              className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-300"
+                            />
+                            <p className="text-[9px] text-slate-400 font-medium">
+                              Auto-dispatched with isolated calendar invite per candidate
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="p-3 bg-teal-50/70 border border-teal-200/80 rounded-xl flex items-start gap-2 text-teal-900 text-xs">
+                            <User className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="block font-bold text-[11px]">In-Person Campus Evaluation</strong>
+                              <span className="text-[10px] text-teal-700">Internal interviews are conducted physically in faculty cabins/labs. No Google Meet link required.</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Available Mentors & Free Period Schedule Matrix */}
@@ -3653,6 +3798,78 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                         </div>
                       </div>
 
+                      {/* Dedicated Priority Allocation & Remaining Students Section */}
+                      {(() => {
+                        const cleanCG = (req.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
+                        const cohortStudents = students.filter(s =>
+                          (s.classGroup && (s.classGroup.toLowerCase() === cleanCG.toLowerCase() || s.classGroup.toLowerCase().includes(cleanCG.toLowerCase()))) ||
+                          (s.department && (s.department.toLowerCase() === cleanCG.toLowerCase() || s.department.toLowerCase().includes(cleanCG.toLowerCase())))
+                        );
+
+                        if (cohortStudents.length === 0) return null;
+
+                        const capacity = camStudentCount || 10;
+                        const selectedList = cohortStudents.slice(0, capacity);
+                        const remainingList = cohortStudents.slice(capacity);
+
+                        return (
+                          <div className="space-y-3 pt-3 border-t border-slate-200/80">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                <Users className="w-3.5 h-3.5 text-[#D528A2]" /> Priority Cohort Allocation ({cohortStudents.length} Enrolled)
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-500">
+                                Allocated: <strong className="text-indigo-600 font-extrabold">{selectedList.length}</strong> • Remaining: <strong className="text-amber-600 font-extrabold">{remainingList.length}</strong>
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {/* Selected Students Panel */}
+                              <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-2">
+                                <div className="flex items-center justify-between text-[11px] font-black text-emerald-900">
+                                  <span>[SELECTED] for this evaluation ({selectedList.length}/{capacity})</span>
+                                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full uppercase">Top Priority</span>
+                                </div>
+                                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                  {selectedList.map((st, idx) => (
+                                    <div key={st.id || idx} className="p-1.5 rounded-lg bg-white border border-emerald-150 text-xs flex items-center justify-between">
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className="text-[9.5px] font-black font-mono text-emerald-700 bg-emerald-50 px-1 rounded">#{idx + 1}</span>
+                                        <span className="font-bold text-slate-800 truncate">{st.name}</span>
+                                      </div>
+                                      <span className="text-[9.5px] font-mono text-slate-400 shrink-0">{st.roll_number || st.register_number || st.id}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Remaining Students Panel */}
+                              <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/40 space-y-2">
+                                <div className="flex items-center justify-between text-[11px] font-black text-amber-900">
+                                  <span>REMAINING STUDENTS (Unallocated) ({remainingList.length})</span>
+                                  <span className="text-[9px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full uppercase">Next Cycle</span>
+                                </div>
+                                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                  {remainingList.length === 0 ? (
+                                    <p className="text-[11px] text-emerald-700 italic py-3 text-center">All cohort students are allocated in this cycle!</p>
+                                  ) : (
+                                    remainingList.map((st, idx) => (
+                                      <div key={st.id || idx} className="p-1.5 rounded-lg bg-white border border-amber-150 text-xs flex items-center justify-between">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <span className="text-[9.5px] font-black font-mono text-amber-700 bg-amber-50 px-1 rounded">#{selectedList.length + idx + 1}</span>
+                                          <span className="font-semibold text-slate-700 truncate">{st.name}</span>
+                                        </div>
+                                        <span className="text-[9.5px] font-mono text-slate-400 shrink-0">{st.roll_number || st.register_number || st.id}</span>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-200">
                         <div className="text-xs text-slate-600 font-semibold">
                           <strong className="text-indigo-600 font-black">{mappedMentorIds.length}</strong> mentor(s) scheduled
@@ -3762,12 +3979,16 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                 Mark Complete
                               </button>
                             )}
-                            {i.gmeet_link && (
+                            {i.type === "internal" ? (
+                              <span className="flex items-center gap-1 text-teal-700 bg-teal-50 border border-teal-200 text-[10px] font-bold px-2 py-1 rounded-lg">
+                                <User className="w-3 h-3 text-teal-600" /> In-Person
+                              </span>
+                            ) : i.gmeet_link ? (
                               <a href={i.gmeet_link} target="_blank" rel="noreferrer"
                                 className="flex items-center gap-1 text-indigo-600 bg-indigo-50 border border-indigo-200 text-[10px] font-bold px-2 py-1 rounded-lg hover:bg-indigo-100 transition-all">
                                 <Video className="w-3 h-3 text-indigo-600" /> Meet
                               </a>
-                            )}
+                            ) : null}
                             <button
                               onClick={() => handleDeleteInterview(i.id)}
                               title="Delete Interview"

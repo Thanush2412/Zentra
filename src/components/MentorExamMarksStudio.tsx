@@ -71,6 +71,9 @@ export const MentorExamMarksStudio: React.FC = () => {
   const [examTabFilter, setExamTabFilter] = useState<"all" | "ready" | "upcoming">("ready");
   const [examSearch, setExamSearch] = useState("");
 
+  // Step 0: Exam type selection
+  const [selectedExamType, setSelectedExamType] = useState<string | null>(null);
+
   // Evaluation Roster states
   const [selectedExam, setSelectedExam] = useState<ExamItem | null>(null);
   const [roster, setRoster] = useState<StudentRosterRow[]>([]);
@@ -133,6 +136,18 @@ export const MentorExamMarksStudio: React.FC = () => {
       return true;
     });
   }, [exams, currentMentor, examSearch, examTabFilter, todayStr]);
+
+  // Unique exam types for Step 0 grouping
+  const uniqueExamTypes = useMemo(() => {
+    const types = Array.from(new Set(filteredExams.map(e => e.exam_type))).sort();
+    return types;
+  }, [filteredExams]);
+
+  // Exams filtered to the selected exam type (for Step 1 subject list)
+  const examTypeExams = useMemo(() => {
+    if (!selectedExamType) return filteredExams;
+    return filteredExams.filter(e => e.exam_type === selectedExamType);
+  }, [filteredExams, selectedExamType]);
 
   // Modal state for CAM Marks Edit Request
   const [editRequestModalOpen, setEditRequestModalOpen] = useState(false);
@@ -506,21 +521,35 @@ export const MentorExamMarksStudio: React.FC = () => {
       </div>
 
       {!selectedExamId ? (
-        /* STEP 1: SELECT AN EXAM TO GRADE */
+        /* STEP 0 + 1: EXAM TYPE PICKER → SUBJECT LIST */
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
+          {/* Header */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-150 pb-4">
-            <div>
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-indigo-600" />
-                Select Assessment for Marks Entry
-              </h2>
-              <p className="text-xs text-slate-450 mt-0.5">
-                Showing scheduled exams across your departments & assigned courses.
-              </p>
+            <div className="flex items-center gap-3">
+              {selectedExamType && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedExamType(null)}
+                  className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                >
+                  ← All Types
+                </button>
+              )}
+              <div>
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <BookOpen className="h-4 w-4 text-indigo-600" />
+                  {selectedExamType ? `${selectedExamType} — Select Subject` : "Select Assessment Type"}
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {selectedExamType
+                    ? `${examTypeExams.length} subject(s) in ${selectedExamType}`
+                    : "Pick an exam type to see its subjects and enter marks."}
+                </p>
+              </div>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-              {/* Tab filters: Ready for grading vs upcoming */}
+              {/* Tab filters */}
               <div className="flex items-center p-1 bg-slate-100 rounded-xl">
                 {(["ready", "upcoming", "all"] as const).map((t) => (
                   <button
@@ -533,16 +562,16 @@ export const MentorExamMarksStudio: React.FC = () => {
                         : "text-slate-500 hover:text-slate-800"
                     }`}
                   >
-                    {t === "ready" ? "Ready for Grading" : t === "upcoming" ? "Upcoming" : "All Exams"}
+                    {t === "ready" ? "Ready" : t === "upcoming" ? "Upcoming" : "All"}
                   </button>
                 ))}
               </div>
 
-              <div className="relative w-full sm:w-60">
+              <div className="relative w-full sm:w-56">
                 <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search subject, exam..."
+                  placeholder="Search subject or exam..."
                   value={examSearch}
                   onChange={(e) => setExamSearch(e.target.value)}
                   className="w-full pl-9 pr-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-indigo-500"
@@ -562,76 +591,130 @@ export const MentorExamMarksStudio: React.FC = () => {
                 <Award className="h-6 w-6" />
               </div>
               <h3 className="text-sm font-bold text-slate-800">No Assessment Schedules Found</h3>
-              <p className="text-xs text-slate-455 mt-1 max-w-md mx-auto">
-                No exams match your current filter. When Campus Managers schedule CIA assessments or finals, they will appear here for evaluation.
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                No exams match your current filter. When Campus Managers schedule assessments, they will appear here.
               </p>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredExams.map((ex) => {
-                const isPastOrToday = ex.exam_date <= todayStr;
+          ) : !selectedExamType ? (
+            /* STEP 0: Exam Type Cards */
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {uniqueExamTypes.map((examType) => {
+                const typeExams = filteredExams.filter(e => e.exam_type === examType);
+                const conductedCount = typeExams.filter(e => e.exam_date <= todayStr).length;
+                const minDate = typeExams.map(e => e.exam_date).sort()[0];
+                const maxDate = typeExams.map(e => e.exam_date).sort().reverse()[0];
                 return (
-                  <div
-                    key={ex.id}
-                    className="p-5 rounded-2xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all bg-white flex flex-col justify-between space-y-4 group"
+                  <button
+                    key={examType}
+                    type="button"
+                    onClick={() => setSelectedExamType(examType)}
+                    className="p-5 rounded-2xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all bg-white flex flex-col items-start gap-3 text-left group cursor-pointer"
                   >
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          {ex.exam_type}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
-                          isPastOrToday
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                            : "bg-slate-100 text-slate-600"
-                        }`}>
-                          {isPastOrToday ? "Conducted / Ready" : "Upcoming"}
-                        </span>
-                      </div>
-
-                      <div>
-                        <h3 className="font-extrabold text-slate-900 text-sm group-hover:text-indigo-600 transition-colors">
-                          {ex.subject_name}
-                        </h3>
-                        <div className="text-xs text-slate-500 font-semibold mt-0.5">
-                          {ex.department} • {ex.semester}
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5 pt-2 border-t border-slate-100 text-[11px] text-slate-600 font-medium">
-                        <div className="flex items-center justify-between gap-1.5">
-                          <div className="flex items-center gap-1.5">
-                            <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                            <span>Date: <strong>{ex.exam_date}</strong></span>
-                          </div>
-                          {ex.day_order && ex.day_order !== "None" && (
-                            <span className="px-2 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-[9.5px] font-black uppercase">
-                              {ex.day_order}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                          <span>Timing: <strong>{ex.session_time || `${ex.start_time} - ${ex.end_time}`}</strong></span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Award className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                          <span>Scale: <strong>Out of {ex.max_marks || 50}</strong> (Pass: {ex.passing_marks || 20})</span>
-                        </div>
-                      </div>
+                    <div className="flex items-center justify-between w-full">
+                      <span className="px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm">
+                        {examType}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                        {typeExams.length} subject{typeExams.length !== 1 ? "s" : ""}
+                      </span>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => selectExamForGrading(ex)}
-                      className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
-                    >
-                      <Edit3 className="h-4 w-4" />
-                      <span>{isPastOrToday ? "Mark Attendance & Enter Marks →" : "Preview Marksheet →"}</span>
-                    </button>
-                  </div>
+                    <div className="w-full space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-500 font-medium">Conducted / Ready</span>
+                        <span className="font-extrabold text-emerald-700">{conductedCount} / {typeExams.length}</span>
+                      </div>
+                      {/* Progress bar */}
+                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-emerald-500 to-indigo-500 rounded-full transition-all"
+                          style={{ width: `${typeExams.length > 0 ? (conductedCount / typeExams.length) * 100 : 0}%` }}
+                        />
+                      </div>
+                      {minDate && (
+                        <p className="text-[10px] text-slate-400 font-medium">
+                          {minDate === maxDate ? minDate : `${minDate} → ${maxDate}`}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1 text-indigo-600 text-xs font-extrabold group-hover:gap-2 transition-all">
+                      <span>Enter Marks</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </div>
+                  </button>
                 );
               })}
+            </div>
+          ) : (
+            /* STEP 1: Subject Cards within selected Exam Type */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {examTypeExams.length === 0 ? (
+                <div className="col-span-full py-10 text-center text-slate-400 text-sm font-bold">
+                  No subjects found for <strong>{selectedExamType}</strong> matching the current filter.
+                </div>
+              ) : (
+                examTypeExams.map((ex) => {
+                  const isPastOrToday = ex.exam_date <= todayStr;
+                  return (
+                    <div
+                      key={ex.id}
+                      className="p-5 rounded-2xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all bg-white flex flex-col justify-between space-y-4 group"
+                    >
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {ex.exam_type}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
+                            isPastOrToday
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {isPastOrToday ? "Ready" : "Upcoming"}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h3 className="font-extrabold text-slate-900 text-sm group-hover:text-indigo-600 transition-colors">
+                            {ex.subject_name}
+                          </h3>
+                          <div className="text-xs text-slate-500 font-semibold mt-0.5">
+                            {ex.department} • {ex.semester}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 pt-2 border-t border-slate-100 text-[11px] text-slate-600 font-medium">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                              <span>Date: <strong>{ex.exam_date}</strong></span>
+                            </div>
+                            {ex.day_order && ex.day_order !== "None" && (
+                              <span className="px-2 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-[9.5px] font-black uppercase">
+                                {ex.day_order}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Clock className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                            <span>Timing: <strong>{ex.session_time || `${ex.start_time} - ${ex.end_time}`}</strong></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => selectExamForGrading(ex)}
+                        className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                        <span>{isPastOrToday ? "Mark Attendance & Enter Marks →" : "Preview Roster →"}</span>
+                      </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
         </div>

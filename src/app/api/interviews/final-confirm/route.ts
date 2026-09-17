@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { generate15MinSlotsForSegment, parseTimeToMinutes } from "@/lib/interview-priority-engine";
 import { dispatchExternalInterviewNotifications } from "@/lib/interview-notifications";
-import { createGoogleCalendarEvent } from "@/lib/google-calendar";
+import { createGoogleCalendarEvent, generateStudentGCalUrl, generateGoogleMeetCode } from "@/lib/google-calendar";
 
 export async function POST(request: Request) {
   try {
@@ -54,42 +54,46 @@ export async function POST(request: Request) {
         [interview_id]
       );
 
-      // Fetch actual enrolled students for this class cohort
-      const enrolledStudents = await db.all(
+      // Fetch actual enrolled students for this class cohort with robust normalized matching
+      const cleanCG = (interview.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
+      let enrolledStudents = await db.all(
         `SELECT id, name, email FROM students 
-         WHERE (LOWER(classGroup) = LOWER(?) OR LOWER(department) = LOWER(?))
+         WHERE (LOWER(TRIM(classGroup)) = LOWER(TRIM(?)) OR LOWER(TRIM(department)) = LOWER(TRIM(?)) OR classGroup LIKE ? OR department LIKE ?)
          ORDER BY id ASC`,
-        [interview.class_group || "", interview.class_group || ""]
+        [cleanCG, cleanCG, `%${cleanCG}%`, `%${cleanCG}%`]
       );
 
-      // Fetch faculty emails
-      const mentorIds = allocations.map((a: any) => a.mentor_id).filter(Boolean);
-      let mentorEmails: string[] = [];
-      if (mentorIds.length > 0) {
-        const placeholders = mentorIds.map(() => "?").join(",");
-        const mentorsFound = await db.all(`SELECT email FROM mentors WHERE id IN (${placeholders})`, mentorIds);
-        mentorEmails = mentorsFound.map((m: any) => m.email).filter(Boolean);
+      if (!enrolledStudents || enrolledStudents.length === 0) {
+        const colId = interview.college_id || null;
+        if (colId) {
+          enrolledStudents = await db.all(
+            `SELECT id, name, email FROM students WHERE college_id = ? ORDER BY id ASC LIMIT 50`,
+            [colId]
+          );
+        } else {
+          enrolledStudents = await db.all(
+            `SELECT id, name, email FROM students ORDER BY id ASC LIMIT 50`
+          );
+        }
       }
 
-      const candidateEmails = enrolledStudents.map((s: any) => s.email).filter(Boolean);
-      const allAttendees = Array.from(new Set([...mentorEmails, ...candidateEmails]));
+      // Fetch faculty emails map
+      const mentorIds = allocations.map((a: any) => a.mentor_id).filter(Boolean);
+      const mentorEmailMap = new Map<string, string>();
+      if (mentorIds.length > 0) {
+        const placeholders = mentorIds.map(() => "?").join(",");
+        const mentorsFound = await db.all(`SELECT id, email FROM mentors WHERE id IN (${placeholders})`, mentorIds);
+        mentorsFound.forEach((m: any) => {
+          if (m.email) mentorEmailMap.set(m.id, m.email);
+        });
+      }
 
-      // 2. Generate Real Google Calendar Event & Google Meet Link
-      const gcalResult = await createGoogleCalendarEvent({
-        title: `Structured Interview: ${interview.subject} (${interview.class_group || 'Cohort'})`,
-        description: `Faculty evaluation assessment session for ${interview.subject}.\nCohort: ${interview.class_group || 'All'}\nAssigned Candidates: ${allocations.reduce((sum: number, a: any) => sum + (Number(a.allocated_student_count) || 0), 0)}\nAssigned Mentors: ${allocations.map((a: any) => a.mentor_name).join(', ')}`,
-        targetDate: interview.target_date || new Date().toISOString().slice(0, 10),
-        startTime: interview.preferred_start_time || "08:20 AM",
-        endTime: "09:10 AM",
-        attendees: allAttendees,
-        existingMeetLink: interview.gmeet_link,
-        interviewId: interview_id
-      });
+      // 2. Base conference room for external session
+      const baseMeetCode = interview.gmeet_link && interview.gmeet_link.includes("meet.google.com")
+        ? interview.gmeet_link
+        : `https://meet.google.com/${generateGoogleMeetCode()}`;
 
-      const gmeetLink = gcalResult.gmeet_link;
-      const gcalLink = gcalResult.gcal_link;
-
-      // 3. Generate and insert 15-minute non-overlapping student slots
+      // 3. Generate and insert 15-minute non-overlapping student slots with ISOLATED student privacy
       await db.run("DELETE FROM student_interview_slots WHERE interview_id = ?", [interview_id]);
 
       let totalAllocatedStudents = 0;
@@ -112,13 +116,28 @@ export async function POST(request: Request) {
           startMins
         );
 
+        const mentorEmail = mentorEmailMap.get(alloc.mentor_id) || "";
+
         for (const s of slots) {
           const slotId = `slot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
           const realStudent = enrolledStudents[studentCursor] || {
             id: s.student_id,
-            name: s.student_name
+            name: s.student_name,
+            email: undefined
           };
           studentCursor++;
+
+          // Isolated 1-on-1 Google Calendar link (strictly student + mentor ONLY, zero cross-student email sharing)
+          const studentGCalUrl = generateStudentGCalUrl({
+            studentName: realStudent.name || s.student_name,
+            studentEmail: realStudent.email,
+            subject: interview.subject || "Interview",
+            targetDate: interview.target_date || new Date().toISOString().slice(0, 10),
+            slotStartTime: s.slot_start_time,
+            slotEndTime: s.slot_end_time,
+            gmeetLink: baseMeetCode,
+            mentorName: s.mentor_name
+          });
 
           await db.run(
             `INSERT INTO student_interview_slots (
@@ -137,8 +156,8 @@ export async function POST(request: Request) {
               s.college_id,
               s.slot_start_time,
               s.slot_end_time,
-              gmeetLink,
-              gcalLink,
+              baseMeetCode,
+              studentGCalUrl,
               interview.subject,
               interview.target_date,
               "scheduled",
@@ -147,6 +166,10 @@ export async function POST(request: Request) {
           );
         }
       }
+
+      const gmeetLink = baseMeetCode;
+      const gcalLink: string | null = null;
+
 
       // 4. Update allocations to confirmed
       await db.run(
@@ -190,7 +213,7 @@ export async function POST(request: Request) {
           originCollegeId: interview.origin_college_id || interview.college_id,
           actionType: "accepted",
           gmeetLink,
-          gcalLink,
+          gcalLink: gcalLink || undefined,
           actorName: actor_name
         });
       } catch (notifErr) {

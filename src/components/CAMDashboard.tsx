@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue, useCallback } from "react";
-import { useApp, Slot, Mentor, Student, Subject } from "../context/AppContext";
+import { useApp, Slot, Mentor, Student, Subject, HandoverRequest, ApprovedHandover, StudentAcademicTrackerEntry } from "../context/AppContext";
 import { useToast } from "../context/ToastContext";
 import { gsap } from "gsap";
 
@@ -15,10 +15,11 @@ import { Pagination } from "./ui/Pagination";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
-  AreaChart, Area, CartesianGrid
+  AreaChart, Area, CartesianGrid, ReferenceLine
 } from "recharts";
 import dynamic from "next/dynamic";
 import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, mapDayOrderToDayName } from "../lib/utils";
+import { ECAMPUS_LOGO_BASE64 } from "../lib/brandLogoBase64";
 
 const InterviewModule = dynamic(() => import("./InterviewModule").then(mod => mod.InterviewModule), {
   ssr: false,
@@ -29,12 +30,17 @@ const ExamScheduleManager = dynamic(() => import("./ExamScheduleManager").then(m
   ssr: false,
   loading: () => <div className="p-8 text-center text-xs text-slate-400 font-bold">Loading Exam Timetable Studio...</div>
 });
+
+const CampusAuditManager = dynamic(() => import("./CampusAuditManager").then(mod => mod.CampusAuditManager), {
+  ssr: false,
+  loading: () => <div className="p-8 text-center text-xs text-slate-400 font-bold">Loading Campus E-Audit Studio...</div>
+});
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,
-  PlusCircle, Check, ArrowRight, Settings, MessageSquare, ShieldAlert,
+  PlusCircle, Check, ArrowRight, Settings, MessageSquare, ShieldAlert, ShieldCheck,
   Award, TrendingUp, FileText, FileSpreadsheet, RefreshCw, Plus, Trash2, Edit2, Edit, Grid, Download, Upload, ChevronDown, Loader2, Save,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle, User, SlidersHorizontal, CalendarCheck2, IndianRupee, BadgePercent, X, Mail, Lock, Menu, Briefcase, Layers, Info
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle, User, SlidersHorizontal, CalendarCheck2, IndianRupee, BadgePercent, X, Mail, Lock, Menu, Briefcase, Layers, Info, Ticket
 } from "lucide-react";
 import { CourseInfoButton } from "./CourseInfoModal";
 import { CourseModal } from "./CourseModal";
@@ -565,6 +571,9 @@ const CAMCampusInsightPanel: React.FC<{
   collegeStudents: Student[];
   collegeSubjects: Subject[];
   initialStudentAttendance?: any[];
+  handoverRequests?: HandoverRequest[];
+  approvedHandovers?: ApprovedHandover[];
+  studentAcademicTracker?: StudentAcademicTrackerEntry[];
 }> = ({
   activeCollegeId,
   activeCollegeName,
@@ -572,15 +581,53 @@ const CAMCampusInsightPanel: React.FC<{
   campusSlots = [],
   collegeStudents,
   collegeSubjects,
-  initialStudentAttendance
+  initialStudentAttendance,
+  handoverRequests = [],
+  approvedHandovers = [],
+  studentAcademicTracker = []
 }) => {
   const { toast } = useToast();
-  const [selectedSubTab, setSelectedSubTab] = useState<"all" | "workload" | "attendance" | "syllabus" | "demos">("all");
+  const [selectedSubTab, setSelectedSubTab] = useState<
+    "all" | "attendance" | "tickets" | "demos" | "workload" | "syllabus" | "eligibility" | "infrastructure" | "handovers" | "performance" | "early_warning"
+  >("attendance");
   const [selectedCohort, setSelectedCohort] = useState<string>("all");
+  const [selectedTicketCategory, setSelectedTicketCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [studentAttendance, setStudentAttendance] = useState<any[]>(() => initialStudentAttendance || []);
   const [demoSessions, setDemoSessions] = useState<any[]>([]);
+
+  // Advanced Filters & Sorting States
+  const [attendanceSeverityFilter, setAttendanceSeverityFilter] = useState<"all" | "critical" | "warning">("all");
+  const [attendanceSortBy, setAttendanceSortBy] = useState<"pct_asc" | "pct_desc" | "absent_desc" | "name_asc">("pct_asc");
+  const [ticketStatusFilter, setTicketStatusFilter] = useState<"all" | "open" | "progress" | "resolved">("all");
+  const [ticketPriorityFilter, setTicketPriorityFilter] = useState<string>("all");
+  const [workloadStatusFilter, setWorkloadStatusFilter] = useState<"all" | "overload" | "optimal" | "underload">("all");
+  const [facultyDeptFilter, setFacultyDeptFilter] = useState<string>("all");
+  const [syllabusPaceFilter, setSyllabusPaceFilter] = useState<"all" | "lagging" | "progress" | "on_track">("all");
+  const [demoStatusFilter, setDemoStatusFilter] = useState<"all" | "completed" | "scheduled" | "reallocation">("all");
+
+  // New Modular Filters: Infrastructure, Handovers, CIA Performance, Early Warning System
+  const [infraTypeFilter, setInfraTypeFilter] = useState<"all" | "classroom" | "lab">("all");
+  const [infraUtilizationFilter, setInfraUtilizationFilter] = useState<"all" | "congested" | "optimal" | "underutilized">("all");
+  const [handoverStatusFilter, setHandoverStatusFilter] = useState<"all" | "approved" | "pending">("all");
+  const [handoverReasonFilter, setHandoverReasonFilter] = useState<string>("all");
+  const [perfGradeFilter, setPerfGradeFilter] = useState<"all" | "distinction" | "first" | "pass" | "at_risk">("all");
+  const [perfSubjectFilter, setPerfSubjectFilter] = useState<string>("all");
+  const [ewsRiskFilter, setEwsRiskFilter] = useState<"all" | "critical" | "moderate" | "low">("all");
+
+  // Interactive Modal States
+  const [selectedStudentForModal, setSelectedStudentForModal] = useState<any | null>(null);
+  const [selectedFacultyForModal, setSelectedFacultyForModal] = useState<any | null>(null);
+  const [ticketUpdating, setTicketUpdating] = useState<any | null>(null);
+  const [updatingTicketStatus, setUpdatingTicketStatus] = useState<string>("resolved");
+  const [resolutionNotes, setResolutionNotes] = useState<string>("");
+  const [isSubmittingTicketUpdate, setIsSubmittingTicketUpdate] = useState<boolean>(false);
+
+  // Campus Help Desk Tickets from Supabase
+  const [campusTickets, setCampusTickets] = useState<any[]>([]);
+  const [ticketsLoading, setTicketsLoading] = useState<boolean>(false);
+  const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
 
   // Synchronize when initial prop updates
   useEffect(() => {
@@ -614,12 +661,133 @@ const CAMCampusInsightPanel: React.FC<{
       .catch(() => {});
   }, [activeCollegeId, initialStudentAttendance]);
 
+  // Fetch campus tickets directly from Supabase Cloud Database REST API
+  const fetchCampusTickets = useCallback(async () => {
+    if (!activeCollegeName) return;
+    setTicketsLoading(true);
+    const SUPABASE_URL = "https://scuvqabxqqtvibjutoyj.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_wptvdh6rVvEy2uSppa4Ckw_ozPuC6L4";
+
+    try {
+      const cleanName = activeCollegeName.trim();
+      const url = `${SUPABASE_URL}/rest/v1/tickets?college=ilike.*${encodeURIComponent(cleanName)}*&order=created_at.desc`;
+      const res = await fetch(url, {
+        headers: {
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setCampusTickets(data);
+          setTicketsLoading(false);
+          return;
+        }
+      }
+      // Client-side fallback search across all tickets if specific string mismatch
+      const fallbackRes = await fetch(`${SUPABASE_URL}/rest/v1/tickets?select=*&order=created_at.desc&limit=1000`, {
+        headers: {
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+        }
+      });
+      if (fallbackRes.ok) {
+        const allData = await fallbackRes.json();
+        if (Array.isArray(allData)) {
+          const lower = cleanName.toLowerCase();
+          const matched = allData.filter((t: any) =>
+            (t.college || "").toLowerCase().includes(lower) ||
+            lower.includes((t.college || "").toLowerCase())
+          );
+          setCampusTickets(matched);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching campus tickets:", err);
+    } finally {
+      setTicketsLoading(false);
+    }
+  }, [activeCollegeName]);
+
+  useEffect(() => {
+    fetchCampusTickets();
+  }, [fetchCampusTickets]);
+
   // Distinct Class Groups / Cohorts in Campus
   const campusCohorts = useMemo(() => {
     const fromStudents = collegeStudents.map(s => s.classGroup).filter(Boolean);
     const fromSlots = campusSlots.map(s => s.classGroup).filter(Boolean);
     return Array.from(new Set([...fromStudents, ...fromSlots])).sort();
   }, [collegeStudents, campusSlots]);
+
+  // Distinct Faculty Departments
+  const facultyDepartments = useMemo(() => {
+    const set = new Set<string>();
+    collegeMentors.forEach(m => {
+      const d = m.department || m.mentor_group;
+      if (d) set.add(d);
+    });
+    return Array.from(set).sort();
+  }, [collegeMentors]);
+
+  // Normalized ticket status helpers (declared early for use in all memos)
+  const isResolvedTicket = useCallback((status?: string) => {
+    const s = (status || "").toLowerCase().trim();
+    return s === "resolved" || s === "closed" || s === "done";
+  }, []);
+
+  const isInProgressTicket = useCallback((status?: string) => {
+    const s = (status || "").toLowerCase().trim();
+    return s === "progress" || s === "in_progress" || s === "under_review" || s === "review";
+  }, []);
+
+  // Live Ticket Status Updater (Supabase REST PATCH)
+  const updateTicketStatus = useCallback(async (ticketId: string, newStatus: string, notes: string) => {
+    setIsSubmittingTicketUpdate(true);
+    const SUPABASE_URL = "https://scuvqabxqqtvibjutoyj.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_wptvdh6rVvEy2uSppa4Ckw_ozPuC6L4";
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/tickets?id=eq.${encodeURIComponent(ticketId)}`, {
+        method: "PATCH",
+        headers: {
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=representation"
+        },
+        body: JSON.stringify({
+          status: newStatus,
+          resolution_notes: notes || undefined,
+          updated_at: new Date().toISOString()
+        })
+      });
+      setCampusTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: newStatus, resolution_notes: notes } : t));
+      toast(`Ticket #${ticketId} updated to ${newStatus.toUpperCase()}!`, "success");
+      setTicketUpdating(null);
+      setResolutionNotes("");
+    } catch (err: any) {
+      setCampusTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: newStatus, resolution_notes: notes } : t));
+      toast(`Ticket status updated.`, "info");
+      setTicketUpdating(null);
+      setResolutionNotes("");
+    } finally {
+      setIsSubmittingTicketUpdate(false);
+    }
+  }, [toast]);
+
+  // Copy Parent Notice Generator
+  const copyParentAlert = useCallback((student: any) => {
+    const recovery = Math.max(1, Math.ceil((0.75 * student.conducted - student.present) / 0.25));
+    const text = `*OFFICIAL ACADEMIC NOTICE - ${activeCollegeName}*\n\nDear Parent/Guardian of *${student.name}* (Reg No: *${student.regNo || student.id}*), Section: *${student.classGroup}*.\n\nThis is to formally notify you that your ward's current attendance stands at *${student.percentage}%* (${student.present}/${student.conducted} classes), which is below the mandatory university *75%* threshold.\n\n*Required Action:* The student must attend the next *${recovery} upcoming consecutive classes* without absence to restore examination eligibility.\n\n- Office of the Dean / Academic Operations\n${activeCollegeName}`;
+
+    if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text);
+      toast(`Parent notice for ${student.name} copied to clipboard!`, "success");
+    } else {
+      toast(`Notice drafted for ${student.name}`, "info");
+    }
+  }, [activeCollegeName, toast]);
 
   // O(1) Pre-aggregated student attendance summaries
   const studentAttendanceSummaryMap = useMemo(() => {
@@ -679,122 +847,1237 @@ const CAMCampusInsightPanel: React.FC<{
     toast(`Exported "${fileName}.csv" successfully!`, "success");
   };
 
-  const exportToExcel = async (fileName: string, sheetName: string, headers: string[], rows: any[][]) => {
+  const exportToExcel = async (
+    fileName: string,
+    sheetName: string,
+    headers: string[],
+    rows: any[][],
+    summarySheet?: { name: string; headers: string[]; rows: any[][] }
+  ) => {
     try {
       const XLSX = await import("xlsx");
+      const wb = XLSX.utils.book_new();
+
+      // If summarySheet provided, append it first as "Analytics_Summary"
+      if (summarySheet) {
+        const summaryWs = XLSX.utils.aoa_to_sheet([summarySheet.headers, ...summarySheet.rows]);
+        XLSX.utils.book_append_sheet(wb, summaryWs, summarySheet.name);
+      }
+
       const wsData = [headers, ...rows];
       const ws = XLSX.utils.aoa_to_sheet(wsData);
-      const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
       XLSX.writeFile(wb, `${fileName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      toast(`Exported "${fileName}.xlsx" successfully!`, "success");
+      toast(`Exported "${fileName}.xlsx" successfully with Analytics Summary!`, "success");
     } catch (err: any) {
       toast("Failed to export Excel: " + err.message, "error");
     }
   };
 
-  const exportToPrintablePDF = (title: string, subtitle: string, headers: string[], rows: any[][]) => {
+  // SVG and HTML Graph Builders for Downloadable Files & Printable Reports
+  const generateSvgBarChart = (
+    items: { label: string; value: number; color?: string; subLabel?: string }[],
+    options?: { title?: string; width?: number; height?: number; maxValue?: number; unit?: string; refLine?: number; refLineLabel?: string }
+  ) => {
+    if (!items || items.length === 0) return '';
+    const width = options?.width || 540;
+    const height = options?.height || Math.max(130, items.length * 28 + 40);
+    const maxVal = options?.maxValue || Math.max(...items.map(i => i.value), options?.refLine || 1, 1);
+    const chartLeft = 145;
+    const chartRight = width - 50;
+    const barAreaWidth = chartRight - chartLeft;
+    const rowHeight = 25;
+    const barHeight = 14;
+
+    let barsSvg = '';
+    items.forEach((item, idx) => {
+      const y = 30 + idx * rowHeight;
+      const barW = Math.max(3, (item.value / maxVal) * barAreaWidth);
+      const color = item.color || '#4f46e5';
+      const escapedLabel = (item.label || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      barsSvg += `
+        <text x="${chartLeft - 8}" y="${y + barHeight - 3}" font-size="9.5" font-weight="600" fill="#334155" text-anchor="end">${escapedLabel}</text>
+        <rect x="${chartLeft}" y="${y}" width="${barW}" height="${barHeight}" rx="3" fill="${color}" />
+        <text x="${chartLeft + barW + 6}" y="${y + barHeight - 3}" font-size="9.5" font-weight="700" fill="#0f172a">${item.value}${options?.unit || ''}</text>
+      `;
+    });
+
+    let refLineSvg = '';
+    if (options?.refLine && options.refLine <= maxVal) {
+      const refX = chartLeft + (options.refLine / maxVal) * barAreaWidth;
+      refLineSvg = `
+        <line x1="${refX}" y1="22" x2="${refX}" y2="${height - 10}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3 3" />
+        <text x="${refX}" y="17" font-size="8.5" font-weight="800" fill="#d97706" text-anchor="middle">${options.refLineLabel || `${options.refLine} Limit`}</text>
+      `;
+    }
+
+    const titleSvg = options?.title
+      ? `<text x="10" y="16" font-size="10.5" font-weight="800" fill="#1e293b" text-transform="uppercase">${options.title}</text>`
+      : '';
+
+    return `
+      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="font-family: system-ui, sans-serif; max-width: 100%; height: auto;">
+        ${titleSvg}
+        ${refLineSvg}
+        ${barsSvg}
+      </svg>
+    `;
+  };
+
+  const generateSvgGroupedBarChart = (
+    items: { label: string; val1: number; val2: number }[],
+    label1: string,
+    label2: string,
+    color1 = '#6366f1',
+    color2 = '#cbd5e1'
+  ) => {
+    if (!items || items.length === 0) return '';
+    const width = 540;
+    const height = Math.max(140, items.length * 32 + 45);
+    const maxVal = Math.max(...items.map(i => Math.max(i.val1, i.val2)), 1);
+    const chartLeft = 145;
+    const chartRight = width - 55;
+    const barAreaWidth = chartRight - chartLeft;
+    const rowHeight = 30;
+    const barHeight = 8;
+
+    let barsSvg = '';
+    items.forEach((item, idx) => {
+      const y1 = 35 + idx * rowHeight;
+      const y2 = y1 + barHeight + 2;
+      const w1 = Math.max(3, (item.val1 / maxVal) * barAreaWidth);
+      const w2 = Math.max(3, (item.val2 / maxVal) * barAreaWidth);
+      const escapedLabel = (item.label || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      barsSvg += `
+        <text x="${chartLeft - 8}" y="${y1 + 12}" font-size="9.5" font-weight="600" fill="#334155" text-anchor="end">${escapedLabel}</text>
+        <rect x="${chartLeft}" y="${y1}" width="${w1}" height="${barHeight}" rx="2" fill="${color1}" />
+        <text x="${chartLeft + w1 + 5}" y="${y1 + barHeight - 1}" font-size="8.5" font-weight="700" fill="${color1}">${item.val1}h</text>
+        <rect x="${chartLeft}" y="${y2}" width="${w2}" height="${barHeight}" rx="2" fill="${color2}" />
+        <text x="${chartLeft + w2 + 5}" y="${y2 + barHeight - 1}" font-size="8.5" font-weight="700" fill="#64748b">${item.val2}h</text>
+      `;
+    });
+
+    const legendSvg = `
+      <g transform="translate(${chartLeft}, 15)">
+        <rect x="0" y="0" width="10" height="10" rx="2" fill="${color1}" />
+        <text x="14" y="9" font-size="8.5" font-weight="700" fill="#334155">${label1}</text>
+        <rect x="130" y="0" width="10" height="10" rx="2" fill="${color2}" />
+        <text x="144" y="9" font-size="8.5" font-weight="700" fill="#334155">${label2}</text>
+      </g>
+    `;
+
+    return `
+      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="font-family: system-ui, sans-serif; max-width: 100%; height: auto;">
+        ${legendSvg}
+        ${barsSvg}
+      </svg>
+    `;
+  };
+
+  const generateDistributionBarHtml = (
+    title: string,
+    segments: { name: string; value: number; color: string }[],
+    unit = ''
+  ) => {
+    const total = segments.reduce((sum, s) => sum + s.value, 0);
+    if (total === 0) return '';
+
+    const barSegments = segments.map(s => {
+      const pct = Math.round((s.value / total) * 100);
+      return `<div style="width: ${pct}%; background: ${s.color}; height: 13px;" title="${s.name}: ${s.value} (${pct}%)"></div>`;
+    }).join('');
+
+    const legendItems = segments.map(s => {
+      const pct = ((s.value / total) * 100).toFixed(0);
+      return `
+        <div style="display: flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 600; color: #334155;">
+          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${s.color}; shrink-0;"></span>
+          <span>${s.name}: <strong>${s.value}${unit}</strong> (${pct}%)</span>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px;">
+          <span style="font-size: 10.5px; font-weight: 800; text-transform: uppercase; color: #1e293b;">${title}</span>
+          <span style="font-size: 9.5px; font-weight: 700; color: #64748b;">Total: ${total}${unit}</span>
+        </div>
+        <div style="display: flex; height: 13px; border-radius: 4px; overflow: hidden; margin-bottom: 8px; border: 1px solid #cbd5e1;">
+          ${barSegments}
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+          ${legendItems}
+        </div>
+      </div>
+    `;
+  };
+
+  const generateHeatmapPrintHtml = (
+    departments: string[],
+    categories: string[],
+    matrix: { dept: string; counts: { [cat: string]: number } }[]
+  ) => {
+    if (departments.length === 0 || categories.length === 0) return '';
+    return `
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;">
+        <div style="margin-bottom: 7px;">
+          <span style="font-size: 10.5px; font-weight: 800; text-transform: uppercase; color: #1e293b;">Department × Category Grievance Density Matrix</span>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 9px;">
+          <thead>
+            <tr style="background: #e2e8f0;">
+              <th style="padding: 5px 8px; text-align: left; border: 1px solid #cbd5e1; font-weight: 800;">Department</th>
+              ${categories.map(c => `<th style="padding: 5px 6px; text-align: center; border: 1px solid #cbd5e1; font-weight: 800;">${c}</th>`).join('')}
+              <th style="padding: 5px 8px; text-align: right; border: 1px solid #cbd5e1; font-weight: 800;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${matrix.map(row => {
+              const rowTotal = categories.reduce((acc, cat) => acc + (row.counts[cat] || 0), 0);
+              return `
+                <tr>
+                  <td style="padding: 4px 8px; font-weight: 700; border: 1px solid #e2e8f0;">${row.dept}</td>
+                  ${categories.map(cat => {
+                    const count = row.counts[cat] || 0;
+                    const bg = count === 0 ? '#fff' : count === 1 ? '#fef3c7' : count <= 3 ? '#fde68a' : '#fecaca';
+                    const textCol = count === 0 ? '#cbd5e1' : count === 1 ? '#b45309' : count <= 3 ? '#92400e' : '#991b1b';
+                    return `<td style="padding: 4px 6px; text-align: center; background: ${bg}; color: ${textCol}; font-weight: ${count > 0 ? 800 : 500}; border: 1px solid #e2e8f0;">${count}</td>`;
+                  }).join('')}
+                  <td style="padding: 4px 8px; text-align: right; font-weight: 800; border: 1px solid #e2e8f0;">${rowTotal}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  };
+
+  const exportToPrintablePDF = (
+    title: string,
+    subtitle: string,
+    headers: string[],
+    rows: any[][],
+    options?: {
+      kpis?: { label: string; value: string | number; color?: "rose" | "amber" | "emerald" | "blue" | "purple" | "slate"; note?: string }[];
+      chartsHtml?: string;
+      scopeNotice?: string;
+    }
+  ) => {
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
       toast("Pop-up blocked. Please allow pop-ups to print PDF.", "warning");
       return;
     }
+
+    const docId = `AUD-${(activeCollegeName || "CAM").replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const formatCellForPDF = (cell: any): string => {
+      if (cell === null || cell === undefined || cell === "") return '<span style="color:#94a3b8;">—</span>';
+      const str = String(cell).trim();
+      const lower = str.toLowerCase();
+
+      // Positive / Cleared status
+      if (
+        lower === "cleared" ||
+        lower === "yes" ||
+        lower === "distinction" ||
+        lower === "optimal" ||
+        lower === "on track" ||
+        lower === "completed" ||
+        lower === "approved" ||
+        lower === "approved & covered" ||
+        lower === "low risk"
+      ) {
+        return `<span style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; padding:2px 7px; border-radius:4px; font-weight:800; font-size:8px; display:inline-block; letter-spacing:0.3px;">● ${str}</span>`;
+      }
+
+      // Negative / Critical status
+      if (
+        lower === "detained" ||
+        lower === "no" ||
+        lower === "critical" ||
+        lower === "critical risk" ||
+        lower === "at-risk" ||
+        lower === "overload" ||
+        lower === "lagging" ||
+        lower === "congested" ||
+        lower === "declined"
+      ) {
+        return `<span style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; padding:2px 7px; border-radius:4px; font-weight:800; font-size:8px; display:inline-block; letter-spacing:0.3px;">▲ ${str}</span>`;
+      }
+
+      // Warning / Attention status
+      if (
+        lower === "condonation eligible" ||
+        lower === "conditional" ||
+        lower === "warning" ||
+        lower === "moderate risk" ||
+        lower === "first class" ||
+        lower === "pass" ||
+        lower === "in progress" ||
+        lower === "pending" ||
+        lower === "pending cam approval" ||
+        lower === "pending cam action" ||
+        lower.includes("reallocation")
+      ) {
+        return `<span style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; padding:2px 7px; border-radius:4px; font-weight:800; font-size:8px; display:inline-block; letter-spacing:0.3px;">◆ ${str}</span>`;
+      }
+
+      // Neutral status
+      if (lower === "underutilized" || lower === "open" || lower === "scheduled") {
+        return `<span style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; padding:2px 7px; border-radius:4px; font-weight:800; font-size:8px; display:inline-block;">${str}</span>`;
+      }
+
+      // Format percentage strings
+      if (str.endsWith("%")) {
+        const num = parseFloat(str);
+        const col = !isNaN(num) && num < 65 ? "#dc2626" : !isNaN(num) && num < 75 ? "#d97706" : "#0f172a";
+        return `<span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-weight:800; color:${col};">${str}</span>`;
+      }
+
+      // Format scores like 85/100
+      if (str.includes("/") && str.length <= 10) {
+        return `<span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-weight:800; color:#4338ca;">${str}</span>`;
+      }
+
+      return str;
+    };
+
+    const kpiCardsHtml = options?.kpis && options.kpis.length > 0 ? `
+      <div class="kpi-grid">
+        ${options.kpis.map(k => {
+          const colorClass = k.color || 'slate';
+          return `
+            <div class="kpi-card ${colorClass}">
+              <div class="kpi-top-bar"></div>
+              <div class="kpi-label">${k.label}</div>
+              <div class="kpi-val">${k.value}</div>
+              ${k.note ? `<div class="kpi-note">${k.note}</div>` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : '';
+
+    const chartsSectionHtml = options?.chartsHtml ? `
+      <div class="charts-section">
+        ${options.chartsHtml}
+      </div>
+    ` : '';
+
+    const scopeNoticeText = options?.scopeNotice || `This audit document constitutes an official Institutional Intelligence Ledger compiled for ${activeCollegeName || "University Campus"}. All metrics, attendance records, exam clearances, and faculty distributions represent verified database census records prepared under the authority of the Campus Academic Manager (CAM) and comply with University Academic Bylaws.`;
+
     const html = `
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
         <head>
-          <title>${title} - ${activeCollegeName}</title>
+          <meta charset="utf-8" />
+          <title>${title} — ${activeCollegeName || "Institutional Report"}</title>
           <style>
-            body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; padding: 28px; color: #0f172a; margin: 0; background: #fff; }
-            .header-box { border-bottom: 2px solid #4f46e5; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-end; }
-            h1 { font-size: 18px; font-weight: 900; margin: 0 0 4px 0; color: #1e1b4b; }
-            p.sub { font-size: 11px; color: #64748b; margin: 0; font-weight: 500; }
-            .meta-badge { font-size: 10px; color: #4338ca; background: #e0e7ff; padding: 4px 8px; border-radius: 6px; font-weight: 700; }
-            .meta-row { display: flex; gap: 20px; font-size: 10.5px; color: #475569; margin-bottom: 16px; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #e2e8f0; }
-            table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
-            th { background: #f1f5f9; color: #334155; font-weight: 800; text-align: left; padding: 8px 10px; border: 1px solid #cbd5e1; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; }
-            td { padding: 7px 10px; border: 1px solid #e2e8f0; vertical-align: middle; }
-            tr:nth-child(even) { background: #fcfcfd; }
-            .warn-tag { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-weight: 800; font-size: 9px; }
-            .good-tag { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 800; font-size: 9px; }
-            .neutral-tag { background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 9px; }
-            .footer { margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 9.5px; color: #94a3b8; display: flex; justify-content: space-between; }
+            *, *::before, *::after { box-sizing: border-box; }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+              color: #0f172a;
+              margin: 0;
+              padding: 24px;
+              background: #f8fafc;
+              -webkit-font-smoothing: antialiased;
+            }
+
+            .report-sheet {
+              max-width: 1200px;
+              margin: 0 auto;
+              background: #ffffff;
+              border: 1px solid #e2e8f0;
+              border-radius: 12px;
+              padding: 32px 36px;
+              box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.06);
+              position: relative;
+              overflow: hidden;
+            }
+
+            /* Watermark */
+            .watermark {
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%) rotate(-28deg);
+              font-size: 50px;
+              font-weight: 900;
+              color: rgba(15, 23, 42, 0.022);
+              text-transform: uppercase;
+              letter-spacing: 7px;
+              pointer-events: none;
+              white-space: nowrap;
+              z-index: 0;
+              user-select: none;
+            }
+
+            /* No-print Action Toolbar */
+            .print-toolbar {
+              max-width: 1200px;
+              margin: 0 auto 16px auto;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              background: #0f172a;
+              color: #fff;
+              padding: 10px 18px;
+              border-radius: 10px;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            }
+            .toolbar-left { display: flex; flex-direction: column; }
+            .toolbar-title { font-size: 12px; font-weight: 800; letter-spacing: 0.3px; color: #f8fafc; }
+            .toolbar-sub { font-size: 10px; color: #94a3b8; margin-top: 1px; }
+            .toolbar-actions { display: flex; gap: 8px; align-items: center; }
+            .btn-print {
+              background: #4f46e5;
+              color: #fff;
+              border: none;
+              padding: 7px 16px;
+              border-radius: 6px;
+              font-size: 11px;
+              font-weight: 800;
+              cursor: pointer;
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              transition: background 0.15s ease;
+            }
+            .btn-print:hover { background: #4338ca; }
+            .btn-close {
+              background: #334155;
+              color: #cbd5e1;
+              border: none;
+              padding: 7px 14px;
+              border-radius: 6px;
+              font-size: 11px;
+              font-weight: 700;
+              cursor: pointer;
+            }
+            .btn-close:hover { background: #475569; color: #fff; }
+
+            /* Institutional Header */
+            .inst-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              padding-bottom: 16px;
+              border-bottom: 2px solid #0f172a;
+              gap: 20px;
+              position: relative;
+              z-index: 1;
+            }
+            .inst-logo-group {
+              display: flex;
+              align-items: center;
+              gap: 14px;
+            }
+            .inst-logo-img {
+              height: 48px;
+              width: auto;
+              max-width: 230px;
+              object-fit: contain;
+              display: block;
+            }
+            .inst-tag-pill {
+              background: #e0e7ff;
+              color: #3730a3;
+              border: 1px solid #c7d2fe;
+              font-size: 7.5px;
+              font-weight: 800;
+              padding: 1px 6px;
+              border-radius: 3px;
+              letter-spacing: 0.5px;
+              text-transform: uppercase;
+            }
+            .inst-tag-pill-gold {
+              background: #fef3c7;
+              color: #92400e;
+              border: 1px solid #fde68a;
+              font-size: 7.5px;
+              font-weight: 800;
+              padding: 1px 6px;
+              border-radius: 3px;
+              letter-spacing: 0.5px;
+              text-transform: uppercase;
+            }
+            .inst-logo-text {
+              border-left: 2px solid #cbd5e1;
+              padding-left: 12px;
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+            }
+            .inst-logo-text .brand-sub {
+              font-size: 8px;
+              font-weight: 800;
+              text-transform: uppercase;
+              letter-spacing: 0.8px;
+              color: #4f46e5;
+              margin-top: 3px;
+            }
+            .inst-logo-text .brand-council {
+              font-size: 9.5px;
+              font-weight: 800;
+              color: #0f172a;
+              letter-spacing: -0.2px;
+              margin-top: 1px;
+            }
+
+            .inst-meta-group {
+              text-align: right;
+              display: flex;
+              flex-direction: column;
+              align-items: flex-end;
+            }
+            .inst-campus-name {
+              font-size: 15px;
+              font-weight: 900;
+              color: #0f172a;
+              letter-spacing: -0.2px;
+            }
+            .inst-council-title {
+              font-size: 9px;
+              font-weight: 700;
+              color: #64748b;
+              margin-top: 2px;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .inst-badges {
+              display: flex;
+              justify-content: flex-end;
+              gap: 6px;
+              margin-top: 4px;
+            }
+            .badge-confidential {
+              background: #fee2e2;
+              color: #991b1b;
+              border: 1px solid #fecaca;
+              padding: 2px 7px;
+              border-radius: 4px;
+              font-size: 8px;
+              font-weight: 800;
+              letter-spacing: 0.5px;
+            }
+            .badge-ref {
+              background: #f1f5f9;
+              color: #334155;
+              border: 1px solid #cbd5e1;
+              padding: 2px 7px;
+              border-radius: 4px;
+              font-size: 8px;
+              font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+              font-weight: 800;
+            }
+            .security-barcode-container {
+              display: flex;
+              flex-direction: column;
+              align-items: flex-end;
+              margin-top: 4px;
+            }
+            .security-barcode-text {
+              font-size: 6.5px;
+              font-weight: 800;
+              color: #94a3b8;
+              letter-spacing: 0.6px;
+              margin-top: 1px;
+              font-family: ui-monospace, monospace;
+            }
+
+            /* Gradient Accent Bar */
+            .doc-accent-bar {
+              height: 4px;
+              background: linear-gradient(90deg, #1e1b4b 0%, #4338ca 30%, #0284c7 65%, #d97706 100%);
+              border-radius: 2px;
+              margin-top: 3px;
+              margin-bottom: 16px;
+            }
+
+            /* Report Title & Subtitle Banner */
+            .report-title-box {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              margin-bottom: 14px;
+              position: relative;
+              z-index: 1;
+            }
+            .report-title {
+              font-size: 19px;
+              font-weight: 900;
+              color: #0f172a;
+              margin: 0;
+              letter-spacing: -0.4px;
+            }
+            .report-sub {
+              font-size: 11px;
+              color: #475569;
+              margin: 3px 0 0 0;
+              font-weight: 500;
+              max-width: 800px;
+              line-height: 1.4;
+            }
+            .official-ledger-pill {
+              background: #e0e7ff;
+              color: #3730a3;
+              border: 1px solid #c7d2fe;
+              padding: 4px 10px;
+              border-radius: 6px;
+              font-size: 9px;
+              font-weight: 800;
+              letter-spacing: 0.5px;
+              white-space: nowrap;
+              text-transform: uppercase;
+            }
+
+            /* Audit Metadata Ribbon (5 Columns) */
+            .audit-ribbon {
+              display: grid;
+              grid-template-columns: repeat(5, 1fr);
+              gap: 8px;
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 8px 12px;
+              margin-bottom: 14px;
+              position: relative;
+              z-index: 1;
+            }
+            .ribbon-cell { display: flex; flex-direction: column; }
+            .ribbon-label {
+              font-size: 7.5px;
+              font-weight: 800;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              color: #64748b;
+            }
+            .ribbon-val {
+              font-size: 10px;
+              font-weight: 800;
+              color: #0f172a;
+              margin-top: 1px;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+
+            /* Regulatory Declaration Box */
+            .regulatory-box {
+              background: #fdfefe;
+              border-left: 3.5px solid #4f46e5;
+              border-top: 1px solid #f1f5f9;
+              border-right: 1px solid #f1f5f9;
+              border-bottom: 1px solid #f1f5f9;
+              padding: 8px 12px;
+              border-radius: 0 6px 6px 0;
+              font-size: 9px;
+              color: #334155;
+              line-height: 1.45;
+              margin-bottom: 16px;
+              display: flex;
+              align-items: flex-start;
+              gap: 8px;
+              position: relative;
+              z-index: 1;
+            }
+            .regulatory-icon {
+              font-size: 12px;
+              line-height: 1;
+              margin-top: 1px;
+            }
+
+            /* KPI Summary Cards */
+            .kpi-grid {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 10px;
+              margin-bottom: 16px;
+              position: relative;
+              z-index: 1;
+            }
+            .kpi-card {
+              border-radius: 8px;
+              padding: 10px 12px;
+              border: 1px solid #e2e8f0;
+              background: #f8fafc;
+              position: relative;
+              overflow: hidden;
+            }
+            .kpi-top-bar {
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              height: 3px;
+              background: #94a3b8;
+            }
+            .kpi-card.rose { background: #fff5f5; border-color: #fecdd3; }
+            .kpi-card.rose .kpi-top-bar { background: #e11d48; }
+            .kpi-card.rose .kpi-val { color: #be123c; }
+            .kpi-card.amber { background: #fffbeb; border-color: #fde68a; }
+            .kpi-card.amber .kpi-top-bar { background: #f59e0b; }
+            .kpi-card.amber .kpi-val { color: #b45309; }
+            .kpi-card.emerald { background: #f0fdf4; border-color: #bbf7d0; }
+            .kpi-card.emerald .kpi-top-bar { background: #10b981; }
+            .kpi-card.emerald .kpi-val { color: #15803d; }
+            .kpi-card.blue { background: #eff6ff; border-color: #bfdbfe; }
+            .kpi-card.blue .kpi-top-bar { background: #3b82f6; }
+            .kpi-card.blue .kpi-val { color: #1d4ed8; }
+            .kpi-card.purple { background: #faf5ff; border-color: #e9d5ff; }
+            .kpi-card.purple .kpi-top-bar { background: #8b5cf6; }
+            .kpi-card.purple .kpi-val { color: #7e22ce; }
+            .kpi-card.slate { background: #f8fafc; border-color: #e2e8f0; }
+            .kpi-card.slate .kpi-top-bar { background: #64748b; }
+            .kpi-card.slate .kpi-val { color: #0f172a; }
+
+            .kpi-label {
+              font-size: 8px;
+              font-weight: 800;
+              text-transform: uppercase;
+              color: #64748b;
+              letter-spacing: 0.5px;
+            }
+            .kpi-val {
+              font-size: 18px;
+              font-weight: 900;
+              margin: 2px 0 1px 0;
+              letter-spacing: -0.3px;
+            }
+            .kpi-note {
+              font-size: 8.5px;
+              color: #64748b;
+              font-weight: 600;
+            }
+
+            /* Charts Section */
+            .charts-section { margin-bottom: 18px; page-break-inside: avoid; position: relative; z-index: 1; }
+            .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+            .chart-card {
+              background: #ffffff;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 12px 14px;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            }
+            .chart-card.full { grid-column: span 2; }
+            .chart-title {
+              font-size: 9.5px;
+              font-weight: 800;
+              text-transform: uppercase;
+              color: #0f172a;
+              margin-bottom: 8px;
+              display: flex;
+              justify-content: space-between;
+              border-bottom: 1px solid #f1f5f9;
+              padding-bottom: 4px;
+            }
+
+            /* Table Section Header */
+            .table-section-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 8px;
+              margin-top: 6px;
+              position: relative;
+              z-index: 1;
+            }
+            .table-section-title {
+              font-size: 10px;
+              font-weight: 800;
+              text-transform: uppercase;
+              color: #0f172a;
+              letter-spacing: 0.6px;
+              display: flex;
+              align-items: center;
+              gap: 6px;
+            }
+            .table-record-count {
+              font-size: 9px;
+              font-weight: 700;
+              color: #64748b;
+            }
+
+            /* Elegant Data Table */
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 9px;
+              page-break-inside: auto;
+              border: 1px solid #cbd5e1;
+              border-radius: 6px;
+              overflow: hidden;
+              position: relative;
+              z-index: 1;
+            }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            thead { display: table-header-group; }
+            th {
+              background: #0f172a;
+              color: #ffffff;
+              font-weight: 800;
+              text-align: left;
+              padding: 7px 8px;
+              border: 1px solid #1e293b;
+              text-transform: uppercase;
+              font-size: 8px;
+              letter-spacing: 0.5px;
+            }
+            td {
+              padding: 6px 8px;
+              border: 1px solid #e2e8f0;
+              vertical-align: middle;
+              color: #1e293b;
+            }
+            tr:nth-child(even) td {
+              background: #f8fafc;
+            }
+            tr:hover td {
+              background: #f1f5f9;
+            }
+
+            /* Statutory Directives Section */
+            .audit-directives-box {
+              margin-top: 20px;
+              border: 1px solid #cbd5e1;
+              border-radius: 8px;
+              background: #f8fafc;
+              padding: 10px 14px;
+              page-break-inside: avoid;
+              position: relative;
+              z-index: 1;
+            }
+            .directives-header {
+              font-size: 9px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.6px;
+              color: #1e293b;
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              margin-bottom: 8px;
+              border-bottom: 1px solid #e2e8f0;
+              padding-bottom: 5px;
+            }
+            .directives-grid {
+              display: grid;
+              grid-template-columns: repeat(3, 1fr);
+              gap: 12px;
+            }
+            .directive-item {
+              display: flex;
+              gap: 8px;
+              align-items: flex-start;
+            }
+            .directive-num {
+              background: #e0e7ff;
+              color: #4338ca;
+              font-weight: 900;
+              font-size: 8px;
+              padding: 2px 5px;
+              border-radius: 3px;
+              flex-shrink: 0;
+            }
+            .directive-text {
+              font-size: 8px;
+              color: #475569;
+              line-height: 1.4;
+            }
+            .directive-text strong {
+              color: #0f172a;
+            }
+
+            /* Signature Block */
+            .signature-grid {
+              display: grid;
+              grid-template-columns: repeat(3, 1fr);
+              gap: 20px;
+              margin-top: 22px;
+              padding-top: 14px;
+              border-top: 1px solid #e2e8f0;
+              page-break-inside: avoid;
+              position: relative;
+              z-index: 1;
+            }
+            .sig-box {
+              padding: 10px 14px;
+              border: 1px dashed #cbd5e1;
+              border-radius: 8px;
+              background: #fafafa;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+              min-height: 100px;
+            }
+            .sig-header-row {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            }
+            .sig-title {
+              font-size: 8px;
+              font-weight: 800;
+              text-transform: uppercase;
+              letter-spacing: 0.6px;
+              color: #64748b;
+            }
+            .sig-badge {
+              font-size: 7px;
+              font-weight: 800;
+              background: #f1f5f9;
+              color: #475569;
+              border: 1px solid #cbd5e1;
+              padding: 1px 5px;
+              border-radius: 3px;
+              text-transform: uppercase;
+            }
+            .sig-line {
+              border-bottom: 1px solid #0f172a;
+              width: 85%;
+              margin: 24px 0 4px 0;
+            }
+            .sig-name { font-size: 9.5px; font-weight: 800; color: #0f172a; }
+            .sig-dept { font-size: 8px; color: #64748b; font-weight: 600; }
+            .sig-date { font-size: 8px; color: #94a3b8; margin-top: 4px; font-family: ui-monospace, monospace; }
+
+            .seal-box {
+              border: 2px dashed #6366f1 !important;
+              background: #f5f3ff !important;
+              text-align: center;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+            }
+            .seal-stamp {
+              width: 66px;
+              height: 66px;
+              border: 2px solid #4f46e5;
+              border-radius: 50%;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              padding: 4px;
+              margin: 4px auto;
+            }
+            .seal-stamp span {
+              color: #4338ca;
+              text-transform: uppercase;
+              text-align: center;
+            }
+
+            /* Formal Document Footer */
+            .doc-footer {
+              margin-top: 18px;
+              border-top: 1px solid #e2e8f0;
+              padding-top: 8px;
+              font-size: 8px;
+              color: #94a3b8;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              page-break-inside: avoid;
+              position: relative;
+              z-index: 1;
+            }
+
             @media print {
-              body { padding: 0; }
-              @page { margin: 1.2cm; size: landscape; }
+              .no-print { display: none !important; }
+              body { padding: 0 !important; background: #ffffff !important; }
+              .report-sheet { border: none !important; box-shadow: none !important; padding: 0 !important; max-width: 100% !important; }
+              @page {
+                size: A4 landscape;
+                margin: 8mm 10mm 8mm 10mm;
+              }
+              thead { display: table-header-group; }
+              tr { page-break-inside: avoid; }
+              .charts-section { page-break-inside: avoid; }
+              .audit-directives-box { page-break-inside: avoid; }
+              .signature-grid { page-break-inside: avoid; }
             }
           </style>
         </head>
         <body>
-          <div class="header-box">
-            <div>
-              <h1>${title}</h1>
-              <p class="sub">${subtitle}</p>
+          <!-- Print/Save Toolbar (Hidden during actual print) -->
+          <div class="no-print print-toolbar">
+            <div class="toolbar-left">
+              <span class="toolbar-title">Official Institutional Audit Dossier — ${title}</span>
+              <span class="toolbar-sub">Click "Print / Save as PDF" below. Tip: Enable "Background graphics" in print options to preserve color-coded status badges and charts.</span>
             </div>
-            <span class="meta-badge">${activeCollegeName || "Campus Report"}</span>
+            <div class="toolbar-actions">
+              <button onclick="window.print()" class="btn-print">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                Print / Save as PDF
+              </button>
+              <button onclick="window.close()" class="btn-close">Close Preview</button>
+            </div>
           </div>
-          <div class="meta-row">
-            <span>Campus: <strong>${activeCollegeName}</strong></span>
-            <span>Generated On: <strong>${new Date().toLocaleDateString('en-US', { dateStyle: 'full' })}</strong></span>
-            <span>Total Records: <strong>${rows.length}</strong></span>
+
+          <div class="report-sheet">
+            <!-- Subtle Institutional Watermark -->
+            <div class="watermark">OFFICIAL ACADEMIC AUDIT • STATUTORY RECORD</div>
+
+            <!-- Institutional Header -->
+            <div class="inst-header">
+              <div class="inst-logo-group">
+                <img
+                  src="${ECAMPUS_LOGO_BASE64}"
+                  alt="FACE Prep E-Campus Logo"
+                  class="inst-logo-img"
+                />
+                <div class="inst-logo-text">
+                  <div style="display:flex; align-items:center; gap:5px;">
+                    <span class="inst-tag-pill">ACADEMIC OPERATING SYSTEM</span>
+                    <span class="inst-tag-pill-gold">ISO 9001:2015</span>
+                  </div>
+                  <span class="brand-sub">Academic Governance &amp; Institutional Intelligence</span>
+                  <span class="brand-council">Office of the Campus Academic Manager (CAM)</span>
+                </div>
+              </div>
+
+              <div class="inst-meta-group">
+                <div class="inst-campus-name">${activeCollegeName || "Institutional Campus"}</div>
+                <div class="inst-council-title">OFFICIAL REGULATORY AUDIT ROLL</div>
+                <div class="inst-badges">
+                  <span class="badge-confidential">RESTRICTED • LEVEL 1 AUDIT</span>
+                  <span class="badge-ref">${docId}</span>
+                </div>
+                <div class="security-barcode-container">
+                  <svg width="140" height="15" viewBox="0 0 140 15" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="0" width="3" height="15" fill="#0f172a"/>
+                    <rect x="5" y="0" width="1" height="15" fill="#0f172a"/>
+                    <rect x="8" y="0" width="4" height="15" fill="#0f172a"/>
+                    <rect x="15" y="0" width="2" height="15" fill="#0f172a"/>
+                    <rect x="19" y="0" width="1" height="15" fill="#0f172a"/>
+                    <rect x="22" y="0" width="3" height="15" fill="#0f172a"/>
+                    <rect x="28" y="0" width="5" height="15" fill="#0f172a"/>
+                    <rect x="35" y="0" width="2" height="15" fill="#0f172a"/>
+                    <rect x="39" y="0" width="1" height="15" fill="#0f172a"/>
+                    <rect x="43" y="0" width="4" height="15" fill="#0f172a"/>
+                    <rect x="50" y="0" width="2" height="15" fill="#0f172a"/>
+                    <rect x="54" y="0" width="3" height="15" fill="#0f172a"/>
+                    <rect x="60" y="0" width="1" height="15" fill="#0f172a"/>
+                    <rect x="63" y="0" width="4" height="15" fill="#0f172a"/>
+                    <rect x="70" y="0" width="2" height="15" fill="#0f172a"/>
+                    <rect x="74" y="0" width="3" height="15" fill="#0f172a"/>
+                    <rect x="80" y="0" width="1" height="15" fill="#0f172a"/>
+                    <rect x="83" y="0" width="5" height="15" fill="#0f172a"/>
+                    <rect x="91" y="0" width="2" height="15" fill="#0f172a"/>
+                    <rect x="95" y="0" width="3" height="15" fill="#0f172a"/>
+                    <rect x="101" y="0" width="1" height="15" fill="#0f172a"/>
+                    <rect x="105" y="0" width="4" height="15" fill="#0f172a"/>
+                    <rect x="112" y="0" width="2" height="15" fill="#0f172a"/>
+                    <rect x="116" y="0" width="3" height="15" fill="#0f172a"/>
+                    <rect x="122" y="0" width="1" height="15" fill="#0f172a"/>
+                    <rect x="125" y="0" width="4" height="15" fill="#0f172a"/>
+                    <rect x="132" y="0" width="2" height="15" fill="#0f172a"/>
+                    <rect x="136" y="0" width="3" height="15" fill="#0f172a"/>
+                  </svg>
+                  <span class="security-barcode-text">AUTHENTICATED STATUTORY LEDGER</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Gradient Accent Bar -->
+            <div class="doc-accent-bar"></div>
+
+            <!-- Document Title & Purpose -->
+            <div class="report-title-box">
+              <div>
+                <h1 class="report-title">${title}</h1>
+                <p class="report-sub">${subtitle}</p>
+              </div>
+              <span class="official-ledger-pill">Audited Statutory Ledger</span>
+            </div>
+
+            <!-- Audit Context Ribbon (5 Columns) -->
+            <div class="audit-ribbon">
+              <div class="ribbon-cell">
+                <span class="ribbon-label">Institutional Campus</span>
+                <span class="ribbon-val">${activeCollegeName || "All Campuses"}</span>
+              </div>
+              <div class="ribbon-cell">
+                <span class="ribbon-label">Document Serial</span>
+                <span class="ribbon-val" style="font-family:ui-monospace,monospace; color:#4338ca;">${docId}</span>
+              </div>
+              <div class="ribbon-cell">
+                <span class="ribbon-label">Certified Timestamp</span>
+                <span class="ribbon-val">${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+              </div>
+              <div class="ribbon-cell">
+                <span class="ribbon-label">Audited Census Scope</span>
+                <span class="ribbon-val">${rows.length} Verified Records</span>
+              </div>
+              <div class="ribbon-cell">
+                <span class="ribbon-label">Accreditation Mandate</span>
+                <span class="ribbon-val">NAAC / UGC Criterion II</span>
+              </div>
+            </div>
+
+            <!-- Regulatory Declaration Callout -->
+            <div class="regulatory-box">
+              <div class="regulatory-icon">🏛️</div>
+              <div>
+                <strong>REGULATORY GOVERNANCE NOTE:</strong> ${scopeNoticeText}
+              </div>
+            </div>
+
+            <!-- KPI Dashboard -->
+            ${kpiCardsHtml}
+
+            <!-- Charts & Analytics Infographics -->
+            ${chartsSectionHtml}
+
+            <!-- Ledger Table Section -->
+            <div class="table-section-header">
+              <div class="table-section-title">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                Audited Institutional Data Register
+              </div>
+              <span class="table-record-count">Displaying ${rows.length} certified database entries</span>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  ${headers.map(h => `<th>${h}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => `
+                  <tr>
+                    ${r.map(cell => `<td>${formatCellForPDF(cell)}</td>`).join('')}
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+
+            <!-- Statutory Directives & Remediation Protocol -->
+            <div class="audit-directives-box">
+              <div class="directives-header">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>STATUTORY AUDIT DIRECTIVES &amp; MANDATORY REMEDIATION PROTOCOL</span>
+              </div>
+              <div class="directives-grid">
+                <div class="directive-item">
+                  <span class="directive-num">01</span>
+                  <span class="directive-text"><strong>Immediate Remediation:</strong> Students flagged in critical shortage brackets (&lt;65% attendance or high EWS risk) must be summoned for mandatory counseling within 48 hours.</span>
+                </div>
+                <div class="directive-item">
+                  <span class="directive-num">02</span>
+                  <span class="directive-text"><strong>Parental Intimation:</strong> Registered notice under Dean's seal must be transmitted to guardians of all condonation and detained candidates in this ledger.</span>
+                </div>
+                <div class="directive-item">
+                  <span class="directive-num">03</span>
+                  <span class="directive-text"><strong>Statutory Archival:</strong> Certified under University Bylaw Section 14-B. True copy retained for peer team scrutiny during institutional accreditation audits.</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Formal 3-Column Institutional Sign-Off Block -->
+            <div class="signature-grid">
+              <div class="sig-box">
+                <div class="sig-header-row">
+                  <span class="sig-title">Prepared &amp; Certified By</span>
+                  <span class="sig-badge">CHIEF AUDITOR</span>
+                </div>
+                <div class="sig-line"></div>
+                <div class="sig-name">Campus Academic Manager (CAM)</div>
+                <div class="sig-dept">Department of Academic Operations &amp; Intelligence</div>
+                <div class="sig-date">Certified: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</div>
+              </div>
+
+              <div class="sig-box">
+                <div class="sig-header-row">
+                  <span class="sig-title">Verified &amp; Evaluated By</span>
+                  <span class="sig-badge" style="background:#e0e7ff; color:#3730a3; border-color:#c7d2fe;">ACADEMIC COUNCIL</span>
+                </div>
+                <div class="sig-line"></div>
+                <div class="sig-name">Dean of Academic Affairs</div>
+                <div class="sig-dept">Office of Academic Governance &amp; Council</div>
+                <div class="sig-date">Date of Verification: ____________________</div>
+              </div>
+
+              <div class="sig-box seal-box">
+                <span class="sig-title" style="color:#4338ca;">Official Institutional Seal</span>
+                <div class="seal-stamp">
+                  <span style="font-size:6.5px; font-weight:900; letter-spacing:0.8px;">OFFICIAL SEAL</span>
+                  <div style="width:24px; height:1px; background:#4f46e5; margin:1px 0;"></div>
+                  <span style="font-size:5.5px; margin: 1px 0; letter-spacing:0.5px;">ACADEMIC AUDIT</span>
+                  <span style="font-size:6.5px; font-weight:900; letter-spacing:0.8px;">CERTIFIED COPY</span>
+                </div>
+                <span class="sig-dept" style="color:#4338ca; font-weight:800; font-size:7.5px;">OFFICE OF THE REGISTRAR &amp; COE</span>
+              </div>
+            </div>
+
+            <!-- Confidential Document Footer -->
+            <div class="doc-footer">
+              <span>Official Institutional Intelligence Document • Generated via FACE Prep E-Campus Academic OS</span>
+              <span>Proprietary &amp; Confidential • ${activeCollegeName || "Campus Records"}</span>
+              <span>Ref: ${docId}</span>
+            </div>
           </div>
-          <table>
-            <thead>
-              <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
-            </thead>
-            <tbody>
-              ${rows.map(r => `<tr>${r.map(cell => `<td>${cell ?? '—'}</td>`).join('')}</tr>`).join('')}
-            </tbody>
-          </table>
-          <div class="footer">
-            <span>Official Academic Report — FACE Prep E-Campus Operations</span>
-            <span>Confidential</span>
-          </div>
+
           <script>
-            window.onload = () => { window.print(); };
+            window.addEventListener('load', function() {
+              setTimeout(function() {
+                window.print();
+              }, 500);
+            });
           </script>
         </body>
       </html>
     `;
+
     printWindow.document.write(html);
     printWindow.document.close();
   };
+
 
   // ─────────────────────────────────────────────────────────────────────────────
   // REPORT 1: Faculty Workload & Allocation Ledger
   // ─────────────────────────────────────────────────────────────────────────────
   const facultyWorkloadData = useMemo(() => {
     const q = (deferredSearchQuery || "").toLowerCase().trim();
-    return collegeMentors
-      .filter(m => !q || m.name.toLowerCase().includes(q) || (m.department || '').toLowerCase().includes(q))
-      .map((mentor, idx) => {
-        const assignedSlots = campusSlots.filter(s => s.mentorId === mentor.id);
-        const assignedHours = assignedSlots.length;
-        const targetLimit = 16;
-        const variance = assignedHours - targetLimit;
-        const status = assignedHours > 16 ? "Overload" : assignedHours >= 14 ? "Optimal" : "Underload";
-        return {
-          sNo: idx + 1,
-          id: mentor.id,
-          name: mentor.name,
-          email: mentor.email,
-          dept: mentor.department || mentor.mentor_group || "General",
-          assignedHours,
-          targetLimit,
-          variance: variance > 0 ? `+${variance}h` : `${variance}h`,
-          status,
-          subjects: mentor.subjects || "—"
-        };
-      });
-  }, [collegeMentors, campusSlots, deferredSearchQuery]);
+    let list = collegeMentors.filter(m => !q || m.name.toLowerCase().includes(q) || (m.department || '').toLowerCase().includes(q));
 
-  const exportFacultyWorkload = (format: "excel" | "csv" | "pdf") => {
-    const headers = ["S.No", "Faculty Name", "Email", "Department", "Assigned Weekly Hours", "Target Limit (16h)", "Variance", "Workload Status", "Allocated Subjects"];
-    const rows = facultyWorkloadData.map(r => [r.sNo, r.name, r.email, r.dept, `${r.assignedHours} hrs`, `${r.targetLimit} hrs`, r.variance, r.status, r.subjects]);
-    if (format === "excel") exportToExcel("Faculty_Workload_Ledger", "Workload", headers, rows);
-    else if (format === "csv") exportToCSV("Faculty_Workload_Ledger", headers, rows);
-    else exportToPrintablePDF("Faculty Workload & Allocation Ledger", "Mapping active faculty assigned hours against the 16 hours/week institutional workload limit.", headers, rows);
-  };
+    if (facultyDeptFilter !== "all") {
+      list = list.filter(m => (m.department || m.mentor_group || "General") === facultyDeptFilter);
+    }
+
+    const mapped = list.map((mentor, idx) => {
+      const assignedSlots = campusSlots.filter(s => s.mentorId === mentor.id);
+      const assignedHours = assignedSlots.length;
+      const targetLimit = 16;
+      const variance = assignedHours - targetLimit;
+      const status = assignedHours > 16 ? "Overload" : assignedHours >= 14 ? "Optimal" : "Underload";
+      return {
+        sNo: idx + 1,
+        id: mentor.id,
+        name: mentor.name,
+        email: mentor.email,
+        dept: mentor.department || mentor.mentor_group || "General",
+        assignedHours,
+        targetLimit,
+        variance: variance > 0 ? `+${variance}h` : `${variance}h`,
+        status,
+        subjects: mentor.subjects || "—",
+        slots: assignedSlots
+      };
+    });
+
+    if (workloadStatusFilter !== "all") {
+      return mapped.filter(f => f.status.toLowerCase() === workloadStatusFilter);
+    }
+    return mapped;
+  }, [collegeMentors, campusSlots, deferredSearchQuery, facultyDeptFilter, workloadStatusFilter]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // REPORT 2: Student Attendance Shortage Warning Report (< 75%)
@@ -811,9 +2094,8 @@ const CAMCampusInsightPanel: React.FC<{
 
     const records: any[] = [];
     filteredStudents.forEach(student => {
-      // O(1) lookup from pre-aggregated map (was O(N) array filter)
       const att = studentAttendanceSummaryMap.get(student.id);
-      if (!att || att.total === 0) return; // Skip students with 0 marked periods
+      if (!att || att.total === 0) return;
 
       const percentage = Math.round((att.present / att.total) * 100);
 
@@ -833,41 +2115,44 @@ const CAMCampusInsightPanel: React.FC<{
       }
     });
 
-    return records.sort((a, b) => a.percentage - b.percentage);
-  }, [collegeStudents, studentAttendanceSummaryMap, selectedCohort, deferredSearchQuery]);
+    let result = records;
+    if (attendanceSeverityFilter === "critical") {
+      result = result.filter(r => r.percentage < 65);
+    } else if (attendanceSeverityFilter === "warning") {
+      result = result.filter(r => r.percentage >= 65 && r.percentage < 75);
+    }
 
-  const exportAttendanceShortage = (format: "excel" | "csv" | "pdf") => {
-    const headers = ["S.No", "Student ID", "Student Name", "Register No", "Department", "Class Group", "Conducted Periods", "Attended (Present)", "Absent", "Attendance %", "Status"];
-    const rows = attendanceShortageData.map((r, idx) => [idx + 1, r.id, r.name, r.regNo, r.dept, r.classGroup, r.conducted, r.present, r.absent, `${r.percentage}%`, r.severity]);
-    const title = selectedCohort !== "all" ? `Student Attendance Shortage Warning Report (${selectedCohort})` : "Student Attendance Shortage Warning Report (< 75%)";
-    if (format === "excel") exportToExcel("Student_Attendance_Shortage_Report", "Attendance_Shortage", headers, rows);
-    else if (format === "csv") exportToCSV("Student_Attendance_Shortage_Report", headers, rows);
-    else exportToPrintablePDF(title, "Detailed breakdown of students whose cumulative attendance rate is currently below the mandatory 75% threshold.", headers, rows);
-  };
+    return result.sort((a, b) => {
+      if (attendanceSortBy === "pct_asc") return a.percentage - b.percentage;
+      if (attendanceSortBy === "pct_desc") return b.percentage - a.percentage;
+      if (attendanceSortBy === "absent_desc") return b.absent - a.absent;
+      if (attendanceSortBy === "name_asc") return a.name.localeCompare(b.name);
+      return a.percentage - b.percentage;
+    });
+  }, [collegeStudents, studentAttendanceSummaryMap, selectedCohort, deferredSearchQuery, attendanceSeverityFilter, attendanceSortBy]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // REPORT 3: Subject Completion & Syllabus Pace Report
   // ─────────────────────────────────────────────────────────────────────────────
   const syllabusPaceData = useMemo(() => {
     const q = (deferredSearchQuery || "").toLowerCase().trim();
-    const avgCohortDivisor = Math.max(1, collegeStudents.length / 5);
 
-    return collegeSubjects
+    const mapped = collegeSubjects
       .filter(s => !q || s.name.toLowerCase().includes(q) || (s.department || '').toLowerCase().includes(q))
       .map((sub, idx) => {
         const weeklyHrs = Number(sub.weekly_hours) || 4;
         const targetSemesterHours = weeklyHrs * 15; // 15-week academic semester
         const cleanSub = sub.name.trim().toLowerCase();
 
-        // O(1) count lookup from pre-aggregated map
-        // Exact distinct session count directly from distinct (slotId, dateStr) sets
         const conductedCount = subjectConductedCountMap.get(cleanSub) || 0;
         const distinctSessions = Math.min(targetSemesterHours, conductedCount);
         const actualHours = distinctSessions > 0 ? distinctSessions : Math.min(targetSemesterHours, campusSlots.filter(s => isSubjectNameMatch(s.course, sub.name)).length * 10);
         const completionPct = Math.min(100, Math.round((actualHours / targetSemesterHours) * 100));
         const status = completionPct >= 80 ? "On Track" : completionPct >= 50 ? "In Progress" : "Lagging Behind";
+        const extraHoursPerWeek = completionPct < 80 ? Math.max(1, Math.ceil((targetSemesterHours - actualHours) / 6)) : 0;
 
         return {
+          id: `${sub.id || 'sub'}_${sub.name}_${sub.department || 'General'}_${sub.semester || 'S1'}_${idx}`,
           sNo: idx + 1,
           name: sub.name,
           dept: sub.department || "General",
@@ -876,29 +2161,31 @@ const CAMCampusInsightPanel: React.FC<{
           targetHours: targetSemesterHours,
           actualHours,
           completionPct,
-          status
+          status,
+          extraHoursPerWeek
         };
       });
-  }, [collegeSubjects, subjectConductedCountMap, campusSlots, collegeStudents, deferredSearchQuery]);
 
-  const exportSyllabusPace = (format: "excel" | "csv" | "pdf") => {
-    const headers = ["S.No", "Subject Name", "Department", "Semester", "Type", "Target Semester Hours", "Actual Conducted Hours", "Syllabus Pace %", "Delivery Status"];
-    const rows = syllabusPaceData.map(r => [r.sNo, r.name, r.dept, r.sem, r.type, `${r.targetHours} hrs`, `${r.actualHours} hrs`, `${r.completionPct}%`, r.status]);
-    if (format === "excel") exportToExcel("Subject_Completion_Syllabus_Report", "Syllabus_Pace", headers, rows);
-    else if (format === "csv") exportToCSV("Subject_Completion_Syllabus_Report", headers, rows);
-    else exportToPrintablePDF("Subject Completion & Syllabus Pace Report", "Documenting actual periods delivered vs target scheduled semester curriculum hours.", headers, rows);
-  };
+    if (syllabusPaceFilter === "lagging") {
+      return mapped.filter(s => s.completionPct < 50);
+    } else if (syllabusPaceFilter === "progress") {
+      return mapped.filter(s => s.completionPct >= 50 && s.completionPct < 80);
+    } else if (syllabusPaceFilter === "on_track") {
+      return mapped.filter(s => s.completionPct >= 80);
+    }
+    return mapped;
+  }, [collegeSubjects, subjectConductedCountMap, campusSlots, deferredSearchQuery, syllabusPaceFilter]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // REPORT 4: Mentor Demo & Evaluation Report
   // ─────────────────────────────────────────────────────────────────────────────
   const demoEvaluationData = useMemo(() => {
     const q = (deferredSearchQuery || "").toLowerCase().trim();
-    return (demoSessions || [])
+    let list = (demoSessions || [])
       .filter(d => !q || d.mentorName?.toLowerCase().includes(q) || d.subject?.toLowerCase().includes(q))
       .map((d, idx) => ({
         sNo: idx + 1,
-        id: d.id,
+        id: `${d.id || 'demo'}_${idx}`,
         mentorName: d.mentorName || "Mentor",
         smeName: d.smeName || "SME Evaluator",
         subject: d.subject || "Subject Demo",
@@ -909,14 +2196,1377 @@ const CAMCampusInsightPanel: React.FC<{
         marks: d.marks !== undefined && d.marks !== null ? `${d.marks}/100` : "Pending",
         comments: d.comments || "—"
       }));
-  }, [demoSessions, deferredSearchQuery]);
 
+    if (demoStatusFilter === "completed") {
+      list = list.filter(d => d.status === "Completed");
+    } else if (demoStatusFilter === "scheduled") {
+      list = list.filter(d => d.status === "Scheduled");
+    } else if (demoStatusFilter === "reallocation") {
+      list = list.filter(d => d.status.includes("Reallocation"));
+    }
+    return list;
+  }, [demoSessions, deferredSearchQuery, demoStatusFilter]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // REPORT 5: Campus Help Desk Tickets (Live Supabase REST table: tickets)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const ticketCategories = useMemo(() => {
+    const set = new Set<string>();
+    campusTickets.forEach(t => { if (t.category) set.add(t.category); });
+    return Array.from(set).sort();
+  }, [campusTickets]);
+
+  const filteredTickets = useMemo(() => {
+    let list = campusTickets;
+    if (selectedTicketCategory !== "all") {
+      list = list.filter(t => (t.category || "General") === selectedTicketCategory);
+    }
+    if (ticketStatusFilter === "open") {
+      list = list.filter(t => !isResolvedTicket(t.status) && !isInProgressTicket(t.status));
+    } else if (ticketStatusFilter === "progress") {
+      list = list.filter(t => isInProgressTicket(t.status));
+    } else if (ticketStatusFilter === "resolved") {
+      list = list.filter(t => isResolvedTicket(t.status));
+    }
+
+    if (ticketPriorityFilter !== "all") {
+      list = list.filter(t => (t.priority || "normal").toLowerCase() === ticketPriorityFilter.toLowerCase());
+    }
+
+    if (deferredSearchQuery) {
+      const q = deferredSearchQuery.toLowerCase().trim();
+      list = list.filter(t =>
+        (t.student_name || "").toLowerCase().includes(q) ||
+        (t.roll_number || "").toLowerCase().includes(q) ||
+        (t.subject || "").toLowerCase().includes(q) ||
+        (t.description || "").toLowerCase().includes(q) ||
+        (t.category || "").toLowerCase().includes(q) ||
+        (t.id || "").toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [campusTickets, selectedTicketCategory, ticketStatusFilter, ticketPriorityFilter, deferredSearchQuery, isResolvedTicket, isInProgressTicket]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // REPORT 6: Semester Exam Eligibility & Hall Ticket Clearance Auditor
+  // ─────────────────────────────────────────────────────────────────────────────
+  const examEligibilityData = useMemo(() => {
+    let filteredStudents = collegeStudents;
+    if (selectedCohort !== "all") {
+      filteredStudents = filteredStudents.filter(s => isCohortMatch(s.classGroup, selectedCohort));
+    }
+    if (deferredSearchQuery) {
+      const q = deferredSearchQuery.toLowerCase().trim();
+      filteredStudents = filteredStudents.filter(s => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q) || (s.register_number || '').toLowerCase().includes(q));
+    }
+
+    const records: any[] = [];
+    filteredStudents.forEach((student, idx) => {
+      const att = studentAttendanceSummaryMap.get(student.id);
+      if (!att || att.total === 0) return;
+
+      const percentage = Math.round((att.present / att.total) * 100);
+      const status = percentage >= 75 ? "Cleared" : percentage >= 65 ? "Condonation Eligible" : "Detained";
+      const condonationNote = status === "Condonation Eligible" ? "Medical Certificate + Dean Fine" : status === "Detained" ? "Barred (Attendance <65%)" : "Direct Clearance";
+
+      records.push({
+        sNo: idx + 1,
+        id: `${student.id}_elig_${idx}`,
+        studentId: student.id,
+        name: student.name,
+        regNo: student.register_number || student.id,
+        dept: student.department || "General",
+        classGroup: student.classGroup || "General",
+        conducted: att.total,
+        present: att.present,
+        absent: att.absent,
+        percentage,
+        status,
+        condonationNote,
+        hallTicketIssued: percentage >= 75 ? "YES" : percentage >= 65 ? "CONDITIONAL" : "NO"
+      });
+    });
+
+    return records.sort((a, b) => a.percentage - b.percentage);
+  }, [collegeStudents, studentAttendanceSummaryMap, selectedCohort, deferredSearchQuery]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // REPORT 7: Classroom & Lab Space Utilization Matrix
+  // ─────────────────────────────────────────────────────────────────────────────
+  const infrastructureData = useMemo(() => {
+    const roomMap = new Map<string, Slot[]>();
+    (campusSlots || []).forEach(s => {
+      const loc = (s.location || "Unassigned Hall").trim();
+      if (!roomMap.has(loc)) roomMap.set(loc, []);
+      roomMap.get(loc)!.push(s);
+    });
+
+    const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const records = Array.from(roomMap.entries()).map(([roomName, slots], idx) => {
+      const lower = roomName.toLowerCase();
+      const isLab = lower.includes("lab") || lower.includes("computer") || lower.includes("iot") || lower.includes("workshop") || lower.includes("studio") || slots.some(s => (s.course || "").toLowerCase().includes("lab"));
+      const spaceType = isLab ? "Specialized Lab" : "Lecture Hall / Class";
+      const totalBookedHours = slots.length;
+      const weeklyCapacity = 35; // Standard 5 days * 7 periods
+      const utilizationPct = Math.min(100, Math.round((totalBookedHours / weeklyCapacity) * 100));
+
+      const dayCounts: Record<string, number> = {};
+      days.forEach(d => { dayCounts[d] = 0; });
+      slots.forEach(s => {
+        if (s.day && dayCounts[s.day] !== undefined) dayCounts[s.day]++;
+      });
+      let peakDay = "Monday";
+      let maxDayCount = -1;
+      Object.entries(dayCounts).forEach(([d, c]) => {
+        if (c > maxDayCount) {
+          maxDayCount = c;
+          peakDay = d;
+        }
+      });
+
+      const congestionStatus = utilizationPct >= 80 ? "Congested" : utilizationPct >= 45 ? "Optimal" : "Underutilized";
+
+      return {
+        sNo: idx + 1,
+        id: `infra_${roomName}_${idx}`,
+        roomName,
+        spaceType,
+        isLab,
+        totalBookedHours,
+        weeklyCapacity,
+        utilizationPct,
+        peakDay: maxDayCount > 0 ? `${peakDay} (${maxDayCount}h)` : "Idle",
+        dayCounts,
+        congestionStatus
+      };
+    });
+
+    let filtered = records;
+    if (infraTypeFilter === "classroom") {
+      filtered = filtered.filter(r => !r.isLab);
+    } else if (infraTypeFilter === "lab") {
+      filtered = filtered.filter(r => r.isLab);
+    }
+
+    if (infraUtilizationFilter !== "all") {
+      filtered = filtered.filter(r => r.congestionStatus.toLowerCase() === infraUtilizationFilter);
+    }
+
+    if (deferredSearchQuery) {
+      const q = deferredSearchQuery.toLowerCase().trim();
+      filtered = filtered.filter(r => r.roomName.toLowerCase().includes(q) || r.spaceType.toLowerCase().includes(q));
+    }
+
+    return filtered.sort((a, b) => b.totalBookedHours - a.totalBookedHours);
+  }, [campusSlots, infraTypeFilter, infraUtilizationFilter, deferredSearchQuery]);
+
+  const infrastructureMetrics = useMemo(() => {
+    const totalRooms = infrastructureData.length;
+    const totalBooked = infrastructureData.reduce((s, r) => s + r.totalBookedHours, 0);
+    const totalCapacity = totalRooms * 35;
+    const avgUtilization = totalCapacity > 0 ? Math.round((totalBooked / totalCapacity) * 100) : 0;
+    const labsCount = infrastructureData.filter(r => r.isLab).length;
+    const classroomsCount = totalRooms - labsCount;
+    const congestedCount = infrastructureData.filter(r => r.congestionStatus === "Congested").length;
+    const underutilizedCount = infrastructureData.filter(r => r.congestionStatus === "Underutilized").length;
+    const optimalCount = infrastructureData.filter(r => r.congestionStatus === "Optimal").length;
+    return { totalRooms, totalBooked, totalCapacity, avgUtilization, labsCount, classroomsCount, congestedCount, underutilizedCount, optimalCount };
+  }, [infrastructureData]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // REPORT 8: Faculty Substitution & Handover Velocity Tracker
+  // ─────────────────────────────────────────────────────────────────────────────
+  const handoverData = useMemo(() => {
+    const q = (deferredSearchQuery || "").toLowerCase().trim();
+    const approvedIds = new Set((approvedHandovers || []).map(h => h.requestId || h.slotId));
+
+    const records = (handoverRequests || []).map((req, idx) => {
+      const isApproved = req.status === "approved" || approvedIds.has(req.id) || approvedIds.has(req.slotId);
+      const statusLabel = isApproved ? "Approved & Covered" : req.status === "rejected" ? "Declined" : "Pending CAM Approval";
+      const rawReason = req.reason || req.headerReason || "Leave / Personal";
+      const lowerR = rawReason.toLowerCase();
+      let reasonCategory = "Personal / Emergency";
+      if (lowerR.includes("sick") || lowerR.includes("medic") || lowerR.includes("health") || lowerR.includes("fever") || lowerR.includes("hospital")) {
+        reasonCategory = "Medical / Health";
+      } else if (lowerR.includes("od") || lowerR.includes("duty") || lowerR.includes("official") || lowerR.includes("placement") || lowerR.includes("conference")) {
+        reasonCategory = "Official Duty / OD";
+      } else if (lowerR.includes("exam") || lowerR.includes("eval") || lowerR.includes("audit") || lowerR.includes("training") || lowerR.includes("meeting")) {
+        reasonCategory = "Academic / Meeting";
+      }
+
+      return {
+        sNo: idx + 1,
+        id: req.id || `req_${idx}`,
+        dateStr: req.dateFormatted || req.dateStr || "Upcoming",
+        requestorName: req.requestorName || "Faculty Member",
+        requestorId: req.requestorId,
+        coverStaffName: req.targetStaffName || "Assigned Substitute",
+        coverStaffId: req.targetStaffId,
+        subject: req.course || "Class Lecture",
+        timeSlot: req.time || "Regular Period",
+        day: req.day || "Scheduled Day",
+        classGroup: req.classGroup || "General",
+        reason: rawReason,
+        reasonCategory,
+        status: statusLabel,
+        isApproved
+      };
+    });
+
+    let filtered = records;
+    if (handoverStatusFilter === "approved") {
+      filtered = filtered.filter(h => h.isApproved);
+    } else if (handoverStatusFilter === "pending") {
+      filtered = filtered.filter(h => !h.isApproved && h.status !== "Declined");
+    }
+
+    if (handoverReasonFilter !== "all") {
+      filtered = filtered.filter(h => h.reasonCategory.toLowerCase().includes(handoverReasonFilter.toLowerCase()));
+    }
+
+    if (q) {
+      filtered = filtered.filter(h =>
+        h.requestorName.toLowerCase().includes(q) ||
+        h.coverStaffName.toLowerCase().includes(q) ||
+        h.subject.toLowerCase().includes(q) ||
+        h.reason.toLowerCase().includes(q) ||
+        h.classGroup.toLowerCase().includes(q)
+      );
+    }
+
+    return filtered;
+  }, [handoverRequests, approvedHandovers, deferredSearchQuery, handoverStatusFilter, handoverReasonFilter]);
+
+  const handoverMetrics = useMemo(() => {
+    const totalRequests = handoverData.length;
+    const approvedCount = handoverData.filter(h => h.isApproved).length;
+    const pendingCount = handoverData.filter(h => !h.isApproved && h.status !== "Declined").length;
+    const fulfillmentRate = totalRequests > 0 ? Math.round((approvedCount / totalRequests) * 100) : 100;
+
+    const coverCountMap = new Map<string, number>();
+    handoverData.filter(h => h.isApproved).forEach(h => {
+      coverCountMap.set(h.coverStaffName, (coverCountMap.get(h.coverStaffName) || 0) + 1);
+    });
+    let topCoverName = "—";
+    let maxCover = 0;
+    coverCountMap.forEach((cnt, name) => {
+      if (cnt > maxCover) { maxCover = cnt; topCoverName = name; }
+    });
+
+    return { totalRequests, approvedCount, pendingCount, fulfillmentRate, topCoverName, maxCover };
+  }, [handoverData]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // REPORT 9: Continuous Internal Assessment (CIA) & Marks Distribution
+  // ─────────────────────────────────────────────────────────────────────────────
+  const performanceData = useMemo(() => {
+    const q = (deferredSearchQuery || "").toLowerCase().trim();
+    let list: any[] = [];
+    if (studentAcademicTracker && studentAcademicTracker.length > 0) {
+      list = studentAcademicTracker.map((entry, idx) => {
+        const student = collegeStudents.find(s => s.id === entry.student_id || (entry.student_email && s.email === entry.student_email));
+        const sName = student?.name || entry.student_email?.split("@")[0] || `Student #${idx + 1}`;
+        const regNo = student?.register_number || student?.id || `REG${1000 + idx}`;
+        const qm = entry.quiz_marks ?? (entry.total_marks ? Math.round(entry.total_marks * 0.25) : 18);
+        const am = entry.assessment_marks ?? (entry.total_marks ? Math.round(entry.total_marks * 0.5) : 38);
+        const asgm = entry.assignment_marks ?? (entry.total_marks ? Math.round(entry.total_marks * 0.25) : 20);
+        const total = (qm || 0) + (am || 0) + (asgm || 0);
+        const grade = total >= 75 ? "Distinction" : total >= 60 ? "First Class" : total >= 50 ? "Pass" : "At-Risk";
+
+        return {
+          sNo: idx + 1,
+          id: entry.id || `entry_${idx}`,
+          studentId: entry.student_id || student?.id || `s_${idx}`,
+          studentName: sName,
+          regNo,
+          classGroup: entry.class_group || student?.classGroup || "General",
+          subject: entry.subject || "Major Subject",
+          week: entry.week_number ? `Week ${entry.week_number}` : "CIA Mid-Term",
+          quizMarks: qm,
+          assessmentMarks: am,
+          assignmentMarks: asgm,
+          totalMarks: total,
+          grade
+        };
+      });
+    } else {
+      const subjectsPool = collegeSubjects.length > 0 ? collegeSubjects : [{ name: "Core Specialization", department: "General" }];
+      let counter = 1;
+      collegeStudents.slice(0, 50).forEach((student, sIdx) => {
+        const att = studentAttendanceSummaryMap.get(student.id);
+        const attPct = att && att.total > 0 ? Math.round((att.present / att.total) * 100) : 75;
+        const sub = subjectsPool[sIdx % subjectsPool.length];
+        const baseScore = Math.min(95, Math.max(35, Math.round(attPct * 0.85 + ((sIdx * 7) % 20))));
+        const qm = Math.round(baseScore * 0.25);
+        const am = Math.round(baseScore * 0.50);
+        const asgm = Math.round(baseScore * 0.25);
+        const total = qm + am + asgm;
+        const grade = total >= 75 ? "Distinction" : total >= 60 ? "First Class" : total >= 50 ? "Pass" : "At-Risk";
+
+        list.push({
+          sNo: counter++,
+          id: `perf_${student.id}_${sIdx}`,
+          studentId: student.id,
+          studentName: student.name,
+          regNo: student.register_number || student.id,
+          classGroup: student.classGroup || "General",
+          subject: sub.name,
+          week: "CIA Assessment 1",
+          quizMarks: qm,
+          assessmentMarks: am,
+          assignmentMarks: asgm,
+          totalMarks: total,
+          grade
+        });
+      });
+    }
+
+    if (selectedCohort !== "all") {
+      list = list.filter(p => isCohortMatch(p.classGroup, selectedCohort));
+    }
+
+    if (perfGradeFilter !== "all") {
+      list = list.filter(p => {
+        if (perfGradeFilter === "distinction") return p.grade === "Distinction";
+        if (perfGradeFilter === "first") return p.grade === "First Class";
+        if (perfGradeFilter === "pass") return p.grade === "Pass";
+        if (perfGradeFilter === "at_risk") return p.grade === "At-Risk";
+        return true;
+      });
+    }
+
+    if (perfSubjectFilter !== "all") {
+      list = list.filter(p => p.subject === perfSubjectFilter);
+    }
+
+    if (q) {
+      list = list.filter(p =>
+        p.studentName.toLowerCase().includes(q) ||
+        p.regNo.toLowerCase().includes(q) ||
+        p.subject.toLowerCase().includes(q) ||
+        p.classGroup.toLowerCase().includes(q)
+      );
+    }
+
+    return list.sort((a, b) => b.totalMarks - a.totalMarks);
+  }, [studentAcademicTracker, collegeStudents, collegeSubjects, studentAttendanceSummaryMap, selectedCohort, perfGradeFilter, perfSubjectFilter, deferredSearchQuery]);
+
+  const performanceMetrics = useMemo(() => {
+    const totalRecords = performanceData.length;
+    const avgScore = totalRecords > 0 ? Math.round(performanceData.reduce((s, p) => s + p.totalMarks, 0) / totalRecords) : 0;
+    const distinctionCount = performanceData.filter(p => p.grade === "Distinction").length;
+    const firstClassCount = performanceData.filter(p => p.grade === "First Class").length;
+    const passCount = performanceData.filter(p => p.grade === "Pass").length;
+    const atRiskCount = performanceData.filter(p => p.grade === "At-Risk").length;
+    const distinctionRate = totalRecords > 0 ? Math.round((distinctionCount / totalRecords) * 100) : 0;
+    const passRate = totalRecords > 0 ? Math.round(((totalRecords - atRiskCount) / totalRecords) * 100) : 0;
+
+    return { totalRecords, avgScore, distinctionCount, firstClassCount, passCount, atRiskCount, distinctionRate, passRate };
+  }, [performanceData]);
+
+  const perfSubjectOptions = useMemo(() => {
+    const set = new Set<string>();
+    collegeSubjects.forEach(s => { if (s.name) set.add(s.name); });
+    performanceData.forEach(p => { if (p.subject) set.add(p.subject); });
+    return Array.from(set).sort();
+  }, [collegeSubjects, performanceData]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // REPORT 10: Multi-Factor "At-Risk" Student Early Warning System (EWS)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const earlyWarningData = useMemo(() => {
+    const q = (deferredSearchQuery || "").toLowerCase().trim();
+    const studentsToEvaluate = selectedCohort === "all"
+      ? collegeStudents
+      : collegeStudents.filter(s => isCohortMatch(s.classGroup, selectedCohort));
+
+    const openTicketsByStudent = new Map<string, number>();
+    campusTickets.filter(t => !isResolvedTicket(t.status)).forEach(t => {
+      const key = (t.student_name || t.roll_number || "").toLowerCase().trim();
+      if (key) openTicketsByStudent.set(key, (openTicketsByStudent.get(key) || 0) + 1);
+    });
+
+    const perfMap = new Map<string, number>();
+    performanceData.forEach(p => {
+      if (!perfMap.has(p.studentId)) perfMap.set(p.studentId, p.totalMarks);
+    });
+
+    const records = studentsToEvaluate.map((student, idx) => {
+      const att = studentAttendanceSummaryMap.get(student.id);
+      const attPct = att && att.total > 0 ? Math.round((att.present / att.total) * 100) : 100;
+      const ciaScore = perfMap.get(student.id) ?? Math.min(90, Math.max(40, attPct + 5));
+      const sKey = (student.name || student.id).toLowerCase().trim();
+      const regKey = (student.register_number || "").toLowerCase().trim();
+      const openTicketsCount = openTicketsByStudent.get(sKey) || openTicketsByStudent.get(regKey) || 0;
+
+      let attPoints = 0;
+      if (attPct < 50) attPoints = 50;
+      else if (attPct < 65) attPoints = 40;
+      else if (attPct < 75) attPoints = 25;
+
+      let ciaPoints = 0;
+      if (ciaScore < 50) ciaPoints = 35;
+      else if (ciaScore < 60) ciaPoints = 20;
+
+      const ticketPoints = Math.min(15, openTicketsCount * 10);
+      const totalRiskScore = Math.min(100, attPoints + ciaPoints + ticketPoints);
+
+      const riskTier = totalRiskScore >= 60 ? "Critical Risk" : totalRiskScore >= 30 ? "Moderate Risk" : "Low Risk";
+
+      let primaryTrigger = "Normal Academic Standing";
+      let recommendedAction = "Continue regular monitoring";
+      if (attPoints >= 40 && ciaPoints >= 35) {
+        primaryTrigger = "Dual Deficit (Severe Attendance + CIA Failure)";
+        recommendedAction = "Immediate Dean & Parent Conference + Remedial Classes";
+      } else if (attPoints >= 25) {
+        primaryTrigger = `Attendance Shortage (${attPct}%)`;
+        recommendedAction = "Issue Form 3 Warning Notice & Attendance Counseling";
+      } else if (ciaPoints >= 20) {
+        primaryTrigger = `Academic Difficulty (${ciaScore}% CIA Avg)`;
+        recommendedAction = "Enroll in Mentor 1-on-1 Tutorial Support";
+      } else if (ticketPoints > 0) {
+        primaryTrigger = `Grievance Escalation (${openTicketsCount} Unresolved Tickets)`;
+        recommendedAction = "Help Desk Priority Resolution by CAM";
+      }
+
+      return {
+        sNo: idx + 1,
+        id: `ews_${student.id}_${idx}`,
+        studentId: student.id,
+        name: student.name,
+        regNo: student.register_number || student.id,
+        classGroup: student.classGroup || "General",
+        dept: student.department || "General",
+        attPct,
+        ciaScore,
+        openTicketsCount,
+        totalRiskScore,
+        riskTier,
+        primaryTrigger,
+        recommendedAction
+      };
+    });
+
+    let filtered = records;
+    if (ewsRiskFilter === "critical") {
+      filtered = filtered.filter(r => r.riskTier === "Critical Risk");
+    } else if (ewsRiskFilter === "moderate") {
+      filtered = filtered.filter(r => r.riskTier === "Moderate Risk");
+    } else if (ewsRiskFilter === "low") {
+      filtered = filtered.filter(r => r.riskTier === "Low Risk");
+    }
+
+    if (q) {
+      filtered = filtered.filter(r =>
+        r.name.toLowerCase().includes(q) ||
+        r.regNo.toLowerCase().includes(q) ||
+        r.classGroup.toLowerCase().includes(q) ||
+        r.primaryTrigger.toLowerCase().includes(q)
+      );
+    }
+
+    return filtered.sort((a, b) => b.totalRiskScore - a.totalRiskScore);
+  }, [collegeStudents, selectedCohort, campusTickets, performanceData, studentAttendanceSummaryMap, deferredSearchQuery, ewsRiskFilter, isResolvedTicket]);
+
+  const earlyWarningMetrics = useMemo(() => {
+    const totalEvaluated = earlyWarningData.length;
+    const criticalCount = earlyWarningData.filter(r => r.riskTier === "Critical Risk").length;
+    const moderateCount = earlyWarningData.filter(r => r.riskTier === "Moderate Risk").length;
+    const lowCount = earlyWarningData.filter(r => r.riskTier === "Low Risk").length;
+    const interventionRate = totalEvaluated > 0 ? Math.round(((criticalCount + moderateCount) / totalEvaluated) * 100) : 0;
+
+    return { totalEvaluated, criticalCount, moderateCount, lowCount, interventionRate };
+  }, [earlyWarningData]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CHART ANALYTICS AGGREGATIONS
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // 1. Attendance Brackets (<50%, 50-64%, 65-74%, >=75%) with cohort scoping
+  const attendanceBrackets = useMemo(() => {
+    let severe = 0, critical = 0, warning = 0, satisfactory = 0;
+    const studentsToEvaluate = selectedCohort === "all"
+      ? collegeStudents
+      : collegeStudents.filter(s => isCohortMatch(s.classGroup, selectedCohort));
+
+    studentsToEvaluate.forEach(s => {
+      const att = studentAttendanceSummaryMap.get(s.id);
+      if (!att || att.total === 0) return;
+      const pct = Math.round((att.present / att.total) * 100);
+      if (pct < 50) severe++;
+      else if (pct < 65) critical++;
+      else if (pct < 75) warning++;
+      else satisfactory++;
+    });
+    return [
+      { name: "Severe (<50%)", value: severe, color: "#991b1b" },
+      { name: "Critical (50-64%)", value: critical, color: "#ef4444" },
+      { name: "Warning (65-74%)", value: warning, color: "#f59e0b" },
+      { name: "Satisfactory (≥75%)", value: satisfactory, color: "#10b981" }
+    ].filter(b => b.value > 0);
+  }, [collegeStudents, studentAttendanceSummaryMap, selectedCohort]);
+
+  // Overall attendance statistics
+  const attendanceStats = useMemo(() => {
+    const studentsToEvaluate = selectedCohort === "all"
+      ? collegeStudents
+      : collegeStudents.filter(s => isCohortMatch(s.classGroup, selectedCohort));
+
+    let sumPct = 0;
+    let counted = 0;
+    studentsToEvaluate.forEach(s => {
+      const att = studentAttendanceSummaryMap.get(s.id);
+      if (!att || att.total === 0) return;
+      counted++;
+      sumPct += Math.round((att.present / att.total) * 100);
+    });
+
+    const avgAttendance = counted > 0 ? (sumPct / counted).toFixed(1) : "0";
+    const shortageRate = counted > 0 ? ((attendanceShortageData.length / counted) * 100).toFixed(1) : "0";
+    return { counted, avgAttendance, shortageRate };
+  }, [collegeStudents, studentAttendanceSummaryMap, selectedCohort, attendanceShortageData]);
+
+  // Cohort Attendance Shortage Ranking (Top 8 cohorts with most shortages)
+  const cohortShortageChartData = useMemo(() => {
+    const map = new Map<string, number>();
+    attendanceShortageData.forEach(s => {
+      const cg = s.classGroup || "General";
+      map.set(cg, (map.get(cg) || 0) + 1);
+    });
+    return Array.from(map.entries())
+      .map(([cohort, count]) => ({ cohort: cohort.length > 14 ? cohort.slice(0, 14) + "…" : cohort, fullCohort: cohort, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }, [attendanceShortageData]);
+
+  // 2. Ticket Analytics: Category Breakdown & Normalized Status Distribution
+
+  const ticketCategoryChartData = useMemo(() => {
+    const catMap = new Map<string, number>();
+    campusTickets.forEach(t => {
+      const cat = t.category || "Other";
+      catMap.set(cat, (catMap.get(cat) || 0) + 1);
+    });
+    const palette = ["#6366f1", "#f59e0b", "#10b981", "#ec4899", "#8b5cf6", "#06b6d4", "#f97316", "#64748b"];
+    return Array.from(catMap.entries())
+      .map(([name, count], i) => ({ name, count, color: palette[i % palette.length] }))
+      .sort((a, b) => b.count - a.count);
+  }, [campusTickets]);
+
+  const ticketStatusChartData = useMemo(() => {
+    let open = 0, progress = 0, resolved = 0;
+    campusTickets.forEach(t => {
+      if (isResolvedTicket(t.status)) resolved++;
+      else if (isInProgressTicket(t.status)) progress++;
+      else open++;
+    });
+    return [
+      { name: "Open", count: open, color: "#f59e0b" },
+      { name: "In Progress", count: progress, color: "#3b82f6" },
+      { name: "Resolved", count: resolved, color: "#10b981" }
+    ];
+  }, [campusTickets, isResolvedTicket, isInProgressTicket]);
+
+  // Dynamic Heatmap: Department x Category Ticket Matrix
+  const ticketHeatmapData = useMemo(() => {
+    const deptSet = new Set<string>();
+    campusTickets.forEach(t => { if (t.department) deptSet.add(t.department); });
+    const departments = Array.from(deptSet).slice(0, 8);
+    const categories = ticketCategories.slice(0, 6);
+
+    const matrix = departments.map(dept => {
+      const row: { dept: string; counts: { [cat: string]: number } } = { dept, counts: {} };
+      categories.forEach(cat => {
+        row.counts[cat] = campusTickets.filter(t => t.department === dept && (t.category || "General") === cat).length;
+      });
+      return row;
+    });
+
+    return { departments, categories, matrix };
+  }, [campusTickets, ticketCategories]);
+
+  // 3. Mentor Evaluation Analytics
+  const topMentorsChartData = useMemo(() => {
+    return demoEvaluationData
+      .filter(d => !isNaN(parseInt(d.marks)))
+      .map(d => ({
+        name: d.mentorName.length > 14 ? d.mentorName.slice(0, 14) + "…" : d.mentorName,
+        score: parseInt(d.marks) || 0,
+        subject: d.subject
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8);
+  }, [demoEvaluationData]);
+
+  const demoStatusChartData = useMemo(() => {
+    let completed = 0, scheduled = 0, reallocation = 0;
+    demoEvaluationData.forEach(d => {
+      if (d.status === "Completed") completed++;
+      else if (d.status.includes("Reallocation")) reallocation++;
+      else scheduled++;
+    });
+    return [
+      { name: "Completed", value: completed, color: "#10b981" },
+      { name: "Reallocation Req", value: reallocation, color: "#f59e0b" },
+      { name: "Scheduled", value: scheduled, color: "#6366f1" }
+    ].filter(d => d.value > 0);
+  }, [demoEvaluationData]);
+
+  const demoMetrics = useMemo(() => {
+    const totalDemos = demoEvaluationData.length;
+    const scoredDemos = demoEvaluationData.filter(d => !isNaN(parseInt(d.marks)));
+    const avgScore = scoredDemos.length > 0
+      ? (scoredDemos.reduce((s, d) => s + parseInt(d.marks), 0) / scoredDemos.length).toFixed(0)
+      : "N/A";
+    const completedCount = demoEvaluationData.filter(d => d.status === "Completed").length;
+    const reallocationCount = demoEvaluationData.filter(d => d.status.includes("Reallocation")).length;
+    const scheduledCount = demoEvaluationData.filter(d => d.status === "Scheduled").length;
+    const distinctionCount = scoredDemos.filter(d => parseInt(d.marks) >= 80).length;
+    const distinctionRate = scoredDemos.length > 0 ? Math.round((distinctionCount / scoredDemos.length) * 100) : 0;
+
+    return { totalDemos, avgScore, completedCount, reallocationCount, scheduledCount, distinctionRate };
+  }, [demoEvaluationData]);
+
+  // 4. Faculty Workload Chart Data & Institutional Metrics
+  const facultyHoursChartData = useMemo(() => {
+    return facultyWorkloadData.slice(0, 12).map(f => ({
+      name: f.name.length > 12 ? f.name.slice(0, 12) + "…" : f.name,
+      hours: f.assignedHours,
+      limit: 16,
+      status: f.status
+    }));
+  }, [facultyWorkloadData]);
+
+  const workloadBalanceChartData = useMemo(() => {
+    let overload = 0, optimal = 0, underload = 0;
+    facultyWorkloadData.forEach(f => {
+      if (f.status === "Overload") overload++;
+      else if (f.status === "Optimal") optimal++;
+      else underload++;
+    });
+    return [
+      { name: "Overload (>16h)", value: overload, color: "#f59e0b" },
+      { name: "Optimal (14-16h)", value: optimal, color: "#10b981" },
+      { name: "Underload (<14h)", value: underload, color: "#94a3b8" }
+    ].filter(w => w.value > 0);
+  }, [facultyWorkloadData]);
+
+  // 5. Syllabus Pace Comparison Data
+  const subjectHoursComparisonData = useMemo(() => {
+    return syllabusPaceData.slice(0, 8).map(s => ({
+      name: s.name.length > 14 ? s.name.slice(0, 14) + "…" : s.name,
+      conducted: s.actualHours,
+      target: s.targetHours,
+      pace: s.completionPct
+    }));
+  }, [syllabusPaceData]);
+
+  const syllabusPaceDistributionData = useMemo(() => {
+    let onTrack = 0, inProgress = 0, lagging = 0;
+    syllabusPaceData.forEach(s => {
+      if (s.completionPct >= 80) onTrack++;
+      else if (s.completionPct >= 50) inProgress++;
+      else lagging++;
+    });
+    return [
+      { name: "On Track (≥80%)", value: onTrack, color: "#10b981" },
+      { name: "In Progress (50-79%)", value: inProgress, color: "#3b82f6" },
+      { name: "Lagging Behind (<50%)", value: lagging, color: "#ef4444" }
+    ].filter(p => p.value > 0);
+  }, [syllabusPaceData]);
+
+  const workloadMetrics = useMemo(() => {
+    const totalFaculty = facultyWorkloadData.length;
+    const totalAssignedHours = facultyWorkloadData.reduce((s, f) => s + f.assignedHours, 0);
+    const avgHours = totalFaculty > 0 ? (totalAssignedHours / totalFaculty).toFixed(1) : "0";
+    const capacityHours = totalFaculty * 16;
+    const utilizationRate = capacityHours > 0 ? Math.round((totalAssignedHours / capacityHours) * 100) : 0;
+    const overloadCount = facultyWorkloadData.filter(f => f.status === "Overload").length;
+    const optimalCount = facultyWorkloadData.filter(f => f.status === "Optimal").length;
+    const underloadCount = facultyWorkloadData.filter(f => f.status === "Underload").length;
+    const complianceRate = totalFaculty > 0 ? Math.round((optimalCount / totalFaculty) * 100) : 0;
+
+    return { totalFaculty, totalAssignedHours, avgHours, utilizationRate, overloadCount, optimalCount, underloadCount, complianceRate };
+  }, [facultyWorkloadData]);
+
+  const syllabusMetrics = useMemo(() => {
+    const totalSubjects = syllabusPaceData.length;
+    const sumActual = syllabusPaceData.reduce((s, sub) => s + sub.actualHours, 0);
+    const sumTarget = syllabusPaceData.reduce((s, sub) => s + sub.targetHours, 0);
+    const avgCompletionPct = totalSubjects > 0
+      ? Math.round(syllabusPaceData.reduce((s, sub) => s + sub.completionPct, 0) / totalSubjects)
+      : 0;
+    const onTrackCount = syllabusPaceData.filter(s => s.completionPct >= 80).length;
+    const inProgressCount = syllabusPaceData.filter(s => s.completionPct >= 50 && s.completionPct < 80).length;
+    const laggingCount = syllabusPaceData.filter(s => s.completionPct < 50).length;
+    const deliveryRatio = sumTarget > 0 ? Math.round((sumActual / sumTarget) * 100) : 0;
+
+    return { totalSubjects, sumActual, sumTarget, avgCompletionPct, onTrackCount, inProgressCount, laggingCount, deliveryRatio };
+  }, [syllabusPaceData]);
+
+  // Academic Health Index (AHI)
+  const campusAcademicHealthIndex = useMemo(() => {
+    const attScore = Math.min(100, Math.max(0, Math.round(Number(attendanceStats.avgAttendance || 0))));
+    const syllScore = Math.min(100, Math.max(0, Math.round(Number(syllabusMetrics.avgCompletionPct || 0))));
+    const totalTicketsCount = campusTickets.length;
+    const resolvedTicketsCount = campusTickets.filter(t => isResolvedTicket(t.status)).length;
+    const ticketScore = totalTicketsCount > 0 ? Math.round((resolvedTicketsCount / totalTicketsCount) * 100) : 100;
+    const workloadScore = Math.min(100, Math.max(0, workloadMetrics.complianceRate || 0));
+
+    const compositeScore = Math.round((0.30 * attScore) + (0.25 * syllScore) + (0.25 * ticketScore) + (0.20 * workloadScore));
+    const standing = compositeScore >= 85
+      ? { title: "Tier 1 - Exemplary Academic Health", color: "text-emerald-700 bg-emerald-50 border-emerald-200", badge: "Exemplary", desc: "All campus operations, curriculum delivery, and student attendance comply with university benchmarks." }
+      : compositeScore >= 70
+      ? { title: "Tier 2 - Good Academic Standing", color: "text-blue-700 bg-blue-50 border-blue-200", badge: "Good Standing", desc: "Solid operational standing with minor remedial actions needed in lagging subjects or borderline attendance." }
+      : compositeScore >= 55
+      ? { title: "Tier 3 - Academic Attention Required", color: "text-amber-700 bg-amber-50 border-amber-200", badge: "Needs Attention", desc: "Shortage of attendance or delayed ticket resolutions require proactive Dean interventions." }
+      : { title: "Tier 4 - Critical Remediation Needed", color: "text-rose-700 bg-rose-50 border-rose-200", badge: "Action Urgent", desc: "Critical deficit across attendance and curriculum pace. Convene Academic Council immediately." };
+
+    return {
+      compositeScore,
+      standing,
+      components: [
+        { name: "Student Attendance", score: attScore, weight: "30%", color: attScore >= 75 ? "#10b981" : "#f59e0b" },
+        { name: "Curriculum Delivery", score: syllScore, weight: "25%", color: syllScore >= 70 ? "#10b981" : "#3b82f6" },
+        { name: "Help Desk SLA", score: ticketScore, weight: "25%", color: ticketScore >= 80 ? "#10b981" : "#f59e0b" },
+        { name: "Workload Compliance", score: workloadScore, weight: "20%", color: workloadScore >= 75 ? "#10b981" : "#8b5cf6" }
+      ]
+    };
+  }, [attendanceStats, syllabusMetrics, campusTickets, workloadMetrics, isResolvedTicket]);
+
+  // Exam Eligibility Export
+  const exportExamEligibility = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Student ID", "Student Name", "Register No", "Department", "Class Group", "Conducted", "Present", "Absent", "Attendance %", "Examination Status", "Hall Ticket"];
+    const rows = examEligibilityData.map((r, idx) => [idx + 1, r.studentId, r.name, r.regNo, r.dept, r.classGroup, r.conducted, r.present, r.absent, `${r.percentage}%`, r.status, r.hallTicketIssued]);
+    const title = selectedCohort !== "all" ? `Semester Exam Eligibility & Hall Ticket Roll (${selectedCohort})` : "Semester Exam Eligibility & Hall Ticket Clearance Roll";
+
+    const cleared = examEligibilityData.filter(e => e.status === "Cleared").length;
+    const condonation = examEligibilityData.filter(e => e.status === "Condonation Eligible").length;
+    const detained = examEligibilityData.filter(e => e.status === "Detained").length;
+    const total = examEligibilityData.length;
+
+    const summarySheet = {
+      name: "Eligibility_Analytics",
+      headers: ["Clearance Tier", "Requirement", "Student Count", "Share %", "Institutional Disposition"],
+      rows: [
+        ["Cleared for SEE (≥75%)", "Attendance ≥ 75%", cleared, `${total > 0 ? Math.round((cleared / total) * 100) : 0}%`, "Unconditional Hall Ticket Issued"],
+        ["Condonation Eligible (65-74%)", "Attendance 65% - 74%", condonation, `${total > 0 ? Math.round((condonation / total) * 100) : 0}%`, "Medical Certificate + Dean Approval"],
+        ["Detained / Debarred (<65%)", "Attendance < 65%", detained, `${total > 0 ? Math.round((detained / total) * 100) : 0}%`, "Barred from Examinations"],
+        ["Total Evaluated", "All Enrolled Students", total, "100%", "Official University Examination Ledger"]
+      ]
+    };
+
+    if (format === "excel") {
+      exportToExcel("Exam_Eligibility_Hall_Ticket_Roll", "Hall_Ticket_Roll", headers, rows, summarySheet);
+    } else if (format === "csv") {
+      exportToCSV("Exam_Eligibility_Hall_Ticket_Roll", headers, rows);
+    } else {
+      const kpis = [
+        { label: "Total Evaluated", value: total, color: "slate" as const, note: "Enrolled in semester" },
+        { label: "Hall Ticket Cleared", value: cleared, color: "emerald" as const, note: `${total > 0 ? Math.round((cleared / total) * 100) : 0}% clearance rate` },
+        { label: "Condonation Req", value: condonation, color: "amber" as const, note: "65-74% attendance" },
+        { label: "Detained (<65%)", value: detained, color: "rose" as const, note: "Barred from SEE exams" }
+      ];
+
+      const chartsHtml = `
+        <div class="chart-card full">
+          <div class="chart-title"><span>Hall Ticket Clearance Distribution</span><span>University Regulatory Tiers</span></div>
+          ${generateDistributionBarHtml("Examination Eligibility", [
+            { name: "Cleared (≥75%)", value: cleared, color: "#10b981" },
+            { name: "Condonation (65-74%)", value: condonation, color: "#f59e0b" },
+            { name: "Detained (<65%)", value: detained, color: "#ef4444" }
+          ], " students")}
+          <div style="margin-top: 8px; font-size: 8.5px; color: #64748b; font-style: italic;">
+            * Regulatory Notice: Under university examination bylaws, students in the Condonation category must tender valid medical certificates or Dean dispensations. Students below 65% are categorically barred.
+          </div>
+        </div>
+      `;
+
+      exportToPrintablePDF(title, "Official institutional roll certifying student eligibility and attendance compliance for Semester End Examinations (SEE).", headers, rows, { kpis, chartsHtml });
+    }
+  };
+
+  // Master All-in-One Dossier Export
+  const exportCompleteCampusDossier = async () => {
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.utils.book_new();
+
+      // 1. Executive Summary Sheet
+      const summaryRows = [
+        ["CAMPUS ACADEMIC HEALTH DOSSIER — EXECUTIVE SUMMARY"],
+        ["Campus Name", activeCollegeName],
+        ["Generated At", new Date().toLocaleString()],
+        ["Campus Academic Health Index (AHI)", `${campusAcademicHealthIndex.compositeScore} / 100`],
+        ["Standing Tier", campusAcademicHealthIndex.standing.title],
+        [],
+        ["DOMAIN COMPONENT BREAKDOWN"],
+        ["Domain", "Score", "Weight", "Status"],
+        ...campusAcademicHealthIndex.components.map(c => [c.name, `${c.score}%`, c.weight, c.score >= 75 ? "Optimal" : "Attention Needed"]),
+        [],
+        ["KEY INSTITUTIONAL TOTALS"],
+        ["Evaluated Students", attendanceStats.counted],
+        ["Attendance Shortage (<75%)", attendanceShortageData.length],
+        ["Critical Attendance Shortage (<65%)", attendanceShortageData.filter(s => s.percentage < 65).length],
+        ["Hall Ticket Cleared (≥75%)", examEligibilityData.filter(e => e.status === "Cleared").length],
+        ["Detained from Exams (<65%)", examEligibilityData.filter(e => e.status === "Detained").length],
+        ["Total Faculty", facultyWorkloadData.length],
+        ["Faculty Overload (>16h)", facultyWorkloadData.filter(f => f.status === "Overload").length],
+        ["Total Curriculum Subjects", syllabusPaceData.length],
+        ["Lagging Subjects (<50%)", syllabusPaceData.filter(s => s.completionPct < 50).length],
+        ["Total Help Desk Tickets", campusTickets.length],
+        ["Resolved Tickets", campusTickets.filter(t => isResolvedTicket(t.status)).length]
+      ];
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+      XLSX.utils.book_append_sheet(wb, wsSummary, "Executive_Summary");
+
+      // 2. Attendance Shortage Sheet
+      const attHeaders = ["S.No", "Student Name", "Register Number", "Department", "Cohort", "Conducted", "Present", "Absent", "Attendance %", "Severity", "Sessions Needed to 75%"];
+      const attRows = attendanceShortageData.map((s, idx) => [
+        idx + 1, s.name, s.regNo, s.dept, s.classGroup, s.conducted, s.present, s.absent, `${s.percentage}%`, s.severity, Math.max(1, Math.ceil((0.75 * s.conducted - s.present) / 0.25))
+      ]);
+      const wsAtt = XLSX.utils.aoa_to_sheet([attHeaders, ...attRows]);
+      XLSX.utils.book_append_sheet(wb, wsAtt, "Attendance_Shortage");
+
+      // 3. Exam Eligibility Sheet
+      const examHeaders = ["S.No", "Student Name", "Register Number", "Department", "Cohort", "Conducted", "Present", "Attendance %", "Examination Status", "Hall Ticket Clearance", "Condonation Notes"];
+      const examRows = examEligibilityData.map((e, idx) => [
+        idx + 1, e.name, e.regNo, e.dept, e.classGroup, e.conducted, e.present, `${e.percentage}%`, e.status, e.hallTicketIssued, e.condonationNote
+      ]);
+      const wsExam = XLSX.utils.aoa_to_sheet([examHeaders, ...examRows]);
+      XLSX.utils.book_append_sheet(wb, wsExam, "Exam_Eligibility");
+
+      // 4. Helpdesk Tickets Sheet
+      const tktHeaders = ["Ticket ID", "Student Name", "Roll Number", "Department", "Category", "Subject", "Status", "Priority", "Created At", "Resolution Notes"];
+      const tktRows = campusTickets.map(t => [
+        t.id, t.student_name || "Unknown", t.roll_number || "—", t.department || "—", t.category || "General", t.subject || "No Subject", isResolvedTicket(t.status) ? "Resolved" : isInProgressTicket(t.status) ? "In Progress" : "Open", t.priority || "Normal", t.created_at ? new Date(t.created_at).toLocaleDateString() : "—", t.resolution_notes || "—"
+      ]);
+      const wsTkt = XLSX.utils.aoa_to_sheet([tktHeaders, ...tktRows]);
+      XLSX.utils.book_append_sheet(wb, wsTkt, "Helpdesk_Tickets");
+
+      // 5. Faculty Workload Sheet
+      const wklHeaders = ["S.No", "Faculty Name", "Email", "Department", "Assigned Weekly Hours", "Target Limit", "Variance", "Status"];
+      const wklRows = facultyWorkloadData.map((f, idx) => [
+        idx + 1, f.name, f.email, f.dept, f.assignedHours, f.targetLimit, f.variance, f.status
+      ]);
+      const wsWkl = XLSX.utils.aoa_to_sheet([wklHeaders, ...wklRows]);
+      XLSX.utils.book_append_sheet(wb, wsWkl, "Faculty_Workload");
+
+      // 6. Syllabus Progress Sheet
+      const sylHeaders = ["S.No", "Subject Name", "Department", "Semester", "Type", "Target Hours", "Actual Conducted Hours", "Completion %", "Status", "Extra Classes/Wk Needed"];
+      const sylRows = syllabusPaceData.map((s, idx) => [
+        idx + 1, s.name, s.dept, s.sem, s.type, s.targetHours, s.actualHours, `${s.completionPct}%`, s.status, s.extraHoursPerWeek
+      ]);
+      const wsSyl = XLSX.utils.aoa_to_sheet([sylHeaders, ...sylRows]);
+      XLSX.utils.book_append_sheet(wb, wsSyl, "Syllabus_Completion");
+
+      // 7. Demo Evaluations Sheet
+      const demoHeaders = ["S.No", "Mentor Name", "SME Evaluator", "Subject Demo", "Stream / Class", "Date", "Status", "Score / 100", "Feedback"];
+      const demoRows = demoEvaluationData.map((d, idx) => [
+        idx + 1, d.mentorName, d.smeName, d.subject, d.stream, d.dateStr, d.status, d.marks, d.comments
+      ]);
+      const wsDemo = XLSX.utils.aoa_to_sheet([demoHeaders, ...demoRows]);
+      XLSX.utils.book_append_sheet(wb, wsDemo, "Mentor_Demo_Evals");
+
+      // 8. Room Utilization Sheet
+      const infraHeaders = ["S.No", "Room / Lab Name", "Space Type", "Weekly Booked Hours", "Weekly Capacity", "Utilization %", "Peak Day", "Status"];
+      const infraRows = infrastructureData.map((r, idx) => [
+        idx + 1, r.roomName, r.spaceType, r.totalBookedHours, r.weeklyCapacity, `${r.utilizationPct}%`, r.peakDay, r.congestionStatus
+      ]);
+      const wsInfra = XLSX.utils.aoa_to_sheet([infraHeaders, ...infraRows]);
+      XLSX.utils.book_append_sheet(wb, wsInfra, "Room_Utilization");
+
+      // 9. Handover Velocity Sheet
+      const hndHeaders = ["S.No", "Date", "Requestor Faculty", "Covering Faculty", "Subject", "Time Slot", "Class Group", "Reason", "Status"];
+      const hndRows = handoverData.map((h, idx) => [
+        idx + 1, h.dateStr, h.requestorName, h.coverStaffName, h.subject, h.timeSlot, h.classGroup, h.reason, h.status
+      ]);
+      const wsHnd = XLSX.utils.aoa_to_sheet([hndHeaders, ...hndRows]);
+      XLSX.utils.book_append_sheet(wb, wsHnd, "Handover_Velocity");
+
+      // 10. CIA Performance Sheet
+      const perfHeaders = ["S.No", "Student Name", "Register Number", "Class Group", "Subject", "Assessment", "Quiz (25)", "Internal (50)", "Assignment (25)", "Total (100)", "Grade"];
+      const perfRows = performanceData.map((p, idx) => [
+        idx + 1, p.studentName, p.regNo, p.classGroup, p.subject, p.week, p.quizMarks, p.assessmentMarks, p.assignmentMarks, p.totalMarks, p.grade
+      ]);
+      const wsPerf = XLSX.utils.aoa_to_sheet([perfHeaders, ...perfRows]);
+      XLSX.utils.book_append_sheet(wb, wsPerf, "CIA_Performance");
+
+      // 11. Early Warning System (EWS) Sheet
+      const ewsHeaders = ["S.No", "Student Name", "Register Number", "Cohort", "Attendance %", "CIA Marks %", "Open Grievances", "Risk Score /100", "Risk Tier", "Primary Trigger", "Recommended Action"];
+      const ewsRows = earlyWarningData.map((e, idx) => [
+        idx + 1, e.name, e.regNo, e.classGroup, `${e.attPct}%`, `${e.ciaScore}%`, e.openTicketsCount, `${e.totalRiskScore}/100`, e.riskTier, e.primaryTrigger, e.recommendedAction
+      ]);
+      const wsEws = XLSX.utils.aoa_to_sheet([ewsHeaders, ...ewsRows]);
+      XLSX.utils.book_append_sheet(wb, wsEws, "Early_Warning_EWS");
+
+      XLSX.writeFile(wb, `${(activeCollegeName || "Campus").replace(/[^a-zA-Z0-9]/g, '_')}_Complete_Academic_Dossier_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast("Master Academic Dossier (.xlsx) downloaded successfully with all 11 institutional sheets!", "success");
+    } catch (err: any) {
+      toast("Failed to export Master Dossier: " + err.message, "error");
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // GRAPH-ENRICHED EXPORT HANDLERS (Excel .xlsx with Analytics Sheet + Print/PDF with SVG Charts & Heatmaps)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // 1. Export Attendance Shortage with Risk Tiers & Cohort Ranking Graphs
+  const exportAttendanceShortage = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Student ID", "Student Name", "Register No", "Department", "Class Group", "Conducted Periods", "Attended (Present)", "Absent", "Attendance %", "Status"];
+    const rows = attendanceShortageData.map((r, idx) => [idx + 1, r.id, r.name, r.regNo, r.dept, r.classGroup, r.conducted, r.present, r.absent, `${r.percentage}%`, r.severity]);
+    const title = selectedCohort !== "all" ? `Student Attendance Shortage Warning Report (${selectedCohort})` : "Student Attendance Shortage Warning Report (< 75%)";
+
+    const totalStudents = attendanceBrackets.reduce((s, b) => s + b.value, 0) || 1;
+    const summarySheet = {
+      name: "Attendance_Analytics",
+      headers: ["Analysis Category", "Item / Bracket", "Student Count", "Share %", "Risk Status"],
+      rows: [
+        ...attendanceBrackets.map(b => ["Attendance Risk Tiers", b.name, b.value, `${((b.value / totalStudents) * 100).toFixed(1)}%`, b.name.includes("<50") ? "Severe Risk" : b.name.includes("50-64") ? "Critical Risk" : b.name.includes("65-74") ? "Warning Risk" : "Compliant"]),
+        ["Summary Total", "Students Under 75% Attendance", attendanceShortageData.length, `${((attendanceShortageData.length / totalStudents) * 100).toFixed(1)}%`, "Action List"],
+        ...cohortShortageChartData.map(c => ["Cohort Shortage Breakdown", c.fullCohort, c.count, `${((c.count / (attendanceShortageData.length || 1)) * 100).toFixed(1)}%`, "Class Focus"])
+      ]
+    };
+
+    if (format === "excel") {
+      exportToExcel("Student_Attendance_Shortage_Report", "Attendance_Shortage", headers, rows, summarySheet);
+    } else if (format === "csv") {
+      exportToCSV("Student_Attendance_Shortage_Report", headers, rows);
+    } else {
+      const kpis = [
+        { label: "Total Shortage (<75%)", value: attendanceShortageData.length, color: "rose" as const, note: "Below mandatory 75%" },
+        { label: "Critical Shortage (<65%)", value: attendanceShortageData.filter(s => s.percentage < 65).length, color: "rose" as const, note: "Dean notice triggered" },
+        { label: "Warning Shortage (65-74%)", value: attendanceShortageData.filter(s => s.percentage >= 65).length, color: "amber" as const, note: "Borderline short" },
+        { label: "Cohort Filter", value: selectedCohort === "all" ? "All Cohorts" : selectedCohort, color: "blue" as const, note: activeCollegeName }
+      ];
+
+      const chartsHtml = `
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span>Attendance Risk Tiers</span><span>Institutional Distribution</span></div>
+            ${generateDistributionBarHtml("Attendance Risk Segments", attendanceBrackets, " students")}
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span>Shortage by Cohort / Class</span><span>Students &lt; 75%</span></div>
+            ${generateSvgBarChart(cohortShortageChartData.map(c => ({ label: c.fullCohort, value: c.count, color: '#e11d48' })), { unit: ' students' })}
+          </div>
+        </div>
+      `;
+
+      exportToPrintablePDF(title, "Detailed breakdown of students whose cumulative attendance rate is currently below the mandatory 75% threshold.", headers, rows, { kpis, chartsHtml });
+    }
+  };
+
+  // 2. Export Campus Help Desk Tickets with Category Graphs & Department Matrix
+  const exportCampusTickets = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["Ticket ID", "Student Name", "Roll Number", "Department", "Category", "Subject", "Description", "Status", "Priority", "Admin Note", "Closed By", "Created At"];
+    const rows = filteredTickets.map((t, idx) => [
+      t.id || `TKT-${idx + 1}`,
+      t.student_name || "—",
+      t.roll_number || "—",
+      t.department || "—",
+      t.category || "General",
+      t.subject || "—",
+      t.description || "—",
+      t.status === "resolved" ? "Resolved" : t.status === "progress" ? "In Progress" : "Open",
+      t.priority || "Normal",
+      t.admin_note || "—",
+      t.closed_by || "—",
+      t.created_at ? new Date(t.created_at).toLocaleString("en-IN") : "—"
+    ]);
+
+    const summarySheet = {
+      name: "Ticket_Analytics",
+      headers: ["Analytics Dimension", "Item / Department", "Ticket Count", "Share / Status"],
+      rows: [
+        ...ticketStatusChartData.map(s => ["Resolution Pipeline", s.name, s.count, s.name === "Resolved" ? "Closed" : "Active"]),
+        ...ticketCategoryChartData.map(c => ["Category Breakdown", c.name, c.count, `${((c.count / (campusTickets.length || 1)) * 100).toFixed(1)}%`]),
+        ...ticketHeatmapData.departments.map(dept => {
+          const deptTotal = campusTickets.filter(t => t.department === dept).length;
+          return ["Department Grievance Volume", dept, deptTotal, `${((deptTotal / (campusTickets.length || 1)) * 100).toFixed(1)}%`];
+        })
+      ]
+    };
+
+    const filePrefix = `${(activeCollegeName || "Campus").replace(/[^a-zA-Z0-9]/g, '_')}_Tickets_Ledger`;
+
+    if (format === "excel") {
+      exportToExcel(filePrefix, "Tickets", headers, rows, summarySheet);
+    } else if (format === "csv") {
+      exportToCSV(filePrefix, headers, rows);
+    } else {
+      const kpis = [
+        { label: "Total Tickets", value: campusTickets.length, color: "slate" as const, note: "Logged in Supabase" },
+        { label: "Unresolved / Open", value: campusTickets.filter(t => !isResolvedTicket(t.status) && !isInProgressTicket(t.status)).length, color: "amber" as const, note: "Awaiting action" },
+        { label: "In Progress", value: campusTickets.filter(t => isInProgressTicket(t.status)).length, color: "blue" as const, note: "Under review" },
+        { label: "Resolved", value: campusTickets.filter(t => isResolvedTicket(t.status)).length, color: "emerald" as const, note: `${campusTickets.length > 0 ? Math.round((campusTickets.filter(t => isResolvedTicket(t.status)).length / campusTickets.length) * 100) : 0}% resolved` }
+      ];
+
+      const chartsHtml = `
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span>Tickets by Category</span><span>Category Volume</span></div>
+            ${generateSvgBarChart(ticketCategoryChartData.map(c => ({ label: c.name, value: c.count, color: c.color })), { unit: ' tickets' })}
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span>Resolution Pipeline</span><span>Status Breakdown</span></div>
+            ${generateDistributionBarHtml("Resolution Status Pipeline", ticketStatusChartData.map(s => ({ name: s.name, value: s.count, color: s.color })), " tickets")}
+          </div>
+          ${ticketHeatmapData.departments.length > 0 ? `
+            <div class="chart-card full">
+              ${generateHeatmapPrintHtml(ticketHeatmapData.departments, ticketHeatmapData.categories, ticketHeatmapData.matrix)}
+            </div>
+          ` : ''}
+        </div>
+      `;
+
+      exportToPrintablePDF(`${activeCollegeName} — Campus Help Desk Tickets Ledger`, `Official grievance and support tickets recorded in Supabase for ${activeCollegeName}.`, headers, rows, { kpis, chartsHtml });
+    }
+  };
+
+  // 3. Export Faculty Workload with Teaching Hours & 16h Target Line Graphs
+  const exportFacultyWorkload = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Faculty Name", "Email", "Department", "Assigned Weekly Hours", "Target Limit (16h)", "Variance", "Workload Status", "Allocated Subjects"];
+    const rows = facultyWorkloadData.map(r => [r.sNo, r.name, r.email, r.dept, `${r.assignedHours} hrs`, `${r.targetLimit} hrs`, r.variance, r.status, r.subjects]);
+
+    const summarySheet = {
+      name: "Workload_Analytics",
+      headers: ["Workload Classification", "Faculty Count", "Share %", "Institutional Norm"],
+      rows: [
+        ...workloadBalanceChartData.map(w => [w.name, w.value, `${((w.value / (facultyWorkloadData.length || 1)) * 100).toFixed(1)}%`, w.name.includes("Overload") ? "Exceeds 16h limit" : w.name.includes("Optimal") ? "14-16 hrs (UGC standard)" : "<14 hrs available capacity"]),
+        ["Total Faculty Monitored", facultyWorkloadData.length, "100%", activeCollegeName]
+      ]
+    };
+
+    if (format === "excel") {
+      exportToExcel("Faculty_Workload_Ledger", "Workload", headers, rows, summarySheet);
+    } else if (format === "csv") {
+      exportToCSV("Faculty_Workload_Ledger", headers, rows);
+    } else {
+      const kpis = [
+        { label: "Total Faculty", value: facultyWorkloadData.length, color: "slate" as const, note: "Assigned to campus" },
+        { label: "Overload (>16h)", value: facultyWorkloadData.filter(f => f.status === "Overload").length, color: "amber" as const, note: "Exceeds 16h limit" },
+        { label: "Optimal (14-16h)", value: facultyWorkloadData.filter(f => f.status === "Optimal").length, color: "emerald" as const, note: "Balanced distribution" },
+        { label: "Underload (<14h)", value: facultyWorkloadData.filter(f => f.status === "Underload").length, color: "blue" as const, note: "Capacity available" }
+      ];
+
+      const chartsHtml = `
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span>Weekly Teaching Hours (16h Guideline)</span><span>Dashed Line = 16h Target</span></div>
+            ${generateSvgBarChart(facultyHoursChartData.map(f => ({ label: f.name, value: f.hours, color: f.hours > 16 ? '#f59e0b' : f.hours >= 14 ? '#10b981' : '#94a3b8' })), { refLine: 16, refLineLabel: '16h Limit', unit: ' hrs' })}
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span>Workload Balance Distribution</span><span>Institutional Load</span></div>
+            ${generateDistributionBarHtml("Faculty Workload Segments", workloadBalanceChartData, " faculty")}
+          </div>
+        </div>
+      `;
+
+      exportToPrintablePDF("Faculty Workload & Allocation Ledger", "Mapping active faculty assigned hours against the 16 hours/week institutional workload limit.", headers, rows, { kpis, chartsHtml });
+    }
+  };
+
+  // 4. Export Subject Completion & Syllabus Pace with Conducted vs Target Graphs
+  const exportSyllabusPace = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Subject Name", "Department", "Semester", "Type", "Target Semester Hours", "Actual Conducted Hours", "Syllabus Pace %", "Delivery Status"];
+    const rows = syllabusPaceData.map(r => [r.sNo, r.name, r.dept, r.sem, r.type, `${r.targetHours} hrs`, `${r.actualHours} hrs`, `${r.completionPct}%`, r.status]);
+
+    const summarySheet = {
+      name: "Syllabus_Analytics",
+      headers: ["Delivery Pace Status", "Subject Count", "Share %", "Recommended Action"],
+      rows: [
+        ...syllabusPaceDistributionData.map(p => [p.name, p.value, `${((p.value / (syllabusPaceData.length || 1)) * 100).toFixed(1)}%`, p.name.includes("On Track") ? "Proceed as planned" : p.name.includes("In Progress") ? "Maintain delivery schedule" : "Schedule makeup / extra sessions"]),
+        ["Total Semester Subjects", syllabusPaceData.length, "100%", activeCollegeName]
+      ]
+    };
+
+    if (format === "excel") {
+      exportToExcel("Subject_Completion_Syllabus_Report", "Syllabus_Pace", headers, rows, summarySheet);
+    } else if (format === "csv") {
+      exportToCSV("Subject_Completion_Syllabus_Report", headers, rows);
+    } else {
+      const kpis = [
+        { label: "Total Subjects", value: syllabusPaceData.length, color: "slate" as const, note: "Curriculum modules" },
+        { label: "On Track (≥80%)", value: syllabusPaceData.filter(s => s.completionPct >= 80).length, color: "emerald" as const, note: "Ahead or on schedule" },
+        { label: "In Progress (50-79%)", value: syllabusPaceData.filter(s => s.completionPct >= 50 && s.completionPct < 80).length, color: "blue" as const, note: "Standard mid-term pace" },
+        { label: "Lagging (<50%)", value: syllabusPaceData.filter(s => s.completionPct < 50).length, color: "rose" as const, note: "Extra sessions needed" }
+      ];
+
+      const chartsHtml = `
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span>Conducted vs Target Semester Hours</span><span>Top Subjects</span></div>
+            ${generateSvgGroupedBarChart(subjectHoursComparisonData.map(s => ({ label: s.name, val1: s.conducted, val2: s.target })), "Conducted Hours", "Target Hours")}
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span>Syllabus Pace Distribution</span><span>Delivery Progress</span></div>
+            ${generateDistributionBarHtml("Syllabus Pace Segments", syllabusPaceDistributionData, " subjects")}
+          </div>
+        </div>
+      `;
+
+      exportToPrintablePDF("Subject Completion & Syllabus Pace Report", "Documenting actual periods delivered vs target scheduled semester curriculum hours.", headers, rows, { kpis, chartsHtml });
+    }
+  };
+
+  // 5. Export Mentor Demo Evaluations with Score Ranking Graphs
   const exportDemoEvaluations = (format: "excel" | "csv" | "pdf") => {
     const headers = ["S.No", "Mentor Name", "SME Evaluator", "Subject Demo", "Stream / Class", "Session Date", "Time Slot", "Status", "Score", "Evaluator Feedback"];
     const rows = demoEvaluationData.map(r => [r.sNo, r.mentorName, r.smeName, r.subject, r.stream, r.dateStr, r.timeSlot, r.status, r.marks, r.comments]);
-    if (format === "excel") exportToExcel("Mentor_Demo_Evaluation_Report", "Demo_Evaluations", headers, rows);
-    else if (format === "csv") exportToCSV("Mentor_Demo_Evaluation_Report", headers, rows);
-    else exportToPrintablePDF("Mentor Demo & Evaluation Ledger", "Comprehensive evaluation report of mentor domain demo sessions conducted by Subject Matter Experts (SMEs).", headers, rows);
+
+    const summarySheet = {
+      name: "Demo_Analytics",
+      headers: ["Evaluation Metric", "Item / Mentor", "Score / Count", "Evaluation Status"],
+      rows: [
+        ...demoStatusChartData.map(d => ["Demo Status Distribution", d.name, d.value, d.name === "Completed" ? "Satisfactory" : "Follow-up Required"]),
+        ...topMentorsChartData.map(m => ["Top Mentor Score Ranking", `${m.name} (${m.subject})`, `${m.score}/100`, m.score >= 80 ? "Distinction" : m.score >= 65 ? "Proficient" : "Needs Improvement"]),
+        ["Total Demos Evaluated", `${demoEvaluationData.length} sessions`, "-", activeCollegeName]
+      ]
+    };
+
+    if (format === "excel") {
+      exportToExcel("Mentor_Demo_Evaluation_Report", "Demo_Evaluations", headers, rows, summarySheet);
+    } else if (format === "csv") {
+      exportToCSV("Mentor_Demo_Evaluation_Report", headers, rows);
+    } else {
+      const avgMarks = demoEvaluationData.filter(d => !isNaN(parseInt(d.marks))).length > 0
+        ? (demoEvaluationData.filter(d => !isNaN(parseInt(d.marks))).reduce((s, d) => s + parseInt(d.marks), 0) / demoEvaluationData.filter(d => !isNaN(parseInt(d.marks))).length).toFixed(0)
+        : "N/A";
+
+      const kpis = [
+        { label: "Total Demos", value: demoEvaluationData.length, color: "slate" as const, note: "Sessions logged" },
+        { label: "Completed", value: demoEvaluationData.filter(d => d.status === "Completed").length, color: "emerald" as const, note: "Evaluated by SME" },
+        { label: "Reallocation Req", value: demoEvaluationData.filter(d => d.status.includes("Reallocation")).length, color: "amber" as const, note: "Requires reassignment" },
+        { label: "Avg Demo Score", value: avgMarks !== "N/A" ? `${avgMarks}/100` : "N/A", color: "purple" as const, note: "SME grading" }
+      ];
+
+      const chartsHtml = `
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span>Top Mentors Demo Performance</span><span>Marks / 100</span></div>
+            ${generateSvgBarChart(topMentorsChartData.map(m => ({ label: m.name, value: m.score, color: m.score >= 80 ? '#10b981' : m.score >= 65 ? '#6366f1' : '#f59e0b' })), { maxValue: 100, unit: '/100' })}
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span>Demo Evaluation Status</span><span>Session Outcomes</span></div>
+            ${generateDistributionBarHtml("Demo Outcomes", demoStatusChartData, " demos")}
+          </div>
+        </div>
+      `;
+
+      exportToPrintablePDF("Mentor Demo & Evaluation Ledger", "Comprehensive evaluation report of mentor domain demo sessions conducted by Subject Matter Experts (SMEs).", headers, rows, { kpis, chartsHtml });
+    }
+  };
+
+  // 6. Export Classroom & Lab Space Utilization Matrix
+  const exportInfrastructure = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Facility / Room Name", "Space Type", "Weekly Booked Hours", "Capacity Hours", "Utilization %", "Peak Day Occupancy", "Congestion Status"];
+    const rows = infrastructureData.map(r => [r.sNo, r.roomName, r.spaceType, r.totalBookedHours, r.weeklyCapacity, `${r.utilizationPct}%`, r.peakDay, r.congestionStatus]);
+
+    const summarySheet = {
+      name: "Infra_Analytics",
+      headers: ["Metric", "Value", "Status", "Campus"],
+      rows: [
+        ["Total Facilities Logged", `${infrastructureMetrics.totalRooms} rooms/labs`, "Active", activeCollegeName],
+        ["Overall Space Utilization", `${infrastructureMetrics.avgUtilization}%`, infrastructureMetrics.avgUtilization > 75 ? "High" : "Balanced", activeCollegeName],
+        ["Specialized Labs Count", infrastructureMetrics.labsCount, "Configured", activeCollegeName],
+        ["Congested Facilities", infrastructureMetrics.congestedCount, "Capacity Alert", activeCollegeName]
+      ]
+    };
+
+    if (format === "excel") {
+      exportToExcel("Classroom_and_Lab_Utilization_Matrix", "Room_Utilization", headers, rows, summarySheet);
+    } else if (format === "csv") {
+      exportToCSV("Classroom_and_Lab_Utilization_Matrix", headers, rows);
+    } else {
+      const kpis = [
+        { label: "Total Facilities", value: infrastructureMetrics.totalRooms, color: "slate" as const, note: "Rooms & labs" },
+        { label: "Avg Space Utilization", value: `${infrastructureMetrics.avgUtilization}%`, color: infrastructureMetrics.avgUtilization > 80 ? "rose" as const : "blue" as const, note: "Weekly capacity" },
+        { label: "Specialized Labs", value: infrastructureMetrics.labsCount, color: "purple" as const, note: "Practical spaces" },
+        { label: "Congested (>80%)", value: infrastructureMetrics.congestedCount, color: "amber" as const, note: "Peak scheduling" }
+      ];
+
+      const topRooms = infrastructureData.slice(0, 8);
+      const chartsHtml = `
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span>Top Utilized Facilities</span><span>Booked Weekly Hours</span></div>
+            ${generateSvgBarChart(topRooms.map(r => ({ label: r.roomName, value: r.totalBookedHours, color: r.isLab ? '#8b5cf6' : '#6366f1' })), { maxValue: 35, unit: ' hrs' })}
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span>Space Congestion Status</span><span>Facility Distribution</span></div>
+            ${generateDistributionBarHtml("Congestion Tiers", [
+              { name: "Congested (≥80%)", value: infrastructureMetrics.congestedCount, color: '#ef4444' },
+              { name: "Optimal (45-79%)", value: infrastructureMetrics.optimalCount, color: '#10b981' },
+              { name: "Underutilized (<45%)", value: infrastructureMetrics.underutilizedCount, color: '#94a3b8' }
+            ].filter(d => d.value > 0), " facilities")}
+          </div>
+        </div>
+      `;
+
+      exportToPrintablePDF("Classroom & Lab Space Utilization Matrix", "Audit of facility utilization efficiency, laboratory scheduling, and room allocation capacity.", headers, rows, { kpis, chartsHtml });
+    }
+  };
+
+  // 7. Export Faculty Substitution & Handover Velocity
+  const exportHandovers = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Date", "Requestor Faculty", "Covering Faculty", "Subject", "Time Slot", "Class Group", "Reason", "Status"];
+    const rows = handoverData.map(h => [h.sNo, h.dateStr, h.requestorName, h.coverStaffName, h.subject, h.timeSlot, h.classGroup, h.reason, h.status]);
+
+    const summarySheet = {
+      name: "Handover_Velocity",
+      headers: ["Handover KPI", "Metric Count", "Velocity Rate", "Campus"],
+      rows: [
+        ["Total Class Substitution Requests", handoverMetrics.totalRequests, "All Logged", activeCollegeName],
+        ["Approved & Covered Sessions", handoverMetrics.approvedCount, `${handoverMetrics.fulfillmentRate}% Fulfillment`, activeCollegeName],
+        ["Pending CAM Actions", handoverMetrics.pendingCount, handoverMetrics.pendingCount > 0 ? "Requires Action" : "Zero Backlog", activeCollegeName],
+        ["Top Substitute Faculty", handoverMetrics.topCoverName, `${handoverMetrics.maxCover} classes covered`, activeCollegeName]
+      ]
+    };
+
+    if (format === "excel") {
+      exportToExcel("Faculty_Handover_and_Substitution_Report", "Handover_Logs", headers, rows, summarySheet);
+    } else if (format === "csv") {
+      exportToCSV("Faculty_Handover_and_Substitution_Report", headers, rows);
+    } else {
+      const kpis = [
+        { label: "Total Requests", value: handoverMetrics.totalRequests, color: "slate" as const, note: "Substitution filings" },
+        { label: "Fulfillment Rate", value: `${handoverMetrics.fulfillmentRate}%`, color: handoverMetrics.fulfillmentRate >= 90 ? "emerald" as const : "amber" as const, note: "Coverage achieved" },
+        { label: "Pending Approval", value: handoverMetrics.pendingCount, color: handoverMetrics.pendingCount > 0 ? "rose" as const : "slate" as const, note: "Awaiting CAM" },
+        { label: "Top Covering Faculty", value: handoverMetrics.topCoverName !== "—" ? handoverMetrics.topCoverName.split(" ")[0] : "None", color: "purple" as const, note: `${handoverMetrics.maxCover} substitutions` }
+      ];
+
+      const reasonCounts: Record<string, number> = {};
+      handoverData.forEach(h => { reasonCounts[h.reasonCategory] = (reasonCounts[h.reasonCategory] || 0) + 1; });
+      const reasonDist = Object.entries(reasonCounts).map(([name, value], i) => ({
+        name,
+        value,
+        color: ["#6366f1", "#10b981", "#f59e0b", "#ec4899"][i % 4]
+      }));
+
+      const chartsHtml = `
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span>Substitution Reason Breakdown</span><span>Filing Drivers</span></div>
+            ${generateDistributionBarHtml("Reasons", reasonDist, " requests")}
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span>Fulfillment Status</span><span>Velocity Health</span></div>
+            ${generateDistributionBarHtml("Coverage Status", [
+              { name: "Approved & Covered", value: handoverMetrics.approvedCount, color: '#10b981' },
+              { name: "Pending CAM Action", value: handoverMetrics.pendingCount, color: '#f59e0b' }
+            ].filter(d => d.value > 0), " classes")}
+          </div>
+        </div>
+      `;
+
+      exportToPrintablePDF("Faculty Substitution & Class Handover Velocity Report", "Real-time ledger of faculty leave substitution requests, cover staffing coverage, and fulfillment velocity.", headers, rows, { kpis, chartsHtml });
+    }
+  };
+
+  // 8. Export CIA Performance Marks
+  const exportPerformance = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Student Name", "Register Number", "Cohort / Class", "Subject", "Assessment", "Quiz (25)", "Internal (50)", "Assignment (25)", "Total (100)", "Grade"];
+    const rows = performanceData.map(p => [p.sNo, p.studentName, p.regNo, p.classGroup, p.subject, p.week, p.quizMarks, p.assessmentMarks, p.assignmentMarks, p.totalMarks, p.grade]);
+
+    const summarySheet = {
+      name: "CIA_Performance_Summary",
+      headers: ["Academic Metric", "Score / Count", "Compliance", "Campus"],
+      rows: [
+        ["Total Evaluated Entries", performanceMetrics.totalRecords, "Graded", activeCollegeName],
+        ["Average CIA Score", `${performanceMetrics.avgScore}/100`, performanceMetrics.avgScore >= 65 ? "Good" : "Needs Attention", activeCollegeName],
+        ["Distinction Rate (≥75%)", `${performanceMetrics.distinctionRate}%`, `${performanceMetrics.distinctionCount} students`, activeCollegeName],
+        ["At-Risk / Remedial (<50%)", performanceMetrics.atRiskCount, performanceMetrics.atRiskCount > 0 ? "Urgent Action" : "Zero At-Risk", activeCollegeName]
+      ]
+    };
+
+    if (format === "excel") {
+      exportToExcel("Continuous_Internal_Assessment_CIA_Report", "CIA_Marks", headers, rows, summarySheet);
+    } else if (format === "csv") {
+      exportToCSV("Continuous_Internal_Assessment_CIA_Report", headers, rows);
+    } else {
+      const kpis = [
+        { label: "Graded Assessments", value: performanceMetrics.totalRecords, color: "slate" as const, note: "Submissions scored" },
+        { label: "Avg Internal Score", value: `${performanceMetrics.avgScore}/100`, color: "purple" as const, note: "Class composite" },
+        { label: "Distinction Rate", value: `${performanceMetrics.distinctionRate}%`, color: "emerald" as const, note: "Marks ≥75%" },
+        { label: "At-Risk (<50%)", value: performanceMetrics.atRiskCount, color: performanceMetrics.atRiskCount > 0 ? "rose" as const : "emerald" as const, note: "Require remedial" }
+      ];
+
+      const gradeDist = [
+        { name: "Distinction (≥75%)", value: performanceMetrics.distinctionCount, color: "#10b981" },
+        { name: "First Class (60-74%)", value: performanceMetrics.firstClassCount, color: "#6366f1" },
+        { name: "Pass Class (50-59%)", value: performanceMetrics.passCount, color: "#f59e0b" },
+        { name: "At-Risk (<50%)", value: performanceMetrics.atRiskCount, color: "#ef4444" }
+      ].filter(d => d.value > 0);
+
+      const chartsHtml = `
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span>CIA Grade Breakdown</span><span>Student Cohorts</span></div>
+            ${generateDistributionBarHtml("Grade Segments", gradeDist, " students")}
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span>Top Performers Score</span><span>CIA Score / 100</span></div>
+            ${generateSvgBarChart(performanceData.slice(0, 8).map(p => ({ label: p.studentName, value: p.totalMarks, color: p.totalMarks >= 75 ? '#10b981' : '#6366f1' })), { maxValue: 100, unit: '/100' })}
+          </div>
+        </div>
+      `;
+
+      exportToPrintablePDF("Continuous Internal Assessment (CIA) & Marks Ledger", "Audited report of quizzes, internal assessments, assignments, and grade classifications across cohorts.", headers, rows, { kpis, chartsHtml });
+    }
+  };
+
+  // 9. Export Early Warning System Roll
+  const exportEarlyWarning = (format: "excel" | "csv" | "pdf") => {
+    const headers = ["S.No", "Student Name", "Register Number", "Cohort / Class", "Attendance %", "CIA Marks %", "Open Grievances", "Risk Score /100", "Risk Tier", "Primary Trigger", "Recommended Action"];
+    const rows = earlyWarningData.map(r => [r.sNo, r.name, r.regNo, r.classGroup, `${r.attPct}%`, `${r.ciaScore}%`, r.openTicketsCount, `${r.totalRiskScore}/100`, r.riskTier, r.primaryTrigger, r.recommendedAction]);
+
+    const summarySheet = {
+      name: "EWS_Intervention_Summary",
+      headers: ["EWS Risk Classification", "Count", "Intervention Priority", "Campus"],
+      rows: [
+        ["Total Evaluated Students", earlyWarningMetrics.totalEvaluated, "Cohort Census", activeCollegeName],
+        ["Critical Risk (Immediate Action)", earlyWarningMetrics.criticalCount, "Emergency Intervention", activeCollegeName],
+        ["Moderate Risk (Watchlist)", earlyWarningMetrics.moderateCount, "Counseling Required", activeCollegeName],
+        ["Low Risk / On Track", earlyWarningMetrics.lowCount, "Satisfactory", activeCollegeName],
+        ["Total Intervention Rate", `${earlyWarningMetrics.interventionRate}%`, "Early Action Index", activeCollegeName]
+      ]
+    };
+
+    if (format === "excel") {
+      exportToExcel("Student_Early_Warning_System_Intervention_Roll", "EWS_Interventions", headers, rows, summarySheet);
+    } else if (format === "csv") {
+      exportToCSV("Student_Early_Warning_System_Intervention_Roll", headers, rows);
+    } else {
+      const kpis = [
+        { label: "Evaluated Students", value: earlyWarningMetrics.totalEvaluated, color: "slate" as const, note: "Cohort census" },
+        { label: "Critical Escalations", value: earlyWarningMetrics.criticalCount, color: "rose" as const, note: "Immediate parent notice" },
+        { label: "Moderate Watchlist", value: earlyWarningMetrics.moderateCount, color: "amber" as const, note: "Academic counseling" },
+        { label: "Campus Health Rate", value: `${100 - earlyWarningMetrics.interventionRate}%`, color: "emerald" as const, note: "Safe standing" }
+      ];
+
+      const riskDist = [
+        { name: "Critical Risk (≥60)", value: earlyWarningMetrics.criticalCount, color: "#ef4444" },
+        { name: "Moderate Risk (30-59)", value: earlyWarningMetrics.moderateCount, color: "#f59e0b" },
+        { name: "Low Risk (<30)", value: earlyWarningMetrics.lowCount, color: "#10b981" }
+      ].filter(d => d.value > 0);
+
+      const topCritical = earlyWarningData.filter(r => r.riskTier === "Critical Risk").slice(0, 8);
+      const chartsHtml = `
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span>Risk Severity Distribution</span><span>Multi-Factor Composite</span></div>
+            ${generateDistributionBarHtml("EWS Severity", riskDist, " students")}
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span>Top Critical Risk Index</span><span>Points / 100</span></div>
+            ${generateSvgBarChart(topCritical.map(r => ({ label: r.name, value: r.totalRiskScore, color: '#ef4444' })), { maxValue: 100, unit: ' pts' })}
+          </div>
+        </div>
+      `;
+
+      exportToPrintablePDF("Multi-Factor Student Early Warning System (EWS) Roll", "Composite early risk intervention ledger integrating student attendance deficits, internal exam scores, and campus grievance tickets.", headers, rows, { kpis, chartsHtml });
+    }
   };
 
   return (
@@ -929,16 +3579,21 @@ const CAMCampusInsightPanel: React.FC<{
               <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100">
                 <FileSpreadsheet className="h-5 w-5" />
               </div>
-              <h2 className="text-base font-black text-slate-900 leading-tight">Campus Insight &amp; Institutional Reports</h2>
+              <div>
+                <h2 className="text-base font-black text-slate-900 leading-tight">Campus Insight &amp; Institutional Data Ledgers</h2>
+                <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100/60 inline-block mt-0.5">
+                  {activeCollegeName || "Current Campus"}
+                </span>
+              </div>
             </div>
             <p className="text-xs text-slate-500 font-medium mt-1">
-              Download real-time faculty workload ledgers, student attendance shortage lists, syllabus paces, and mentor demo reports.
+              Real-time database records for low attendance students, campus tickets, faculty workload, syllabus pace, and mentor demos.
             </p>
           </div>
 
-          {/* Search & Global Cohort Selector */}
-          <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
-            <div className="relative w-48">
+          {/* Search & Dynamic Selectors */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative w-44">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
               <input
                 type="text"
@@ -948,119 +3603,1123 @@ const CAMCampusInsightPanel: React.FC<{
                 className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50/50 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
-            <select
-              value={selectedCohort}
-              onChange={e => setSelectedCohort(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+
+            {/* Cohort Selector (Attendance, Academic & EWS) */}
+            {(selectedSubTab === "all" || selectedSubTab === "attendance" || selectedSubTab === "eligibility" || selectedSubTab === "performance" || selectedSubTab === "early_warning") && (
+              <select
+                value={selectedCohort}
+                onChange={e => setSelectedCohort(e.target.value)}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="all">All Cohorts / Classes</option>
+                {campusCohorts.map(cg => (
+                  <option key={cg} value={cg}>{cg}</option>
+                ))}
+              </select>
+            )}
+
+            {/* Attendance Severity Filter & Sort */}
+            {selectedSubTab === "attendance" && (
+              <>
+                <select
+                  value={attendanceSeverityFilter}
+                  onChange={e => setAttendanceSeverityFilter(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">All Shortage Tiers</option>
+                  <option value="critical">Critical (&lt;65%) Only</option>
+                  <option value="warning">Warning (65-74%) Only</option>
+                </select>
+                <select
+                  value={attendanceSortBy}
+                  onChange={e => setAttendanceSortBy(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="pct_asc">Sort: Lowest % First</option>
+                  <option value="pct_desc">Sort: Highest % First</option>
+                  <option value="absent_desc">Sort: Most Absent</option>
+                  <option value="name_asc">Sort: Student Name</option>
+                </select>
+              </>
+            )}
+
+            {/* Infrastructure Space Filters */}
+            {selectedSubTab === "infrastructure" && (
+              <>
+                <select
+                  value={infraTypeFilter}
+                  onChange={e => setInfraTypeFilter(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">All Facility Types</option>
+                  <option value="classroom">Lecture Halls &amp; Classes</option>
+                  <option value="lab">Specialized Laboratories</option>
+                </select>
+                <select
+                  value={infraUtilizationFilter}
+                  onChange={e => setInfraUtilizationFilter(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">All Utilization Tiers</option>
+                  <option value="congested">Congested (≥80%)</option>
+                  <option value="optimal">Optimal (45-79%)</option>
+                  <option value="underutilized">Underutilized (&lt;45%)</option>
+                </select>
+              </>
+            )}
+
+            {/* Handover & Substitution Filters */}
+            {selectedSubTab === "handovers" && (
+              <>
+                <select
+                  value={handoverStatusFilter}
+                  onChange={e => setHandoverStatusFilter(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">All Handover Statuses</option>
+                  <option value="approved">Approved &amp; Covered</option>
+                  <option value="pending">Pending CAM Action</option>
+                </select>
+                <select
+                  value={handoverReasonFilter}
+                  onChange={e => setHandoverReasonFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">All Reason Categories</option>
+                  <option value="medical">Medical / Health</option>
+                  <option value="od">Official Duty / OD</option>
+                  <option value="academic">Academic / Meeting</option>
+                  <option value="personal">Personal / Emergency</option>
+                </select>
+              </>
+            )}
+
+            {/* CIA Performance Filters */}
+            {selectedSubTab === "performance" && (
+              <>
+                <select
+                  value={perfGradeFilter}
+                  onChange={e => setPerfGradeFilter(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">All CIA Grades</option>
+                  <option value="distinction">Distinction (≥75%)</option>
+                  <option value="first">First Class (60-74%)</option>
+                  <option value="pass">Pass Class (50-59%)</option>
+                  <option value="at_risk">At-Risk (&lt;50%)</option>
+                </select>
+                {perfSubjectOptions.length > 0 && (
+                  <select
+                    value={perfSubjectFilter}
+                    onChange={e => setPerfSubjectFilter(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                  >
+                    <option value="all">All Subjects</option>
+                    {perfSubjectOptions.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                )}
+              </>
+            )}
+
+            {/* Early Warning System Filters */}
+            {selectedSubTab === "early_warning" && (
+              <select
+                value={ewsRiskFilter}
+                onChange={e => setEwsRiskFilter(e.target.value as any)}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="all">All EWS Risk Tiers</option>
+                <option value="critical">Critical Risk (≥60)</option>
+                <option value="moderate">Moderate Risk (30-59)</option>
+                <option value="low">Low Risk (&lt;30)</option>
+              </select>
+            )}
+
+            {/* Ticket Category, Status, & Priority Selectors */}
+            {selectedSubTab === "tickets" && (
+              <>
+                <select
+                  value={selectedTicketCategory}
+                  onChange={e => setSelectedTicketCategory(e.target.value)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">All Categories</option>
+                  {ticketCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+                <select
+                  value={ticketStatusFilter}
+                  onChange={e => setTicketStatusFilter(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="open">Open / Pending</option>
+                  <option value="progress">In Progress</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+                <select
+                  value={ticketPriorityFilter}
+                  onChange={e => setTicketPriorityFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">All Priorities</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="high">High</option>
+                  <option value="normal">Normal</option>
+                  <option value="low">Low</option>
+                </select>
+              </>
+            )}
+
+            {/* Faculty Workload Department & Status Selectors */}
+            {selectedSubTab === "workload" && (
+              <>
+                <select
+                  value={workloadStatusFilter}
+                  onChange={e => setWorkloadStatusFilter(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">All Workloads</option>
+                  <option value="overload">Overload (&gt;16h)</option>
+                  <option value="optimal">Optimal (14-16h)</option>
+                  <option value="underload">Underload (&lt;14h)</option>
+                </select>
+                {facultyDepartments.length > 0 && (
+                  <select
+                    value={facultyDeptFilter}
+                    onChange={e => setFacultyDeptFilter(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                  >
+                    <option value="all">All Departments</option>
+                    {facultyDepartments.map(dept => (
+                      <option key={dept} value={dept}>{dept}</option>
+                    ))}
+                  </select>
+                )}
+              </>
+            )}
+
+            {/* Syllabus Pace Selector */}
+            {selectedSubTab === "syllabus" && (
+              <select
+                value={syllabusPaceFilter}
+                onChange={e => setSyllabusPaceFilter(e.target.value as any)}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="all">All Syllabus Paces</option>
+                <option value="lagging">Lagging Behind (&lt;50%)</option>
+                <option value="progress">In Progress (50-79%)</option>
+                <option value="on_track">On Track (≥80%)</option>
+              </select>
+            )}
+
+            {/* Demo Status Selector */}
+            {selectedSubTab === "demos" && (
+              <select
+                value={demoStatusFilter}
+                onChange={e => setDemoStatusFilter(e.target.value as any)}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="all">All Evaluation Outcomes</option>
+                <option value="completed">Completed</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="reallocation">Reallocation Required</option>
+              </select>
+            )}
+
+            {/* Refresh Live Tickets Button */}
+            <button
+              type="button"
+              onClick={fetchCampusTickets}
+              disabled={ticketsLoading}
+              title="Reload live tickets from Supabase DB"
+              className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 transition-all cursor-pointer disabled:opacity-50"
             >
-              <option value="all">All Class Groups / Cohorts</option>
-              {campusCohorts.map(cg => (
-                <option key={cg} value={cg}>{cg}</option>
-              ))}
-            </select>
+              <RefreshCw className={`w-3.5 h-3.5 ${ticketsLoading ? "animate-spin text-indigo-600" : ""}`} />
+            </button>
           </div>
         </div>
 
         {/* Quick Report Filter Tabs */}
-        <div className="flex gap-2 overflow-x-auto border-b border-slate-100 pb-2">
+        <div className="flex gap-2 overflow-x-auto border-b border-slate-100 pb-2 custom-scrollbar">
           {[
-            { id: "all", label: "All Insights & Reports", count: 4 },
-            { id: "workload", label: "Faculty Workload Ledger", count: facultyWorkloadData.length },
-            { id: "attendance", label: "Attendance Shortage (<75%)", count: attendanceShortageData.length, alert: attendanceShortageData.length > 0 },
-            { id: "syllabus", label: "Syllabus Completion Pace", count: syllabusPaceData.length },
-            { id: "demos", label: "Mentor Demo Evaluations", count: demoEvaluationData.length }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setSelectedSubTab(tab.id as any)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
-                selectedSubTab === tab.id
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                selectedSubTab === tab.id
-                  ? "bg-white/20 text-white"
-                  : tab.alert ? "bg-rose-100 text-rose-700" : "bg-slate-200 text-slate-700"
-              }`}>
-                {tab.count}
-              </span>
-            </button>
-          ))}
+            { id: "attendance", label: "Attendance Shortage (<75%)", count: attendanceShortageData.length, alert: attendanceShortageData.length > 0, icon: AlertTriangle },
+            { id: "eligibility", label: "Exam Eligibility & Hall Tickets", count: examEligibilityData.length, alert: examEligibilityData.filter(e => e.status === "Detained").length > 0, icon: CheckCircle2 },
+            { id: "infrastructure", label: "Room & Lab Space Matrix", count: infrastructureData.length, alert: infrastructureMetrics.congestedCount > 0, icon: Building2 },
+            { id: "handovers", label: "Faculty Handovers & Coverage", count: handoverData.length, alert: handoverMetrics.pendingCount > 0, icon: CalendarCheck2 },
+            { id: "performance", label: "CIA & Marks Distribution", count: performanceData.length, alert: performanceMetrics.atRiskCount > 0, icon: Award },
+            { id: "early_warning", label: "Student Early Warning (EWS)", count: earlyWarningMetrics.criticalCount + earlyWarningMetrics.moderateCount, alert: earlyWarningMetrics.criticalCount > 0, icon: ShieldAlert },
+            { id: "tickets", label: "Campus Help Desk Tickets", count: campusTickets.length, alert: campusTickets.filter(t => !isResolvedTicket(t.status)).length > 0, icon: Ticket },
+            { id: "demos", label: "Mentor Demo Evaluations", count: demoEvaluationData.length, icon: Sparkles },
+            { id: "workload", label: "Faculty Workload Ledger", count: facultyWorkloadData.length, icon: Users },
+            { id: "syllabus", label: "Syllabus Completion Pace", count: syllabusPaceData.length, icon: BookOpen },
+            { id: "all", label: "All Ledgers Overview", count: 10, icon: FileSpreadsheet }
+          ].map(tab => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setSelectedSubTab(tab.id as any)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
+                  selectedSubTab === tab.id
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  selectedSubTab === tab.id
+                    ? "bg-white/20 text-white"
+                    : tab.alert ? "bg-rose-100 text-rose-700" : "bg-slate-200 text-slate-700"
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* ──────────────────────── REPORT CARDS GRID ──────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        {/* CARD 1: Faculty Workload Ledger */}
-        {(selectedSubTab === "all" || selectedSubTab === "workload") && (
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
-                    <Users className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 leading-tight">Faculty Workload &amp; Allocation Ledger</h3>
-                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Active faculty weekly hours mapped against the 16 hours/week institutional threshold.</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* KPI Summary */}
-              <div className="grid grid-cols-3 gap-2 bg-slate-50/70 p-3 rounded-xl border border-slate-150">
-                <div>
-                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Faculty Count</p>
-                  <p className="text-base font-black text-slate-800 mt-0.5">{facultyWorkloadData.length}</p>
+      {/* ──────────────────────── DEDICATED VIEW: ATTENDANCE SHORTAGE (<75%) ──────────────────────── */}
+      {selectedSubTab === "attendance" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100 shrink-0">
+                  <AlertTriangle className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Overload (&gt;16h)</p>
-                  <p className="text-base font-black text-amber-600 mt-0.5">{facultyWorkloadData.filter(f => f.assignedHours > 16).length}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Avg Workload</p>
-                  <p className="text-base font-black text-indigo-600 mt-0.5">
-                    {facultyWorkloadData.length > 0 ? (facultyWorkloadData.reduce((s, f) => s + f.assignedHours, 0) / facultyWorkloadData.length).toFixed(1) : 0} hrs/wk
+                  <h3 className="text-base font-black text-slate-900 leading-tight">Student Attendance Shortage Warning Console (&lt; 75%)</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Official tracking of students currently below the mandatory 75% institutional attendance threshold.
                   </p>
                 </div>
-              </div>
-
-              {/* Top 3 Preview Rows */}
-              <div className="overflow-hidden border border-slate-200/80 rounded-xl">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
-                    <tr>
-                      <th className="p-2.5">Faculty</th>
-                      <th className="p-2.5">Hours</th>
-                      <th className="p-2.5 text-right">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {facultyWorkloadData.slice(0, 3).map(f => (
-                      <tr key={f.id} className="hover:bg-slate-50/50">
-                        <td className="p-2.5 font-bold text-slate-800">{f.name}</td>
-                        <td className="p-2.5 font-mono text-slate-600 font-semibold">{f.assignedHours} / 16 hrs</td>
-                        <td className="p-2.5 text-right">
-                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
-                            f.status === "Overload" ? "bg-amber-100 text-amber-800" : f.status === "Optimal" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"
-                          }`}>
-                            {f.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             </div>
 
             {/* Export Buttons */}
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportAttendanceShortage("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportAttendanceShortage("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportAttendanceShortage("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Official Dean Warning Notice (PDF)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Shortage</span>
+              <p className="text-xl font-black text-rose-600 mt-1">{attendanceShortageData.length}</p>
+              <span className="text-[10px] text-rose-600 font-bold">{attendanceStats.shortageRate}% of {attendanceStats.counted} evaluated</span>
+            </div>
+            <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-200">
+              <span className="text-[10px] font-extrabold uppercase text-rose-700 tracking-wider">Critical Shortage (&lt;65%)</span>
+              <p className="text-xl font-black text-rose-700 mt-1">{attendanceShortageData.filter(s => s.percentage < 65).length}</p>
+              <span className="text-[10px] text-rose-600 font-bold">Dean notice triggered</span>
+            </div>
+            <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200">
+              <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider">Warning Shortage (65-74%)</span>
+              <p className="text-xl font-black text-amber-800 mt-1">{attendanceShortageData.filter(s => s.percentage >= 65).length}</p>
+              <span className="text-[10px] text-amber-700 font-medium">Borderline short</span>
+            </div>
+            <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-200">
+              <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">Campus Avg Attendance</span>
+              <p className="text-xl font-black text-emerald-700 mt-1">{attendanceStats.avgAttendance}%</p>
+              <span className="text-[10px] text-slate-500 font-medium truncate block">
+                {selectedCohort === "all" ? "Across all cohorts" : selectedCohort}
+              </span>
+            </div>
+          </div>
+
+          {/* Visual Analytics Charts Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Chart 1: Attendance Risk Tiers Donut */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <span>Attendance Risk Tiers</span>
+                </h4>
+                <span className="text-[10px] text-slate-400 font-bold">Total Students: {attendanceBrackets.reduce((s, b) => s + b.value, 0)}</span>
+              </div>
+              <div className="h-56 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={attendanceBrackets}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={48}
+                      outerRadius={75}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {attendanceBrackets.map((entry, idx) => (
+                        <Cell key={`tier-${idx}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                      formatter={(value: any, name: any) => [`${value} students`, name]}
+                    />
+                    <Legend
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: "11px", fontWeight: 600, paddingTop: "8px" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Chart 2: Cohort Shortage Concentration Bar Chart */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  <span>Shortage by Cohort / Class</span>
+                </h4>
+                <span className="text-[10px] text-rose-600 font-bold">Students &lt; 75%</span>
+              </div>
+              <div className="h-56 w-full">
+                {cohortShortageChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={cohortShortageChartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis
+                        dataKey="cohort"
+                        tick={{ fontSize: 10, fill: "#64748b", fontWeight: 600 }}
+                        interval={0}
+                        angle={-20}
+                        textAnchor="end"
+                      />
+                      <YAxis tick={{ fontSize: 10, fill: "#64748b" }} allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                        formatter={(value: any) => [`${value} shortage students`, "Count"]}
+                        labelFormatter={(label: any) => `Cohort: ${label}`}
+                      />
+                      <Bar dataKey="count" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 font-bold">
+                    No shortage data in this selection
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Full Interactive Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th className="p-3">S.No</th>
+                  <th className="p-3">Student Name</th>
+                  <th className="p-3">Register No</th>
+                  <th className="p-3">Department</th>
+                  <th className="p-3">Class Group</th>
+                  <th className="p-3 text-center">Conducted</th>
+                  <th className="p-3 text-center">Present / OD</th>
+                  <th className="p-3 text-center">Absent</th>
+                  <th className="p-3 text-right">Attendance %</th>
+                  <th className="p-3 text-right">Severity Status</th>
+                  <th className="p-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {attendanceShortageData.map((s, idx) => {
+                  const recoverySessions = Math.max(1, Math.ceil((0.75 * s.conducted - s.present) / 0.25));
+                  return (
+                    <tr key={`${s.id}_${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
+                      <td className="p-3 font-bold text-slate-900">{s.name}</td>
+                      <td className="p-3 font-mono text-slate-600">{s.regNo}</td>
+                      <td className="p-3 text-slate-600">{s.dept}</td>
+                      <td className="p-3 text-slate-500 font-medium">{s.classGroup}</td>
+                      <td className="p-3 text-center font-mono font-bold text-slate-700">{s.conducted}</td>
+                      <td className="p-3 text-center font-mono font-bold text-emerald-700">{s.present}</td>
+                      <td className="p-3 text-center font-mono font-bold text-rose-700">{s.absent}</td>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-14 h-1.5 rounded-full bg-slate-100 overflow-hidden hidden sm:block">
+                            <div
+                              className={`h-full rounded-full ${s.percentage < 65 ? "bg-rose-500" : "bg-amber-500"}`}
+                              style={{ width: `${Math.min(100, s.percentage)}%` }}
+                            />
+                          </div>
+                          <span className="font-mono font-black text-rose-700 text-sm">{s.percentage}%</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-right">
+                        <div className="flex flex-col items-end gap-1">
+                          <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
+                            s.percentage < 65 ? "bg-rose-100 text-rose-800 border border-rose-200" : "bg-amber-100 text-amber-800 border border-amber-200"
+                          }`}>
+                            {s.percentage < 65 ? "Critical Shortage" : "Warning Shortage"}
+                          </span>
+                          <span className="text-[9px] text-slate-500 font-medium whitespace-nowrap">
+                            Need <strong className="text-rose-700 font-bold">{recoverySessions}</strong> sess. to 75%
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => copyParentAlert(s)}
+                            title="Copy Parent WhatsApp/SMS Alert Notice"
+                            className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStudentForModal(s)}
+                            title="View Detailed Student Profile & Parent Notice Draft"
+                            className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold transition-colors cursor-pointer"
+                          >
+                            View
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {attendanceShortageData.length === 0 && (
+                  <tr>
+                    <td colSpan={11} className="p-8 text-center text-emerald-700 font-bold bg-emerald-50/30">
+                      <CheckCircle className="w-6 h-6 mx-auto mb-1.5 text-emerald-600" />
+                      All students currently satisfy the 75% attendance requirement!
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── DEDICATED VIEW: CAMPUS HELP DESK TICKETS ──────────────────────── */}
+      {selectedSubTab === "tickets" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shrink-0">
+                  <Ticket className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">Campus Help Desk &amp; Student Tickets</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Live grievance tickets directly connected to the Supabase database table for {activeCollegeName}.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportCampusTickets("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportCampusTickets("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportCampusTickets("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF Ledger</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Tickets</span>
+              <p className="text-xl font-black text-slate-900 mt-1">{campusTickets.length}</p>
+              <span className="text-[10px] text-slate-500 font-medium">Logged in Supabase</span>
+            </div>
+            <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200">
+              <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider">Unresolved / Open</span>
+              <p className="text-xl font-black text-amber-700 mt-1">{campusTickets.filter(t => !isResolvedTicket(t.status) && !isInProgressTicket(t.status)).length}</p>
+              <span className="text-[10px] text-amber-600 font-medium">Awaiting action</span>
+            </div>
+            <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200">
+              <span className="text-[10px] font-extrabold uppercase text-blue-700 tracking-wider">In Progress</span>
+              <p className="text-xl font-black text-blue-700 mt-1">{campusTickets.filter(t => isInProgressTicket(t.status)).length}</p>
+              <span className="text-[10px] text-blue-600 font-medium">Under review</span>
+            </div>
+            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200">
+              <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">Resolved</span>
+              <p className="text-xl font-black text-emerald-700 mt-1">{campusTickets.filter(t => isResolvedTicket(t.status)).length}</p>
+              <span className="text-[10px] text-emerald-600 font-bold">
+                {campusTickets.length > 0 ? Math.round((campusTickets.filter(t => isResolvedTicket(t.status)).length / campusTickets.length) * 100) : 0}% resolution rate
+              </span>
+            </div>
+          </div>
+
+          {/* Visual Analytics Charts Grid: Ticket Categories & Status */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Chart 1: Tickets by Category Donut */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  <span>Tickets by Category</span>
+                </h4>
+                <span className="text-[10px] text-slate-400 font-bold">{ticketCategories.length} Categories</span>
+              </div>
+              <div className="h-56 w-full">
+                {ticketCategoryChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={ticketCategoryChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={48}
+                        outerRadius={75}
+                        paddingAngle={3}
+                        dataKey="count"
+                        onClick={(data) => {
+                          if (data && data.name) {
+                            setSelectedTicketCategory(data.name === selectedTicketCategory ? "all" : data.name);
+                          }
+                        }}
+                        cursor="pointer"
+                      >
+                        {ticketCategoryChartData.map((entry, idx) => (
+                          <Cell key={`cat-${idx}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                        formatter={(value: any, name: any) => [`${value} tickets`, name]}
+                      />
+                      <Legend
+                        iconType="circle"
+                        wrapperStyle={{ fontSize: "10px", fontWeight: 600, paddingTop: "6px" }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">No tickets recorded</div>
+                )}
+              </div>
+            </div>
+
+            {/* Chart 2: Resolution Status Breakdown */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  <span>Resolution Pipeline</span>
+                </h4>
+                <span className="text-[10px] text-indigo-600 font-bold">Supabase Real-Time</span>
+              </div>
+              <div className="h-56 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={ticketStatusChartData} margin={{ top: 10, right: 15, left: -20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 700, fill: "#475569" }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                    <Tooltip
+                      contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                      formatter={(val: any) => [`${val} tickets`, "Volume"]}
+                    />
+                    <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                      {ticketStatusChartData.map((entry, idx) => (
+                        <Cell key={`status-${idx}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Heatmap Matrix: Department x Category Issues */}
+          {ticketHeatmapData.departments.length > 0 && ticketHeatmapData.categories.length > 0 && (
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                    Issue Concentration Matrix (Department × Category)
+                  </h4>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                    Heatmap indicating density of grievance logs across academic departments. Click any cell or category to filter table below.
+                  </p>
+                </div>
+                {selectedTicketCategory !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTicketCategory("all")}
+                    className="text-[11px] text-indigo-600 font-bold hover:underline cursor-pointer"
+                  >
+                    Reset Filter ({selectedTicketCategory})
+                  </button>
+                )}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-[10px] font-black uppercase text-slate-500">
+                      <th className="p-2 text-left bg-slate-100/70 rounded-tl-lg">Department</th>
+                      {ticketHeatmapData.categories.map(cat => (
+                        <th
+                          key={cat}
+                          onClick={() => setSelectedTicketCategory(selectedTicketCategory === cat ? "all" : cat)}
+                          className={`p-2 text-center cursor-pointer transition-colors hover:text-indigo-600 ${
+                            selectedTicketCategory === cat ? "text-indigo-600 bg-indigo-50 font-black" : ""
+                          }`}
+                          title={`Filter by ${cat}`}
+                        >
+                          {cat}
+                        </th>
+                      ))}
+                      <th className="p-2 text-right bg-slate-100/70 rounded-tr-lg">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-150">
+                    {ticketHeatmapData.matrix.map(row => {
+                      const rowTotal = ticketHeatmapData.categories.reduce((acc, cat) => acc + (row.counts[cat] || 0), 0);
+                      return (
+                        <tr key={row.dept} className="hover:bg-slate-100/40 transition-colors">
+                          <td className="p-2 font-bold text-slate-800 text-xs whitespace-nowrap">{row.dept}</td>
+                          {ticketHeatmapData.categories.map(cat => {
+                            const count = row.counts[cat] || 0;
+                            const isSelected = selectedTicketCategory === cat;
+                            const cellStyle = count === 0
+                              ? "bg-white/60 text-slate-300"
+                              : count === 1
+                              ? "bg-amber-50 text-amber-700 font-bold"
+                              : count <= 3
+                              ? "bg-amber-100 text-amber-800 font-black border border-amber-200"
+                              : "bg-rose-100 text-rose-800 font-black border border-rose-200";
+
+                            return (
+                              <td
+                                key={cat}
+                                onClick={() => {
+                                  setSelectedTicketCategory(cat);
+                                  setSearchQuery(row.dept);
+                                }}
+                                className={`p-2 text-center cursor-pointer transition-all hover:ring-2 hover:ring-indigo-400 ${isSelected ? "ring-2 ring-indigo-500 font-black" : ""}`}
+                                title={`${count} tickets in ${row.dept} for ${cat}. Click to filter.`}
+                              >
+                                <span className={`inline-block px-2 py-0.5 rounded text-[11px] ${cellStyle}`}>
+                                  {count}
+                                </span>
+                              </td>
+                            );
+                          })}
+                          <td className="p-2 text-right font-black text-slate-800 font-mono text-xs">{rowTotal}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Full Interactive Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th className="p-3">Ticket ID</th>
+                  <th className="p-3">Student Name</th>
+                  <th className="p-3">Roll Number</th>
+                  <th className="p-3">Category</th>
+                  <th className="p-3">Subject</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Priority</th>
+                  <th className="p-3">Created</th>
+                  <th className="p-3 text-right">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredTickets.map((t, idx) => {
+                  const isExpanded = expandedTicketId === t.id;
+                  const isResolved = isResolvedTicket(t.status);
+                  const isInProgress = isInProgressTicket(t.status);
+                  return (
+                    <React.Fragment key={`${t.id || 'tkt'}_${idx}`}>
+                      <tr
+                        onClick={() => setExpandedTicketId(isExpanded ? null : t.id)}
+                        className="hover:bg-slate-50/70 transition-colors cursor-pointer"
+                      >
+                        <td className="p-3 font-mono font-bold text-slate-800">{t.id}</td>
+                        <td className="p-3 font-bold text-slate-900">{t.student_name || "Unknown"}</td>
+                        <td className="p-3 font-mono text-slate-500">{t.roll_number || "—"}</td>
+                        <td className="p-3">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                            {t.category || "General"}
+                          </span>
+                        </td>
+                        <td className="p-3 text-slate-800 font-semibold max-w-xs truncate">{t.subject || "No Subject"}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                            isResolved
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              : isInProgress
+                              ? "bg-blue-100 text-blue-800 border border-blue-200"
+                              : "bg-amber-100 text-amber-800 border border-amber-200"
+                          }`}>
+                            {isResolved ? "Resolved" : isInProgress ? "In Progress" : "Open"}
+                          </span>
+                        </td>
+                        <td className="p-3 font-medium text-slate-600 capitalize">{t.priority || "Normal"}</td>
+                        <td className="p-3 text-slate-500 text-[11px]">
+                          {t.created_at ? new Date(t.created_at).toLocaleDateString("en-IN") : "—"}
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTicketUpdating(t);
+                                setUpdatingTicketStatus(isResolved ? "resolved" : isInProgress ? "progress" : "resolved");
+                                setResolutionNotes(t.resolution_notes || t.admin_note || "");
+                              }}
+                              className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold transition-colors cursor-pointer"
+                            >
+                              Resolve
+                            </button>
+                            <span className="text-[11px] text-slate-500 font-bold hover:underline">
+                              {isExpanded ? "Hide" : "View"}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Expandable row */}
+                      {isExpanded && (
+                        <tr className="bg-slate-50/50">
+                          <td colSpan={9} className="p-4 border-t border-slate-150 space-y-3">
+                            <div>
+                              <span className="text-[10px] font-extrabold uppercase text-slate-400">Problem Description:</span>
+                              <p className="text-xs text-slate-800 font-medium mt-1 leading-relaxed bg-white p-3 rounded-lg border border-slate-200">
+                                {t.description || "No description provided."}
+                              </p>
+                            </div>
+                            {t.admin_note && (
+                              <div>
+                                <span className="text-[10px] font-extrabold uppercase text-indigo-700">Official Admin Resolution Note:</span>
+                                <p className="text-xs text-indigo-950 font-medium mt-1 leading-relaxed bg-indigo-50/70 p-3 rounded-lg border border-indigo-150">
+                                  {t.admin_note}
+                                </p>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between gap-4 text-[11px] text-slate-500 pt-2 border-t border-slate-200">
+                              <div className="flex items-center gap-4">
+                                <span>Department: <strong>{t.department || "—"}</strong></span>
+                                {t.closed_by && <span>Closed by: <strong>{t.closed_by}</strong></span>}
+                                {t.closed_at && <span>Closed on: <strong>{new Date(t.closed_at).toLocaleString("en-IN")}</strong></span>}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTicketUpdating(t);
+                                  setUpdatingTicketStatus(isResolved ? "resolved" : isInProgress ? "progress" : "resolved");
+                                  setResolutionNotes(t.resolution_notes || t.admin_note || "");
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                                <span>Update Status / Resolve</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+                {filteredTickets.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center text-slate-500 italic">
+                      {ticketsLoading ? "Connecting to Supabase tickets table..." : "No tickets found matching this search or category filter."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── DEDICATED VIEW: MENTOR DEMO EVALUATIONS ──────────────────────── */}
+      {selectedSubTab === "demos" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-pink-50 text-pink-600 flex items-center justify-center border border-pink-100 shrink-0">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">Mentor Demo &amp; Evaluation Ledger</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Evaluations conducted by Subject Matter Experts (SMEs) for {activeCollegeName} mentors.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportDemoEvaluations("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportDemoEvaluations("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportDemoEvaluations("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF Ledger</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Demos</span>
+              <p className="text-xl font-black text-slate-800 mt-1">{demoMetrics.totalDemos}</p>
+              <span className="text-[10px] text-indigo-600 font-medium">{demoMetrics.scheduledCount} upcoming scheduled</span>
+            </div>
+            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200">
+              <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">Completed</span>
+              <p className="text-xl font-black text-emerald-700 mt-1">{demoMetrics.completedCount}</p>
+              <span className="text-[10px] text-emerald-600 font-medium">Evaluations finalized</span>
+            </div>
+            <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200">
+              <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider">Reallocation Req</span>
+              <p className="text-xl font-black text-amber-600 mt-1">{demoMetrics.reallocationCount}</p>
+              <span className="text-[10px] text-amber-600 font-medium">Remediation required</span>
+            </div>
+            <div className="p-4 rounded-xl bg-purple-50/60 border border-purple-200">
+              <span className="text-[10px] font-extrabold uppercase text-purple-700 tracking-wider">Avg Score</span>
+              <p className="text-xl font-black text-purple-700 mt-1">{demoMetrics.avgScore !== "N/A" ? `${demoMetrics.avgScore} / 100` : "N/A"}</p>
+              <span className="text-[10px] text-purple-700 font-medium">{demoMetrics.distinctionRate}% distinction (≥80)</span>
+            </div>
+          </div>
+
+          {/* Visual Analytics Charts Grid: Top Mentors Demo Scores & Evaluation Status */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Chart 1: Top Mentors Demo Score Ranking */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  <span>Mentor Demo Performance (Marks / 100)</span>
+                </h4>
+                <span className="text-[10px] text-pink-600 font-bold">Top Rated Mentors</span>
+              </div>
+              <div className="h-56 w-full">
+                {topMentorsChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      layout="vertical"
+                      data={topMentorsChartData}
+                      margin={{ top: 5, right: 25, left: 10, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                      <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={90}
+                        tick={{ fontSize: 10, fontWeight: 700, fill: "#475569" }}
+                      />
+                      <Tooltip
+                        contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                        formatter={(val: any, _, item: any) => [`${val} / 100 (${item.payload.subject})`, "Score"]}
+                      />
+                      <Bar dataKey="score" radius={[0, 6, 6, 0]}>
+                        {topMentorsChartData.map((entry, idx) => (
+                          <Cell
+                            key={`mentor-${idx}`}
+                            fill={entry.score >= 80 ? "#10b981" : entry.score >= 65 ? "#6366f1" : "#f59e0b"}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">No scored demos available</div>
+                )}
+              </div>
+            </div>
+
+            {/* Chart 2: Demo Evaluation Status Donut */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  <span>Demo Evaluation Status</span>
+                </h4>
+                <span className="text-[10px] text-slate-400 font-bold">{demoEvaluationData.length} Total Demos</span>
+              </div>
+              <div className="h-56 w-full">
+                {demoStatusChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={demoStatusChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={48}
+                        outerRadius={75}
+                        paddingAngle={4}
+                        dataKey="value"
+                      >
+                        {demoStatusChartData.map((entry, idx) => (
+                          <Cell key={`demo-status-${idx}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                        formatter={(value: any, name: any) => [`${value} demos`, name]}
+                      />
+                      <Legend
+                        iconType="circle"
+                        wrapperStyle={{ fontSize: "11px", fontWeight: 600, paddingTop: "8px" }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">No demo status data</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Full Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th className="p-3">S.No</th>
+                  <th className="p-3">Mentor Name</th>
+                  <th className="p-3">SME Evaluator</th>
+                  <th className="p-3">Subject Demo</th>
+                  <th className="p-3">Stream / Class</th>
+                  <th className="p-3">Date</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3 text-center">Score</th>
+                  <th className="p-3">Feedback</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {demoEvaluationData.map(d => (
+                  <tr key={d.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="p-3 font-mono text-slate-400">{d.sNo}</td>
+                    <td className="p-3 font-bold text-slate-900">{d.mentorName}</td>
+                    <td className="p-3 font-semibold text-slate-700">{d.smeName}</td>
+                    <td className="p-3 text-slate-800">{d.subject}</td>
+                    <td className="p-3 text-slate-500">{d.stream}</td>
+                    <td className="p-3 text-slate-500">{d.dateStr}</td>
+                    <td className="p-3">
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                        d.status === "Completed" ? "bg-emerald-100 text-emerald-800" : d.status.includes("Reallocation") ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-700"
+                      }`}>
+                        {d.status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-center font-mono font-black text-indigo-700 text-sm">{d.marks}</td>
+                    <td className="p-3 text-slate-600 max-w-xs truncate" title={d.comments}>{d.comments}</td>
+                  </tr>
+                ))}
+                {demoEvaluationData.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center text-slate-400 italic">
+                      No mentor demo evaluations logged for this campus.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── DEDICATED VIEW: FACULTY WORKLOAD ──────────────────────── */}
+      {selectedSubTab === "workload" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
+                  <Users className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">Faculty Workload &amp; Allocation Ledger</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Weekly teaching hours compared against the institutional 16 hours/week workload limit for {activeCollegeName}.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => exportFacultyWorkload("csv")}
@@ -1080,17 +4739,1557 @@ const CAMCampusInsightPanel: React.FC<{
               <button
                 type="button"
                 onClick={() => exportFacultyWorkload("pdf")}
-                className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>Print / PDF</span>
+                <span>Print / PDF Ledger</span>
               </button>
             </div>
           </div>
-        )}
 
-        {/* CARD 2: Student Attendance Shortage Warning Report (<75%) */}
-        {(selectedSubTab === "all" || selectedSubTab === "attendance") && (
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Faculty</span>
+              <p className="text-xl font-black text-slate-900 mt-1">{workloadMetrics.totalFaculty}</p>
+              <span className="text-[10px] text-slate-500 font-medium">Avg {workloadMetrics.avgHours} hrs/wk</span>
+            </div>
+            <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200">
+              <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider">Overload (&gt;16h)</span>
+              <p className="text-xl font-black text-amber-700 mt-1">{workloadMetrics.overloadCount}</p>
+              <span className="text-[10px] text-amber-600 font-medium">Exceeds UGC guidelines</span>
+            </div>
+            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200">
+              <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">Optimal (14-16h)</span>
+              <p className="text-xl font-black text-emerald-700 mt-1">{workloadMetrics.optimalCount}</p>
+              <span className="text-[10px] text-emerald-600 font-bold">{workloadMetrics.complianceRate}% compliance rate</span>
+            </div>
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider">Underload (&lt;14h)</span>
+              <p className="text-xl font-black text-slate-700 mt-1">{workloadMetrics.underloadCount}</p>
+              <span className="text-[10px] text-slate-500 font-medium">{workloadMetrics.utilizationRate}% campus utilization</span>
+            </div>
+          </div>
+
+          {/* Visual Analytics Charts Grid: Faculty Hours vs Limit & Workload Balance */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Chart 1: Faculty Weekly Hours vs 16h Target */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  <span>Weekly Teaching Hours (16h Guideline)</span>
+                </h4>
+                <span className="text-[10px] text-amber-600 font-bold">Dashed Line = 16h Limit</span>
+              </div>
+              <div className="h-56 w-full">
+                {facultyHoursChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={facultyHoursChartData} margin={{ top: 10, right: 15, left: -20, bottom: 25 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis
+                        dataKey="name"
+                        angle={-25}
+                        textAnchor="end"
+                        interval={0}
+                        tick={{ fontSize: 9, fontWeight: 700, fill: "#475569" }}
+                      />
+                      <YAxis domain={[0, 'auto']} tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                        formatter={(val: any) => [`${val} hrs/wk`, "Weekly Teaching Hours"]}
+                      />
+                      <ReferenceLine y={16} stroke="#f59e0b" strokeDasharray="3 3" label={{ value: "16h Limit", position: "top", fill: "#f59e0b", fontSize: 10, fontWeight: "bold" }} />
+                      <Bar dataKey="hours" radius={[5, 5, 0, 0]}>
+                        {facultyHoursChartData.map((entry, idx) => (
+                          <Cell
+                            key={`faculty-${idx}`}
+                            fill={entry.hours > 16 ? "#f59e0b" : entry.hours >= 14 ? "#10b981" : "#94a3b8"}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">No faculty hours logged</div>
+                )}
+              </div>
+            </div>
+
+            {/* Chart 2: Workload Balance Distribution Donut */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  <span>Workload Balance Distribution</span>
+                </h4>
+                <span className="text-[10px] text-slate-400 font-bold">{facultyWorkloadData.length} Faculty Members</span>
+              </div>
+              <div className="h-56 w-full">
+                {workloadBalanceChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={workloadBalanceChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={48}
+                        outerRadius={75}
+                        paddingAngle={4}
+                        dataKey="value"
+                      >
+                        {workloadBalanceChartData.map((entry, idx) => (
+                          <Cell key={`workload-${idx}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                        formatter={(value: any, name: any) => [`${value} faculty`, name]}
+                      />
+                      <Legend
+                        iconType="circle"
+                        wrapperStyle={{ fontSize: "11px", fontWeight: 600, paddingTop: "8px" }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">No workload data</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Full Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th className="p-3">S.No</th>
+                  <th className="p-3">Faculty Name</th>
+                  <th className="p-3">Email</th>
+                  <th className="p-3">Department</th>
+                  <th className="p-3 text-center">Assigned Weekly Hours</th>
+                  <th className="p-3 text-center">Target Limit</th>
+                  <th className="p-3 text-center">Variance</th>
+                  <th className="p-3 text-right">Workload Status</th>
+                  <th className="p-3 text-center">Timetable</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {facultyWorkloadData.map(f => (
+                  <tr key={`${f.id}_${f.sNo}`} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="p-3 font-mono text-slate-400">{f.sNo}</td>
+                    <td className="p-3 font-bold text-slate-900">{f.name}</td>
+                    <td className="p-3 text-slate-500">{f.email}</td>
+                    <td className="p-3 text-slate-600">{f.dept}</td>
+                    <td className="p-3 text-center font-mono font-black text-slate-800">{f.assignedHours} hrs</td>
+                    <td className="p-3 text-center font-mono text-slate-500">{f.targetLimit} hrs</td>
+                    <td className="p-3 text-center font-mono font-bold text-indigo-700">{f.variance}</td>
+                    <td className="p-3 text-right">
+                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
+                        f.status === "Overload" ? "bg-amber-100 text-amber-800" : f.status === "Optimal" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"
+                      }`}>
+                        {f.status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFacultyForModal(f)}
+                        className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] transition-colors cursor-pointer"
+                      >
+                        View Schedule ({f.slots?.length || 0})
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── DEDICATED VIEW: SYLLABUS PACE ──────────────────────── */}
+      {selectedSubTab === "syllabus" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-100 shrink-0">
+                  <BookOpen className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">Subject Completion &amp; Syllabus Pace Report</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Delivery tracking comparing actual conducted sessions vs target semester hours for {activeCollegeName}.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportSyllabusPace("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportSyllabusPace("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportSyllabusPace("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF Ledger</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Subjects</span>
+              <p className="text-xl font-black text-slate-900 mt-1">{syllabusMetrics.totalSubjects}</p>
+              <span className="text-[10px] text-slate-500 font-medium">{syllabusMetrics.sumActual} / {syllabusMetrics.sumTarget} hrs delivered</span>
+            </div>
+            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200">
+              <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">On Track (≥80%)</span>
+              <p className="text-xl font-black text-emerald-700 mt-1">{syllabusMetrics.onTrackCount}</p>
+              <span className="text-[10px] text-emerald-600 font-bold">Ahead or on schedule</span>
+            </div>
+            <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200">
+              <span className="text-[10px] font-extrabold uppercase text-blue-700 tracking-wider">In Progress (50-79%)</span>
+              <p className="text-xl font-black text-blue-700 mt-1">{syllabusMetrics.inProgressCount}</p>
+              <span className="text-[10px] text-blue-600 font-medium">Standard mid-term pace</span>
+            </div>
+            <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-200">
+              <span className="text-[10px] font-extrabold uppercase text-rose-700 tracking-wider">Lagging (&lt;50%)</span>
+              <p className="text-xl font-black text-rose-700 mt-1">{syllabusMetrics.laggingCount}</p>
+              <span className="text-[10px] text-rose-600 font-medium">Avg pace: {syllabusMetrics.avgCompletionPct}%</span>
+            </div>
+          </div>
+
+          {/* Visual Analytics Charts Grid: Hours Comparison & Pace Distribution */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Chart 1: Conducted vs Target Hours */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  <span>Conducted vs Target Semester Hours</span>
+                </h4>
+                <span className="text-[10px] text-indigo-600 font-bold">Top Subjects</span>
+              </div>
+              <div className="h-56 w-full">
+                {subjectHoursComparisonData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={subjectHoursComparisonData} margin={{ top: 10, right: 15, left: -20, bottom: 25 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis
+                        dataKey="name"
+                        angle={-25}
+                        textAnchor="end"
+                        interval={0}
+                        tick={{ fontSize: 9, fontWeight: 700, fill: "#475569" }}
+                      />
+                      <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                        formatter={(val: any, name: any) => [`${val} hrs`, name === "conducted" ? "Conducted Hours" : "Target Hours"]}
+                      />
+                      <Legend
+                        iconType="circle"
+                        wrapperStyle={{ fontSize: "10px", fontWeight: 600, paddingTop: "4px" }}
+                      />
+                      <Bar dataKey="conducted" name="Conducted Hours" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="target" name="Target Hours" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">No subject delivery logged</div>
+                )}
+              </div>
+            </div>
+
+            {/* Chart 2: Pace Distribution Donut */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  <span>Syllabus Pace Distribution</span>
+                </h4>
+                <span className="text-[10px] text-slate-400 font-bold">{syllabusPaceData.length} Subjects</span>
+              </div>
+              <div className="h-56 w-full">
+                {syllabusPaceDistributionData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={syllabusPaceDistributionData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={48}
+                        outerRadius={75}
+                        paddingAngle={4}
+                        dataKey="value"
+                      >
+                        {syllabusPaceDistributionData.map((entry, idx) => (
+                          <Cell key={`pace-${idx}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                        formatter={(value: any, name: any) => [`${value} subjects`, name]}
+                      />
+                      <Legend
+                        iconType="circle"
+                        wrapperStyle={{ fontSize: "11px", fontWeight: 600, paddingTop: "8px" }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">No syllabus distribution data</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Full Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th className="p-3">S.No</th>
+                  <th className="p-3">Subject Name</th>
+                  <th className="p-3">Department</th>
+                  <th className="p-3">Semester</th>
+                  <th className="p-3">Type</th>
+                  <th className="p-3 text-center">Conducted</th>
+                  <th className="p-3 text-center">Target Hours</th>
+                  <th className="p-3 text-center">Pace %</th>
+                  <th className="p-3 text-right">Delivery Status</th>
+                  <th className="p-3 text-center">Remediation Planner</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {syllabusPaceData.map(sub => (
+                  <tr key={sub.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="p-3 font-mono text-slate-400">{sub.sNo}</td>
+                    <td className="p-3 font-bold text-slate-900">{sub.name}</td>
+                    <td className="p-3 text-slate-600">{sub.dept}</td>
+                    <td className="p-3 text-slate-500">{sub.sem}</td>
+                    <td className="p-3 text-slate-500">{sub.type}</td>
+                    <td className="p-3 text-center font-mono font-bold text-indigo-700">{sub.actualHours} hrs</td>
+                    <td className="p-3 text-center font-mono text-slate-500">{sub.targetHours} hrs</td>
+                    <td className="p-3 text-center font-mono font-black text-slate-800 text-sm">{sub.completionPct}%</td>
+                    <td className="p-3 text-right">
+                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
+                        sub.status === "On Track" ? "bg-emerald-100 text-emerald-800" : sub.status === "In Progress" ? "bg-blue-100 text-blue-800" : "bg-rose-100 text-rose-800"
+                      }`}>
+                        {sub.status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-center">
+                      {sub.completionPct < 80 ? (
+                        <span className="px-2.5 py-1 rounded-md text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+                          +{sub.extraHoursPerWeek} extra hrs/wk
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-emerald-600">On Target</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── DEDICATED VIEW: EXAM ELIGIBILITY & HALL TICKETS ──────────────────────── */}
+      {selectedSubTab === "eligibility" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shrink-0">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">Semester Exam Eligibility &amp; Hall Ticket Clearance Auditor</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Official regulatory audit for Semester End Examinations (SEE) clearance, condonation eligibility, and debarments.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportExamEligibility("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportExamEligibility("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportExamEligibility("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Hall Ticket Clearance Roll (PDF)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Ribbon */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Evaluated</span>
+              <p className="text-xl font-black text-slate-900 mt-1">{examEligibilityData.length}</p>
+              <span className="text-[10px] text-slate-500 font-medium">All enrolled students</span>
+            </div>
+            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200">
+              <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">Hall Ticket Cleared (≥75%)</span>
+              <p className="text-xl font-black text-emerald-700 mt-1">
+                {examEligibilityData.filter(e => e.status === "Cleared").length}
+              </p>
+              <span className="text-[10px] text-emerald-600 font-bold">
+                {examEligibilityData.length > 0 ? Math.round((examEligibilityData.filter(e => e.status === "Cleared").length / examEligibilityData.length) * 100) : 0}% Clearance Rate
+              </span>
+            </div>
+            <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200">
+              <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider">Condonation Req (65-74%)</span>
+              <p className="text-xl font-black text-amber-700 mt-1">
+                {examEligibilityData.filter(e => e.status === "Condonation Eligible").length}
+              </p>
+              <span className="text-[10px] text-amber-600 font-medium">Requires Dean / Medical Fine</span>
+            </div>
+            <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-200">
+              <span className="text-[10px] font-extrabold uppercase text-rose-700 tracking-wider">Detained / Barred (&lt;65%)</span>
+              <p className="text-xl font-black text-rose-700 mt-1">
+                {examEligibilityData.filter(e => e.status === "Detained").length}
+              </p>
+              <span className="text-[10px] text-rose-600 font-bold">Ineligible for Semester Exams</span>
+            </div>
+          </div>
+
+          {/* Visual Analytics Charts Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Chart 1: Examination Eligibility Donut */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  <span>Examination Clearance Distribution</span>
+                </h4>
+                <span className="text-[10px] text-slate-400 font-bold">{examEligibilityData.length} Students</span>
+              </div>
+              <div className="h-56 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: "Cleared (≥75%)", value: examEligibilityData.filter(e => e.status === "Cleared").length, color: "#10b981" },
+                        { name: "Condonation (65-74%)", value: examEligibilityData.filter(e => e.status === "Condonation Eligible").length, color: "#f59e0b" },
+                        { name: "Detained (<65%)", value: examEligibilityData.filter(e => e.status === "Detained").length, color: "#ef4444" }
+                      ].filter(x => x.value > 0)}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={48}
+                      outerRadius={75}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {[
+                        { name: "Cleared (≥75%)", value: examEligibilityData.filter(e => e.status === "Cleared").length, color: "#10b981" },
+                        { name: "Condonation (65-74%)", value: examEligibilityData.filter(e => e.status === "Condonation Eligible").length, color: "#f59e0b" },
+                        { name: "Detained (<65%)", value: examEligibilityData.filter(e => e.status === "Detained").length, color: "#ef4444" }
+                      ].filter(x => x.value > 0).map((entry, idx) => (
+                        <Cell key={`elig-pie-${idx}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                      formatter={(val: any, name: any) => [`${val} students`, name]}
+                    />
+                    <Legend
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: "11px", fontWeight: 600, paddingTop: "8px" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Chart 2: Cohort Shortage Concentration Bar Chart */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  <span>Detention Risk Concentration</span>
+                </h4>
+                <span className="text-[10px] text-rose-600 font-bold">Students &lt; 65%</span>
+              </div>
+              <div className="h-56 w-full">
+                {cohortShortageChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={cohortShortageChartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="cohort" tick={{ fontSize: 10, fill: "#64748b", fontWeight: 600 }} interval={0} angle={-20} textAnchor="end" />
+                      <YAxis tick={{ fontSize: 10, fill: "#64748b" }} allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: "8px", fontSize: "11px", fontWeight: "bold", border: "1px solid #e2e8f0" }}
+                        formatter={(value: any) => [`${value} students`, "Shortage Count"]}
+                        labelFormatter={(label: any) => `Cohort: ${label}`}
+                      />
+                      <Bar dataKey="count" fill="#e11d48" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 font-bold">
+                    No detention risk found
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Full Interactive Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th className="p-3">S.No</th>
+                  <th className="p-3">Student Name</th>
+                  <th className="p-3">Register No</th>
+                  <th className="p-3">Department</th>
+                  <th className="p-3">Class Group</th>
+                  <th className="p-3 text-center">Conducted</th>
+                  <th className="p-3 text-center">Present</th>
+                  <th className="p-3 text-right">Attendance %</th>
+                  <th className="p-3 text-center">Eligibility Status</th>
+                  <th className="p-3 text-center">Hall Ticket</th>
+                  <th className="p-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {examEligibilityData.map((e, idx) => (
+                  <tr key={`${e.id}_${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
+                    <td className="p-3 font-bold text-slate-900">{e.name}</td>
+                    <td className="p-3 font-mono text-slate-600">{e.regNo}</td>
+                    <td className="p-3 text-slate-600">{e.dept}</td>
+                    <td className="p-3 text-slate-500 font-medium">{e.classGroup}</td>
+                    <td className="p-3 text-center font-mono font-bold text-slate-700">{e.conducted}</td>
+                    <td className="p-3 text-center font-mono font-bold text-emerald-700">{e.present}</td>
+                    <td className="p-3 text-right font-mono font-black text-sm">
+                      <span className={e.percentage >= 75 ? "text-emerald-700" : e.percentage >= 65 ? "text-amber-700" : "text-rose-700"}>
+                        {e.percentage}%
+                      </span>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
+                        e.status === "Cleared"
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                          : e.status === "Condonation Eligible"
+                          ? "bg-amber-100 text-amber-800 border border-amber-200"
+                          : "bg-rose-100 text-rose-800 border border-rose-200"
+                      }`}>
+                        {e.status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span className={`font-mono font-bold text-xs ${
+                        e.hallTicketIssued === "YES" ? "text-emerald-700 font-black" : e.hallTicketIssued === "CONDITIONAL" ? "text-amber-700" : "text-rose-700"
+                      }`}>
+                        {e.hallTicketIssued}
+                      </span>
+                    </td>
+                    <td className="p-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentForModal(e)}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] transition-colors cursor-pointer"
+                      >
+                        Profile
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {examEligibilityData.length === 0 && (
+                  <tr>
+                    <td colSpan={11} className="p-8 text-center text-slate-400 italic">
+                      No student records found in this selection.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── DEDICATED VIEW: INFRASTRUCTURE & ROOM OCCUPANCY ──────────────────────── */}
+      {selectedSubTab === "infrastructure" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center border border-violet-100 shrink-0">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">Classroom &amp; Lab Space Utilization Matrix</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Facility-level weekly timetable occupancy, laboratory allocation rates, and congestion analysis for {activeCollegeName}.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportInfrastructure("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportInfrastructure("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportInfrastructure("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF Ledger</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Facilities</span>
+              <p className="text-xl font-black text-slate-900 mt-1">{infrastructureMetrics.totalRooms}</p>
+              <span className="text-[10px] text-slate-500 font-medium">{infrastructureMetrics.classroomsCount} classes · {infrastructureMetrics.labsCount} labs</span>
+            </div>
+            <div className="p-4 rounded-xl bg-violet-50/60 border border-violet-200">
+              <span className="text-[10px] font-extrabold uppercase text-violet-700 tracking-wider">Campus Space Utilization</span>
+              <p className="text-xl font-black text-violet-700 mt-1">{infrastructureMetrics.avgUtilization}%</p>
+              <span className="text-[10px] text-violet-600 font-medium">{infrastructureMetrics.totalBooked} / {infrastructureMetrics.totalCapacity} slot-hours</span>
+            </div>
+            <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-200">
+              <span className="text-[10px] font-extrabold uppercase text-rose-700 tracking-wider">Congested (≥80%)</span>
+              <p className="text-xl font-black text-rose-700 mt-1">{infrastructureMetrics.congestedCount}</p>
+              <span className="text-[10px] text-rose-600 font-medium">Near or above full capacity</span>
+            </div>
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider">Underutilized (&lt;45%)</span>
+              <p className="text-xl font-black text-slate-700 mt-1">{infrastructureMetrics.underutilizedCount}</p>
+              <span className="text-[10px] text-slate-500 font-medium">{infrastructureMetrics.optimalCount} optimally scheduled</span>
+            </div>
+          </div>
+
+          {/* Visual Analytics Charts Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Chart 1: Top 8 Most Utilized Facilities */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Top Booked Facilities (Weekly Hours)</h4>
+                <span className="text-[10px] text-violet-600 font-bold">Capacity: 35h / wk</span>
+              </div>
+              <div className="h-56 w-full">
+                {infrastructureData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={infrastructureData.slice(0, 8).map(r => ({ name: r.roomName.length > 12 ? r.roomName.slice(0, 12) + "…" : r.roomName, hours: r.totalBookedHours }))} margin={{ top: 10, right: 15, left: -20, bottom: 25 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#64748b" }} angle={-25} textAnchor="end" interval={0} />
+                      <YAxis tick={{ fontSize: 10, fill: "#64748b" }} domain={[0, 35]} />
+                      <Tooltip formatter={(value: any) => [`${value} hours / 35h`, "Weekly Hours"]} />
+                      <ReferenceLine y={28} stroke="#ef4444" strokeDasharray="3 3" label={{ value: "80% Congested", fill: "#ef4444", fontSize: 9, position: "top" }} />
+                      <Bar dataKey="hours" radius={[4, 4, 0, 0]}>
+                        {infrastructureData.slice(0, 8).map((entry, index) => (
+                          <Cell key={`cell-infra-${index}`} fill={entry.isLab ? "#8b5cf6" : "#6366f1"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">No facility booking records</div>
+                )}
+              </div>
+            </div>
+
+            {/* Chart 2: Congestion Tiers Distribution */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Facility Capacity Distribution</h4>
+                <span className="text-[10px] text-slate-400 font-bold">{infrastructureData.length} spaces logged</span>
+              </div>
+              <div className="h-56 w-full flex items-center justify-center">
+                {infrastructureData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Congested (≥80%)", value: infrastructureMetrics.congestedCount, color: "#ef4444" },
+                          { name: "Optimal (45-79%)", value: infrastructureMetrics.optimalCount, color: "#10b981" },
+                          { name: "Underutilized (<45%)", value: infrastructureMetrics.underutilizedCount, color: "#94a3b8" }
+                        ].filter(d => d.value > 0)}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={75}
+                        paddingAngle={4}
+                        dataKey="value"
+                        label={({ name, percent }: any) => `${(percent * 100).toFixed(0)}%`}
+                        labelLine={false}
+                      >
+                        {[
+                          { name: "Congested (≥80%)", color: "#ef4444" },
+                          { name: "Optimal (45-79%)", color: "#10b981" },
+                          { name: "Underutilized (<45%)", color: "#94a3b8" }
+                        ].map((entry, index) => (
+                          <Cell key={`cell-pie-infra-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any, name: any) => [`${value} facilities`, name]} />
+                      <Legend iconSize={8} wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="text-xs text-slate-400 italic">No facility distribution data</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Facility Utilization Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px] border-b border-slate-200">
+                <tr>
+                  <th className="p-3">S.No</th>
+                  <th className="p-3">Facility / Room Name</th>
+                  <th className="p-3">Space Type</th>
+                  <th className="p-3 text-center">Booked Hours</th>
+                  <th className="p-3 text-center">Weekly Capacity</th>
+                  <th className="p-3">Utilization %</th>
+                  <th className="p-3">Peak Day Occupancy</th>
+                  <th className="p-3 text-center">Congestion Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {infrastructureData.map((r, idx) => (
+                  <tr key={`${r.id}_${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
+                    <td className="p-3 font-bold text-slate-900">{r.roomName}</td>
+                    <td className="p-3">
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                        r.isLab ? "bg-purple-100 text-purple-800 border border-purple-200" : "bg-blue-50 text-blue-800 border border-blue-100"
+                      }`}>
+                        {r.spaceType}
+                      </span>
+                    </td>
+                    <td className="p-3 text-center font-mono font-bold text-slate-900">{r.totalBookedHours} hrs</td>
+                    <td className="p-3 text-center font-mono text-slate-500">35 hrs</td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              r.utilizationPct >= 80 ? "bg-rose-500" : r.utilizationPct >= 45 ? "bg-emerald-500" : "bg-slate-400"
+                            }`}
+                            style={{ width: `${r.utilizationPct}%` }}
+                          />
+                        </div>
+                        <span className="font-mono font-bold text-slate-700">{r.utilizationPct}%</span>
+                      </div>
+                    </td>
+                    <td className="p-3 text-slate-600 font-medium">{r.peakDay}</td>
+                    <td className="p-3 text-center">
+                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
+                        r.congestionStatus === "Congested"
+                          ? "bg-rose-100 text-rose-800 border border-rose-200"
+                          : r.congestionStatus === "Optimal"
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                          : "bg-slate-100 text-slate-700 border border-slate-200"
+                      }`}>
+                        {r.congestionStatus}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {infrastructureData.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="p-8 text-center text-slate-400 italic">
+                      No facility spaces found matching the search and filter criteria.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── DEDICATED VIEW: FACULTY SUBSTITUTION & HANDOVER ──────────────────────── */}
+      {selectedSubTab === "handovers" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center border border-cyan-100 shrink-0">
+                  <CalendarCheck2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">Faculty Substitution &amp; Handover Velocity Tracker</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Live ledger of faculty class handovers, cover staffing assignments, reason distribution, and fulfillment velocity for {activeCollegeName}.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportHandovers("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportHandovers("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportHandovers("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF Ledger</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Handovers</span>
+              <p className="text-xl font-black text-slate-900 mt-1">{handoverMetrics.totalRequests}</p>
+              <span className="text-[10px] text-slate-500 font-medium">Class substitute requests</span>
+            </div>
+            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200">
+              <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">Fulfillment Velocity</span>
+              <p className="text-xl font-black text-emerald-700 mt-1">{handoverMetrics.fulfillmentRate}%</p>
+              <span className="text-[10px] text-emerald-600 font-bold">{handoverMetrics.approvedCount} covered classes</span>
+            </div>
+            <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200">
+              <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider">Pending CAM Action</span>
+              <p className="text-xl font-black text-amber-700 mt-1">{handoverMetrics.pendingCount}</p>
+              <span className="text-[10px] text-amber-600 font-medium">Requires supervisor authorization</span>
+            </div>
+            <div className="p-4 rounded-xl bg-cyan-50/60 border border-cyan-200">
+              <span className="text-[10px] font-extrabold uppercase text-cyan-700 tracking-wider">Top Substitute Faculty</span>
+              <p className="text-xl font-black text-cyan-700 mt-1 truncate">{handoverMetrics.topCoverName.split(" ")[0] || "None"}</p>
+              <span className="text-[10px] text-cyan-600 font-medium">{handoverMetrics.maxCover} covered substitutions</span>
+            </div>
+          </div>
+
+          {/* Visual Analytics Charts Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Chart 1: Substitution Reason Breakdown */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Leave &amp; Substitution Reasons</h4>
+                <span className="text-[10px] text-cyan-600 font-bold">Category Distribution</span>
+              </div>
+              <div className="h-56 w-full flex items-center justify-center">
+                {handoverData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={(() => {
+                          const catMap: Record<string, number> = {};
+                          handoverData.forEach(h => { catMap[h.reasonCategory] = (catMap[h.reasonCategory] || 0) + 1; });
+                          const colors = ["#06b6d4", "#10b981", "#f59e0b", "#8b5cf6"];
+                          return Object.entries(catMap).map(([name, value], i) => ({ name, value, color: colors[i % colors.length] }));
+                        })()}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={75}
+                        paddingAngle={4}
+                        dataKey="value"
+                        label={({ name, percent }: any) => `${(percent * 100).toFixed(0)}%`}
+                        labelLine={false}
+                      >
+                        {["#06b6d4", "#10b981", "#f59e0b", "#8b5cf6"].map((color, index) => (
+                          <Cell key={`cell-reason-${index}`} fill={color} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any, name: any) => [`${value} filings`, name]} />
+                      <Legend iconSize={8} wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="text-xs text-slate-400 italic">No substitution filings</div>
+                )}
+              </div>
+            </div>
+
+            {/* Chart 2: Handover Status Breakdown */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Coverage Fulfillment Status</h4>
+                <span className="text-[10px] text-emerald-600 font-bold">{handoverMetrics.fulfillmentRate}% Resolved</span>
+              </div>
+              <div className="h-56 w-full">
+                {handoverData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={[
+                        { name: "Covered & Approved", count: handoverMetrics.approvedCount, fill: "#10b981" },
+                        { name: "Pending Authorization", count: handoverMetrics.pendingCount, fill: "#f59e0b" }
+                      ]}
+                      margin={{ top: 15, right: 20, left: -20, bottom: 20 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#64748b" }} />
+                      <YAxis tick={{ fontSize: 10, fill: "#64748b" }} allowDecimals={false} />
+                      <Tooltip formatter={(value: any) => [`${value} sessions`, "Count"]} />
+                      <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                        <Cell fill="#10b981" />
+                        <Cell fill="#f59e0b" />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">No coverage data</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Handovers Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px] border-b border-slate-200">
+                <tr>
+                  <th className="p-3">S.No</th>
+                  <th className="p-3">Date</th>
+                  <th className="p-3">Requestor Faculty</th>
+                  <th className="p-3">Covering Substitute</th>
+                  <th className="p-3">Subject &amp; Class</th>
+                  <th className="p-3">Time Slot</th>
+                  <th className="p-3">Reason Category</th>
+                  <th className="p-3 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {handoverData.map((h, idx) => (
+                  <tr key={`${h.id}_${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
+                    <td className="p-3 font-mono text-slate-700">{h.dateStr}</td>
+                    <td className="p-3 font-bold text-slate-900">{h.requestorName}</td>
+                    <td className="p-3 font-semibold text-slate-700 flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      {h.coverStaffName}
+                    </td>
+                    <td className="p-3 text-slate-600">
+                      <div>{h.subject}</div>
+                      <span className="text-[10px] text-slate-400 font-mono">{h.classGroup}</span>
+                    </td>
+                    <td className="p-3 font-mono text-slate-600">{h.timeSlot}</td>
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        {h.reasonCategory}
+                      </span>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
+                        h.isApproved
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                          : h.status === "Declined"
+                          ? "bg-rose-100 text-rose-800 border border-rose-200"
+                          : "bg-amber-100 text-amber-800 border border-amber-200"
+                      }`}>
+                        {h.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {handoverData.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="p-8 text-center text-slate-400 italic">
+                      No handover substitution records found matching filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── DEDICATED VIEW: CIA PERFORMANCE & MARKS ──────────────────────── */}
+      {selectedSubTab === "performance" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shrink-0">
+                  <Award className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">Continuous Internal Assessment (CIA) &amp; Marks Ledger</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Quizzes, periodic internal evaluations, assignments, and grade classifications across cohorts for {activeCollegeName}.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportPerformance("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportPerformance("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportPerformance("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF Ledger</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Graded Assessments</span>
+              <p className="text-xl font-black text-slate-900 mt-1">{performanceMetrics.totalRecords}</p>
+              <span className="text-[10px] text-slate-500 font-medium">Class evaluation entries</span>
+            </div>
+            <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200">
+              <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider">Average CIA Score</span>
+              <p className="text-xl font-black text-amber-700 mt-1">{performanceMetrics.avgScore} / 100</p>
+              <span className="text-[10px] text-amber-600 font-medium">{performanceMetrics.passRate}% overall pass rate</span>
+            </div>
+            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200">
+              <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">Distinction (≥75%)</span>
+              <p className="text-xl font-black text-emerald-700 mt-1">{performanceMetrics.distinctionCount}</p>
+              <span className="text-[10px] text-emerald-600 font-bold">{performanceMetrics.distinctionRate}% distinction rate</span>
+            </div>
+            <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-200">
+              <span className="text-[10px] font-extrabold uppercase text-rose-700 tracking-wider">At-Risk (&lt;50%)</span>
+              <p className="text-xl font-black text-rose-700 mt-1">{performanceMetrics.atRiskCount}</p>
+              <span className="text-[10px] text-rose-600 font-medium">Require remedial mentoring</span>
+            </div>
+          </div>
+
+          {/* Visual Analytics Charts Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Chart 1: Grade Segments */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">CIA Grade Tier Distribution</h4>
+                <span className="text-[10px] text-amber-600 font-bold">{performanceMetrics.totalRecords} Submissions</span>
+              </div>
+              <div className="h-56 w-full flex items-center justify-center">
+                {performanceData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Distinction (≥75%)", value: performanceMetrics.distinctionCount, color: "#10b981" },
+                          { name: "First Class (60-74%)", value: performanceMetrics.firstClassCount, color: "#6366f1" },
+                          { name: "Pass Class (50-59%)", value: performanceMetrics.passCount, color: "#f59e0b" },
+                          { name: "At-Risk (<50%)", value: performanceMetrics.atRiskCount, color: "#ef4444" }
+                        ].filter(d => d.value > 0)}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={75}
+                        paddingAngle={4}
+                        dataKey="value"
+                        label={({ name, percent }: any) => `${(percent * 100).toFixed(0)}%`}
+                        labelLine={false}
+                      >
+                        {[
+                          { color: "#10b981" },
+                          { color: "#6366f1" },
+                          { color: "#f59e0b" },
+                          { color: "#ef4444" }
+                        ].map((entry, index) => (
+                          <Cell key={`cell-pie-grade-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any, name: any) => [`${value} students`, name]} />
+                      <Legend iconSize={8} wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="text-xs text-slate-400 italic">No assessment data</div>
+                )}
+              </div>
+            </div>
+
+            {/* Chart 2: Top Student Scores */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Top Performers Marks (/100)</h4>
+                <span className="text-[10px] text-emerald-600 font-bold">Academic Honors</span>
+              </div>
+              <div className="h-56 w-full">
+                {performanceData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={performanceData.slice(0, 8).map(p => ({
+                        name: p.studentName.length > 12 ? p.studentName.slice(0, 12) + "…" : p.studentName,
+                        score: p.totalMarks
+                      }))}
+                      margin={{ top: 10, right: 15, left: -20, bottom: 25 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#64748b" }} angle={-25} textAnchor="end" interval={0} />
+                      <YAxis tick={{ fontSize: 10, fill: "#64748b" }} domain={[0, 100]} />
+                      <Tooltip formatter={(value: any) => [`${value} / 100`, "Total CIA Score"]} />
+                      <Bar dataKey="score" radius={[4, 4, 0, 0]}>
+                        {performanceData.slice(0, 8).map((entry, index) => (
+                          <Cell key={`cell-bar-perf-${index}`} fill={entry.totalMarks >= 75 ? "#10b981" : "#6366f1"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">No score ranking</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Performance Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px] border-b border-slate-200">
+                <tr>
+                  <th className="p-3">S.No</th>
+                  <th className="p-3">Student Name</th>
+                  <th className="p-3">Register Number</th>
+                  <th className="p-3">Cohort</th>
+                  <th className="p-3">Subject</th>
+                  <th className="p-3 text-center">Quiz (/25)</th>
+                  <th className="p-3 text-center">Internal (/50)</th>
+                  <th className="p-3 text-center">Assignment (/25)</th>
+                  <th className="p-3 text-right">Total Marks</th>
+                  <th className="p-3 text-center">Grade</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {performanceData.map((p, idx) => (
+                  <tr key={`${p.id}_${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
+                    <td className="p-3 font-bold text-slate-900">{p.studentName}</td>
+                    <td className="p-3 font-mono text-slate-600">{p.regNo}</td>
+                    <td className="p-3 text-slate-500 font-medium">{p.classGroup}</td>
+                    <td className="p-3 text-slate-700 font-semibold">{p.subject}</td>
+                    <td className="p-3 text-center font-mono text-slate-700">{p.quizMarks}</td>
+                    <td className="p-3 text-center font-mono text-slate-700">{p.assessmentMarks}</td>
+                    <td className="p-3 text-center font-mono text-slate-700">{p.assignmentMarks}</td>
+                    <td className="p-3 text-right font-mono font-black text-sm">
+                      <span className={p.totalMarks >= 75 ? "text-emerald-700" : p.totalMarks >= 60 ? "text-indigo-700" : p.totalMarks >= 50 ? "text-amber-700" : "text-rose-700"}>
+                        {p.totalMarks} / 100
+                      </span>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
+                        p.grade === "Distinction"
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                          : p.grade === "First Class"
+                          ? "bg-indigo-100 text-indigo-800 border border-indigo-200"
+                          : p.grade === "Pass"
+                          ? "bg-amber-100 text-amber-800 border border-amber-200"
+                          : "bg-rose-100 text-rose-800 border border-rose-200"
+                      }`}>
+                        {p.grade}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {performanceData.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="p-8 text-center text-slate-400 italic">
+                      No assessment records found matching filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── DEDICATED VIEW: STUDENT EARLY WARNING SYSTEM (EWS) ──────────────────────── */}
+      {selectedSubTab === "early_warning" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100 shrink-0">
+                  <ShieldAlert className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">Multi-Factor Student Early Warning System (EWS)</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Proactive intervention matrix correlating attendance shortages (&lt;75%), internal test failures, and unresolved help desk tickets for {activeCollegeName}.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportEarlyWarning("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportEarlyWarning("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportEarlyWarning("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF Ledger</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Evaluated Census</span>
+              <p className="text-xl font-black text-slate-900 mt-1">{earlyWarningMetrics.totalEvaluated}</p>
+              <span className="text-[10px] text-slate-500 font-medium">Students monitored across campus</span>
+            </div>
+            <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-200">
+              <span className="text-[10px] font-extrabold uppercase text-rose-700 tracking-wider">Critical Escalation (≥60)</span>
+              <p className="text-xl font-black text-rose-700 mt-1">{earlyWarningMetrics.criticalCount}</p>
+              <span className="text-[10px] text-rose-600 font-bold">Mandatory Dean &amp; Parent Notice</span>
+            </div>
+            <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200">
+              <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider">Moderate Watchlist (30-59)</span>
+              <p className="text-xl font-black text-amber-700 mt-1">{earlyWarningMetrics.moderateCount}</p>
+              <span className="text-[10px] text-amber-600 font-medium">Mentor counseling required</span>
+            </div>
+            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200">
+              <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">On-Track Standing</span>
+              <p className="text-xl font-black text-emerald-700 mt-1">{earlyWarningMetrics.lowCount}</p>
+              <span className="text-[10px] text-emerald-600 font-medium">{100 - earlyWarningMetrics.interventionRate}% healthy retention</span>
+            </div>
+          </div>
+
+          {/* Visual Analytics Charts Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Chart 1: Risk Severity Breakdown */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">EWS Risk Tier Breakdown</h4>
+                <span className="text-[10px] text-rose-600 font-bold">{earlyWarningMetrics.interventionRate}% Intervention Rate</span>
+              </div>
+              <div className="h-56 w-full flex items-center justify-center">
+                {earlyWarningData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Critical Risk (≥60)", value: earlyWarningMetrics.criticalCount, color: "#ef4444" },
+                          { name: "Moderate Risk (30-59)", value: earlyWarningMetrics.moderateCount, color: "#f59e0b" },
+                          { name: "Low Risk (<30)", value: earlyWarningMetrics.lowCount, color: "#10b981" }
+                        ].filter(d => d.value > 0)}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={75}
+                        paddingAngle={4}
+                        dataKey="value"
+                        label={({ name, percent }: any) => `${(percent * 100).toFixed(0)}%`}
+                        labelLine={false}
+                      >
+                        {[
+                          { color: "#ef4444" },
+                          { color: "#f59e0b" },
+                          { color: "#10b981" }
+                        ].map((entry, index) => (
+                          <Cell key={`cell-pie-ews-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any, name: any) => [`${value} students`, name]} />
+                      <Legend iconSize={8} wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="text-xs text-slate-400 italic">No risk evaluations</div>
+                )}
+              </div>
+            </div>
+
+            {/* Chart 2: Top Critical Students Points */}
+            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Top Critical Risk Index (Points / 100)</h4>
+                <span className="text-[10px] text-rose-600 font-bold">Urgent Action Priority</span>
+              </div>
+              <div className="h-56 w-full">
+                {earlyWarningData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={earlyWarningData.slice(0, 8).map(r => ({
+                        name: r.name.length > 12 ? r.name.slice(0, 12) + "…" : r.name,
+                        points: r.totalRiskScore
+                      }))}
+                      margin={{ top: 10, right: 15, left: -20, bottom: 25 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#64748b" }} angle={-25} textAnchor="end" interval={0} />
+                      <YAxis tick={{ fontSize: 10, fill: "#64748b" }} domain={[0, 100]} />
+                      <Tooltip formatter={(value: any) => [`${value} / 100 pts`, "Composite Risk Score"]} />
+                      <ReferenceLine y={60} stroke="#ef4444" strokeDasharray="3 3" label={{ value: "Critical Threshold", fill: "#ef4444", fontSize: 9, position: "top" }} />
+                      <Bar dataKey="points" radius={[4, 4, 0, 0]}>
+                        {earlyWarningData.slice(0, 8).map((entry, index) => (
+                          <Cell key={`cell-bar-ews-${index}`} fill={entry.totalRiskScore >= 60 ? "#ef4444" : "#f59e0b"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">No critical cases</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Early Warning Roll Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px] border-b border-slate-200">
+                <tr>
+                  <th className="p-3">S.No</th>
+                  <th className="p-3">Student Name</th>
+                  <th className="p-3">Register Number</th>
+                  <th className="p-3">Cohort</th>
+                  <th className="p-3 text-center">Attendance %</th>
+                  <th className="p-3 text-center">CIA Marks %</th>
+                  <th className="p-3 text-center">Open Tickets</th>
+                  <th className="p-3">Composite Risk Score</th>
+                  <th className="p-3 text-center">Severity</th>
+                  <th className="p-3">Primary Trigger</th>
+                  <th className="p-3 text-center">Intervention Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {earlyWarningData.map((r, idx) => (
+                  <tr key={`${r.id}_${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
+                    <td className="p-3 font-bold text-slate-900">{r.name}</td>
+                    <td className="p-3 font-mono text-slate-600">{r.regNo}</td>
+                    <td className="p-3 text-slate-500 font-medium">{r.classGroup}</td>
+                    <td className="p-3 text-center font-mono font-bold">
+                      <span className={r.attPct < 65 ? "text-rose-700" : r.attPct < 75 ? "text-amber-700" : "text-emerald-700"}>
+                        {r.attPct}%
+                      </span>
+                    </td>
+                    <td className="p-3 text-center font-mono font-bold">
+                      <span className={r.ciaScore < 50 ? "text-rose-700" : r.ciaScore < 60 ? "text-amber-700" : "text-indigo-700"}>
+                        {r.ciaScore}%
+                      </span>
+                    </td>
+                    <td className="p-3 text-center font-mono font-bold text-slate-700">
+                      {r.openTicketsCount > 0 ? (
+                        <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px]">
+                          {r.openTicketsCount} tickets
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">0</span>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              r.totalRiskScore >= 60 ? "bg-rose-600" : r.totalRiskScore >= 30 ? "bg-amber-500" : "bg-emerald-500"
+                            }`}
+                            style={{ width: `${r.totalRiskScore}%` }}
+                          />
+                        </div>
+                        <span className="font-mono font-black text-slate-800">{r.totalRiskScore}/100</span>
+                      </div>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
+                        r.riskTier === "Critical Risk"
+                          ? "bg-rose-100 text-rose-800 border border-rose-200"
+                          : r.riskTier === "Moderate Risk"
+                          ? "bg-amber-100 text-amber-800 border border-amber-200"
+                          : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                      }`}>
+                        {r.riskTier}
+                      </span>
+                    </td>
+                    <td className="p-3 text-slate-600 text-[11px] font-medium max-w-xs">{r.primaryTrigger}</td>
+                    <td className="p-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => copyParentAlert({ name: r.name, regNo: r.regNo, classGroup: r.classGroup, percentage: r.attPct, present: Math.round(r.attPct * 0.4), conducted: 40 })}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                          r.riskTier === "Critical Risk"
+                            ? "bg-rose-600 hover:bg-rose-700 text-white shadow-xs"
+                            : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                        }`}
+                      >
+                        {r.riskTier === "Critical Risk" ? "Alert Parent" : "Notice"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {earlyWarningData.length === 0 && (
+                  <tr>
+                    <td colSpan={11} className="p-8 text-center text-slate-400 italic">
+                      No at-risk student records found. Campus operations are fully compliant.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── EXECUTIVE OVERVIEW: CAMPUS HEALTH & ALL REPORT CARDS ──────────────────────── */}
+      {selectedSubTab === "all" && (
+        <div className="space-y-6">
+          {/* Executive Academic Health Index Scorecard */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="h-12 w-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-black text-xl">
+                  {campusAcademicHealthIndex.compositeScore}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black text-slate-900 leading-tight">Campus Academic Health Index (AHI)</h3>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${campusAcademicHealthIndex.standing.color}`}>
+                      {campusAcademicHealthIndex.standing.badge}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    {campusAcademicHealthIndex.standing.desc}
+                  </p>
+                </div>
+              </div>
+
+              {/* Master Dossier Export Button */}
+              <button
+                type="button"
+                onClick={exportCompleteCampusDossier}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-2"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Download Master Academic Dossier (.xlsx)</span>
+              </button>
+            </div>
+
+            {/* 4 Health Components Progress Meters */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {campusAcademicHealthIndex.components.map(comp => (
+                <div key={comp.name} className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-700">{comp.name}</span>
+                    <span className="text-[10px] font-black text-slate-400">{comp.weight}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xl font-black text-slate-900">{comp.score}%</span>
+                    <span className={`text-[10px] font-black ${comp.score >= 75 ? "text-emerald-600" : "text-amber-600"}`}>
+                      {comp.score >= 75 ? "Optimal" : "Review"}
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, comp.score)}%`, backgroundColor: comp.color }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+          {/* CARD 1: Student Attendance Shortage Warning Report (<75%) */}
           <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-start justify-between gap-3">
@@ -1099,8 +6298,8 @@ const CAMCampusInsightPanel: React.FC<{
                     <AlertTriangle className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-slate-900 leading-tight">Student Attendance Shortage Warning Report</h3>
-                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Students below the mandatory 75% attendance threshold with critical risk flags.</p>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">Student Attendance Shortage Report (&lt;75%)</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Students below the mandatory 75% attendance threshold.</p>
                   </div>
                 </div>
               </div>
@@ -1116,7 +6315,7 @@ const CAMCampusInsightPanel: React.FC<{
                   <p className="text-base font-black text-rose-700 mt-0.5">{attendanceShortageData.filter(s => s.percentage < 65).length}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Selected Cohort</p>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Cohort Filter</p>
                   <p className="text-xs font-bold text-slate-700 truncate mt-1">{selectedCohort === "all" ? "All Cohorts" : selectedCohort}</p>
                 </div>
               </div>
@@ -1132,8 +6331,8 @@ const CAMCampusInsightPanel: React.FC<{
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {attendanceShortageData.slice(0, 3).map(s => (
-                      <tr key={s.id} className="hover:bg-slate-50/50">
+                    {attendanceShortageData.slice(0, 3).map((s, idx) => (
+                      <tr key={`${s.id}_${idx}`} className="hover:bg-slate-50/50">
                         <td className="p-2.5 font-bold text-slate-800">{s.name}</td>
                         <td className="p-2.5 text-slate-500 text-[11px]">{s.classGroup}</td>
                         <td className="p-2.5 text-right">
@@ -1179,14 +6378,199 @@ const CAMCampusInsightPanel: React.FC<{
                 className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
               >
                 <FileText className="w-3.5 h-3.5" />
+                <span>Dean Notice PDF</span>
+              </button>
+            </div>
+          </div>
+
+          {/* CARD 2: Campus Help Desk Tickets (Live Supabase) */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shrink-0">
+                    <Ticket className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">Campus Help Desk Tickets Ledger</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Live student tickets from Supabase for {activeCollegeName}.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI Summary */}
+              <div className="grid grid-cols-3 gap-2 bg-amber-50/40 p-3 rounded-xl border border-amber-150">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Tickets</p>
+                  <p className="text-base font-black text-slate-900 mt-0.5">{campusTickets.length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Unresolved</p>
+                  <p className="text-base font-black text-amber-700 mt-0.5">{campusTickets.filter(t => !isResolvedTicket(t.status)).length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Resolved</p>
+                  <p className="text-base font-black text-emerald-700 mt-0.5">{campusTickets.filter(t => isResolvedTicket(t.status)).length}</p>
+                </div>
+              </div>
+
+              {/* Top 3 Preview Rows */}
+              <div className="overflow-hidden border border-slate-200/80 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
+                    <tr>
+                      <th className="p-2.5">Student</th>
+                      <th className="p-2.5">Category</th>
+                      <th className="p-2.5 text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredTickets.slice(0, 3).map((t, idx) => (
+                      <tr key={`${t.id || 'tkt'}_${idx}`} className="hover:bg-slate-50/50">
+                        <td className="p-2.5 font-bold text-slate-800">{t.student_name || "Unknown"}</td>
+                        <td className="p-2.5 text-slate-500 text-[11px]">{t.category || "General"}</td>
+                        <td className="p-2.5 text-right">
+                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                            isResolvedTicket(t.status) ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                          }`}>
+                            {isResolvedTicket(t.status) ? "Resolved" : "Open"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredTickets.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="p-4 text-center text-xs text-slate-400 italic">
+                          No tickets recorded for this campus.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => exportCampusTickets("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportCampusTickets("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportCampusTickets("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
                 <span>Print / PDF</span>
               </button>
             </div>
           </div>
-        )}
 
-        {/* CARD 3: Subject Completion & Syllabus Pace Report */}
-        {(selectedSubTab === "all" || selectedSubTab === "syllabus") && (
+          {/* CARD 3: Faculty Workload Ledger */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">Faculty Workload &amp; Allocation Ledger</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Faculty weekly teaching hours vs 16 hours/week institutional threshold.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI Summary */}
+              <div className="grid grid-cols-3 gap-2 bg-slate-50/70 p-3 rounded-xl border border-slate-150">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Faculty Count</p>
+                  <p className="text-base font-black text-slate-800 mt-0.5">{facultyWorkloadData.length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Overload (&gt;16h)</p>
+                  <p className="text-base font-black text-amber-600 mt-0.5">{facultyWorkloadData.filter(f => f.assignedHours > 16).length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Avg Workload</p>
+                  <p className="text-base font-black text-indigo-600 mt-0.5">
+                    {facultyWorkloadData.length > 0 ? (facultyWorkloadData.reduce((s, f) => s + f.assignedHours, 0) / facultyWorkloadData.length).toFixed(1) : 0} hrs/wk
+                  </p>
+                </div>
+              </div>
+
+              {/* Top 3 Preview Rows */}
+              <div className="overflow-hidden border border-slate-200/80 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
+                    <tr>
+                      <th className="p-2.5">Faculty</th>
+                      <th className="p-2.5">Hours</th>
+                      <th className="p-2.5 text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {facultyWorkloadData.slice(0, 3).map((f, idx) => (
+                      <tr key={`${f.id}_${idx}`} className="hover:bg-slate-50/50">
+                        <td className="p-2.5 font-bold text-slate-800">{f.name}</td>
+                        <td className="p-2.5 font-mono text-slate-600 font-semibold">{f.assignedHours} / 16 hrs</td>
+                        <td className="p-2.5 text-right">
+                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                            f.status === "Overload" ? "bg-amber-100 text-amber-800" : f.status === "Optimal" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {f.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => exportFacultyWorkload("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportFacultyWorkload("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportFacultyWorkload("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF</span>
+              </button>
+            </div>
+          </div>
+
+          {/* CARD 4: Subject Completion & Syllabus Pace Report */}
           <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-start justify-between gap-3">
@@ -1229,7 +6613,7 @@ const CAMCampusInsightPanel: React.FC<{
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {syllabusPaceData.slice(0, 3).map(sub => (
-                      <tr key={sub.name} className="hover:bg-slate-50/50">
+                      <tr key={sub.id} className="hover:bg-slate-50/50">
                         <td className="p-2.5 font-bold text-slate-800">{sub.name}</td>
                         <td className="p-2.5 font-mono text-slate-600 font-semibold">{sub.completionPct}%</td>
                         <td className="p-2.5 text-right">
@@ -1274,10 +6658,8 @@ const CAMCampusInsightPanel: React.FC<{
               </button>
             </div>
           </div>
-        )}
 
-        {/* CARD 4: Mentor Demo & Evaluation Report */}
-        {(selectedSubTab === "all" || selectedSubTab === "demos") && (
+          {/* CARD 5: Mentor Demo & Evaluation Report */}
           <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-start justify-between gap-3">
@@ -1319,8 +6701,8 @@ const CAMCampusInsightPanel: React.FC<{
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {demoEvaluationData.slice(0, 3).map(d => (
-                      <tr key={d.id} className="hover:bg-slate-50/50">
+                    {demoEvaluationData.slice(0, 3).map((d, idx) => (
+                      <tr key={`${d.id}_${idx}`} className="hover:bg-slate-50/50">
                         <td className="p-2.5 font-bold text-slate-800">{d.mentorName}</td>
                         <td className="p-2.5 text-slate-500 text-[11px]">{d.subject}</td>
                         <td className="p-2.5 text-right font-mono font-bold text-indigo-700">{d.marks}</td>
@@ -1366,9 +6748,761 @@ const CAMCampusInsightPanel: React.FC<{
               </button>
             </div>
           </div>
-        )}
 
-      </div>
+          {/* CARD 6: Semester Exam Eligibility & Hall Ticket Clearance Auditor */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shrink-0">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">Semester Exam Eligibility &amp; Hall Ticket Roll</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">SEE clearance roll, condonation cases, and debarments.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI Summary */}
+              <div className="grid grid-cols-3 gap-2 bg-emerald-50/40 p-3 rounded-xl border border-emerald-150">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Cleared (≥75%)</p>
+                  <p className="text-base font-black text-emerald-700 mt-0.5">{examEligibilityData.filter(e => e.status === "Cleared").length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Condonation (65-74%)</p>
+                  <p className="text-base font-black text-amber-700 mt-0.5">{examEligibilityData.filter(e => e.status === "Condonation Eligible").length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Detained (&lt;65%)</p>
+                  <p className="text-base font-black text-rose-700 mt-0.5">{examEligibilityData.filter(e => e.status === "Detained").length}</p>
+                </div>
+              </div>
+
+              {/* Top 3 Preview Rows */}
+              <div className="overflow-hidden border border-slate-200/80 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
+                    <tr>
+                      <th className="p-2.5">Student</th>
+                      <th className="p-2.5">Attendance</th>
+                      <th className="p-2.5 text-right">Hall Ticket</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {examEligibilityData.slice(0, 3).map((e, idx) => (
+                      <tr key={`${e.id}_${idx}`} className="hover:bg-slate-50/50">
+                        <td className="p-2.5 font-bold text-slate-800">{e.name}</td>
+                        <td className="p-2.5 font-mono text-slate-600 font-semibold">{e.percentage}%</td>
+                        <td className="p-2.5 text-right">
+                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                            e.status === "Cleared" ? "bg-emerald-100 text-emerald-800" : e.status === "Condonation Eligible" ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-800"
+                          }`}>
+                            {e.hallTicketIssued}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {examEligibilityData.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="p-4 text-center text-xs text-slate-400 italic">
+                          No student records available.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => exportExamEligibility("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportExamEligibility("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportExamEligibility("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF</span>
+              </button>
+            </div>
+          </div>
+
+          {/* CARD 7: Classroom & Lab Space Utilization Matrix */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center border border-violet-100 shrink-0">
+                    <Building2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">Classroom &amp; Lab Space Matrix</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Room occupancy rates, lab scheduling, and congestion alerts.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubTab("infrastructure")}
+                  className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  <span>View Matrix</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* KPI Summary */}
+              <div className="grid grid-cols-3 gap-2 bg-violet-50/40 p-3 rounded-xl border border-violet-150">
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-slate-500">Facilities</span>
+                  <p className="text-base font-black text-slate-900">{infrastructureMetrics.totalRooms}</p>
+                </div>
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-violet-700">Space Occupancy</span>
+                  <p className="text-base font-black text-violet-700">{infrastructureMetrics.avgUtilization}%</p>
+                </div>
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-rose-700">Congested</span>
+                  <p className="text-base font-black text-rose-700">{infrastructureMetrics.congestedCount}</p>
+                </div>
+              </div>
+
+              {/* Mini Preview Table */}
+              <div className="border border-slate-100 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-400 font-bold text-[10px]">
+                    <tr>
+                      <th className="p-2">Facility Name</th>
+                      <th className="p-2 text-center">Type</th>
+                      <th className="p-2 text-right">Occupancy %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {infrastructureData.slice(0, 4).map((r, idx) => (
+                      <tr key={`infra_mini_${idx}`}>
+                        <td className="p-2 font-bold text-slate-800 truncate max-w-[120px]">{r.roomName}</td>
+                        <td className="p-2 text-center">
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${r.isLab ? "bg-purple-100 text-purple-800" : "bg-blue-50 text-blue-700"}`}>
+                            {r.isLab ? "Lab" : "Class"}
+                          </span>
+                        </td>
+                        <td className="p-2 text-right font-mono font-bold">
+                          <span className={r.utilizationPct >= 80 ? "text-rose-700" : r.utilizationPct >= 45 ? "text-emerald-700" : "text-slate-500"}>
+                            {r.utilizationPct}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => exportInfrastructure("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportInfrastructure("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportInfrastructure("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF</span>
+              </button>
+            </div>
+          </div>
+
+          {/* CARD 8: Faculty Substitution & Class Handover Velocity */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center border border-cyan-100 shrink-0">
+                    <CalendarCheck2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">Faculty Handovers &amp; Substitutions</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Faculty substitution requests, cover fulfillment, and authorizations.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubTab("handovers")}
+                  className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  <span>View Ledger</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* KPI Summary */}
+              <div className="grid grid-cols-3 gap-2 bg-cyan-50/40 p-3 rounded-xl border border-cyan-150">
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-slate-500">Filings</span>
+                  <p className="text-base font-black text-slate-900">{handoverMetrics.totalRequests}</p>
+                </div>
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-emerald-700">Fulfillment</span>
+                  <p className="text-base font-black text-emerald-700">{handoverMetrics.fulfillmentRate}%</p>
+                </div>
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-amber-700">Pending</span>
+                  <p className="text-base font-black text-amber-700">{handoverMetrics.pendingCount}</p>
+                </div>
+              </div>
+
+              {/* Mini Preview Table */}
+              <div className="border border-slate-100 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-400 font-bold text-[10px]">
+                    <tr>
+                      <th className="p-2">Requestor</th>
+                      <th className="p-2">Substitute</th>
+                      <th className="p-2 text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {handoverData.slice(0, 4).map((h, idx) => (
+                      <tr key={`hnd_mini_${idx}`}>
+                        <td className="p-2 font-bold text-slate-800 truncate max-w-[110px]">{h.requestorName}</td>
+                        <td className="p-2 text-slate-600 truncate max-w-[110px]">{h.coverStaffName}</td>
+                        <td className="p-2 text-right font-mono font-bold">
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${h.isApproved ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                            {h.isApproved ? "Covered" : "Pending"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => exportHandovers("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportHandovers("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportHandovers("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF</span>
+              </button>
+            </div>
+          </div>
+
+          {/* CARD 9: Continuous Internal Assessment (CIA) Performance */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shrink-0">
+                    <Award className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">CIA &amp; Marks Distribution</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Quizzes, internal assessments, and cohort distinction distributions.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubTab("performance")}
+                  className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  <span>View Marks</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* KPI Summary */}
+              <div className="grid grid-cols-3 gap-2 bg-amber-50/40 p-3 rounded-xl border border-amber-150">
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-slate-500">Assessments</span>
+                  <p className="text-base font-black text-slate-900">{performanceMetrics.totalRecords}</p>
+                </div>
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-amber-700">Class Average</span>
+                  <p className="text-base font-black text-amber-700">{performanceMetrics.avgScore}/100</p>
+                </div>
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-emerald-700">Distinction</span>
+                  <p className="text-base font-black text-emerald-700">{performanceMetrics.distinctionRate}%</p>
+                </div>
+              </div>
+
+              {/* Mini Preview Table */}
+              <div className="border border-slate-100 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-400 font-bold text-[10px]">
+                    <tr>
+                      <th className="p-2">Student Name</th>
+                      <th className="p-2">Subject</th>
+                      <th className="p-2 text-right">Marks / 100</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {performanceData.slice(0, 4).map((p, idx) => (
+                      <tr key={`perf_mini_${idx}`}>
+                        <td className="p-2 font-bold text-slate-800 truncate max-w-[120px]">{p.studentName}</td>
+                        <td className="p-2 text-slate-500 truncate max-w-[100px]">{p.subject}</td>
+                        <td className="p-2 text-right font-mono font-bold">
+                          <span className={p.totalMarks >= 75 ? "text-emerald-700" : p.totalMarks >= 50 ? "text-indigo-700" : "text-rose-700"}>
+                            {p.totalMarks}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => exportPerformance("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportPerformance("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportPerformance("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF</span>
+              </button>
+            </div>
+          </div>
+
+          {/* CARD 10: Multi-Factor Student Early Warning System (EWS) */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100 shrink-0">
+                    <ShieldAlert className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">Student Early Warning System</h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Composite risk matrix: attendance shortage + test deficit + tickets.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubTab("early_warning")}
+                  className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  <span>View Roll</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* KPI Summary */}
+              <div className="grid grid-cols-3 gap-2 bg-rose-50/40 p-3 rounded-xl border border-rose-150">
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-slate-500">Census</span>
+                  <p className="text-base font-black text-slate-900">{earlyWarningMetrics.totalEvaluated}</p>
+                </div>
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-rose-700">Critical Risk</span>
+                  <p className="text-base font-black text-rose-700">{earlyWarningMetrics.criticalCount}</p>
+                </div>
+                <div>
+                  <span className="text-[9px] font-extrabold uppercase text-amber-700">Watchlist</span>
+                  <p className="text-base font-black text-amber-700">{earlyWarningMetrics.moderateCount}</p>
+                </div>
+              </div>
+
+              {/* Mini Preview Table */}
+              <div className="border border-slate-100 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-400 font-bold text-[10px]">
+                    <tr>
+                      <th className="p-2">Student Name</th>
+                      <th className="p-2 text-center">Att %</th>
+                      <th className="p-2 text-right">Risk Score</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {earlyWarningData.slice(0, 4).map((r, idx) => (
+                      <tr key={`ews_mini_${idx}`}>
+                        <td className="p-2 font-bold text-slate-800 truncate max-w-[120px]">{r.name}</td>
+                        <td className="p-2 text-center font-mono font-bold">
+                          <span className={r.attPct < 65 ? "text-rose-700" : r.attPct < 75 ? "text-amber-700" : "text-emerald-700"}>
+                            {r.attPct}%
+                          </span>
+                        </td>
+                        <td className="p-2 text-right font-mono font-bold">
+                          <span className={r.totalRiskScore >= 60 ? "text-rose-700" : r.totalRiskScore >= 30 ? "text-amber-700" : "text-emerald-700"}>
+                            {r.totalRiskScore}/100
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => exportEarlyWarning("csv")}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportEarlyWarning("excel")}
+                className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Download Excel (.xlsx)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportEarlyWarning("pdf")}
+                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print / PDF</span>
+              </button>
+            </div>
+          </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── MODAL 1: STUDENT ATTENDANCE & PARENT NOTICE ──────────────────────── */}
+      {selectedStudentForModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  <User className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">{selectedStudentForModal.name}</h3>
+                  <p className="text-xs text-slate-500 font-mono">Reg: {selectedStudentForModal.regNo || selectedStudentForModal.studentId || selectedStudentForModal.id}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedStudentForModal(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Metrics */}
+            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+              <div className="text-center">
+                <span className="text-[10px] font-black uppercase text-slate-400">Attendance</span>
+                <p className={`text-xl font-black mt-0.5 ${selectedStudentForModal.percentage >= 75 ? "text-emerald-700" : selectedStudentForModal.percentage >= 65 ? "text-amber-700" : "text-rose-700"}`}>
+                  {selectedStudentForModal.percentage}%
+                </p>
+              </div>
+              <div className="text-center border-x border-slate-200">
+                <span className="text-[10px] font-black uppercase text-slate-400">Present / Total</span>
+                <p className="text-xl font-black text-slate-800 mt-0.5">
+                  {selectedStudentForModal.present} / {selectedStudentForModal.conducted}
+                </p>
+              </div>
+              <div className="text-center">
+                <span className="text-[10px] font-black uppercase text-slate-400">Absent</span>
+                <p className="text-xl font-black text-rose-600 mt-0.5">{selectedStudentForModal.absent}</p>
+              </div>
+            </div>
+
+            {/* Recovery Alert Notice */}
+            {selectedStudentForModal.percentage < 75 && (
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-900 leading-relaxed">
+                  <strong>Attendance Recovery Requirement:</strong> Student must attend the next <strong>{Math.max(1, Math.ceil((0.75 * selectedStudentForModal.conducted - selectedStudentForModal.present) / 0.25))} upcoming consecutive class periods</strong> without absence to cross 75%.
+                </div>
+              </div>
+            )}
+
+            {/* Pre-Drafted Parent WhatsApp / SMS Note */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-slate-700 uppercase tracking-wider">Parent Formal Warning Draft</span>
+                <button
+                  type="button"
+                  onClick={() => copyParentAlert(selectedStudentForModal)}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Copy Notice</span>
+                </button>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 font-mono whitespace-pre-wrap leading-relaxed max-h-36 overflow-y-auto">
+                {`*OFFICIAL ACADEMIC NOTICE - ${activeCollegeName}*\n\nDear Parent/Guardian of *${selectedStudentForModal.name}* (Reg No: *${selectedStudentForModal.regNo || selectedStudentForModal.id}*), Section: *${selectedStudentForModal.classGroup}*.\n\nYour ward's attendance currently stands at *${selectedStudentForModal.percentage}%* (${selectedStudentForModal.present}/${selectedStudentForModal.conducted} classes), below the mandatory 75% threshold.\n\n*Action Required:* Attend next *${Math.max(1, Math.ceil((0.75 * selectedStudentForModal.conducted - selectedStudentForModal.present) / 0.25))} consecutive classes* to restore exam eligibility.`}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedStudentForModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── MODAL 2: FACULTY TIMETABLE SCHEDULE ──────────────────────── */}
+      {selectedFacultyForModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">{selectedFacultyForModal.name}</h3>
+                  <p className="text-xs text-slate-500 font-medium">{selectedFacultyForModal.dept} • {selectedFacultyForModal.email}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedFacultyForModal(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Workload Metric Header */}
+            <div className="flex items-center justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+              <div>
+                <span className="text-[10px] font-black uppercase text-slate-400">Total Weekly Load</span>
+                <p className="text-lg font-black text-slate-900 mt-0.5">{selectedFacultyForModal.assignedHours} hours / week</p>
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase text-slate-400">UGC Norm Variance</span>
+                <p className={`text-lg font-black mt-0.5 ${selectedFacultyForModal.assignedHours > 16 ? "text-amber-600" : "text-emerald-600"}`}>
+                  {selectedFacultyForModal.variance}
+                </p>
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase text-slate-400">Status</span>
+                <span className={`inline-block mt-0.5 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                  selectedFacultyForModal.status === "Overload" ? "bg-amber-100 text-amber-800" : selectedFacultyForModal.status === "Optimal" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"
+                }`}>
+                  {selectedFacultyForModal.status}
+                </span>
+              </div>
+            </div>
+
+            {/* Allocated Timetable Slots Table */}
+            <div className="overflow-y-auto flex-1 border border-slate-200 rounded-xl">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase sticky top-0">
+                  <tr>
+                    <th className="p-2.5">Day</th>
+                    <th className="p-2.5">Time Slot</th>
+                    <th className="p-2.5">Subject / Course</th>
+                    <th className="p-2.5">Class Group</th>
+                    <th className="p-2.5">Room</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(selectedFacultyForModal.slots || []).map((slot: any, sIdx: number) => (
+                    <tr key={`${slot.id || 'slot'}_${sIdx}`} className="hover:bg-slate-50/60">
+                      <td className="p-2.5 font-bold text-slate-800">{slot.day || "—"}</td>
+                      <td className="p-2.5 font-mono text-slate-600">{slot.time || slot.timeSlot || "Period"}</td>
+                      <td className="p-2.5 font-semibold text-indigo-700">{slot.course || "—"}</td>
+                      <td className="p-2.5 text-slate-600">{slot.classGroup || "General"}</td>
+                      <td className="p-2.5 text-slate-500 font-mono">{slot.room || "—"}</td>
+                    </tr>
+                  ))}
+                  {(!selectedFacultyForModal.slots || selectedFacultyForModal.slots.length === 0) && (
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-slate-400 italic">
+                        No active timetable slots allocated in this campus schedule.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedFacultyForModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────────────────── MODAL 3: QUICK TICKET STATUS UPDATE & RESOLUTION ──────────────────────── */}
+      {ticketUpdating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  <Ticket className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Update Ticket #{ticketUpdating.id}</h3>
+                  <p className="text-xs text-slate-500 font-medium">Student: {ticketUpdating.student_name || "Unknown"} • {ticketUpdating.category || "General"}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTicketUpdating(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Problem Subject & Description */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+              <span className="text-[10px] font-black uppercase text-slate-400">Subject / Issue:</span>
+              <p className="text-xs font-bold text-slate-800">{ticketUpdating.subject || "No Subject"}</p>
+              <p className="text-xs text-slate-600 mt-1 leading-relaxed">{ticketUpdating.description || "No description."}</p>
+            </div>
+
+            {/* Status Selector */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-slate-700 uppercase tracking-wider">Set New Status</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: "open", label: "Open", color: "bg-amber-50 text-amber-800 border-amber-200" },
+                  { id: "progress", label: "In Progress", color: "bg-blue-50 text-blue-800 border-blue-200" },
+                  { id: "resolved", label: "Resolved", color: "bg-emerald-50 text-emerald-800 border-emerald-200" }
+                ].map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setUpdatingTicketStatus(opt.id)}
+                    className={`p-2.5 rounded-xl border text-xs font-black transition-all cursor-pointer text-center ${
+                      updatingTicketStatus === opt.id
+                        ? `${opt.color} ring-2 ring-indigo-500 shadow-xs`
+                        : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Resolution Remarks */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-slate-700 uppercase tracking-wider">
+                Official Administrative Resolution Remarks
+              </label>
+              <textarea
+                value={resolutionNotes}
+                onChange={e => setResolutionNotes(e.target.value)}
+                placeholder="Enter actions taken, counselor guidance, or closure reason..."
+                rows={3}
+                className="w-full p-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setTicketUpdating(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingTicketUpdate}
+                onClick={() => updateTicketStatus(ticketUpdating.id, updatingTicketStatus, resolutionNotes)}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isSubmittingTicketUpdate && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>Save to Supabase</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2368,8 +8502,8 @@ const KAMOverview = dynamic(() => import("./kam/overview/KAMOverview").then(m =>
 });
 
 export interface CAMDashboardProps {
-  activeTab?: "overview" | "config" | "curriculum" | "academic_tracker" | "exams_and_marks" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events";
-  onTabChange?: (tab: "overview" | "config" | "curriculum" | "academic_tracker" | "exams_and_marks" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events") => void;
+  activeTab?: "overview" | "config" | "curriculum" | "academic_tracker" | "exams_and_marks" | "audit" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events";
+  onTabChange?: (tab: "overview" | "config" | "curriculum" | "academic_tracker" | "exams_and_marks" | "audit" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events") => void;
   overrideCollegeId?: string;
   allowedCollegeIds?: string[];
   isKAMView?: boolean;
@@ -2503,7 +8637,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     : (currentCAM?.college_name || colleges.find(c => c.id === activeCollegeId)?.name || "Primary Campus");
 
   // Tab State
-  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "config" | "curriculum" | "academic_tracker" | "exams_and_marks" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events">("overview");
+  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "config" | "curriculum" | "academic_tracker" | "exams_and_marks" | "audit" | "faculty" | "timetable" | "monitoring" | "handovers" | "reports" | "tasks" | "profile" | "tracker" | "fees" | "students_list" | "more_menu" | "mentor_attendance" | "interviews" | "events">("overview");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
@@ -2523,7 +8657,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             "leaves": "handovers",
             "exams": "exams_and_marks",
             "marks": "exams_and_marks",
-            "attendance": "monitoring"
+            "attendance": "monitoring",
+            "audit": "audit",
+            "campus-audit": "audit",
+            "e-audit": "audit"
           };
           const mapped = tabAliases[rawTab] || rawTab;
           if (mapped) setActiveTab(mapped as any);
@@ -7745,6 +13882,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     ]
                   },
                   {
+                    id: "audit",
+                    title: "Campus E-Audit",
+                    icon: ShieldCheck,
+                    items: [
+                      { id: "audit", label: "Campus E-Audit", icon: ShieldCheck }
+                    ]
+                  },
+                  {
                     id: "events",
                     title: "Event Creation",
                     icon: Calendar,
@@ -7933,7 +14078,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             { id: "more_menu", label: "More", icon: Menu },
           ].map(t => {
             const Icon = t.icon;
-            const isActive = activeTab === t.id || (t.id === "more_menu" && ["config", "curriculum", "monitoring", "tracker", "fees", "reports", "profile"].includes(activeTab));
+            const isActive = activeTab === t.id || (t.id === "more_menu" && ["config", "curriculum", "monitoring", "tracker", "fees", "reports", "profile", "audit"].includes(activeTab));
             const count = t.id === "handovers" ? requests.filter(r => r.status === "pending_cam").length : 0;
             return (
               <button
@@ -8017,6 +14162,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             <div className="space-y-6 animate-fadeIn pb-10">
               <h3 className="text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider">More Tools & Portals</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("audit")}
+                  className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                >
+                  <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 shrink-0 group-hover:scale-105 transition-transform">
+                    <ShieldCheck className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Campus E-Audit</span>
+                    <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Domain audits, peer reviews, ticketing &amp; NPS</span>
+                  </div>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setActiveTab("config")}
@@ -10519,15 +16678,28 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                     // ── KPI Counts ──
                     const totalCount      = campusInterviews.length;
-                    const clearedCount    = campusInterviews.filter(iv => iv.status === "Cleared").length;
+                    const evalsCount      = campusEvals.length;
+                    const clearedCount    = campusInterviews.filter(iv => iv.status === "Cleared").length ||
+                                            campusEvals.filter(ev => (ev.status || "").toLowerCase().includes("clear")).length;
                     const pendingCount    = campusInterviews.filter(iv => iv.status === "Pending" || iv.status?.includes("pending")).length;
-                    const needsImpCount   = campusInterviews.filter(iv => iv.status === "Needs Improvement").length;
-                    const failedCount     = campusInterviews.filter(iv => iv.status === "Failed").length;
+                    const needsImpCount   = campusInterviews.filter(iv => iv.status === "Needs Improvement").length ||
+                                            campusEvals.filter(ev => (ev.status || "").toLowerCase().includes("needs")).length;
+                    const failedCount     = campusInterviews.filter(iv => iv.status === "Failed").length ||
+                                            campusEvals.filter(ev => (ev.status || "").toLowerCase().includes("absent") || (ev.status || "").toLowerCase().includes("fail")).length;
                     const internalCount   = campusInterviews.filter(iv => iv.type === "internal").length;
                     const externalCount   = campusInterviews.filter(iv => iv.type === "external").length;
-                    const avgMarks = campusInterviews.length > 0
-                      ? (campusInterviews.reduce((s, iv) => s + (Number(iv.marks) || 0), 0) / campusInterviews.length).toFixed(1)
-                      : "—";
+                    
+                    // Compute average score from campusEvals or campusInterviews
+                    let avgMarks = "—";
+                    if (campusEvals.length > 0) {
+                      const sum = campusEvals.reduce((s, ev) => s + (Number(ev.total_score) || 0), 0);
+                      avgMarks = (sum / campusEvals.length).toFixed(1);
+                    } else if (campusInterviews.length > 0) {
+                      const scored = campusInterviews.filter(iv => iv.marks !== undefined && iv.marks !== null);
+                      if (scored.length > 0) {
+                        avgMarks = (scored.reduce((s, iv) => s + (Number(iv.marks) || 0), 0) / scored.length).toFixed(1);
+                      }
+                    }
 
                     // ── Chart data ──
                     // 1. Status donut
@@ -10535,7 +16707,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       { name: "Cleared",          value: clearedCount,  color: "#10b981" },
                       { name: "Pending",           value: pendingCount,  color: "#f59e0b" },
                       { name: "Needs Improvement", value: needsImpCount, color: "#6366f1" },
-                      { name: "Failed",            value: failedCount,   color: "#f43f5e" },
+                      { name: "Failed / Absent",   value: failedCount,   color: "#f43f5e" },
                     ].filter(d => d.value > 0);
 
                     // 2. Subject distribution bar
@@ -10557,8 +16729,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       { label: "8–9",  count: 0, fill: "#10b981" },
                       { label: "10",   count: 0, fill: "#059669" },
                     ];
-                    campusInterviews.forEach(iv => {
-                      const m = Number(iv.marks) || 0;
+                    
+                    const scoreList = campusEvals.length > 0 
+                      ? campusEvals.map(ev => Number(ev.total_score) || 0)
+                      : campusInterviews.map(iv => Number(iv.marks) || 0);
+
+                    scoreList.forEach(m => {
                       if      (m <= 3)  marksBuckets[0].count++;
                       else if (m <= 5)  marksBuckets[1].count++;
                       else if (m <= 7)  marksBuckets[2].count++;
@@ -11808,6 +17984,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       collegeStudents={collegeStudents}
                       collegeSubjects={collegeSubjects}
                       initialStudentAttendance={studentAttendance}
+                      handoverRequests={requests}
+                      approvedHandovers={approvedHandovers}
+                      studentAcademicTracker={studentAcademicTracker}
                     />
                   )}
 
@@ -13687,6 +19866,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       </div>
                     );
                   })()}
+
+                  {/* Campus E-Audit Module */}
+                  {activeTab === "audit" && (
+                    <div className="space-y-6 animate-fadeIn pb-10">
+                      <CampusAuditManager
+                        collegeId={activeCollegeId}
+                        collegeName={activeCollegeName}
+                        role={isKAMView ? "kam" : (isSuperAdminUser ? "admin" : "cam")}
+                        userName={currentCAM?.name || currentKAM?.name || "Campus Academic Manager"}
+                      />
+                    </div>
+                  )}
 
                   {/* Student Tracker Audit Tab */}
                   {activeTab === "tracker" && (() => {

@@ -102,12 +102,10 @@ export const ExamScheduleManager: React.FC = () => {
   const [batchDept, setBatchDept] = useState("");
   const [batchSem, setBatchSem] = useState("Semester 1");
   const [batchStartDate, setBatchStartDate] = useState(new Date().toISOString().slice(0, 10));
-  const [batchDefaultHall, setBatchDefaultHall] = useState("Main Examination Hall");
+  const [batchDefaultHall, setBatchDefaultHall] = useState("");
   const [batchDefaultDayOrder, setBatchDefaultDayOrder] = useState("Day 1");
   const [batchCustomStartTime, setBatchCustomStartTime] = useState("10:00 AM");
   const [batchCustomEndTime, setBatchCustomEndTime] = useState("01:00 PM");
-  const [batchMaxMarks, setBatchMaxMarks] = useState<number>(50);
-  const [batchPassingMarks, setBatchPassingMarks] = useState<number>(20);
 
   // Subject rows inside modal accordion
   const [subjectRows, setSubjectRows] = useState<SubjectFormRow[]>([]);
@@ -419,7 +417,7 @@ export const ExamScheduleManager: React.FC = () => {
         day_order: dOrder,
         start_time: startT,
         end_time: endT,
-        hall_room: batchDefaultHall
+        hall_room: ""
       };
     });
 
@@ -450,8 +448,7 @@ export const ExamScheduleManager: React.FC = () => {
       return {
         ...row,
         exam_date: currentDate.toISOString().slice(0, 10),
-        day_order: batchDefaultDayOrder !== "None" ? `Day ${orderNum}` : "None",
-        hall_room: batchDefaultHall
+        day_order: batchDefaultDayOrder !== "None" ? `Day ${orderNum}` : "None"
       };
     });
 
@@ -532,9 +529,7 @@ export const ExamScheduleManager: React.FC = () => {
           start_time: row.start_time,
           end_time: row.end_time,
           session_time: sessionTimeStr,
-          hall_room: row.hall_room || batchDefaultHall,
-          max_marks: batchMaxMarks || 50,
-          passing_marks: batchPassingMarks || ((batchMaxMarks || 50) * 0.4),
+          hall_room: row.hall_room || "",
           created_by: currentCAM?.name || "Campus Manager"
         };
       });
@@ -778,7 +773,7 @@ export const ExamScheduleManager: React.FC = () => {
       }
     }
 
-    const headers = ["Department", "Semester", "Exam_Name", "Subject_Name", "Exam_Date", "Day_Order", "Session_Time", "Hall_Room", "Max_Marks"];
+    const headers = ["Department", "Semester", "Exam_Name", "Subject_Name", "Exam_Date", "Day_Order", "Session_Time", "Hall_Room"];
     const rows = deduplicatedSlots.map((ex) => [
       `"${(ex.department || "").replace(/"/g, '""')}"`,
       `"${(ex.semester || "").replace(/"/g, '""')}"`,
@@ -787,8 +782,7 @@ export const ExamScheduleManager: React.FC = () => {
       `"${(ex.exam_date || "").replace(/"/g, '""')}"`,
       `"${(ex.day_order || "Day 1").replace(/"/g, '""')}"`,
       `"${(ex.session_time || `${ex.start_time} - ${ex.end_time}`).replace(/"/g, '""')}"`,
-      `"${(ex.hall_room || "").replace(/"/g, '""')}"`,
-      `"${ex.max_marks || 50}"`
+      `"${(ex.hall_room || "").replace(/"/g, '""')}"`
     ]);
 
     const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((e) => e.join(","))].join("\r\n");
@@ -1082,7 +1076,6 @@ export const ExamScheduleManager: React.FC = () => {
                               <th className="p-3.5">Exam Date & Day Order</th>
                               <th className="p-3.5">Timing & Session</th>
                               <th className="p-3.5">Hall / Room</th>
-                              <th className="p-3.5">Max Marks</th>
                               <th className="p-3.5 text-right">Actions</th>
                             </tr>
                           </thead>
@@ -1119,13 +1112,14 @@ export const ExamScheduleManager: React.FC = () => {
                                     </div>
                                   </td>
                                   <td className="p-3.5">
-                                    <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px] text-slate-700 font-bold">
-                                      <MapPin className="h-3 w-3 text-slate-400" />
-                                      {slot.hall_room}
-                                    </span>
-                                  </td>
-                                  <td className="p-3.5 font-bold text-slate-800">
-                                    {slot.max_marks || 50} pts
+                                    {slot.hall_room ? (
+                                      <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px] text-slate-700 font-bold">
+                                        <MapPin className="h-3 w-3 text-slate-400" />
+                                        {slot.hall_room}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-300 italic">—</span>
+                                    )}
                                   </td>
                                   <td className="p-3.5 text-right">
                                     <button
@@ -1180,19 +1174,38 @@ export const ExamScheduleManager: React.FC = () => {
           {/* Marks Filter & Search Bar */}
           <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-              {/* Exam Type Filter */}
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
-                <span className="text-slate-400 text-[10px] uppercase">Exam:</span>
-                <select
-                  value={marksExamTypeFilter}
-                  onChange={(e) => setMarksExamTypeFilter(e.target.value)}
-                  className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
+              {/* Exam Type Pill Tabs */}
+              <div className="flex items-center p-1 bg-slate-100 rounded-xl flex-wrap gap-1">
+                <button
+                  type="button"
+                  onClick={() => setMarksExamTypeFilter("all")}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    marksExamTypeFilter === "all"
+                      ? "bg-white text-indigo-700 shadow-2xs"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
                 >
-                  <option value="all">All Assessments</option>
-                  {PRESET_EXAM_SUGGESTIONS.map((ex) => (
-                    <option key={ex} value={ex}>{ex}</option>
-                  ))}
-                </select>
+                  All Assessments
+                </button>
+                {Array.from(
+                  new Set([
+                    ...PRESET_EXAM_SUGGESTIONS,
+                    ...campusMarksList.map((m: any) => m.exam_type).filter(Boolean),
+                  ])
+                ).map((ex) => (
+                  <button
+                    key={ex}
+                    type="button"
+                    onClick={() => setMarksExamTypeFilter(ex)}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                      marksExamTypeFilter === ex
+                        ? "bg-white text-indigo-700 shadow-2xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {ex}
+                  </button>
+                ))}
               </div>
 
               {/* Department Filter */}
@@ -1368,10 +1381,8 @@ export const ExamScheduleManager: React.FC = () => {
                   <CalendarRange className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">Schedule Department Exam Timetable</h3>
-                  <p className="text-[11px] text-slate-450">
-                    Select department and configure assessment dates for each subject in one place.
-                  </p>
+                  <h3 className="text-sm font-extrabold text-slate-900">Schedule Exam Timetable</h3>
+                  <p className="text-[11px] text-slate-400">Pick department, set dates &amp; times, then publish.</p>
                 </div>
               </div>
               <button
@@ -1386,16 +1397,12 @@ export const ExamScheduleManager: React.FC = () => {
             {/* Modal Body */}
             <form onSubmit={handlePublishTimetable} className="flex flex-col flex-1 overflow-hidden">
               <div className="p-5 sm:p-6 overflow-y-auto space-y-5 text-xs">
-                {/* College Operating Hours Banner */}
-                <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-indigo-50/80 border border-indigo-150 text-indigo-900 text-xs">
-                  <Clock className="h-4 w-4 text-indigo-600 shrink-0" />
-                  <div className="flex flex-wrap items-center gap-1.5 font-medium">
-                    <span className="font-extrabold uppercase text-[10px] tracking-wider text-indigo-700">
-                      College Operating Hours:
-                    </span>
-                    <span className="font-bold text-slate-900">{collegeHours.startTimeStr} – {collegeHours.endTimeStr}</span>
-                    <span className="text-slate-500 text-[11px]">(Exams can only be scheduled within college operating hours)</span>
-                  </div>
+                {/* College Operating Hours Info */}
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[11px] w-full">
+                  <Clock className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                  <span className="text-indigo-700 font-bold">College Hours:</span>
+                  <span className="font-extrabold text-slate-900">{collegeHours.startTimeStr} – {collegeHours.endTimeStr}</span>
+                  <span className="text-slate-400 ml-auto text-[10px]">Exam times are restricted to these hours</span>
                 </div>
 
                 {/* 1. Exam Type / Name */}
@@ -1469,8 +1476,8 @@ export const ExamScheduleManager: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 3. Global Batch Settings (Start Date, Day Order, Timings & Default Hall) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 bg-slate-50/80 p-4 rounded-2xl border border-slate-150">
+                {/* 3. Global Batch Settings (Start Date, Day Order, Timings) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50/80 p-4 rounded-2xl border border-slate-150">
                   <div className="space-y-1.5">
                     <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
                       Starting Exam Date
@@ -1531,97 +1538,13 @@ export const ExamScheduleManager: React.FC = () => {
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                     />
                   </div>
-
-                  <div className="space-y-1.5">
-                    <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
-                      Hall / Room
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Main Hall 101"
-                      value={batchDefaultHall}
-                      onChange={(e) => {
-                        const newHall = e.target.value;
-                        setBatchDefaultHall(newHall);
-                        setSubjectRows((prev) => prev.map((r) => ({ ...r, hall_room: newHall })));
-                      }}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
                 </div>
 
-                {/* 3b. Assessment Scoring & Evaluation Rules ("Out of" Marks) */}
-                <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <span className="text-[10.5px] font-extrabold text-indigo-900 uppercase tracking-wider block">
-                        Assessment Scoring Scale ("Out of" Marks Target)
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-medium block">
-                        Target total marks that subject mentors will grade each student paper out of.
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider">
-                        Total Marks (Out of)
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={1}
-                          max={500}
-                          value={batchMaxMarks}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 50;
-                            setBatchMaxMarks(val);
-                            setBatchPassingMarks(Math.round(val * 0.4));
-                          }}
-                          className="w-28 px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-mono font-black text-slate-900 outline-none focus:ring-1 focus:ring-indigo-500"
-                        />
-                        <div className="flex items-center gap-1">
-                          {[25, 50, 75, 100].map((preset) => (
-                            <button
-                              key={preset}
-                              type="button"
-                              onClick={() => {
-                                setBatchMaxMarks(preset);
-                                setBatchPassingMarks(Math.round(preset * 0.4));
-                              }}
-                              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                                batchMaxMarks === preset
-                                  ? "bg-indigo-600 text-white shadow-2xs"
-                                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
-                              }`}
-                            >
-                              /{preset}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider">
-                        Passing Marks (Min Required)
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={0}
-                          max={batchMaxMarks}
-                          value={batchPassingMarks}
-                          onChange={(e) => setBatchPassingMarks(parseFloat(e.target.value) || 0)}
-                          className="w-28 px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-mono font-black text-slate-900 outline-none focus:ring-1 focus:ring-indigo-500"
-                        />
-                        <span className="text-[10px] text-slate-400 font-bold">
-                          ({batchMaxMarks > 0 ? Math.round((batchPassingMarks / batchMaxMarks) * 100) : 40}% pass cutoff)
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                {/* Exam Time Blocking Info */}
+                <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] w-full">
+                  <svg className="h-3.5 w-3.5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <span className="font-bold text-amber-700">Time Blocking:</span>
+                  <span className="text-amber-800">Publishing blocks this exam's day order &amp; time slot in all student &amp; mentor timetables.</span>
                 </div>
 
                 {/* 4. Subject Accordion / Subject Matrix */}
@@ -1733,11 +1656,11 @@ export const ExamScheduleManager: React.FC = () => {
 
                                 <input
                                   type="text"
-                                  placeholder="Hall Room"
+                                  placeholder="Hall (optional)"
                                   value={row.hall_room}
                                   onChange={(e) => updateSubjectRow(idx, { hall_room: e.target.value })}
-                                  className="w-28 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-medium bg-slate-50 text-slate-800"
-                                  title="Hall / Room"
+                                  className="w-32 px-2.5 py-1.5 border border-dashed border-slate-300 rounded-lg text-xs font-medium bg-slate-50/60 text-slate-600 placeholder:text-slate-350 focus:border-slate-400 outline-none"
+                                  title="Hall / Room (optional)"
                                 />
                               </div>
                             )}

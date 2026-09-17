@@ -7,6 +7,7 @@ import { getDb } from "@/lib/db";
 import { sendMail, renderEmailShell } from "@/lib/mail";
 import { dispatchExternalInterviewNotifications } from "@/lib/interview-notifications";
 import { checkMentorAvailability } from "@/lib/availability";
+import { generateStudentGCalUrl } from "@/lib/google-calendar";
 
 export async function POST(request: Request) {
   try {
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
         totalAllocated, 
         totalAccepted, 
         finalStatus, 
-        gmeet_link || interview.gmeet_link || null, 
+        interview.type === "internal" ? null : (gmeet_link || interview.gmeet_link || null), 
         assignedTimeSlot, 
         now, 
         interview_id
@@ -102,6 +103,7 @@ export async function POST(request: Request) {
     // Populate student-level slot records for individual student tracking
     const mentorSchedule = Array.isArray(body.mentor_schedule) ? body.mentor_schedule : [];
     if (mentorSchedule.length > 0) {
+      const isInternal = interview.type === "internal";
       const cleanCG = (interview.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
       const colId = interview.college_id || null;
       let enrolledStudents = [];
@@ -122,25 +124,70 @@ export async function POST(request: Request) {
         );
       }
 
+      // Priority ordering: if selected_student_ids were passed, order them first
+      const selectedStudentIds = Array.isArray(body.selected_student_ids) ? body.selected_student_ids : [];
+      if (selectedStudentIds.length > 0) {
+        enrolledStudents.sort((a: any, b: any) => {
+          const aIndex = selectedStudentIds.indexOf(a.id);
+          const bIndex = selectedStudentIds.indexOf(b.id);
+          if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+          if (aIndex !== -1) return -1;
+          if (bIndex !== -1) return 1;
+          return 0;
+        });
+      }
+
+      // Helper to increment minutes and format e.g. "09:15 AM"
+      const formatTimeSlotWindow = (baseTimeStr: string, slotIndex: number) => {
+        const startMins = 540 + (slotIndex * 15); // default 9:00 AM (540m) + 15m intervals
+        const endMins = startMins + 15;
+        const toTimeStr = (m: number) => {
+          let hrs = Math.floor(m / 60);
+          const mins = m % 60;
+          const ampm = hrs >= 12 ? "PM" : "AM";
+          if (hrs > 12) hrs -= 12;
+          if (hrs === 0) hrs = 12;
+          return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")} ${ampm}`;
+        };
+        return { start: toTimeStr(startMins), end: toTimeStr(endMins) };
+      };
+
       let sIndex = 0;
+      let slotRunningIndex = 0;
       for (const ms of mentorSchedule) {
         const mObj = await db.get("SELECT name, college_id FROM mentors WHERE id = ?", [ms.mentor_id]);
         const mName = mObj?.name || "Mentor";
         const mCol = mObj?.college_id || interview.college_id || "campus";
         const count = Number(ms.student_count) || 3;
-        const timeSlot = ms.time_slot || assignedTimeSlot;
+        const baseTime = ms.time_slot || assignedTimeSlot || "09:00 AM";
 
         for (let k = 0; k < count; k++) {
           const slotId = `slot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-          const st = enrolledStudents[sIndex] || { id: `std_${sIndex + 1}`, name: `Student #${sIndex + 1}` };
+          const st = enrolledStudents[sIndex] || { id: `std_${sIndex + 1}`, name: `Student #${sIndex + 1}`, email: undefined };
           sIndex++;
+
+          const slotTiming = formatTimeSlotWindow(baseTime, slotRunningIndex);
+          slotRunningIndex++;
+
+          // Internal interviews do NOT use Google Meet (in-person physical on campus)
+          const effectiveMeetLink = isInternal ? null : (gmeet_link || interview.gmeet_link || null);
+          const studentGCalUrl = isInternal || !effectiveMeetLink ? null : generateStudentGCalUrl({
+            studentName: st.name,
+            studentEmail: st.email,
+            subject: interview.subject || "Interview",
+            targetDate: interview.target_date || new Date().toISOString().slice(0, 10),
+            slotStartTime: slotTiming.start,
+            slotEndTime: slotTiming.end,
+            gmeetLink: effectiveMeetLink,
+            mentorName: mName
+          });
 
           await db.run(
             `INSERT INTO student_interview_slots (
               id, interview_id, allocation_id, student_id, student_name,
               mentor_id, mentor_name, college_id, slot_start_time, slot_end_time,
-              gmeet_link, subject, target_date, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              gmeet_link, gcal_link, subject, target_date, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               slotId,
               interview_id,
@@ -150,9 +197,10 @@ export async function POST(request: Request) {
               ms.mentor_id,
               mName,
               mCol,
-              timeSlot,
-              timeSlot,
-              gmeet_link || interview.gmeet_link || null,
+              slotTiming.start,
+              slotTiming.end,
+              effectiveMeetLink,
+              studentGCalUrl,
               interview.subject,
               interview.target_date,
               "scheduled",
@@ -195,7 +243,7 @@ export async function POST(request: Request) {
               { label: "Interview Type", value: (interview.type || "internal").toUpperCase() },
               { label: "Student Count", value: String(updatedCount) },
               { label: "Topics", value: interview.topics || "General Review" },
-              ...(gmeet_link ? [{ label: "Google Meet Link", value: gmeet_link, highlight: true }] : []),
+              ...(interview.type !== "internal" && gmeet_link ? [{ label: "Google Meet Link", value: gmeet_link, highlight: true }] : (interview.type === "internal" ? [{ label: "Interview Mode", value: "In-Person On-Campus Evaluation", highlight: true }] : [])),
               { label: "Assigned By", value: cm_name },
             ],
             ctaText: "Open Mentor Dashboard to Evaluate →",

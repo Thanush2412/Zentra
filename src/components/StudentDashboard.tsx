@@ -814,7 +814,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       isCohortMatching(task.class_group, currentStudent?.classGroup, coursesList, subjectsList) ||
       (currentStudent?.department && task.class_group.toLowerCase().includes(currentStudent.department.toLowerCase().trim()))
     );
-    const taskSubjects = Array.from(new Set(matchingTasks.map(t => t.subject).filter(Boolean)));
+    const taskSubjects = Array.from(new Set(matchingTasks.map(t => t.subject).filter(Boolean))).filter(s => isSkillSubject(s));
 
     // Also include enrolled semester subjects that are explicitly marked as skill subjects
     const skillEnrolledSubjects = (studentSubjects || []).filter(s => isSkillSubject(s)).map(s => s.name);
@@ -838,7 +838,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       }
     } else if (studentSubjects.length > 0 && !studentTrackerSubject) {
       const skillSub = studentSubjects.find((s) => isSkillSubject(s));
-      setStudentTrackerSubject(skillSub ? skillSub.name : studentSubjects[0].name);
+      if (skillSub) {
+        setStudentTrackerSubject(skillSub.name);
+      }
     }
   }, [assignedMentorSubjects, studentSubjects, studentTrackerSubject]);
 
@@ -1211,6 +1213,32 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     } finally { setFeePaySubmitting(false); }
   };
 
+  // Student Interview Hub State
+  const [studentInterviewsList, setStudentInterviewsList] = useState<any[]>([]);
+  const [loadingStudentInterviews, setLoadingStudentInterviews] = useState(false);
+
+  const fetchStudentInterviews = async () => {
+    if (!currentStudent?.id) return;
+    setLoadingStudentInterviews(true);
+    try {
+      const res = await fetch(`/api/interviews?role=student&studentId=${encodeURIComponent(currentStudent.id)}&classGroup=${encodeURIComponent(currentStudent.classGroup || "")}&collegeId=${encodeURIComponent(currentStudent.college_id || "")}`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.interviews)) {
+        setStudentInterviewsList(json.interviews);
+      }
+    } catch (e) {
+      console.error("Error fetching student interviews:", e);
+    } finally {
+      setLoadingStudentInterviews(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentStudent?.id) {
+      fetchStudentInterviews();
+    }
+  }, [currentStudent?.id, currentStudent?.classGroup, currentStudent?.college_id]);
+
   return (
     <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 h-full overflow-hidden">
       {/* Dynamic sidebar for student portal modules */}
@@ -1402,6 +1430,24 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         {activeTab === "more_menu" && (
           <div className="space-y-6 animate-fadeIn pb-10">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+              <a
+                href="/student/interviews"
+                onClick={(e) => {
+                  if (e.ctrlKey || e.metaKey || e.button === 1) return;
+                  e.preventDefault();
+                  window.location.href = "/student/interviews";
+                }}
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+              >
+                <div className="h-10 w-10 rounded-xl bg-purple-50 dark:bg-purple-900/25 flex items-center justify-center text-purple-600 shrink-0 group-hover:scale-105 transition-transform">
+                  <Award className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">My Interviews</span>
+                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Join Google Meet, view slots & rubric scores</span>
+                </div>
+              </a>
 
               <a
                 href="/student/exams"
@@ -1833,7 +1879,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     const mySlot = (todayInterview.student_slots || []).find((s: any) =>
                       s.student_id === currentStudent?.id || s.roll_number === currentStudent?.roll_number
                     );
-                    const meetLink = mySlot?.gmeet_link || todayInterview.gmeet_link;
+                    const isInternal = todayInterview.type === "internal" || mySlot?.mode === "in_person";
+                    const meetLink = !isInternal ? (mySlot?.gmeet_link || todayInterview.gmeet_link) : null;
                     const evaluator = mySlot?.mentor_name || todayInterview.mentor_name || "Faculty Evaluator";
                     const timing = mySlot?.slot_start_time || todayInterview.preferred_start_time || "8:20 AM - 8:35 AM";
 
@@ -1846,12 +1893,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           <div className="min-w-0">
                             <span className="text-xs font-black text-purple-950 block truncate">{todayInterview.subject}</span>
                             <span className="text-[10px] text-purple-700 block truncate font-semibold mt-0.5">
-                              Evaluator: {evaluator} • {timing}
+                              Evaluator: {evaluator} • {timing} {isInternal ? "• In-Person" : ""}
                             </span>
                           </div>
                         </div>
                         <div className="text-right shrink-0">
-                          {meetLink ? (
+                          {!isInternal && meetLink ? (
                             <a
                               href={meetLink}
                               target="_blank"
@@ -1861,8 +1908,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                               <Video className="w-3 h-3" /> Join Room
                             </a>
                           ) : (
-                            <span className="inline-block px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-[9px] font-bold">
-                              Scheduled
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-100 text-purple-800 rounded-lg text-[9.5px] font-bold border border-purple-200">
+                              <User className="w-3 h-3 text-purple-600" /> In-Person
                             </span>
                           )}
                         </div>
@@ -2070,7 +2117,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             const mySlot = (interviewForSlot.student_slots || []).find((s: any) =>
                               s.student_id === currentStudent?.id || s.roll_number === currentStudent?.roll_number
                             );
-                            const meetLink = mySlot?.gmeet_link || interviewForSlot.gmeet_link;
+                            const isInternal = interviewForSlot.type === "internal" || mySlot?.mode === "in_person";
+                            const meetLink = !isInternal ? (mySlot?.gmeet_link || interviewForSlot.gmeet_link) : null;
                             const evaluatorName = mySlot?.mentor_name || interviewForSlot.mentor_name || "Faculty Evaluator";
                             const slotTiming = mySlot?.slot_start_time || interviewForSlot.preferred_start_time || "8:20 AM - 8:35 AM";
 
@@ -2095,7 +2143,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                   </div>
 
                                   <div className="flex items-center justify-between text-[8px] mt-1 pt-1.5 border-t border-purple-200/60 font-black uppercase">
-                                    {meetLink ? (
+                                    {!isInternal && meetLink ? (
                                       <a
                                         href={meetLink}
                                         target="_blank"
@@ -2105,7 +2153,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                         <Video className="w-2.5 h-2.5" /> GMeet
                                       </a>
                                     ) : (
-                                      <span className="text-purple-600 font-mono">{slotTiming}</span>
+                                      <span className="text-purple-600 font-mono">{isInternal ? "In-Person" : slotTiming}</span>
                                     )}
                                     <span className={`px-1.5 py-0.5 rounded text-[7.5px] ${isCompleted
                                         ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
@@ -2298,10 +2346,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         (e: any) => e.interview_id === inv.id && e.student_id === currentStudent.id
                       );
 
+                      const isInternal = inv.type === "internal" || mySlot?.mode === "in_person";
                       const isAllocated = Boolean(mySlot) || (!inv.student_slots?.length && inv.status === "assigned");
                       const assignedTime = mySlot ? `${mySlot.slot_start_time} - ${mySlot.slot_end_time}` : (inv.preferred_start_time || "09:00 AM");
                       const assignedMentor = mySlot?.mentor_name || inv.mentor_name || "Assigned Faculty Evaluator";
-                      const meetLink = mySlot?.gmeet_link || inv.gmeet_link;
+                      const meetLink = !isInternal ? (mySlot?.gmeet_link || inv.gmeet_link) : null;
                       const isVerified = inv.status === "completed";
 
                       return (
@@ -2332,7 +2381,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                 </span>
                               </div>
 
-                              {meetLink && (
+                              {!isInternal && meetLink ? (
                                 <div className="pt-1 flex items-center justify-between">
                                   <span className="text-[10px] font-semibold text-slate-400">Virtual Meeting Room:</span>
                                   <a
@@ -2344,7 +2393,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                     <Sparkles className="w-3.5 h-3.5" /> Join Live Google Meet
                                   </a>
                                 </div>
-                              )}
+                              ) : isInternal ? (
+                                <div className="pt-1 flex items-center justify-between">
+                                  <span className="text-[10px] font-semibold text-slate-500">Evaluation Mode:</span>
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-200">
+                                    <User className="w-3 h-3 text-indigo-600" /> In-Person Evaluation (Faculty Cabin)
+                                  </span>
+                                </div>
+                              ) : null}
                             </div>
                           ) : (
                             <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-center text-[11px] font-semibold text-amber-800">
@@ -2429,19 +2485,95 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           const overallPct = totalMaxMarks > 0 ? ((totalMarks / totalMaxMarks) * 100).toFixed(1) : "—";
 
           const availableExamTypes = Array.from(
-            new Set(displayMarks.map((m: any) => m.exam_type).filter(Boolean))
-          );
+            new Set([
+              ...displayMarks.map((m: any) => m.exam_type),
+              ...allExams.map((ex: any) => ex.exam_type),
+            ].filter(Boolean))
+          ).sort();
 
-          const filteredMarks = displayMarks.filter((m: any) => {
-            if (marksTypeFilter !== "all" && m.exam_type !== marksTypeFilter) return false;
-            if (marksSearchTerm.trim()) {
-              const q = marksSearchTerm.toLowerCase();
-              const subName = (m.subject_name || "").toLowerCase();
-              const subCode = (m.subject_code || "").toLowerCase();
-              const examType = (m.exam_type || "").toLowerCase();
-              const evalBy = (m.evaluated_by || "").toLowerCase();
-              return subName.includes(q) || subCode.includes(q) || examType.includes(q) || evalBy.includes(q);
-            }
+          const examGroups = availableExamTypes.map((type: string) => {
+            const typeMarks = displayMarks.filter((m: any) => m.exam_type === type);
+            const typeScheduled = allExams.filter((ex: any) => ex.exam_type === type);
+
+            // Scheduled exams not yet evaluated
+            const evaluatedSubjectKeys = new Set(
+              typeMarks.map((m: any) => (m.subject_code || m.subject_name || "").toLowerCase())
+            );
+            const pendingExams = typeScheduled.filter((ex: any) => {
+              const key = (ex.subject_code || ex.subject_name || "").toLowerCase();
+              return key ? !evaluatedSubjectKeys.has(key) : true;
+            });
+
+            // Calculate metrics for this exam type
+            let scoreTotal = 0;
+            let maxTotal = 0;
+            let passCount = 0;
+            let arrearCount = 0;
+            let evalCount = 0;
+
+            typeMarks.forEach((m: any) => {
+              if (m.is_absent) {
+                arrearCount++;
+                evalCount++;
+              } else if (m.marks_obtained !== null && m.marks_obtained !== undefined) {
+                evalCount++;
+                const s = parseFloat(m.marks_obtained);
+                const mx = parseFloat(m.max_marks || 50);
+                const passM = parseFloat(m.passing_marks || (mx * 0.4) || 20);
+                scoreTotal += s;
+                maxTotal += mx;
+                if (s >= passM) passCount++;
+                else arrearCount++;
+              }
+            });
+
+            const allDates = [
+              ...typeMarks.map((m: any) => m.exam_date),
+              ...typeScheduled.map((ex: any) => ex.exam_date),
+            ].filter(Boolean).sort();
+            const minDate = allDates[0];
+            const maxDate = allDates[allDates.length - 1];
+            const dateRangeStr = minDate ? (minDate === maxDate ? minDate : `${minDate} → ${maxDate}`) : "";
+
+            // Filter rows by marksSearchTerm if active
+            const q = marksSearchTerm.toLowerCase().trim();
+            const matchesQuery = (subName: string, subCode: string, evalBy?: string) => {
+              if (!q) return true;
+              return (
+                type.toLowerCase().includes(q) ||
+                (subName || "").toLowerCase().includes(q) ||
+                (subCode || "").toLowerCase().includes(q) ||
+                (evalBy || "").toLowerCase().includes(q)
+              );
+            };
+
+            const filteredTypeMarks = typeMarks.filter((m: any) =>
+              matchesQuery(m.subject_name, m.subject_code, m.evaluated_by)
+            );
+            const filteredPendingExams = pendingExams.filter((ex: any) =>
+              matchesQuery(ex.subject_name, ex.subject_code)
+            );
+
+            const totalSubjects = typeMarks.length + pendingExams.length;
+            const hasMatches = !q || filteredTypeMarks.length > 0 || filteredPendingExams.length > 0;
+
+            return {
+              type,
+              typeMarks: filteredTypeMarks,
+              pendingExams: filteredPendingExams,
+              totalSubjects,
+              evalCount,
+              scoreTotal,
+              maxTotal,
+              passCount,
+              arrearCount,
+              pct: maxTotal > 0 ? ((scoreTotal / maxTotal) * 100).toFixed(1) : null,
+              dateRangeStr,
+              hasMatches,
+            };
+          }).filter((g: any) => {
+            if (marksTypeFilter !== "all" && g.type !== marksTypeFilter) return false;
+            if (marksSearchTerm.trim() && !g.hasMatches) return false;
             return true;
           });
 
@@ -2548,11 +2680,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 )}
               </div>
 
-              {/* VIEW 1: ASSESSMENT RESULTS & SCORECARD */}
+              {/* VIEW 1: ASSESSMENT RESULTS & SCORECARD (EXAM-WISE) */}
               {examSubTab === "results" && (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {/* Filter and search bar */}
-                  {displayMarks.length > 0 && (
+                  {availableExamTypes.length > 0 && (
                     <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[10px] font-extrabold uppercase text-slate-400 mr-1">Filter Test:</span>
@@ -2567,7 +2699,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         >
                           All ({displayMarks.length})
                         </button>
-                        {availableExamTypes.map((t: any) => {
+                        {availableExamTypes.map((t: string) => {
                           const count = displayMarks.filter((m: any) => m.exam_type === t).length;
                           return (
                             <button
@@ -2599,159 +2731,275 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     </div>
                   )}
 
-                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                    <div className="overflow-x-auto scroll-touch">
-                      <table className="w-full border-collapse text-left text-xs min-w-[700px]">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
-                            <th className="p-3">Exam / Test Type</th>
-                            <th className="p-3">Subject Details</th>
-                            <th className="p-3">Test Date</th>
-                            <th className="p-3 text-center">Marks Scored</th>
-                            <th className="p-3 text-center">Score %</th>
-                            <th className="p-3 text-center">Grade</th>
-                            <th className="p-3 text-center">Status</th>
-                            <th className="p-3">Evaluator & Remarks</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                          {examsLoading ? (
-                            <tr>
-                              <td colSpan={8} className="p-8 text-center text-slate-400 font-bold">
-                                Loading evaluated test scores...
-                              </td>
-                            </tr>
-                          ) : filteredMarks.length === 0 ? (
-                            <tr>
-                              <td colSpan={8} className="p-10 text-center text-slate-400">
-                                {displayMarks.length === 0 ? (
-                                  <div className="flex flex-col items-center justify-center gap-2">
-                                    <BookOpen className="h-8 w-8 text-slate-300" />
-                                    <p className="font-bold text-slate-600 text-sm">No Test Marks Published Yet</p>
-                                    <p className="text-xs text-slate-400 max-w-md">
-                                      As your subject mentors evaluate your test papers, your marks, percentages, and feedback will be posted here in real-time.
-                                    </p>
-                                  </div>
-                                ) : (
-                                  <div className="text-slate-500 text-xs">
-                                    No test marks matching your current filter.{" "}
-                                    <button
-                                      onClick={() => {
-                                        setMarksTypeFilter("all");
-                                        setMarksSearchTerm("");
-                                      }}
-                                      className="text-indigo-600 underline font-bold cursor-pointer"
-                                    >
-                                      Reset filters
-                                    </button>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          ) : (
-                            filteredMarks.map((m: any, idx: number) => {
-                              const isAbs = Boolean(m.is_absent);
-                              const marksNum = m.marks_obtained !== null && m.marks_obtained !== undefined ? parseFloat(m.marks_obtained) : null;
-                              const maxM = parseFloat(m.max_marks || 50);
-                              const passM = parseFloat(m.passing_marks || (maxM * 0.4) || 20);
-                              const pct = marksNum !== null && maxM > 0 ? Math.round((marksNum / maxM) * 100) : 0;
-                              const isPass = marksNum !== null && marksNum >= passM;
-
-                              return (
-                                <tr key={m.id || idx} className="hover:bg-slate-50/60 transition-colors">
-                                  <td className="p-3">
-                                    <span className="px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-150 text-indigo-700 text-[10.5px] font-extrabold shadow-2xs">
-                                      {m.exam_type}
-                                    </span>
-                                  </td>
-                                  <td className="p-3">
-                                    <div className="font-extrabold text-slate-900">{m.subject_name}</div>
-                                    {m.subject_code && (
-                                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">{m.subject_code}</div>
-                                    )}
-                                  </td>
-                                  <td className="p-3 text-slate-700 font-bold whitespace-nowrap">
-                                    {m.exam_date}
-                                  </td>
-                                  <td className="p-3 text-center font-extrabold">
-                                    {isAbs ? (
-                                      <span className="px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-600 font-mono text-[11px] font-black">
-                                        ABSENT
-                                      </span>
-                                    ) : marksNum !== null ? (
-                                      <div className="inline-flex items-baseline gap-1 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
-                                        <span className={`font-mono text-sm font-black ${isPass ? "text-slate-900" : "text-rose-600"}`}>
-                                          {marksNum}
-                                        </span>
-                                        <span className="text-slate-400 font-medium text-[10.5px]">/ {maxM}</span>
-                                      </div>
-                                    ) : (
-                                      <span className="text-amber-600 italic text-[11px]">Pending evaluation</span>
-                                    )}
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    {isAbs || marksNum === null ? (
-                                      <span className="text-slate-400">—</span>
-                                    ) : (
-                                      <div className="flex flex-col items-center gap-1">
-                                        <span className="font-black text-slate-800 text-[11px]">{pct}%</span>
-                                        <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                          <div
-                                            className={`h-full rounded-full transition-all ${
-                                              pct >= 75 ? "bg-emerald-500" : pct >= passM ? "bg-indigo-500" : "bg-rose-500"
-                                            }`}
-                                            style={{ width: `${Math.min(pct, 100)}%` }}
-                                          />
-                                        </div>
-                                      </div>
-                                    )}
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    <span
-                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                                        isAbs
-                                          ? "bg-slate-100 text-slate-600"
-                                          : m.grade === "O" || m.grade === "A+" || m.grade === "A"
-                                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                          : m.grade === "B+" || m.grade === "B"
-                                          ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                                          : isPass
-                                          ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                          : "bg-rose-50 text-rose-700 border border-rose-200"
-                                      }`}
-                                    >
-                                      {isAbs ? "AB" : m.grade || (isPass ? "PASS" : "RA")}
-                                    </span>
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    <span
-                                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[9.5px] font-black uppercase ${
-                                        isAbs
-                                          ? "bg-rose-50 text-rose-700 border border-rose-200"
-                                          : isPass
-                                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                          : "bg-rose-50 text-rose-700 border border-rose-200"
-                                      }`}
-                                    >
-                                      {isAbs ? "Absent" : isPass ? "Passed" : "Re-Appear"}
-                                    </span>
-                                  </td>
-                                  <td className="p-3 text-[11px] text-slate-600 max-w-[200px]">
-                                    <div className="font-bold text-slate-800">{m.evaluated_by || "Subject Mentor"}</div>
-                                    {m.remarks ? (
-                                      <div className="text-slate-500 text-[10px] italic mt-0.5 line-clamp-2">{m.remarks}</div>
-                                    ) : (
-                                      <div className="text-slate-400 text-[10px] italic">Verified</div>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
+                  {/* Exam-wise Grouped Cards */}
+                  {examsLoading ? (
+                    <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-400 font-bold shadow-sm">
+                      Loading evaluated test scores...
                     </div>
-                  </div>
+                  ) : availableExamTypes.length === 0 ? (
+                    <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-400 shadow-sm">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <BookOpen className="h-8 w-8 text-slate-300" />
+                        <p className="font-bold text-slate-600 text-sm">No Test Marks Published Yet</p>
+                        <p className="text-xs text-slate-400 max-w-md">
+                          As your subject mentors evaluate your test papers, your marks, percentages, and feedback will be posted here in real-time.
+                        </p>
+                      </div>
+                    </div>
+                  ) : examGroups.length === 0 ? (
+                    <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-500 text-xs shadow-sm">
+                      No test marks matching your current filter.{" "}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMarksTypeFilter("all");
+                          setMarksSearchTerm("");
+                        }}
+                        className="text-indigo-600 underline font-bold cursor-pointer"
+                      >
+                        Reset filters
+                      </button>
+                    </div>
+                  ) : (
+                    examGroups.map((group: any) => {
+                      return (
+                        <div
+                          key={group.type}
+                          className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden transition-all hover:border-slate-300"
+                        >
+                          {/* Group Header */}
+                          <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 via-indigo-50/20 to-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-xs shadow-xs uppercase">
+                                {group.type.slice(0, 4)}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="text-sm font-black text-slate-900 tracking-tight">{group.type}</h3>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-150">
+                                    {group.evalCount} / {group.totalSubjects} Evaluated
+                                  </span>
+                                  {group.pct !== null && (
+                                    <span
+                                      className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                        parseFloat(group.pct) >= 75
+                                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                          : parseFloat(group.pct) >= 40
+                                          ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                          : "bg-rose-50 text-rose-700 border border-rose-200"
+                                      }`}
+                                    >
+                                      Avg {group.pct}%
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-400 font-medium mt-0.5 flex items-center gap-2 flex-wrap">
+                                  {group.dateRangeStr && <span>📅 {group.dateRangeStr}</span>}
+                                  {group.arrearCount > 0 && (
+                                    <span className="text-rose-500 font-bold">• {group.arrearCount} Needs Attention</span>
+                                  )}
+                                  {group.arrearCount === 0 && group.evalCount > 0 && (
+                                    <span className="text-emerald-600 font-bold">• All Cleared</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Group Score Metrics */}
+                            {group.maxTotal > 0 && (
+                              <div className="flex items-center gap-3 bg-white px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs shadow-2xs">
+                                <div className="text-right">
+                                  <div className="text-[9px] font-black uppercase text-slate-400">Total Scored</div>
+                                  <div className="font-mono font-black text-slate-900">
+                                    {group.scoreTotal.toFixed(0)} / {group.maxTotal.toFixed(0)}
+                                  </div>
+                                </div>
+                                <div className="h-6 w-px bg-slate-200" />
+                                <div className="text-right">
+                                  <div className="text-[9px] font-black uppercase text-slate-400">Pass Rate</div>
+                                  <div
+                                    className={`font-mono font-black ${
+                                      group.arrearCount === 0 ? "text-emerald-600" : "text-amber-600"
+                                    }`}
+                                  >
+                                    {group.evalCount > 0 ? `${group.passCount}/${group.evalCount}` : "—"}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Group Subject Scorecards Table */}
+                          <div className="overflow-x-auto scroll-touch">
+                            <table className="w-full border-collapse text-left text-xs min-w-[700px]">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
+                                  <th className="p-3">Subject Details</th>
+                                  <th className="p-3">Test Date</th>
+                                  <th className="p-3 text-center">Marks Scored</th>
+                                  <th className="p-3 text-center">Score %</th>
+                                  <th className="p-3 text-center">Grade</th>
+                                  <th className="p-3 text-center">Status</th>
+                                  <th className="p-3">Evaluator & Remarks</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                                {/* 1. Evaluated Marks */}
+                                {group.typeMarks.map((m: any, idx: number) => {
+                                  const isAbs = Boolean(m.is_absent);
+                                  const marksNum =
+                                    m.marks_obtained !== null && m.marks_obtained !== undefined
+                                      ? parseFloat(m.marks_obtained)
+                                      : null;
+                                  const maxM = parseFloat(m.max_marks || 50);
+                                  const passM = parseFloat(m.passing_marks || (maxM * 0.4) || 20);
+                                  const pct = marksNum !== null && maxM > 0 ? Math.round((marksNum / maxM) * 100) : 0;
+                                  const isPass = marksNum !== null && marksNum >= passM;
+
+                                  return (
+                                    <tr key={m.id || `mark-${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                                      <td className="p-3">
+                                        <div className="font-extrabold text-slate-900">{m.subject_name}</div>
+                                        {m.subject_code && (
+                                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">{m.subject_code}</div>
+                                        )}
+                                      </td>
+                                      <td className="p-3 text-slate-700 font-bold whitespace-nowrap">
+                                        {m.exam_date}
+                                      </td>
+                                      <td className="p-3 text-center font-extrabold">
+                                        {isAbs ? (
+                                          <span className="px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-600 font-mono text-[11px] font-black">
+                                            ABSENT
+                                          </span>
+                                        ) : marksNum !== null ? (
+                                          <div className="inline-flex items-baseline gap-1 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
+                                            <span
+                                              className={`font-mono text-sm font-black ${
+                                                isPass ? "text-slate-900" : "text-rose-600"
+                                              }`}
+                                            >
+                                              {marksNum}
+                                            </span>
+                                            <span className="text-slate-400 font-medium text-[10.5px]">/ {maxM}</span>
+                                          </div>
+                                        ) : (
+                                          <span className="text-amber-600 italic text-[11px]">Pending evaluation</span>
+                                        )}
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        {isAbs || marksNum === null ? (
+                                          <span className="text-slate-400">—</span>
+                                        ) : (
+                                          <div className="flex flex-col items-center gap-1">
+                                            <span className="font-black text-slate-800 text-[11px]">{pct}%</span>
+                                            <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                              <div
+                                                className={`h-full rounded-full transition-all ${
+                                                  pct >= 75
+                                                    ? "bg-emerald-500"
+                                                    : pct >= passM
+                                                    ? "bg-indigo-500"
+                                                    : "bg-rose-500"
+                                                }`}
+                                                style={{ width: `${Math.min(pct, 100)}%` }}
+                                              />
+                                            </div>
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        <span
+                                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                            isAbs
+                                              ? "bg-slate-100 text-slate-600"
+                                              : m.grade === "O" || m.grade === "A+" || m.grade === "A"
+                                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                              : m.grade === "B+" || m.grade === "B"
+                                              ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                              : isPass
+                                              ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                              : "bg-rose-50 text-rose-700 border border-rose-200"
+                                          }`}
+                                        >
+                                          {isAbs ? "AB" : m.grade || (isPass ? "PASS" : "RA")}
+                                        </span>
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        <span
+                                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[9.5px] font-black uppercase ${
+                                            isAbs
+                                              ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                              : isPass
+                                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                              : "bg-rose-50 text-rose-700 border border-rose-200"
+                                          }`}
+                                        >
+                                          {isAbs ? "Absent" : isPass ? "Passed" : "Re-Appear"}
+                                        </span>
+                                      </td>
+                                      <td className="p-3 text-[11px] text-slate-600 max-w-[200px]">
+                                        <div className="font-bold text-slate-800">{m.evaluated_by || "Subject Mentor"}</div>
+                                        {m.remarks ? (
+                                          <div className="text-slate-500 text-[10px] italic mt-0.5 line-clamp-2">{m.remarks}</div>
+                                        ) : (
+                                          <div className="text-slate-400 text-[10px] italic">Verified</div>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+
+                                {/* 2. Scheduled Pending Exams */}
+                                {group.pendingExams.map((ex: any, idx: number) => {
+                                  return (
+                                    <tr
+                                      key={ex.id || `pending-${idx}`}
+                                      className="hover:bg-amber-50/20 transition-colors bg-slate-50/40"
+                                    >
+                                      <td className="p-3">
+                                        <div className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                                          <span>{ex.subject_name}</span>
+                                        </div>
+                                        {ex.subject_code && (
+                                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">{ex.subject_code}</div>
+                                        )}
+                                      </td>
+                                      <td className="p-3 text-slate-600 font-medium whitespace-nowrap">
+                                        {ex.exam_date}
+                                        {ex.session_time && (
+                                          <div className="text-[10px] text-slate-400 font-normal">{ex.session_time}</div>
+                                        )}
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        <span className="text-amber-600 italic text-[11px] font-medium">
+                                          Pending evaluation
+                                        </span>
+                                      </td>
+                                      <td className="p-3 text-center text-slate-400">—</td>
+                                      <td className="p-3 text-center">
+                                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-500 text-[9.5px] font-bold uppercase">
+                                          Scheduled
+                                        </span>
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9.5px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200">
+                                          Pending
+                                        </span>
+                                      </td>
+                                      <td className="p-3 text-[11px] text-slate-400 italic">
+                                        Awaiting faculty evaluation
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               )}
 
@@ -3377,7 +3625,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
           const allWeeks = Array.from({ length: 15 }, (_, i) => i + 1);
           const studentAcadSubjects = studentSubjects.filter(s => !isSkillSubject(s));
-          const availableAcadSubjects = studentAcadSubjects.length > 0 ? studentAcadSubjects : studentSubjects;
+          const availableAcadSubjects = studentAcadSubjects;
           const activeAcadSubjName = studentAcadSubject || availableAcadSubjects[0]?.name || "";
 
           // Academic stats for student
@@ -3478,6 +3726,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           </button>
                         );
                       })}
+                      {availableAcadSubjects.length === 0 && (
+                        <p className="text-xs text-slate-400 italic py-2">No academic courses enrolled in this semester.</p>
+                      )}
                     </div>
                   </div>
 
@@ -4720,6 +4971,394 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 </div>
               </div>
             </form>
+          );
+        })()}
+        {/* Tab: 1-on-1 Structured Interviews, GMeet & Rubric Assessment Hub */}
+        {activeTab === "interviews" && (() => {
+          // Flatten student slots and evaluations across both context and dynamic fetch
+          const allSlots: any[] = [];
+          const allEvals: any[] = [];
+
+          // 1. From dynamically fetched interviews
+          studentInterviewsList.forEach(iv => {
+            if (Array.isArray(iv.student_slots)) {
+              iv.student_slots.forEach((s: any) => {
+                const isStudentMatch = s.student_id === currentStudent?.id ||
+                  (s.student_name && currentStudent?.name && s.student_name.toLowerCase().trim() === currentStudent.name.toLowerCase().trim());
+                if (isStudentMatch) allSlots.push({ ...s, interviewType: iv.type, preferred_start_time: iv.preferred_start_time });
+              });
+            }
+            if (Array.isArray(iv.evaluations)) {
+              iv.evaluations.forEach((e: any) => {
+                const isStudentMatch = e.student_id === currentStudent?.id ||
+                  (e.student_name && currentStudent?.name && e.student_name.toLowerCase().trim() === currentStudent.name.toLowerCase().trim());
+                if (isStudentMatch) allEvals.push({ ...e, subject: iv.subject, target_date: iv.target_date, interviewType: iv.type });
+              });
+            }
+          });
+
+          // 2. From global context (fallback if dynamic not populated)
+          if (allEvals.length === 0 && Array.isArray(interviewEvaluations)) {
+            interviewEvaluations.forEach((e: any) => {
+              if (e.student_id === currentStudent?.id || (e.student_name && currentStudent?.name && e.student_name.toLowerCase().trim() === currentStudent.name.toLowerCase().trim())) {
+                allEvals.push(e);
+              }
+            });
+          }
+
+          // Deduplicate
+          const uniqueSlots = Array.from(new Map(allSlots.map(s => [s.id || `${s.interview_id}_${s.slot_start_time}`, s])).values());
+          const uniqueEvals = Array.from(new Map(allEvals.map(e => [e.id || `${e.interview_id}_${e.student_id}`, e])).values());
+
+          const upcomingSlots = uniqueSlots.filter(s => s.status !== "completed" && s.status !== "absent");
+          const evaluatedCount = uniqueEvals.length;
+          const clearedCount = uniqueEvals.filter(e => (e.status || "").toLowerCase().includes("clear")).length;
+          const avgScore = evaluatedCount > 0
+            ? (uniqueEvals.reduce((acc, e) => acc + (Number(e.total_score) || 0), 0) / evaluatedCount).toFixed(1)
+            : "—";
+
+          return (
+            <div className="space-y-6 animate-fadeIn pb-12">
+              {/* Header Card */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-[#D528A2] text-white flex items-center justify-center shadow-sm shrink-0">
+                    <Award className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h1 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                      1-on-1 Structured Technical Interviews
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200/80">
+                        Live Portal
+                      </span>
+                    </h1>
+                    <p className="text-xs text-slate-400 font-medium mt-0.5">
+                      Individual 15-minute faculty assessments, real Google Meet video conferences, and multi-pillar rubric scorecards.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => fetchStudentInterviews()}
+                    disabled={loadingStudentInterviews}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${loadingStudentInterviews ? "animate-spin" : ""}`} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* KPI Analytics Summary Bar */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs flex items-center gap-3.5">
+                  <div className="h-10 w-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Upcoming Slots</span>
+                    <span className="text-xl font-black text-slate-900">{upcomingSlots.length}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs flex items-center gap-3.5">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Cleared Sessions</span>
+                    <span className="text-xl font-black text-emerald-600">{clearedCount}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs flex items-center gap-3.5">
+                  <div className="h-10 w-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Avg Rubric Score</span>
+                    <span className="text-xl font-black text-indigo-700">{avgScore} {avgScore !== "—" ? "/ 10" : ""}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-xs flex items-center gap-3.5 bg-emerald-50/20">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <Activity className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-emerald-700 font-extrabold uppercase tracking-wider block">Period Attendance Sync</span>
+                    <span className="text-xs font-black text-emerald-800 flex items-center gap-1 mt-0.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Active & Synchronized
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 1: Upcoming Scheduled Interview Slots */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                      <Video className="h-4 w-4 text-indigo-600" />
+                      Scheduled 15-Minute Interview Sessions
+                    </h2>
+                    <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                      Join your Google Meet call at your exact allocated time window. Your timetable period attendance will update automatically.
+                    </p>
+                  </div>
+                  <span className="text-xs font-extrabold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+                    {upcomingSlots.length} Active
+                  </span>
+                </div>
+
+                {upcomingSlots.length === 0 ? (
+                  <div className="p-8 bg-white border border-dashed border-slate-200 rounded-2xl text-center space-y-3">
+                    <div className="h-12 w-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                      <Calendar className="h-6 w-6" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-bold text-slate-800">No Upcoming Interviews Scheduled</h3>
+                      <p className="text-xs text-slate-400 max-w-md mx-auto font-medium">
+                        When an internal or external faculty evaluation is scheduled for your cohort, your dedicated 15-minute slot, Google Meet link, and calendar invite will appear here.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {upcomingSlots.map((slot) => {
+                      const isInternal = slot.interviewType === "internal" || slot.mode === "in_person";
+                      const meetUrl = !isInternal ? slot.gmeet_link : null;
+                      const calUrl = !isInternal ? slot.gcal_link : null;
+
+                      return (
+                        <div
+                          key={slot.id || `${slot.interview_id}_${slot.slot_start_time}`}
+                          className="bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all duration-200 p-5 space-y-4 flex flex-col justify-between relative overflow-hidden group"
+                        >
+                          <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-indigo-500 via-[#D528A2] to-teal-400" />
+
+                          <div className="space-y-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full inline-block mb-1.5 border ${
+                                  isInternal
+                                    ? "bg-teal-50 text-teal-700 border-teal-200/80"
+                                    : "bg-indigo-50 text-indigo-700 border-indigo-200/80"
+                                }`}>
+                                  {isInternal ? "Internal Campus Evaluation (In-Person)" : "External Zone Panel (Virtual)"}
+                                </span>
+                                <h3 className="text-sm font-black text-slate-900 line-clamp-1">{slot.subject || "Technical Interview"}</h3>
+                              </div>
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                                {slot.status || "Scheduled"}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3 pt-1 text-xs">
+                              <div className="flex items-center gap-2 text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                <Calendar className="h-4 w-4 text-indigo-500 shrink-0" />
+                                <div>
+                                  <span className="text-[9px] font-extrabold text-slate-400 uppercase block">Date</span>
+                                  <span className="font-bold text-slate-800">{slot.target_date || "Upcoming"}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                <Clock className="h-4 w-4 text-[#D528A2] shrink-0" />
+                                <div>
+                                  <span className="text-[9px] font-extrabold text-slate-400 uppercase block">Allocated Slot</span>
+                                  <span className="font-bold text-slate-800 truncate block">
+                                    {slot.slot_start_time ? `${slot.slot_start_time} - ${slot.slot_end_time || ""}` : "Assigned Window"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="p-2.5 rounded-xl bg-slate-50/80 border border-slate-100 text-xs flex items-center justify-between">
+                              <span className="text-slate-500 font-medium">Evaluator:</span>
+                              <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                                <User className="h-3.5 w-3.5 text-slate-400" />
+                                {slot.mentor_name || "Assigned Faculty Member"}
+                              </span>
+                            </div>
+
+                            {isInternal && (
+                              <div className="p-2.5 rounded-lg bg-teal-50/70 border border-teal-200 text-[10.5px] text-teal-900 flex items-start gap-2">
+                                <MapPin className="h-4 w-4 text-teal-600 shrink-0 mt-0.5" />
+                                <div>
+                                  <strong className="block font-bold">Venue: In-Person Faculty Cabin / Lab</strong>
+                                  <span>Report directly to the assigned faculty room for your 15-minute evaluation slot.</span>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100 text-[10.5px] text-emerald-800 flex items-center gap-1.5">
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                              <span>Period Attendance will automatically mark <strong>Present</strong> upon faculty evaluation.</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                            {isInternal ? (
+                              <div className="flex-1 py-2.5 px-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-2">
+                                <User className="h-4 w-4 text-teal-600" />
+                                <span>In-Person Campus Interview</span>
+                              </div>
+                            ) : (
+                              <>
+                                {calUrl && (
+                                  <a
+                                    href={calUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 px-3 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold transition-all"
+                                    title="Add to Google Calendar"
+                                  >
+                                    <Calendar className="h-3.5 w-3.5 text-indigo-600" />
+                                    <span className="hidden sm:inline">Add to Cal</span>
+                                  </a>
+                                )}
+                                {meetUrl ? (
+                                  <a
+                                    href={meetUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex-1 btn-gradient py-2.5 rounded-xl text-xs font-extrabold text-white flex items-center justify-center gap-2 shadow-sm hover:opacity-95 transition-all cursor-pointer"
+                                  >
+                                    <Video className="h-4 w-4" />
+                                    <span>Join Google Meet</span>
+                                    <ExternalLink className="h-3 w-3 opacity-80" />
+                                  </a>
+                                ) : (
+                                  <div className="flex-1 py-2.5 px-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-500 text-xs font-medium text-center">
+                                    Virtual Room Link Pending
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2: Completed Evaluations & Multi-Criteria Rubric Breakdown */}
+              <div className="space-y-4 pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-[#D528A2]" />
+                      Interview Performance & Rubric Evaluations
+                    </h2>
+                    <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                      Comprehensive scorecards, faculty remarks, and individual criteria breakdown.
+                    </p>
+                  </div>
+                  <span className="text-xs font-extrabold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+                    {uniqueEvals.length} Completed
+                  </span>
+                </div>
+
+                {uniqueEvals.length === 0 ? (
+                  <div className="p-8 bg-white border border-dashed border-slate-200 rounded-2xl text-center space-y-2">
+                    <div className="h-12 w-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                      <Award className="h-6 w-6" />
+                    </div>
+                    <h3 className="text-sm font-bold text-slate-800">No Evaluations Recorded Yet</h3>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto font-medium">
+                      Your completed interview marks, rubrics, and faculty feedback will appear here once submitted.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {uniqueEvals.map((ev) => {
+                      const isAbsent = ev.attendance === "absent" || (ev.status || "").toLowerCase() === "absent";
+                      const isCleared = !isAbsent && (Number(ev.total_score) >= 6 || (ev.status || "").toLowerCase().includes("clear"));
+
+                      return (
+                        <div
+                          key={ev.id || `${ev.interview_id}_${ev.student_id}`}
+                          className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-6 space-y-5"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                                  {ev.interviewType === "external" ? "External Evaluation" : "Internal Evaluation"}
+                                </span>
+                                <span className="text-xs text-slate-400 font-semibold">{ev.target_date || "Completed"}</span>
+                              </div>
+                              <h3 className="text-base font-extrabold text-slate-900 mt-1">{ev.subject || "Technical Interview"}</h3>
+                              <p className="text-xs text-slate-500 font-medium">Evaluated by <strong className="text-slate-800">{ev.mentor_name || "Faculty Panel"}</strong></p>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <div className="text-right">
+                                <span className="text-[9px] text-slate-400 font-bold uppercase block">Overall Score</span>
+                                <span className={`text-2xl font-black ${isAbsent ? "text-rose-600" : isCleared ? "text-emerald-600" : "text-amber-600"}`}>
+                                  {isAbsent ? "0" : ev.total_score} <span className="text-xs text-slate-400 font-bold">/ 10</span>
+                                </span>
+                              </div>
+                              <span className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider ${
+                                isAbsent
+                                  ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                  : isCleared
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                              }`}>
+                                {isAbsent ? "Absent" : isCleared ? "Cleared" : "Needs Work"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {isAbsent ? (
+                            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center gap-2">
+                              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                              <span>Candidate was recorded absent for this interview session. The timetable period attendance reflects <strong>Absent</strong>.</span>
+                            </div>
+                          ) : (
+                            <>
+                              {/* 4-Criteria Rubric Grid */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center space-y-1">
+                                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">Communication</span>
+                                  <span className="text-lg font-black text-slate-800">{ev.communication_score ?? "—"} <span className="text-[10px] text-slate-400 font-bold">/ 10</span></span>
+                                </div>
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center space-y-1">
+                                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">Content & Concept</span>
+                                  <span className="text-lg font-black text-slate-800">{ev.content_score ?? "—"} <span className="text-[10px] text-slate-400 font-bold">/ 10</span></span>
+                                </div>
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center space-y-1">
+                                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">Technical Skill</span>
+                                  <span className="text-lg font-black text-slate-800">{ev.technical_score ?? "—"} <span className="text-[10px] text-slate-400 font-bold">/ 10</span></span>
+                                </div>
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center space-y-1">
+                                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">Confidence</span>
+                                  <span className="text-lg font-black text-slate-800">{ev.confidence_score ?? "—"} <span className="text-[10px] text-slate-400 font-bold">/ 10</span></span>
+                                </div>
+                              </div>
+
+                              {/* Remarks */}
+                              {ev.remarks && (
+                                <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-100 space-y-1">
+                                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Evaluator Feedback</span>
+                                  <p className="text-xs text-slate-700 font-medium italic">"{ev.remarks}"</p>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
           );
         })()}
       </main>

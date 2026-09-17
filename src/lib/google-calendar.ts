@@ -176,3 +176,26 @@ export async function createGoogleCalendarEvent(options: GoogleCalendarEventOpti
     event_created: eventCreated
   };
 }
+
+/**
+ * Generate a personalized 1-Click "Add to Google Calendar" link for an individual student
+ * with their exact 15-minute slot time and Google Meet link.
+ */
+export function generateStudentGCalUrl(options: {
+  studentName: string;
+  studentEmail?: string;
+  subject: string;
+  targetDate: string;
+  slotStartTime: string;
+  slotEndTime: string;
+  gmeetLink: string;
+  mentorName?: string;
+}): string {
+  const { studentName, studentEmail, subject, targetDate, slotStartTime, slotEndTime, gmeetLink, mentorName } = options;
+  const { startISO, endISO } = formatGCalDateTime(targetDate, slotStartTime);
+  const title = `Technical Interview: ${subject} - ${studentName}`;
+  const description = `1-on-1 Structured Evaluation Session\nSubject: ${subject}\nCandidate: ${studentName}\nEvaluator: ${mentorName || 'Faculty Panel'}\nSlot Time: ${slotStartTime} - ${slotEndTime}\n\nJoin Google Meet: ${gmeetLink}`;
+  const attendeesList = [studentEmail].filter(Boolean).join(",");
+  
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startISO}/${endISO}&details=${encodeURIComponent(description)}&location=${encodeURIComponent(gmeetLink)}${attendeesList ? `&add=${encodeURIComponent(attendeesList)}` : ""}`;
+}

@@ -51,7 +51,8 @@ import {
   Layers,
   ArrowUpRight,
   Save,
-  ArrowRight
+  ArrowRight,
+  Building
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -3955,6 +3956,20 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <button
                 type="button"
+                onClick={() => setActiveTab("interviews")}
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+              >
+                <div className="h-10 w-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0 group-hover:scale-105 transition-transform">
+                  <Award className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="block text-xs font-bold text-slate-800">Interview Module</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Evaluate student interviews & Google Meet</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveTab("handovers")}
                 className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
@@ -4133,11 +4148,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 <p className="text-[10px] text-purple-700 font-medium mt-0.5">
                                   Cohort: <strong>{inv.class_group || "All Cohorts"}</strong> • {inv.student_count || 10} Students
                                 </p>
-                                {inv.gmeet_link && (
+                                {inv.type === "internal" ? (
+                                  <div className="text-[10px] text-teal-700 font-bold mt-0.5 flex items-center gap-1">
+                                    <User className="h-3 w-3 text-teal-600" /> In-Person Evaluation (Faculty Cabin)
+                                  </div>
+                                ) : inv.gmeet_link ? (
                                   <div className="text-[10px] text-emerald-700 font-bold mt-0.5 flex items-center gap-1">
                                     <Video className="h-3 w-3" /> GMeet Link Available
                                   </div>
-                                )}
+                                ) : null}
                               </div>
                             </div>
                             <span className="text-xs font-black text-purple-700 group-hover:underline shrink-0">
@@ -5175,7 +5194,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     interviewSession.assigned_mentor_ids?.includes(currentMentor.id);
                                   const mySlots = (interviewSession.student_slots || []).filter((s: any) => s.mentor_id === currentMentor.id);
                                   const myCandidateCount = mySlots.length > 0 ? mySlots.length : (interviewSession.allocated_students || interviewSession.student_count || 3);
-                                  const meetLink = mySlots[0]?.gmeet_link || interviewSession.gmeet_link;
+                                  const isInternal = interviewSession.type === "internal" || mySlots[0]?.mode === "in_person";
+                                  const meetLink = !isInternal ? (mySlots[0]?.gmeet_link || interviewSession.gmeet_link) : null;
 
                                   return (
                                     <div
@@ -5203,7 +5223,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       </div>
 
                                       <div className="flex items-center justify-between text-[8px] mt-1 pt-1.5 border-t border-purple-200/60 font-black uppercase">
-                                        {meetLink ? (
+                                        {!isInternal && meetLink ? (
                                           <a
                                             href={meetLink}
                                             target="_blank"
@@ -5214,7 +5234,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                             <Video className="w-2.5 h-2.5" /> GMeet
                                           </a>
                                         ) : (
-                                          <span className="text-purple-600">15m Slots</span>
+                                          <span className="text-purple-600 font-mono">{isInternal ? "In-Person" : "15m Slots"}</span>
                                         )}
                                         <span className={`px-1.5 py-0.5 rounded text-[7.5px] ${isCompleted
                                             ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
@@ -8577,7 +8597,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     ? mentorFilteredSubjectObjs.map(s => s.name?.trim()).filter(Boolean)
                     : mentorAcadSubjects.length > 0
                       ? mentorAcadSubjects.map(s => s?.trim()).filter(Boolean)
-                      : (explicitMentorSubjects.length > 0 ? explicitMentorSubjects.map(s => s?.trim()).filter(Boolean) : ["Assigned Academic Subject"])
+                      : (explicitMentorSubjects.length > 0 ? explicitMentorSubjects.filter(s => !isSkillSubject(s)).map(s => s?.trim()).filter(Boolean) : ["Assigned Academic Subject"])
                 ));
 
                 const activeWeeklySubj = acadWeeklySubject && subjectOptions.includes(acadWeeklySubject)
