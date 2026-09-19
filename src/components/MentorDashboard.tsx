@@ -52,13 +52,15 @@ import {
   ArrowUpRight,
   Save,
   ArrowRight,
-  Building
+  Building,
+  CalendarRange
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
 const InterviewModule = dynamic(() => import("./InterviewModule").then(m => m.InterviewModule), { ssr: false });
 const MentorProfileModal = dynamic(() => import("./MentorProfileModal").then(m => m.MentorProfileModal), { ssr: false });
 const MentorExamMarksStudio = dynamic(() => import("./MentorExamMarksStudio").then(m => m.MentorExamMarksStudio), { ssr: false });
+import { MentorWeeklyPlanStudio } from "./WeeklyPlanStudio";
 
 import { CourseInfoButton } from "./CourseInfoModal";
 import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, calculateWeekOffsetForDate, isSlotOverlappingExamWindow } from "@/lib/utils";
@@ -1409,8 +1411,8 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
 };
 
 export interface MentorDashboardProps {
-  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews";
-  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews") => void;
+  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan";
+  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan") => void;
 }
 
 export const MentorDashboard: React.FC<MentorDashboardProps> = ({
@@ -1839,7 +1841,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         }, 6000);
       } else if (tabParam) {
         const normalized = tabParam === "schedule" ? "timetable" : tabParam === "leaves" ? "handovers" : tabParam === "marks" ? "exams" : tabParam;
-        if (["home", "timetable", "handovers", "attendance", "exams", "profile", "tracker", "academic_tracker", "demo_evaluations", "more_menu", "leave_requests", "interviews"].includes(normalized)) {
+        if (["home", "timetable", "handovers", "attendance", "exams", "profile", "tracker", "academic_tracker", "demo_evaluations", "more_menu", "leave_requests", "interviews", "weekly_plan"].includes(normalized)) {
           setActiveTab(normalized as any);
         }
       }
@@ -3839,6 +3841,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   { id: "exams", label: "Exam Marks Entry", icon: FileText },
                   { id: "academic_tracker", label: "Academic Tracker", icon: BookOpen },
                   { id: "tracker", label: "Skill Development Tracker", icon: GraduationCap },
+                  { id: "weekly_plan", label: "Weekly Teaching Plan", icon: CalendarRange },
                   { id: "leave_requests", label: "Leave & Permissions", icon: CalendarCheck2 },
                   { id: "handovers", label: "Handovers", icon: Clock },
                   { id: "profile", label: "Profile", icon: User }
@@ -7878,6 +7881,21 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         {activeTab === "interviews" && (
           <div className="space-y-6 font-sans">
             <InterviewModule currentUserRole="mentor" currentUserName={currentMentor?.name || "Mentor"} />
+          </div>
+        )}
+
+        {/* ── Tab: Weekly Teaching Plan Studio ── */}
+        {activeTab === "weekly_plan" && currentMentor && (
+          <div className="space-y-6">
+            <MentorWeeklyPlanStudio
+              mentorId={currentMentor.id}
+              mentorName={currentMentor.name}
+              collegeId={currentMentor.college_id}
+              collegeName={colleges.find(c => c.id === currentMentor.college_id)?.name}
+              department={currentMentor.department}
+              assignedClasses={mentorClasses}
+              assignedSubjects={mentorSubjects}
+            />
           </div>
         )}
 

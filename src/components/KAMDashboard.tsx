@@ -3,6 +3,7 @@
 import React, { useMemo } from "react";
 import { useApp } from "@/context/AppContext";
 import { CAMDashboard } from "./CAMDashboard";
+import { isSuperAdminSession } from "@/lib/superadmin";
 
 export interface KAMDashboardProps {
   activeTab?: string;
@@ -12,8 +13,8 @@ export interface KAMDashboardProps {
 export function KAMDashboard({ activeTab = "overview", onTabChange }: KAMDashboardProps = {}) {
   const { colleges: rawColleges, currentKAM } = useApp();
 
-  const storedUserEmail = typeof window !== "undefined" ? (localStorage.getItem("fp_user_email") || "") : "";
-  const isSuperAdmin = storedUserEmail.toLowerCase().trim() === "thanush@faceprep.in";
+  // Server-issued super-admin session flag (users.role === "admin") — no hardcoded identity
+  const isSuperAdmin = isSuperAdminSession();
 
   // Filter colleges strictly to those assigned to this KAM
   const assignedCollegeIds = useMemo(() => {

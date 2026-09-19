@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { isSuperAdminSession, SUPER_ADMIN_FLAG_KEY } from "@/lib/superadmin";
 import { useApp, Role } from "@/context/AppContext";
 import {
   LogOut,
@@ -61,7 +62,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
   const storedUserEmail = typeof window !== "undefined" ? (localStorage.getItem("fp_user_email") || "") : "";
-  const isSuperAdminEmail = storedUserEmail.toLowerCase().trim() === "thanush@faceprep.in";
+  const storedUserName = typeof window !== "undefined" ? (localStorage.getItem("fp_user_name") || "") : "";
+  // Server-issued super-admin session flag (users.role === "admin") — no hardcoded identity
+  const isSuperAdmin = isSuperAdminSession();
 
   const [selectedCampusScope, setSelectedCampusScope] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -82,7 +85,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
   const isLoggedInClient = typeof window !== "undefined" && localStorage.getItem("fp_logged_in") === "true";
   const storedRoleClient = typeof window !== "undefined" ? localStorage.getItem("fp_current_role") : null;
-  const isAuthorized = isLoggedInClient && (isSuperAdminEmail || currentRole === requiredRole || storedRoleClient === requiredRole);
+  const isAuthorized = isLoggedInClient && (isSuperAdmin || currentRole === requiredRole || storedRoleClient === requiredRole);
 
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
@@ -484,7 +487,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       const storedRole = typeof window !== "undefined" ? (localStorage.getItem("fp_current_role") || sessionStorage.getItem("fp_current_role")) : null;
       const activeRole = currentRole || storedRole;
 
-      if (!isSuperAdminEmail && activeRole && activeRole !== requiredRole && !isLoading && !isDataLoading) {
+      if (!isSuperAdmin && activeRole && activeRole !== requiredRole && !isLoading && !isDataLoading) {
         const targetPath = "/" + (activeRole === "fee_manager" ? "fee-manager" : activeRole);
         router.replace(targetPath);
       }
@@ -495,7 +498,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
         clearTimeout(routeProtectionTimeoutRef.current);
       }
     };
-  }, [isLoading, isDataLoading, requiredRole, router, isSuperAdminEmail]);
+  }, [isLoading, isDataLoading, requiredRole, router, isSuperAdmin]);
 
   const handleLogout = async () => {
     try {
@@ -508,6 +511,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     } catch (_) {}
 
     localStorage.removeItem("fp_logged_in");
+    localStorage.removeItem(SUPER_ADMIN_FLAG_KEY);
     localStorage.removeItem("fp_must_change_pass");
     localStorage.removeItem("fp_current_role");
     localStorage.removeItem("fp_user_id");
@@ -593,8 +597,8 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
 
 
-          {/* Master Global Region / Campus Scope Switcher (Restricted to thanush@faceprep.in) */}
-          {isSuperAdminEmail && (
+          {/* Master Global Region / Campus Scope Switcher (super-admin sessions only) */}
+          {isSuperAdmin && (
             <div className="relative">
               <button
                 type="button"
@@ -615,7 +619,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                 <div className="absolute right-0 mt-2.5 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl p-2 z-50 animate-fadeIn space-y-1 max-h-80 overflow-y-auto">
                   <div className="px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-indigo-600 border-b border-slate-100 flex items-center justify-between">
                     <span>Global Data Scope</span>
-                    <span className="text-[8px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Thanush</span>
+                    <span className="text-[8px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold">{storedUserName || "Super Admin"}</span>
                   </div>
 
                   <button

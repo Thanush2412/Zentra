@@ -36,10 +36,12 @@ import {
   Trash2,
   Save,
   SlidersHorizontal,
-  CheckSquare
+  CheckSquare,
+  CalendarRange
 } from "lucide-react";
+import { WeeklyPlanViewer } from "./WeeklyPlanStudio";
 
-type TabKey = "overview" | "demo_list" | "availability" | "reallocation" | "history" | "calendar" | "reallocation_hub";
+type TabKey = "overview" | "demo_list" | "weekly_plans" | "availability" | "reallocation" | "history" | "calendar" | "reallocation_hub";
 
 interface SMEDashboardProps {
   activeTab?: TabKey;
@@ -369,6 +371,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
   const sidebarNavItems = [
     { id: "overview", label: "Dashboard", icon: Sparkles, count: 0 },
     { id: "demo_list", label: "My Demos", icon: ClipboardList, count: totalAssigned },
+    { id: "weekly_plans", label: "Weekly Plans", icon: CalendarRange, count: 0 },
     { id: "availability", label: "Availability", icon: Calendar, count: 0 },
     { id: "reallocation", label: "Reallocation", icon: RefreshCw, count: pendingInboundRequests.length + affectedCount },
     { id: "history", label: "History", icon: FileText, count: completedCount }
@@ -1026,6 +1029,15 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                 )}
               </div>
             </Panel>
+          )}
+
+          {/* ═══════════════ TAB: WEEKLY TEACHING PLANS (SME CURRICULUM OVERSIGHT) ═══════════════ */}
+          {activeTab === "weekly_plans" && (
+            <WeeklyPlanViewer
+              role="sme"
+              reviewerName={currentSME?.name || "Subject Matter Expert"}
+              allColleges={colleges.map(c => ({ id: c.id, name: c.name }))}
+            />
           )}
 
           {/* ═══════════════ TAB 2: AVAILABILITY ═══════════════ */}

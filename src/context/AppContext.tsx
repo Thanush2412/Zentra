@@ -1059,18 +1059,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentRoleState(role);
 
     const userEmail = (localStorage.getItem("fp_user_email") || "").toLowerCase().trim();
-    const isThanushUser = userEmail === "thanush@faceprep.in";
+    // Identity issued by the server at login — lets the super-admin pick any workspace and
+    // still resolve their own profile without any hardcoded account ids.
+    const sessionUserId = localStorage.getItem("fp_user_id") || "";
 
     if (role === "mentor") {
-      const selectedId = userId || (isThanushUser ? "mentor_thanush" : currentMentor?.id);
-      const m = mentors.find((item) => item.id === selectedId || (isThanushUser && item.email.toLowerCase() === userEmail)) || mentors[0] || null;
+      const selectedId = userId || localStorage.getItem("fp_mentor_id") || sessionUserId || currentMentor?.id;
+      const m = mentors.find((item) => item.id === selectedId || (!!userEmail && String(item.email || "").toLowerCase() === userEmail)) || mentors[0] || null;
       setCurrentMentor(m);
       setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
       if (m) {
         localStorage.setItem("fp_mentor_id", m.id);
       }
     } else if (role === "cam") {
-      const targetCamId = userId || (isThanushUser ? "cam_thanush" : localStorage.getItem("fp_cam_id"));
+      const targetCamId = userId || localStorage.getItem("fp_cam_id") || sessionUserId;
       if (targetCamId) {
         localStorage.setItem("fp_cam_id", targetCamId);
         setCurrentMentor(null); setCurrentHR(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
@@ -1079,7 +1081,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
     } else if (role === "kam") {
-      const targetKamId = userId || (isThanushUser ? "kam_thanush" : localStorage.getItem("fp_kam_id"));
+      const targetKamId = userId || localStorage.getItem("fp_kam_id") || sessionUserId;
       if (targetKamId) {
         localStorage.setItem("fp_kam_id", targetKamId);
         setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentAdmin(null); setCurrentStudent(null);
@@ -1088,7 +1090,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
     } else if (role === "admin") {
-      const targetAdminId = userId || (isThanushUser ? "admin_thanush" : localStorage.getItem("fp_admin_id"));
+      const targetAdminId = userId || localStorage.getItem("fp_admin_id") || sessionUserId;
       if (targetAdminId) {
         localStorage.setItem("fp_admin_id", targetAdminId);
         setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentStudent(null);
@@ -1097,10 +1099,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
     } else if (role === "student") {
-      const targetStudentId = userId || (isThanushUser ? "std_thanush" : localStorage.getItem("fp_student_id"));
+      const targetStudentId = userId || localStorage.getItem("fp_student_id") || sessionUserId;
       if (targetStudentId) {
         localStorage.setItem("fp_student_id", targetStudentId);
-        const s = students.find((item) => item.id === targetStudentId || (isThanushUser && item.email.toLowerCase() === userEmail)) || students[0] || null;
+        const s = students.find((item) => item.id === targetStudentId || (!!userEmail && String(item.email || "").toLowerCase() === userEmail)) || students[0] || null;
         setCurrentStudent(s);
         setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentSME(null);
       }
@@ -1108,10 +1110,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem("fp_current_role", "fee_manager");
       setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
     } else if (role === "sme") {
-      const targetSmeId = userId || (isThanushUser ? "sme_thanush" : localStorage.getItem("fp_sme_id"));
+      const targetSmeId = userId || localStorage.getItem("fp_sme_id") || sessionUserId;
       if (targetSmeId) {
         localStorage.setItem("fp_sme_id", targetSmeId);
-        const s = smes.find((item) => item.id === targetSmeId || (isThanushUser && item.email.toLowerCase() === userEmail)) || smes[0] || null;
+        const s = smes.find((item) => item.id === targetSmeId || (!!userEmail && String(item.email || "").toLowerCase() === userEmail)) || smes[0] || null;
         setCurrentSME(s);
         setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
       }

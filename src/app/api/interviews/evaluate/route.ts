@@ -153,7 +153,7 @@ export async function POST(request: Request) {
 
         // 1. Resolve student record
         const student = await db.get(
-          "SELECT id, name, classGroup, department, college_id FROM students WHERE id = ? OR LOWER(name) = LOWER(?)",
+          `SELECT id, name, classgroup as "classGroup", department, college_id FROM students WHERE id = $1 OR LOWER(name) = LOWER($2)`,
           [student_id, student_name || ""]
         );
         const resolvedClassGroup = student?.classGroup || class_group || interview?.class_group || "";

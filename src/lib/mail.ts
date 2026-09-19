@@ -394,7 +394,7 @@ export async function sendMail({ to, subject, htmlBody }: { to: string; subject:
     // 1. PRIMARY: Brevo Transactional Email REST API v3 (xkeysib Key)
     const brevoApiKey = process.env.BREVO_API_KEY || "";
     const senderName = process.env.BREVO_SENDER_NAME || "FACE Prep E-Campus";
-    const senderEmail = process.env.BREVO_SENDER_EMAIL || "thanush@faceprep.in";
+    const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.SUPER_ADMIN_EMAIL || "no-reply@faceprep.in";
 
     if (brevoApiKey) {
       try {

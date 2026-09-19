@@ -70,10 +70,32 @@ Create a `.env.local` file in the root directory based on `.env.example`:
 # Zentra by FPC - Environment Variables
 NEXT_PUBLIC_GAS_MAIL_URL=https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec
 
-# Turso Cloud Database Credentials
+# Postgres / Turso Cloud Database Credentials
+DATABASE_URL="postgres://user:password@host:5432/database"
 TURSO_DATABASE_URL="libsql://your-database.turso.io"
 TURSO_AUTH_TOKEN="your_turso_auth_token_here"
+
+# Email delivery (Brevo transactional API)
+BREVO_API_KEY="xkeysib-your-key"
+BREVO_SENDER_EMAIL="notifications@yourdomain.com"
+BREVO_SENDER_NAME="FACE Prep E-Campus"
+
+# Optional: break-glass owner account (no identity is hardcoded in the codebase).
+# When both are set, these exact credentials provision/repair a users row with role = 'admin',
+# which is the role that unlocks every workspace. Leave unset to disable the bootstrap.
+SUPER_ADMIN_EMAIL="owner@yourdomain.com"
+SUPER_ADMIN_PASSWORD="a-strong-one-time-passphrase"
+SUPER_ADMIN_NAME="Super Admin"
 ```
+
+#### How admin access works
+
+Super-admin access is a **role**, not an email address:
+
+- `POST /api/login` verifies the submitted password against `users.password_hash` for **every** account — there is no bypass.
+- The response returns `isSuperAdmin: true` only when `users.role = 'admin'`.
+- The client stores that server verdict in the `fp_is_super_admin` session flag, and every dashboard/route reads the flag (or the DB role) instead of comparing an email.
+- To promote an account: `UPDATE users SET role = 'admin' WHERE LOWER(email) = LOWER('someone@example.com');`
 
 ### 3. Run Development Server
 ```bash

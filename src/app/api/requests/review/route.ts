@@ -318,7 +318,8 @@ export async function POST(request: Request) {
     // Asynchronously trigger email notification on approval/rejection
     try {
       const requestor = await db.get("SELECT email FROM mentors WHERE id = ?", handoverRequest.requestorId);
-      const requestorEmail = requestor?.email || "thanush@faceprep.in";
+      // Env-configured ops mailbox instead of a hardcoded personal address
+      const requestorEmail = requestor?.email || process.env.SUPER_ADMIN_EMAIL || process.env.BREVO_SENDER_EMAIL || "";
       const subject = `[FACE Prep E-Campus] Handover Request ${status === "approved" ? "Approved" : "Rejected"} - ${handoverRequest.course}`;
       
       const detailsList = [

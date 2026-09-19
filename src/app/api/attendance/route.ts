@@ -126,7 +126,7 @@ export async function POST(request: Request) {
           "UNION SELECT id FROM admin_users WHERE LOWER(id) = ? OR LOWER(email) = ? OR LOWER(name) = ?",
           lowerActor, lowerActor, lowerActor, lowerActor, lowerActor, lowerActor
         );
-        verifiedAdminOverride = !!adminCheck || lowerActor === "thanush@faceprep.in" || lowerActor === "admin" || lowerActor === "super admin";
+        verifiedAdminOverride = !!adminCheck || lowerActor === "admin" || lowerActor === "super admin";
       }
 
       if (currentCount >= 2 && !verifiedAdminOverride) {

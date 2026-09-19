@@ -229,6 +229,9 @@ const ScoreSlider = ({
   </div>
 );
 
+const isCandidatePlaceholder = (name?: string) =>
+  !name || /^(Candidate|Student)\s*#?\d*$/i.test(name.trim());
+
 const StudentConductedRosterDrawer = ({
   interview,
   cohortStudents,
@@ -237,6 +240,7 @@ const StudentConductedRosterDrawer = ({
   allColleges = [],
   userCollegeId,
   isCM = false,
+  initialTab,
   onClose
 }: {
   interview: any;
@@ -246,13 +250,31 @@ const StudentConductedRosterDrawer = ({
   allColleges?: any[];
   userCollegeId?: string;
   isCM?: boolean;
+  initialTab?: "mentors" | "students" | "logs";
   onClose: () => void;
 }) => {
   const isExternalSession = interview.type === "external";
   const hostCollegeId = interview.college_id || interview.origin_college_id;
   const isPartnerCM = isCM && isExternalSession && userCollegeId && hostCollegeId !== userCollegeId;
 
-  const [activeTab, setActiveTab] = useState<"mentors" | "students" | "logs">("mentors");
+  // Resilient session evaluations resolution (supports string/number ID, trimming, and eval_ID prefix)
+  const sessionEvals = useMemo(() => {
+    const rawId = String(interview.id || "").trim();
+    return (evaluations || []).filter(e => {
+      if (!e) return false;
+      const eIntId = String(e.interview_id || "").trim();
+      if (eIntId && rawId && (eIntId === rawId || eIntId.toLowerCase() === rawId.toLowerCase())) return true;
+      if (e.id && rawId && e.id.toLowerCase().startsWith(`eval_${rawId.toLowerCase()}_`)) return true;
+      return false;
+    });
+  }, [evaluations, interview.id]);
+  const evalCount = sessionEvals.length;
+  const isCompleted = interview.status === "completed";
+
+  // Default to 'students' tab if evaluations exist or requested, so CM immediately sees marks & questions
+  const [activeTab, setActiveTab] = useState<"mentors" | "students" | "logs">(
+    initialTab || (evalCount > 0 ? "students" : "mentors")
+  );
   const [studentSearch, setStudentSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "evaluated" | "pending" | "cleared" | "needs_work">("all");
   const [selectedEvaluationDetail, setSelectedEvaluationDetail] = useState<any | null>(null);
@@ -289,23 +311,27 @@ const StudentConductedRosterDrawer = ({
         }
       }
 
-      const isPlaceholderName = (name?: string) => !name || /^Candidate\s*#?\d*$/i.test(name.trim()) || /^Student\s*#?\d*$/i.test(name.trim());
-
       return relevantSlots.map((sl: any, sIdx: number) => {
         const found = cohortStudents.find(cs => 
-          (sl.student_id && (cs.id === sl.student_id || cs.register_number === sl.student_id)) ||
-          (sl.student_name && !isPlaceholderName(sl.student_name) && cs.name?.toLowerCase().trim() === sl.student_name?.toLowerCase().trim())
+          (sl.student_id && (cs.id === sl.student_id || cs.register_number === sl.student_id || cs.roll_number === sl.student_id)) ||
+          (sl.student_name && !isCandidatePlaceholder(sl.student_name) && cs.name?.toLowerCase().trim() === sl.student_name?.toLowerCase().trim())
         );
 
-        const resolvedName = (!isPlaceholderName(sl.student_name) ? sl.student_name : null) ||
+        const resolvedName = (!isCandidatePlaceholder(sl.student_name) ? sl.student_name : null) ||
           found?.name ||
           sl.student_name ||
           (sl.student_id ? `Student ${sl.student_id}` : `Student #${sIdx + 1}`);
 
+        const resolvedRegNo = found?.register_number || found?.roll_number || sl.register_number || sl.roll_number || sl.student_id || `REG-${1000 + sIdx}`;
+
         return {
-          id: sl.student_id || sl.studentId || found?.id || `slot_std_${sIdx + 1}`,
+          id: found?.id || sl.student_id || sl.studentId || `slot_std_${sIdx + 1}`,
+          dbId: found?.id,
+          slotStudentId: sl.student_id,
+          student_id: sl.student_id,
           name: resolvedName,
-          roll_number: found?.roll_number || sl.roll_number || sl.student_id || `REG-${1000 + sIdx}`,
+          roll_number: resolvedRegNo,
+          register_number: resolvedRegNo,
           classGroup: found?.classGroup || interview.class_group || "Cohort",
           department: found?.department || interview.class_group || "Cohort",
           slot_start_time: sl.slot_start_time,
@@ -319,7 +345,12 @@ const StudentConductedRosterDrawer = ({
 
     if (isPartnerCM && myCampusResponse?.accepted_student_capacity) {
       const cap = Number(myCampusResponse.accepted_student_capacity);
-      return cohortStudents.slice(0, cap);
+      return cohortStudents.slice(0, cap).map((s: any, idx: number) => ({
+        ...s,
+        dbId: s.id,
+        register_number: s.register_number || s.roll_number || s.id,
+        roll_number: s.register_number || s.roll_number || s.id
+      }));
     }
 
     const cohortMatching = cohortStudents.filter(s =>
@@ -329,11 +360,13 @@ const StudentConductedRosterDrawer = ({
         : (interview.college_id && s.college_id === interview.college_id)
     );
     const pool = cohortMatching.length > 0 ? cohortMatching : cohortStudents;
-    return pool.slice(0, maxSessionCount);
+    return pool.slice(0, maxSessionCount).map((s: any, idx: number) => ({
+      ...s,
+      dbId: s.id,
+      register_number: s.register_number || s.roll_number || s.id,
+      roll_number: s.register_number || s.roll_number || s.id
+    }));
   }, [slots, cohortStudents, interview, maxSessionCount, isPartnerCM, userCollegeId, myCollegeMentorIds, myCampusResponse]);
-  const sessionEvals = evaluations.filter(e => e.interview_id === interview.id);
-  const evalCount = sessionEvals.length;
-  const isCompleted = interview.status === "completed";
 
   // Resolve Google Meet Link with robust fallback for assigned sessions
   const sessionMeetLink = useMemo(() => {
@@ -428,17 +461,59 @@ const StudentConductedRosterDrawer = ({
     });
   }, [assignedMentorIds, allMentors, slots, sessionEvals, displayStudents.length, interview, allColleges, isPartnerCM, userCollegeId, myCollegeMentorIds]);
 
+  // Robust helper: find eval for a student using all available keys
+  const findEvalForStudent = (st: any): any | undefined => {
+    if (!st) return undefined;
+    const candidateIds = [
+      st.id,
+      st.dbId,
+      st.slotStudentId,
+      st.student_id,
+      st.register_number,
+      st.roll_number
+    ].filter(Boolean).map(x => String(x).trim().toLowerCase());
+
+    const cleanStName = (st.name || "").trim().toLowerCase();
+    const isPlaceholder = isCandidatePlaceholder(st.name);
+    const intIdLower = String(interview.id || "").trim().toLowerCase();
+
+    return sessionEvals.find(e => {
+      // 1. Direct candidate ID match
+      const eStudentId = String(e.student_id || "").trim().toLowerCase();
+      if (eStudentId && candidateIds.includes(eStudentId)) return true;
+
+      // 2. Check eval.id ending with any candidate key or exact pattern
+      if (e.id) {
+        const eIdLower = String(e.id).toLowerCase();
+        if (candidateIds.some(cid => eIdLower === `eval_${intIdLower}_${cid}` || eIdLower.endsWith(`_${cid}`))) {
+          return true;
+        }
+      }
+
+      // 3. Name match (fallback for real student names)
+      if (!isPlaceholder && cleanStName && e.student_name) {
+        const eNameClean = String(e.student_name).trim().toLowerCase();
+        if (eNameClean === cleanStName) return true;
+        if (cleanStName.length > 3 && eNameClean.length > 3) {
+          if (cleanStName.includes(eNameClean) || eNameClean.includes(cleanStName)) return true;
+        }
+      }
+
+      return false;
+    });
+  };
+
   // Filter students for Student Roster tab
   const filteredStudents = useMemo(() => {
     return displayStudents.filter((st: any) => {
-      const evaluation = sessionEvals.find(e => e.student_id === st.id);
+      const evaluation = findEvalForStudent(st);
       const isEval = Boolean(evaluation);
       const evalStatus = (evaluation?.status || "").toLowerCase();
 
       if (studentSearch.trim()) {
         const q = studentSearch.toLowerCase().trim();
         const matchName = (st.name || "").toLowerCase().includes(q);
-        const matchRoll = (st.roll_number || st.id || "").toLowerCase().includes(q);
+        const matchRoll = (st.roll_number || st.register_number || st.id || "").toLowerCase().includes(q);
         if (!matchName && !matchRoll) return false;
       }
 
@@ -655,9 +730,20 @@ const StudentConductedRosterDrawer = ({
                       </div>
 
                       <div>
-                        <div className="flex justify-between text-[10px] font-bold text-slate-500 mb-1">
+                        <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 mb-1">
                           <span>Evaluations</span>
-                          <span className="text-indigo-700 font-black">{m.evalCount} / {m.allocCount} ({mProgressPct}%)</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-indigo-700 font-black">{m.evalCount} / {m.allocCount} ({mProgressPct}%)</span>
+                            {m.evalCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setActiveTab("students")}
+                                className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
+                              >
+                                View Marks →
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                           <div
@@ -782,11 +868,8 @@ const StudentConductedRosterDrawer = ({
                   ) : (
                     filteredStudents.map((st: any, idx: number) => {
                       const isAssignedToSlot = assignedSlotStudentIds.includes(st.id) || (idx < displayStudents.length && (interview.status === "assigned" || interview.status === "completed" || interview.status === "pending_verification"));
-                      const slot = slots.find((s: any) => s.student_id === st.id);
-                      const evaluation = sessionEvals.find(e => 
-                        (st.id && e.student_id === st.id) || 
-                        (e.student_name && st.name && e.student_name.toLowerCase().trim() === st.name.toLowerCase().trim())
-                      );
+                      const slot = slots.find((s: any) => s.student_id === st.id || s.student_id === st.register_number);
+                      const evaluation = findEvalForStudent(st);
                       const isEval = Boolean(evaluation);
 
                       return (
@@ -1346,6 +1429,12 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   const [isAssigning, setIsAssigning] = useState(false);
   const [isMarkingComplete, setIsMarkingComplete] = useState<string | null>(null);
   const [viewingStudentRosterModal, setViewingStudentRosterModal] = useState<any | null>(null);
+  const [rosterInitialTab, setRosterInitialTab] = useState<"mentors" | "students" | "logs">("students");
+
+  const openRosterModal = (req: any, tab: "mentors" | "students" | "logs" = "students") => {
+    setViewingStudentRosterModal(req);
+    setRosterInitialTab(tab);
+  };
   const [expandedMentorTimetable, setExpandedMentorTimetable] = useState<string | null>(null);
 
   // Min date = today + 2 days
@@ -1650,6 +1739,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           content_score: isAbsent ? 0 : contentScore,
           technical_score: isAbsent ? 0 : techScore,
           confidence_score: isAbsent ? 0 : confidenceScore,
+          total_score: combinedScore,
           questions_asked: isAbsent ? "[]" : JSON.stringify(evalQuestions), // Structured JSON questions
           remarks: isAbsent ? (remarks || "Candidate absent for interview") : remarks,
           status: isAbsent ? "Absent" : (combinedScore >= 6 ? "Cleared" : "Needs Improvement"),
@@ -2093,74 +2183,78 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   const sessionStudents = (req: any) => {
     if (!req) return [];
 
-    // 1. If student_slots exist in the interview object:
-    if (req.student_slots && req.student_slots.length > 0) {
-      const isPlaceholderName = (name?: string) => !name || /^Candidate\s*#?\d*$/i.test(name.trim()) || /^Student\s*#?\d*$/i.test(name.trim());
+    // Helper: detect auto-generated placeholder names like "Candidate #3" or "Student xyz123"
+    const isPlaceholderName = (name?: string) =>
+      !name ||
+      /^Candidate\s*#?\d*$/i.test(name.trim()) ||
+      /^Student\s+[a-f0-9]{6,}$/i.test(name.trim()); // matches "Student abc12345" stubs
 
-      // If a mentor is logged in as an evaluator:
+    // ── Path 1: slots from DB ────────────────────────────────────────────────
+    if (req.student_slots && req.student_slots.length > 0) {
+      let slotsToRender = req.student_slots;
+
+      // Mentor: only show their assigned slots
       if (isMentor && currentMentor?.id) {
         const mySlots = req.student_slots.filter((s: any) => s.mentor_id === currentMentor.id);
-        
-        // If this mentor is an allocated evaluator with specific slots, return strictly their assigned slots!
         if (mySlots.length > 0) {
-          return mySlots.map((slot: any, idx: number) => {
-            const enrolled = students.find(st => 
-              (slot.student_id && (st.id === slot.student_id || st.register_number === slot.student_id || (st as any).roll_no === slot.student_id)) ||
-              (slot.student_name && !isPlaceholderName(slot.student_name) && st.name?.toLowerCase().trim() === slot.student_name?.toLowerCase().trim())
-            );
-
-            const cName = (!isPlaceholderName(slot.student_name) ? slot.student_name : null) || 
-              enrolled?.name || 
-              (slot.student_id ? `Student ${slot.student_id}` : `Student #${idx + 1}`);
-            const regNo = enrolled?.register_number || enrolled?.roll_number || (enrolled as any)?.roll_no || slot.register_number || slot.roll_number || slot.student_id || `REG-${1000 + idx}`;
-
-            return {
-              id: slot.student_id || slot.studentId || enrolled?.id || `slot_std_${idx + 1}`,
-              name: cName,
-              register_number: regNo,
-              roll_number: regNo,
-              classGroup: enrolled?.classGroup || req.class_group || "Cohort",
-              department: enrolled?.department || req.class_group || "Cohort",
-              slotTime: slot.slot_start_time ? `${slot.slot_start_time} - ${slot.slot_end_time}` : undefined,
-              gmeetLink: slot.gmeet_link || req.gmeet_link,
-              mentorId: slot.mentor_id,
-              mentorName: slot.mentor_name
-            };
-          });
+          slotsToRender = mySlots;
         }
       }
 
-      // If Raiser or CAM/Admin: return all allocated student slots
-      return req.student_slots.map((slot: any, idx: number) => {
-        const enrolled = students.find(st => 
-          (slot.student_id && (st.id === slot.student_id || st.register_number === slot.student_id || (st as any).roll_no === slot.student_id)) ||
-          (slot.student_name && !isPlaceholderName(slot.student_name) && st.name?.toLowerCase().trim() === slot.student_name?.toLowerCase().trim())
-        );
+      return slotsToRender.map((slot: any, idx: number) => {
+        // Try to find a matching enrolled student by ID or name
+        const enrolled = students.find((st: any) => {
+          const slotStudentId = slot.student_id || slot.studentId;
+          const slotStudentName = slot.student_name || slot.studentName;
+          if (slotStudentId && (
+            st.id === slotStudentId ||
+            st.register_number === slotStudentId ||
+            (st as any).roll_no === slotStudentId ||
+            st.roll_number === slotStudentId
+          )) return true;
+          // Only match by name if slot has a real (non-placeholder) name
+          if (slotStudentName && !isPlaceholderName(slotStudentName)) {
+            return st.name?.toLowerCase().trim() === slotStudentName.toLowerCase().trim();
+          }
+          return false;
+        });
 
-        const cName = (!isPlaceholderName(slot.student_name) ? slot.student_name : null) || 
-          enrolled?.name || 
-          (slot.student_id ? `Student ${slot.student_id}` : `Student #${idx + 1}`);
-        const regNo = enrolled?.register_number || enrolled?.roll_number || (enrolled as any)?.roll_no || slot.register_number || slot.roll_number || slot.student_id || `REG-${1000 + idx}`;
+        const slotStudentId = slot.student_id || slot.studentId;
+        const slotStudentName = slot.student_name || slot.studentName;
+
+        // Prefer enrolled record name; if not found use slot name (unless it's a stub)
+        const resolvedName =
+          enrolled?.name ||
+          (!isPlaceholderName(slotStudentName) ? slotStudentName : null) ||
+          (slotStudentId ? `ID: ${slotStudentId}` : `Student #${idx + 1}`);
+
+        const resolvedRegNo =
+          enrolled?.register_number ||
+          enrolled?.roll_number ||
+          (enrolled as any)?.roll_no ||
+          slot.register_number ||
+          slot.roll_number ||
+          slotStudentId ||
+          `REG-${1000 + idx}`;
 
         return {
-          id: slot.student_id || slot.studentId || enrolled?.id || `slot_std_${idx + 1}`,
-          name: cName,
-          register_number: regNo,
-          roll_number: regNo,
+          id: enrolled?.id || slotStudentId || `slot_std_${idx + 1}`,
+          name: resolvedName,
+          register_number: resolvedRegNo,
+          roll_number: resolvedRegNo,
           classGroup: enrolled?.classGroup || req.class_group || "Cohort",
           department: enrolled?.department || req.class_group || "Cohort",
           slotTime: slot.slot_start_time ? `${slot.slot_start_time} - ${slot.slot_end_time}` : undefined,
           gmeetLink: slot.gmeet_link || req.gmeet_link,
           mentorId: slot.mentor_id,
-          mentorName: slot.mentor_name
+          mentorName: slot.mentor_name,
         };
       });
     }
 
-    // 2. Fallback when student_slots table has not been populated yet:
-    let assignedCount = Math.max(1, Number(req?.allocated_students || req?.student_count || 46));
+    // ── Path 2: fallback — no slots yet, derive from students list ───────────
+    let assignedCount = Math.max(1, Number(req?.allocated_students || req?.student_count || 10));
 
-    // If mentor is an assigned evaluator, check mentor's batch slice (e.g. 3 candidates)
     if (isMentor && currentMentor?.id) {
       const assignedIds: string[] = req.assigned_mentor_ids ? JSON.parse(req.assigned_mentor_ids) : [];
       if (assignedIds.includes(currentMentor.id) && req.mentor_id !== currentMentor.id) {
@@ -2168,7 +2262,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         const batchSize = 3;
         const startIdx = myIndex * batchSize;
         const cohortList = req.class_group
-          ? students.filter(s => {
+          ? students.filter((s: any) => {
               if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
               const sCG = (s.classGroup || "").toLowerCase().trim();
               const sDept = (s.department || "").toLowerCase().trim();
@@ -2180,12 +2274,12 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         return pool.slice(startIdx, startIdx + batchSize).map((s: any) => ({
           ...s,
           register_number: s.register_number || s.roll_number || s.id,
-          roll_number: s.register_number || s.roll_number || s.id
+          roll_number: s.register_number || s.roll_number || s.id,
         }));
       }
     }
 
-    const filtered = students.filter(s => {
+    const filtered = students.filter((s: any) => {
       if (s.college_id && currentMentor?.college_id && s.college_id !== currentMentor.college_id) return false;
       const sCG = (s.classGroup || "").toLowerCase().trim();
       const sDept = (s.department || "").toLowerCase().trim();
@@ -2196,7 +2290,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     return listToSlice.slice(0, assignedCount).map((s: any) => ({
       ...s,
       register_number: s.register_number || s.roll_number || s.id,
-      roll_number: s.register_number || s.roll_number || s.id
+      roll_number: s.register_number || s.roll_number || s.id,
     }));
   };
 
@@ -2205,13 +2299,35 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       (m.subjects || "").toLowerCase().includes((req?.subject || "").toLowerCase().trim())
     );
 
-  const getEvalForStudent = (interviewId: string, studentId?: string, studentName?: string) =>
-    evaluationsList.find(ev => 
-      ev.interview_id === interviewId && (
-        (studentId && ev.student_id === studentId) ||
-        (studentName && ev.student_name && ev.student_name.toLowerCase().trim() === studentName.toLowerCase().trim())
-      )
-    );
+  const getEvalForStudent = (interviewId: string, studentId?: string, studentName?: string) => {
+    const rawIntId = String(interviewId || "").trim().toLowerCase();
+    const cleanStdId = String(studentId || "").trim().toLowerCase();
+    const cleanStdName = String(studentName || "").trim().toLowerCase();
+    const isPlaceholder = isCandidatePlaceholder(studentName);
+
+    return evaluationsList.find(ev => {
+      const evIntId = String(ev.interview_id || "").trim().toLowerCase();
+      const intMatches = evIntId === rawIntId || (ev.id && rawIntId && String(ev.id).toLowerCase().startsWith(`eval_${rawIntId}_`));
+      if (!intMatches) return false;
+
+      // 1. Direct student_id match
+      if (cleanStdId && ev.student_id && String(ev.student_id).trim().toLowerCase() === cleanStdId) return true;
+      // 2. Eval ID pattern: eval_{interview_id}_{student_id} or ends with student_id
+      if (cleanStdId && ev.id) {
+        const evIdLower = String(ev.id).toLowerCase();
+        if (evIdLower === `eval_${rawIntId}_${cleanStdId}` || evIdLower.endsWith(`_${cleanStdId}`)) return true;
+      }
+      // 3. Name match (case-insensitive, only real names)
+      if (!isPlaceholder && cleanStdName && ev.student_name) {
+        const evNameLower = String(ev.student_name).trim().toLowerCase();
+        if (evNameLower === cleanStdName) return true;
+        if (cleanStdName.length > 3 && evNameLower.length > 3) {
+          if (cleanStdName.includes(evNameLower) || evNameLower.includes(cleanStdName)) return true;
+        }
+      }
+      return false;
+    });
+  };
 
   // Filtered student list for Evaluation drawer
   const activeReq = interviewsList.find(i => i.id === expandedRequest);
@@ -2227,13 +2343,13 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
     // Status filter
     if (studentStatusFilter === "pending") {
-      list = list.filter((s: any) => !getEvalForStudent(activeReq.id, s.id));
+      list = list.filter((s: any) => !getEvalForStudent(activeReq.id, s.id, s.name));
     } else if (studentStatusFilter === "evaluated") {
-      list = list.filter((s: any) => Boolean(getEvalForStudent(activeReq.id, s.id)));
+      list = list.filter((s: any) => Boolean(getEvalForStudent(activeReq.id, s.id, s.name)));
     } else if (studentStatusFilter === "cleared") {
       list = list.filter((s: any) => {
-        const ev = getEvalForStudent(activeReq.id, s.id);
-        return ev && ev.status === "Cleared";
+        const ev = getEvalForStudent(activeReq.id, s.id, s.name);
+        return ev && (ev.status === "Cleared" || (ev.status || "").toLowerCase().includes("clear"));
       });
     }
 
@@ -2942,7 +3058,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
                       <div className="flex items-center gap-2 shrink-0 flex-wrap">
                         <button
-                          onClick={() => setViewingStudentRosterModal(req)}
+                          onClick={() => openRosterModal(req, "students")}
                           className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold px-3 py-2 rounded-xl transition-all cursor-pointer border border-slate-200 shadow-2xs"
                         >
                           <Users className="w-3.5 h-3.5 text-indigo-600" />
@@ -3498,11 +3614,21 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                         );
                       })()}
                       <button
-                        onClick={() => setViewingStudentRosterModal(req)}
-                        className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold px-3 py-2 rounded-xl transition-all cursor-pointer border border-slate-200 shadow-2xs"
+                        onClick={() => openRosterModal(req, "students")}
+                        className={`flex items-center gap-1.5 text-xs font-extrabold px-3 py-2 rounded-xl transition-all cursor-pointer border shadow-2xs ${
+                          (req.evaluated_students || 0) > 0
+                            ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
+                            : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                        }`}
+                        title="View Student Roster, Marks, Evaluated Questions & Rubrics"
                       >
-                        <Users className="w-3.5 h-3.5 text-indigo-600" />
-                        Student Conducted Roster
+                        <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Student Marks &amp; Questions</span>
+                        {(req.evaluated_students || 0) > 0 && (
+                          <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-indigo-600 text-white">
+                            {req.evaluated_students}
+                          </span>
+                        )}
                       </button>
                       <button
                         onClick={() => {
@@ -4215,8 +4341,8 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <button
-                              onClick={() => setViewingStudentRosterModal(i)}
-                              title="View Assigned Faculty, Student Roster & Logs"
+                              onClick={() => openRosterModal(i, "students")}
+                              title="View Assigned Faculty, Student Roster, Marks & Questions"
                               className="flex items-center gap-1 text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-[10px] font-extrabold px-2.5 py-1.5 rounded-lg transition-all shadow-2xs cursor-pointer whitespace-nowrap"
                             >
                               <Eye className="w-3.5 h-3.5 text-indigo-600" />
@@ -4325,8 +4451,8 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                         <td className="px-4 py-3"><StatusBadge status={i.status || "pending_cm"} /></td>
                         <td className="px-4 py-3">
                           <button
-                            onClick={() => setViewingStudentRosterModal(i)}
-                            title="View Assigned Faculty, Student Roster & Logs"
+                            onClick={() => openRosterModal(i, "students")}
+                            title="View Assigned Faculty, Student Roster, Marks & Questions"
                             className="flex items-center gap-1 text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-[10px] font-extrabold px-2.5 py-1.5 rounded-lg transition-all shadow-2xs cursor-pointer whitespace-nowrap"
                           >
                             <Eye className="w-3.5 h-3.5 text-indigo-600" />
@@ -4353,6 +4479,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           allColleges={activeCollegesList || colleges}
           userCollegeId={defaultCollegeId || currentMentor?.college_id}
           isCM={isCM}
+          initialTab={rosterInitialTab}
           onClose={() => setViewingStudentRosterModal(null)}
         />
       )}

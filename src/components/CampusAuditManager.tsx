@@ -37,7 +37,14 @@ import {
   Lock,
   Layers,
   Percent,
-  LifeBuoy
+  LifeBuoy,
+  Handshake,
+  Camera,
+  RefreshCw,
+  MapPin,
+  Star,
+  ImageIcon,
+  History
 } from "lucide-react";
 
 // ============================================================================
@@ -102,17 +109,22 @@ export const KAM_CLUSTERS: Record<string, KAMClusterInfo> = {
   }
 };
 
-export function resolveKAMForCampus(campusName?: string): { kam: string; region: string; matchedCampus: string } {
+export function resolveKAMForCampus(campusName?: string): { kam: string; region: string; matchedCampus: string; campuses: string[] } {
   const norm = (campusName || "").trim().toLowerCase();
   for (const [kam, info] of Object.entries(KAM_CLUSTERS)) {
     for (const c of info.campuses) {
       if (c.trim().toLowerCase() === norm || norm.includes(c.trim().toLowerCase()) || c.trim().toLowerCase().includes(norm)) {
-        return { kam, region: info.region, matchedCampus: c };
+        return { kam, region: info.region, matchedCampus: c, campuses: info.campuses };
       }
     }
   }
   // Default fallback to Chennai cluster if unmapped
-  return { kam: "Shyam Kumar", region: "Chennai", matchedCampus: campusName || "SDNB Vaishnav College for Women" };
+  return {
+    kam: "Shyam Kumar",
+    region: "Chennai",
+    matchedCampus: campusName || "SDNB Vaishnav College for Women",
+    campuses: KAM_CLUSTERS["Shyam Kumar"]?.campuses || []
+  };
 }
 
 // ============================================================================
@@ -255,7 +267,7 @@ const STORAGE_KEY_PEER_HISTORY = "fp_campus_audit_peer_history_v2";
 // ============================================================================
 // INITIAL REALISTIC SEED DATA (Naveen's Cluster Records)
 // ============================================================================
-const INITIAL_SKILL_RECORDS: SkillAuditRecord[] = [
+export const INITIAL_SKILL_RECORDS: SkillAuditRecord[] = [
   {
     uid: "sk_001",
     id: "LOG-SK-801",
@@ -330,7 +342,7 @@ const INITIAL_SKILL_RECORDS: SkillAuditRecord[] = [
   }
 ];
 
-const INITIAL_ACADEMIC_RECORDS: AcademicAuditRecord[] = [
+export const INITIAL_ACADEMIC_RECORDS: AcademicAuditRecord[] = [
   {
     uid: "ac_001",
     id: "TSK-AC-401",
@@ -375,7 +387,7 @@ const INITIAL_ACADEMIC_RECORDS: AcademicAuditRecord[] = [
   }
 ];
 
-const INITIAL_ATTENDANCE_RECORDS: AttendanceAuditRecord[] = [
+export const INITIAL_ATTENDANCE_RECORDS: AttendanceAuditRecord[] = [
   {
     uid: "at_001",
     id: "ATT-VER-301",
@@ -485,6 +497,454 @@ const CAMPUS_TICKETS_SAMPLE = [
 ];
 
 // ============================================================================
+// 2b. CLASSROOM OBSERVATION VIEW (form + gallery, college-scoped)
+// ============================================================================
+
+const OBS_RATING_DIMS = [
+  { key: "rating_professionalism", label: "Professionalism" },
+  { key: "rating_class_handling", label: "Class Handling" },
+  { key: "rating_skill_development", label: "Skill Development" },
+  { key: "rating_student_engagement", label: "Student Engagement" },
+  { key: "rating_tasks_followup", label: "Tasks Follow-up" },
+  { key: "rating_session_plan_adherence", label: "Session Plan Adherence" },
+  { key: "rating_study_material_sharing", label: "Material Sharing" }
+] as const;
+
+export const ClassObservationView: React.FC<{
+  collegeName: string;
+  userName: string;
+  observations: any[];
+  loading: boolean;
+  error: string;
+  onRefresh: () => void;
+  showForm: boolean;
+  setShowForm: (v: boolean) => void;
+  saving: boolean;
+  setSaving: (v: boolean) => void;
+  detail: any | null;
+  setDetail: (v: any | null) => void;
+}> = ({ collegeName, userName, observations, loading, error, onRefresh, showForm, setShowForm, saving, setSaving, detail, setDetail }) => {
+  const { toast } = useToast();
+  const [fTeacher, setFTeacher] = useState("");
+  const [fDept, setFDept] = useState("");
+  const [fSubject, setFSubject] = useState("");
+  const [fDate, setFDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [fPhoto, setFPhoto] = useState<File | null>(null);
+  const [fPhotoPreview, setFPhotoPreview] = useState("");
+  const [fRatings, setFRatings] = useState<Record<string, number>>({});
+  const [fOverall, setFOverall] = useState(4);
+  const [fSatisfaction, setFSatisfaction] = useState<"satisfied" | "not_satisfied">("satisfied");
+  const [fRemarks, setFRemarks] = useState("");
+
+  const resetForm = () => {
+    setFTeacher(""); setFDept(""); setFSubject("");
+    setFDate(new Date().toISOString().slice(0, 10)); setFPhoto(null); setFPhotoPreview("");
+    setFRatings({}); setFOverall(4); setFSatisfaction("satisfied"); setFRemarks("");
+  };
+
+  const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+
+  const handleSubmit = async () => {
+    if (!fTeacher.trim()) { toast("Enter the mentor / teacher observed.", "warning"); return; }
+    if (fSatisfaction === "not_satisfied" && wordCount(fRemarks) < 20) {
+      toast("For 'Not Satisfied', remarks must be at least 20 words explaining the concerns.", "warning");
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        college: collegeName,
+        manager_name: userName || null,
+        class_name: fDept || null,
+        department: fDept || null,
+        subject: fSubject || null,
+        course_name: fSubject || null,
+        teacher_name: fTeacher.trim() || null,
+        mentor_name: fTeacher.trim() || null,
+        notes: fRemarks || null,
+        comments: fRemarks || null,
+        observation_date: fDate || null,
+        rating_professionalism: fRatings.rating_professionalism ?? null,
+        rating_class_handling: fRatings.rating_class_handling ?? null,
+        rating_skill_development: fRatings.rating_skill_development ?? null,
+        rating_student_engagement: fRatings.rating_student_engagement ?? null,
+        rating_tasks_followup: fRatings.rating_tasks_followup ?? null,
+        rating_session_plan_adherence: fRatings.rating_session_plan_adherence ?? null,
+        rating_study_material_sharing: fRatings.rating_study_material_sharing ?? null,
+        overall_rating: fOverall,
+        satisfaction_status: fSatisfaction,
+        satisfaction_remarks: fRemarks || null
+      };
+      let res: Response;
+      if (fPhoto) {
+        const fd = new FormData();
+        fd.append("photo", fPhoto);
+        fd.append("payload", JSON.stringify(payload));
+        res = await fetch("/api/audit/observations", { method: "POST", body: fd });
+      } else {
+        res = await fetch("/api/audit/observations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      }
+      const data = await res.json();
+      if (data.success) {
+        toast(
+          fSatisfaction === "not_satisfied"
+            ? "Observation logged & escalation email sent to senior management."
+            : "Classroom observation logged successfully.",
+          "success"
+        );
+        resetForm();
+        setShowForm(false);
+        onRefresh();
+      } else {
+        toast(data.message || "Failed to save observation.", "error");
+      }
+    } catch (e: any) {
+      toast("Network error while saving observation.", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const avgObs = observations.length > 0
+    ? Math.round((observations.reduce((s, o) => s + (Number(o.overall_rating) || 0), 0) / observations.length) * 10) / 10
+    : null;
+  const notSatisfiedCount = observations.filter(o => o.satisfaction_status === "not_satisfied").length;
+  const thisMonthCount = observations.filter(o => (o.observation_date || String(o.created_at || "")).slice(0, 7) === new Date().toISOString().slice(0, 7)).length;
+
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2">
+            <Camera className="h-5 w-5 text-orange-600" />
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                Classroom Observation Log ({collegeName})
+              </h3>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Log classroom visits with photo evidence, dimension ratings, and satisfaction status. Not-satisfied entries escalate to senior management automatically.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors cursor-pointer"
+              title="Refresh"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowForm(!showForm)}
+              className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                showForm ? "bg-slate-200 text-slate-700 hover:bg-slate-300" : "bg-orange-600 hover:bg-orange-700 text-white"
+              }`}
+            >
+              <Camera className="h-4 w-4" />
+              <span>{showForm ? "Close Form" : "Log Observation"}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs">
+          <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 block">Total Observations</span>
+          <div className="text-2xl font-black text-slate-900 mt-1">{observations.length}</div>
+        </div>
+        <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl shadow-2xs">
+          <span className="text-[9px] font-black uppercase tracking-wider text-indigo-700 block">This Month</span>
+          <div className="text-2xl font-black text-indigo-900 mt-1">{thisMonthCount}</div>
+        </div>
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl shadow-2xs">
+          <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 block">Avg Overall Rating</span>
+          <div className="text-2xl font-black text-emerald-900 mt-1">{avgObs ?? "—"}</div>
+          <span className="text-[10px] text-emerald-700 font-medium">out of 5</span>
+        </div>
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl shadow-2xs">
+          <span className="text-[9px] font-black uppercase tracking-wider text-rose-700 block">Not Satisfied Flags</span>
+          <div className="text-2xl font-black text-rose-900 mt-1">{notSatisfiedCount}</div>
+          <span className="text-[10px] text-rose-700 font-medium">escalated</span>
+        </div>
+      </div>
+
+      {error && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700">{error}</div>
+      )}
+
+      {/* Entry form */}
+      {showForm && (
+        <div className="bg-white border-2 border-orange-200 rounded-2xl p-5 shadow-xs space-y-4">
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+            <Sparkles className="h-4 w-4 text-orange-500" />
+            <span className="text-xs font-black text-slate-800 uppercase tracking-wider">New Observation Entry</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Mentor / Teacher *</label>
+              <input value={fTeacher} onChange={(e) => setFTeacher(e.target.value)} placeholder="Faculty observed"
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-1 focus:ring-orange-500" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Class / Department</label>
+              <input value={fDept} onChange={(e) => setFDept(e.target.value)} placeholder="e.g. B.Sc CS — Sem 3"
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-1 focus:ring-orange-500" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Subject / Course</label>
+              <input value={fSubject} onChange={(e) => setFSubject(e.target.value)} placeholder="Subject taught"
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-1 focus:ring-orange-500" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Observation Date</label>
+              <input type="date" value={fDate} onChange={(e) => setFDate(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-1 focus:ring-orange-500" />
+            </div>
+          </div>
+
+          {/* Dimension ratings */}
+          <div>
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider block mb-2">Dimension Ratings (1–5)</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {OBS_RATING_DIMS.map((d) => (
+                <div key={d.key} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                  <span className="text-[10.5px] font-bold text-slate-700">{d.label}</span>
+                  <select
+                    value={fRatings[d.key] ?? ""}
+                    onChange={(e) => setFRatings(prev => ({ ...prev, [d.key]: Number(e.target.value) }))}
+                    className="bg-white border border-slate-200 rounded-lg text-[11px] font-black px-1.5 py-0.5 cursor-pointer focus:outline-hidden"
+                  >
+                    <option value="">—</option>
+                    {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider block mb-2">Overall Rating *</span>
+              <div className="flex items-center gap-2">
+                {[1, 2, 3, 4, 5].map(n => (
+                  <button key={n} type="button" onClick={() => setFOverall(n)}
+                    className={`p-1 cursor-pointer transition-transform hover:scale-110 ${n <= fOverall ? "text-amber-400" : "text-slate-300"}`}>
+                    <Star className={`h-7 w-7 ${n <= fOverall ? "fill-amber-400" : ""}`} />
+                  </button>
+                ))}
+                <span className="text-xs font-black text-slate-600 ml-1">{fOverall}/5</span>
+              </div>
+            </div>
+            <div>
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider block mb-2">Satisfaction Status *</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setFSatisfaction("satisfied")}
+                  className={`flex-1 py-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                    fSatisfaction === "satisfied" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200 hover:border-emerald-400"
+                  }`}>
+                  ✓ Satisfied
+                </button>
+                <button type="button" onClick={() => setFSatisfaction("not_satisfied")}
+                  className={`flex-1 py-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                    fSatisfaction === "not_satisfied" ? "bg-rose-600 text-white border-rose-600" : "bg-white text-slate-600 border-slate-200 hover:border-rose-400"
+                  }`}>
+                  ✗ Not Satisfied
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">
+              {fSatisfaction === "not_satisfied" ? "Remarks (min 20 words, required) *" : "Remarks / Observations"}
+            </label>
+            <textarea rows={3} value={fRemarks} onChange={(e) => setFRemarks(e.target.value)}
+              placeholder="What did you observe during the classroom visit? Teaching quality, engagement, discipline, infrastructure…"
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-1 focus:ring-orange-500" />
+            {fSatisfaction === "not_satisfied" && (
+              <span className={`text-[10px] font-bold ${wordCount(fRemarks) >= 20 ? "text-emerald-600" : "text-rose-500"}`}>
+                {wordCount(fRemarks)}/20 words minimum
+              </span>
+            )}
+          </div>
+
+          {/* Photo upload */}
+          <div>
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider block mb-2">Classroom Photo Evidence (optional, max 8MB)</span>
+            {fPhotoPreview ? (
+              <div className="relative inline-block">
+                <img src={fPhotoPreview} alt="preview" className="h-28 rounded-xl border border-slate-200 object-cover" />
+                <button type="button"
+                  onClick={() => { setFPhoto(null); setFPhotoPreview(""); }}
+                  className="absolute -top-2 -right-2 h-6 w-6 bg-rose-600 text-white rounded-full text-xs font-black cursor-pointer shadow-md">
+                  ×
+                </button>
+              </div>
+            ) : (
+              <label className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl text-xs font-bold text-slate-500 hover:border-orange-400 hover:text-orange-600 transition-all cursor-pointer">
+                <ImageIcon className="h-4 w-4" />
+                Choose photo
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    setFPhoto(f);
+                    if (f) setFPhotoPreview(URL.createObjectURL(f));
+                  }} />
+              </label>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-1">
+            <button type="button" onClick={handleSubmit} disabled={saving}
+              className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-xs">
+              {saving ? (
+                <><RefreshCw className="h-4 w-4 animate-spin" /><span>Saving…</span></>
+              ) : (
+                <><Check className="h-4 w-4" /><span>Submit Observation</span></>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Gallery */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+        <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+          <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Observation Ledger</span>
+          <span className="text-[10px] font-bold text-slate-500">{observations.length} entries</span>
+        </div>
+        {loading && observations.length === 0 ? (
+          <div className="p-10 text-center text-xs font-bold text-slate-400 animate-pulse">Loading observations…</div>
+        ) : observations.length === 0 ? (
+          <div className="p-10 text-center space-y-1">
+            <Camera className="h-8 w-8 text-slate-300 mx-auto" />
+            <p className="text-xs text-slate-400 font-bold">No observations logged for this campus yet.</p>
+            <p className="text-[10px] text-slate-400 font-medium">Use &quot;Log Observation&quot; to record your first classroom visit.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 max-h-[480px] overflow-y-auto">
+            {observations.map((o) => {
+              const rating = Number(o.overall_rating) || 0;
+              const isNotSat = o.satisfaction_status === "not_satisfied";
+              return (
+                <button key={o.id || o.created_at} type="button" onClick={() => setDetail(o)}
+                  className="w-full p-4 flex items-center justify-between hover:bg-slate-50/60 transition-colors text-left cursor-pointer">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {o.photo_url ? (
+                      <img src={o.photo_url} alt="" className="h-11 w-11 rounded-lg object-cover border border-slate-200 shrink-0" />
+                    ) : (
+                      <div className="h-11 w-11 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                        <Camera className="h-4 w-4 text-slate-400" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 text-xs truncate">{o.mentor_name || o.teacher_name || "Unknown mentor"}</div>
+                      <div className="text-[10px] text-slate-400 font-medium truncate">
+                        {o.department || o.class_name || "—"} · {o.observation_date ? new Date(o.observation_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${
+                      isNotSat ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    }`}>
+                      {isNotSat ? "Not Satisfied" : "Satisfied"}
+                    </span>
+                    <span className={`text-sm font-black ${rating >= 4 ? "text-emerald-600" : rating >= 3 ? "text-amber-500" : "text-rose-500"}`}>
+                      {rating || "—"}/5
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+        {/* Detail modal */}
+        {detail && (
+          <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setDetail(null)}>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6 space-y-4"
+              onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Classroom Observation · {detail.mentor_name || detail.teacher_name || "Unknown"}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                    {detail.department || detail.class_name || "—"} · {detail.observation_date ? new Date(detail.observation_date).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : ""}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setDetail(null)} className="text-slate-400 hover:text-slate-700 text-xl font-black cursor-pointer">×</button>
+              </div>
+
+              {detail.photo_url && (
+                <img src={detail.photo_url} alt="observation" className="w-full rounded-xl border border-slate-200 object-cover max-h-64" />
+              )}
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Subject</span>
+                  <span className="font-bold text-slate-700">{detail.subject || detail.course_name || "—"}</span>
+                </div>
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Overall Rating</span>
+                  <span className="font-black text-slate-800">{detail.overall_rating || "—"}/5</span>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-2">Dimension Ratings</span>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {OBS_RATING_DIMS.map(d => {
+                    const v = detail[d.key];
+                    if (v == null) return null;
+                    return (
+                      <div key={d.key} className="flex items-center gap-2">
+                        <span className="text-[10.5px] font-bold text-slate-600 w-44 shrink-0">{d.label}</span>
+                        <div className="flex-1 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                          <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${(Number(v) / 5) * 100}%` }} />
+                        </div>
+                        <span className="text-[10px] font-black text-slate-600">{v}/5</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {detail.satisfaction_remarks && (
+                <div className={`p-3 rounded-xl border text-[11px] font-medium ${
+                  detail.satisfaction_status === "not_satisfied"
+                    ? "bg-rose-50 border-rose-200 text-rose-800"
+                    : "bg-emerald-50 border-emerald-200 text-emerald-800"
+                }`}>
+                  <span className="block text-[9px] font-black uppercase tracking-wider mb-1">
+                    Remarks · {detail.satisfaction_status === "not_satisfied" ? "Not Satisfied (Escalated)" : "Satisfied"}
+                  </span>
+                  {detail.satisfaction_remarks}
+                </div>
+              )}
+
+              {detail.manager_name && (
+                <p className="text-[10px] text-slate-400 font-medium">Logged by {detail.manager_name}</p>
+              )}
+            </div>
+          </div>
+        )}
+    </div>
+  );
+};
+
+// ============================================================================
 // 3. MAIN COMPONENT
 // ============================================================================
 export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
@@ -498,13 +958,10 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
   // Resolved KAM cluster for active campus
   const activeKamInfo = useMemo(() => resolveKAMForCampus(collegeName), [collegeName]);
 
-  // Main navigation tabs inside the module
-  const [activeSubTab, setActiveSubTab] = useState<"overview" | "ledger" | "wizard" | "peer_inbox" | "tickets" | "feedback">("overview");
-
-  // Ledger sub-domain tab
-  const [ledgerDomain, setLedgerDomain] = useState<"skill" | "academic" | "attendance" | "audit">("skill");
-  const [ledgerSearch, setLedgerSearch] = useState("");
-  const [ledgerStatusFilter, setLedgerStatusFilter] = useState("all");
+  // Main navigation tabs inside the module - STRICTLY ASSIGNED AUDITS & RECORD AUDIT
+  const [activeSubTab, setActiveSubTab] = useState<"assigned" | "record">("assigned");
+  const [assignedStatusFilter, setAssignedStatusFilter] = useState<"pending" | "completed">("pending");
+  const [auditSubmittedSuccess, setAuditSubmittedSuccess] = useState(false);
 
   // Data states
   const [skillRecords, setSkillRecords] = useState<SkillAuditRecord[]>(INITIAL_SKILL_RECORDS);
@@ -809,10 +1266,10 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
       "success"
     );
 
-    // Reset wizard and return to ledger
+    // Reset wizard and show success state
     setWizardStage(1);
-    setActiveSubTab("ledger");
-    setLedgerDomain("audit");
+    setAuditSubmittedSuccess(true);
+    setActiveSubTab("record");
   };
 
   // --------------------------------------------------------------------------
@@ -824,15 +1281,26 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
   const [signOffSkillDev, setSignOffSkillDev] = useState<"Completed" | "In Progress" | "Not Completed">("Completed");
   const [signOffAcademic, setSignOffAcademic] = useState<"Completed" | "In Progress" | "Not Completed">("Completed");
 
-  // Incoming peer reviews assigned to this campus
+  // Active campus normalized
+  const cNorm = (collegeName || "").trim().toLowerCase();
+
+  // Incoming peer reviews assigned to this campus (Pending sign-off)
   const incomingPeerReviews = useMemo(() => {
-    const cNorm = (collegeName || "").trim().toLowerCase();
     return peerAudits.filter(
       (a) =>
         (a.reviewerCampus.trim().toLowerCase() === cNorm || cNorm.includes(a.reviewerCampus.trim().toLowerCase())) &&
         a.overall !== "Completed"
     );
-  }, [peerAudits, collegeName]);
+  }, [peerAudits, cNorm]);
+
+  // Completed peer reviews assigned to this campus (Already signed off)
+  const completedPeerReviews = useMemo(() => {
+    return peerAudits.filter(
+      (a) =>
+        (a.reviewerCampus.trim().toLowerCase() === cNorm || cNorm.includes(a.reviewerCampus.trim().toLowerCase())) &&
+        a.overall === "Completed"
+    );
+  }, [peerAudits, cNorm]);
 
   const handleSignOffPeerReview = () => {
     if (!selectedPeerAuditForReview) return;
@@ -867,184 +1335,11 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
     setSignOffNotes("");
   };
 
-  // --------------------------------------------------------------------------
-  // EXCEL EXPORT
-  // --------------------------------------------------------------------------
-  const handleExportExcel = async () => {
-    try {
-      const XLSX = await import("xlsx");
-      const wb = XLSX.utils.book_new();
-
-      // Skill Sheet
-      const skillRows = skillRecords.map((r) => [
-        r.id,
-        r.mentor,
-        r.campus,
-        r.deptName,
-        r.subject,
-        r.criteria.genuine ? "Yes" : "No",
-        r.criteria.weeklyPlan ? "Yes" : "No",
-        r.criteria.tracker ? "Yes" : "No",
-        r.criteria.assignment ? "Yes" : "No",
-        r.criteria.assessment ? "Yes" : "No",
-        `${r.score}%`,
-        r.tasksAssigned,
-        r.tasksCompleted,
-        `${r.avgCompletionPct}%`,
-        r.remarks,
-        r.date,
-        r.status
-      ]);
-      const wsSkill = XLSX.utils.aoa_to_sheet([
-        [
-          "Log ID",
-          "Mentor Name",
-          "Campus",
-          "Department",
-          "Skill Subject",
-          "Genuine",
-          "Weekly Plan",
-          "Tracker",
-          "Assignment",
-          "Assessment",
-          "Verification Score",
-          "Tasks Assigned",
-          "Tasks Completed",
-          "Avg Completion",
-          "Remarks",
-          "Date",
-          "Status"
-        ],
-        ...skillRows
-      ]);
-      XLSX.utils.book_append_sheet(wb, wsSkill, "Skill_Development");
-
-      // Internal Audit Sheet
-      const auditRows = peerAudits.map((r) => [
-        r.id,
-        r.campus,
-        r.mentor,
-        r.deptName,
-        r.kam,
-        r.reviewerCampus,
-        r.weeklyPlan,
-        r.skillDev,
-        r.academic,
-        r.overall,
-        r.auditor,
-        r.date,
-        r.auditorNotes || ""
-      ]);
-      const wsAudit = XLSX.utils.aoa_to_sheet([
-        [
-          "Audit ID",
-          "Audited Campus",
-          "Mentor",
-          "Department",
-          "KAM Cluster",
-          "Assigned Reviewer Campus",
-          "Weekly Plan",
-          "Skill Dev",
-          "Coursework",
-          "Overall Status",
-          "Auditor",
-          "Audit Date",
-          "Reviewer Notes"
-        ],
-        ...auditRows
-      ]);
-      XLSX.utils.book_append_sheet(wb, wsAudit, "Internal_Peer_Audits");
-
-      XLSX.writeFile(wb, `Campus_E_Audit_${collegeName.replace(/[^a-zA-Z0-9]/g, "_")}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      toast("Campus audit ledger exported to Excel!", "success");
-    } catch (e: any) {
-      toast("Export failed: " + e.message, "error");
-    }
-  };
-
-  // --------------------------------------------------------------------------
-  // SCOPED METRICS CALCULATIONS FOR THIS CM'S CAMPUS
-  // --------------------------------------------------------------------------
-  const campusSkillRecords = useMemo(() => {
-    if (role === "admin") return skillRecords;
-    const norm = collegeName.trim().toLowerCase();
-    return skillRecords.filter((r) => r.campus.trim().toLowerCase() === norm || norm.includes(r.campus.trim().toLowerCase()));
-  }, [skillRecords, collegeName, role]);
-
-  const campusAcadRecords = useMemo(() => {
-    if (role === "admin") return academicRecords;
-    const norm = collegeName.trim().toLowerCase();
-    return academicRecords.filter((r) => r.campus.trim().toLowerCase() === norm || norm.includes(r.campus.trim().toLowerCase()));
-  }, [academicRecords, collegeName, role]);
-
-  const campusAttRecords = useMemo(() => {
-    if (role === "admin") return attendanceRecords;
-    const norm = collegeName.trim().toLowerCase();
-    return attendanceRecords.filter((r) => r.campus.trim().toLowerCase() === norm || norm.includes(r.campus.trim().toLowerCase()));
-  }, [attendanceRecords, collegeName, role]);
-
-  const avgSkillScore = useMemo(() => {
-    if (campusSkillRecords.length === 0) return 92;
-    const sum = campusSkillRecords.reduce((acc, r) => acc + r.score, 0);
-    return Math.round(sum / campusSkillRecords.length);
-  }, [campusSkillRecords]);
-
-  const avgAcadScore = useMemo(() => {
-    if (campusAcadRecords.length === 0) return 90;
-    const sum = campusAcadRecords.reduce((acc, r) => acc + r.score, 0);
-    return Math.round(sum / campusAcadRecords.length);
-  }, [campusAcadRecords]);
-
-  const avgAttScore = useMemo(() => {
-    if (campusAttRecords.length === 0) return 88;
-    const sum = campusAttRecords.reduce((acc, r) => acc + r.score, 0);
-    return Math.round(sum / campusAttRecords.length);
-  }, [campusAttRecords]);
-
-  const overallComplianceScore = Math.round((avgSkillScore + avgAcadScore + avgAttScore) / 3);
-
-  // Filtered ledger rows based on selected domain tab and search
-  const filteredLedgerRows = useMemo(() => {
-    const q = ledgerSearch.toLowerCase().trim();
-    if (ledgerDomain === "skill") {
-      return campusSkillRecords.filter((r) => {
-        if (ledgerStatusFilter !== "all" && r.status !== ledgerStatusFilter) return false;
-        if (q) return r.mentor.toLowerCase().includes(q) || r.subject.toLowerCase().includes(q) || r.deptName.toLowerCase().includes(q);
-        return true;
-      });
-    }
-    if (ledgerDomain === "academic") {
-      return campusAcadRecords.filter((r) => {
-        if (ledgerStatusFilter !== "all" && r.status !== ledgerStatusFilter) return false;
-        if (q) return r.mentor.toLowerCase().includes(q) || r.subject.toLowerCase().includes(q) || r.deptName.toLowerCase().includes(q);
-        return true;
-      });
-    }
-    if (ledgerDomain === "attendance") {
-      return campusAttRecords.filter((r) => {
-        if (ledgerStatusFilter !== "all" && r.status !== ledgerStatusFilter) return false;
-        if (q) return r.mentor.toLowerCase().includes(q) || r.deptName.toLowerCase().includes(q);
-        return true;
-      });
-    }
-    // internal audit
-    return peerAudits.filter((r) => {
-      if (role !== "admin") {
-        const cNorm = collegeName.trim().toLowerCase();
-        const matchesCampus = r.campus.trim().toLowerCase() === cNorm || cNorm.includes(r.campus.trim().toLowerCase());
-        const matchesReviewer = r.reviewerCampus.trim().toLowerCase() === cNorm || cNorm.includes(r.reviewerCampus.trim().toLowerCase());
-        if (!matchesCampus && !matchesReviewer) return false;
-      }
-      if (ledgerStatusFilter !== "all" && r.overall !== ledgerStatusFilter) return false;
-      if (q) return r.mentor.toLowerCase().includes(q) || r.campus.toLowerCase().includes(q) || r.reviewerCampus.toLowerCase().includes(q);
-      return true;
-    });
-  }, [ledgerDomain, campusSkillRecords, campusAcadRecords, campusAttRecords, peerAudits, ledgerSearch, ledgerStatusFilter, role, collegeName]);
 
   return (
     <div className="space-y-6 font-sans">
       {/* ==================================================================== */}
-      {/* 1. TOP HEADER & KAM CLUSTER IDENTITY                                */}
+      {/* 1. TOP HEADER & STREAMLINED 2-TAB NAVIGATION                        */}
       {/* ==================================================================== */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-4">
@@ -1055,7 +1350,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                  Campus E-Audit &amp; Peer Review Hub
+                  Campus E-Audit
                 </h2>
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-black uppercase flex items-center gap-1">
                   <Building2 className="h-3 w-3 text-emerald-600" />
@@ -1068,460 +1363,316 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                 </span>
               </div>
               <p className="text-[11.5px] text-slate-500 font-medium mt-0.5">
-                Standardized verification of Skill Development, Coursework Delivery, Attendance integrity &amp; Intra-KAM peer audits.
+                Record operational mentor audits and review incoming peer audits assigned to your campus.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
-            >
-              <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-              <span>Export Audit Ledger (.xlsx)</span>
-            </button>
-
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => {
                 setWizardStage(1);
-                setActiveSubTab("wizard");
+                setAuditSubmittedSuccess(false);
+                setActiveSubTab("record");
               }}
-              className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                activeSubTab === "record"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+              }`}
             >
               <Send className="h-3.5 w-3.5" />
-              <span>Record New Audit</span>
+              <span>+ Record New Audit</span>
             </button>
           </div>
         </div>
 
-        {/* Quick KPI Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-1">
-          <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl">
-            <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800 block">Overall Compliance</span>
-            <div className="text-xl font-black text-emerald-950 mt-1">{overallComplianceScore}%</div>
-            <span className="text-[10px] text-emerald-700 font-medium">Campus Audit Grade</span>
-          </div>
-
-          <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl">
-            <span className="text-[9px] font-black uppercase tracking-wider text-indigo-800 block">Skill Development</span>
-            <div className="text-xl font-black text-indigo-950 mt-1">{avgSkillScore}%</div>
-            <span className="text-[10px] text-indigo-700 font-medium">{campusSkillRecords.length} Mentors logged</span>
-          </div>
-
-          <div className="p-3 bg-teal-50/70 border border-teal-200 rounded-xl">
-            <span className="text-[9px] font-black uppercase tracking-wider text-teal-800 block">Coursework Progress</span>
-            <div className="text-xl font-black text-teal-950 mt-1">{avgAcadScore}%</div>
-            <span className="text-[10px] text-teal-700 font-medium">Syllabus compliance</span>
-          </div>
-
-          <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl">
-            <span className="text-[9px] font-black uppercase tracking-wider text-purple-800 block">Attendance Integrity</span>
-            <div className="text-xl font-black text-purple-950 mt-1">{avgAttScore}%</div>
-            <span className="text-[10px] text-purple-700 font-medium">Verified without proxy</span>
-          </div>
-
-          <div
-            onClick={() => setActiveSubTab("peer_inbox")}
-            className={`p-3 rounded-xl border cursor-pointer transition-all hover:scale-[1.02] ${
-              incomingPeerReviews.length > 0 ? "bg-amber-50 border-amber-300 ring-2 ring-amber-200/50" : "bg-slate-50 border-slate-200"
+        {/* Focused 2-Tab Navigation */}
+        <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={() => setActiveSubTab("assigned")}
+            className={`px-4 py-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
+              activeSubTab === "assigned"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "bg-slate-100 hover:bg-slate-200 text-slate-600"
             }`}
           >
-            <div className="flex items-center justify-between">
-              <span className={`text-[9px] font-black uppercase tracking-wider ${incomingPeerReviews.length > 0 ? "text-amber-800" : "text-slate-600"}`}>
-                Peer Reviews Inbox
+            <Inbox className="h-4 w-4" />
+            <span>Assigned Audits</span>
+            {incomingPeerReviews.length > 0 && (
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                activeSubTab === "assigned" ? "bg-white text-emerald-800" : "bg-amber-500 text-white animate-pulse"
+              }`}>
+                {incomingPeerReviews.length} Pending
               </span>
-              <Inbox className={`h-3.5 w-3.5 ${incomingPeerReviews.length > 0 ? "text-amber-600" : "text-slate-400"}`} />
-            </div>
-            <div className={`text-xl font-black mt-1 ${incomingPeerReviews.length > 0 ? "text-amber-950" : "text-slate-800"}`}>
-              {incomingPeerReviews.length} Assigned
-            </div>
-            <span className={`text-[10px] font-medium ${incomingPeerReviews.length > 0 ? "text-amber-700 font-bold underline" : "text-slate-500"}`}>
-              {incomingPeerReviews.length > 0 ? "Requires your sign-off" : "All reviews cleared"}
-            </span>
-          </div>
-        </div>
+            )}
+          </button>
 
-        {/* Sub-Tab Switcher Navigation */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pt-1 border-t border-slate-100">
-          {[
-            { id: "overview", label: "Executive Dashboard", icon: BarChart3 },
-            { id: "ledger", label: "Audit Ledger & Reports", icon: FileText },
-            { id: "wizard", label: "Record Audit (4-Stage Flow)", icon: Send },
-            {
-              id: "peer_inbox",
-              label: `Assigned Peer Reviews (${incomingPeerReviews.length})`,
-              icon: Inbox,
-              badge: incomingPeerReviews.length > 0
-            },
-            { id: "tickets", label: "Help Desk & Tickets", icon: LifeBuoy },
-            { id: "feedback", label: "Faculty NPS & Ratings", icon: ThumbsUp }
-          ].map((t) => {
-            const Icon = t.icon;
-            const isActive = activeSubTab === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setActiveSubTab(t.id as any)}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
-                  isActive ? "bg-emerald-600 text-white shadow-xs" : "bg-slate-100 hover:bg-slate-200 text-slate-600"
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                <span>{t.label}</span>
-                {t.badge && (
-                  <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping ml-0.5" />
-                )}
-              </button>
-            );
-          })}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSubTab("record");
+              setAuditSubmittedSuccess(false);
+            }}
+            className={`px-4 py-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
+              activeSubTab === "record"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+            }`}
+          >
+            <Send className="h-4 w-4" />
+            <span>Record Audit Form</span>
+          </button>
         </div>
       </div>
 
       {/* ==================================================================== */}
-      {/* VIEW 1: EXECUTIVE DASHBOARD & MENTOR LEADERBOARD                     */}
+      {/* VIEW 1: ASSIGNED AUDITS (INBOX & SIGN-OFF)                           */}
       {/* ==================================================================== */}
-      {activeSubTab === "overview" && (
-        <div className="space-y-6">
-          {/* Domain Breakdown Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Skill Development Audits</span>
-                <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-black">{campusSkillRecords.length} Audited</span>
-              </div>
-              <p className="text-xs text-slate-500">
-                Verifies genuine task marking, daily tracker compliance, and links to student repositories and assessments.
-              </p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${avgSkillScore}%` }} />
-                </div>
-                <span className="text-xs font-black text-indigo-700">{avgSkillScore}%</span>
-              </div>
+      {activeSubTab === "assigned" && (
+        <div className="space-y-4">
+          {/* Header & Sub-filter pills */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Inbox className="h-4 w-4 text-emerald-600" />
+              <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                Audits Assigned to {collegeName}
+              </span>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Coursework Progress</span>
-                <span className="px-2 py-0.5 rounded bg-teal-50 text-teal-700 text-[10px] font-black">{campusAcadRecords.length} Audited</span>
-              </div>
-              <p className="text-xs text-slate-500">
-                Ensures syllabus coverage matches planned units, experiments are conducted on time, and materials are shared.
-              </p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-teal-600 h-full rounded-full" style={{ width: `${avgAcadScore}%` }} />
-                </div>
-                <span className="text-xs font-black text-teal-700">{avgAcadScore}%</span>
-              </div>
-            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAssignedStatusFilter("pending")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  assignedStatusFilter === "pending"
+                    ? "bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+                }`}
+              >
+                <span>Pending Sign-Off ({incomingPeerReviews.length})</span>
+              </button>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Attendance Integrity</span>
-                <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 text-[10px] font-black">{campusAttRecords.length} Audited</span>
-              </div>
-              <p className="text-xs text-slate-500">
-                Audits classroom biometric synchronicity, flags low-attendance cohorts (&lt;75%), and prevents proxy entries.
-              </p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-purple-600 h-full rounded-full" style={{ width: `${avgAttScore}%` }} />
-                </div>
-                <span className="text-xs font-black text-purple-700">{avgAttScore}%</span>
-              </div>
+              <button
+                type="button"
+                onClick={() => setAssignedStatusFilter("completed")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  assignedStatusFilter === "completed"
+                    ? "bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-2xs"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+                }`}
+              >
+                <span>Signed-Off / Completed ({completedPeerReviews.length})</span>
+              </button>
             </div>
           </div>
 
-          {/* Leaderboard & Needs Attention Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {/* Mentor Audit Leaderboard */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-150 pb-3">
-                <div className="flex items-center gap-2">
-                  <Award className="h-4 w-4 text-emerald-600" />
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                    Campus Mentor Compliance Leaderboard
-                  </h3>
+          {/* Pending Sign-Off List */}
+          {assignedStatusFilter === "pending" && (
+            <div>
+              {incomingPeerReviews.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-xs space-y-3">
+                  <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto" />
+                  <h4 className="text-sm font-extrabold text-slate-800">Your Assigned Audits Queue is Clear</h4>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                    No incoming audits currently pending your sign-off. When peer colleges in your {activeKamInfo.region} cluster submit mentor audits for review, they will appear here automatically.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveSubTab("record");
+                      setAuditSubmittedSuccess(false);
+                    }}
+                    className="mt-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-xs"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    <span>Record an Audit for Your Campus &rarr;</span>
+                  </button>
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">Scored on genuineness</span>
-              </div>
-
-              <div className="space-y-2.5">
-                {campusSkillRecords.map((m, idx) => (
-                  <div key={m.uid} className="flex items-center justify-between p-3 rounded-xl bg-slate-50/70 border border-slate-200">
-                    <div className="flex items-center gap-2.5">
-                      <span className="h-6 w-6 rounded-full bg-white border border-slate-200 flex items-center justify-center text-xs font-black text-slate-700">
-                        {idx + 1}
-                      </span>
-                      <div>
-                        <div className="font-extrabold text-slate-900 text-xs">{m.mentor}</div>
-                        <div className="text-[10px] text-slate-400 font-medium">{m.deptName}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 bg-slate-200 h-2 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${m.score >= 80 ? "bg-emerald-500" : m.score >= 50 ? "bg-amber-500" : "bg-rose-500"}`}
-                          style={{ width: `${m.score}%` }}
-                        />
-                      </div>
-                      <span className="text-xs font-black font-mono text-slate-900">{m.score}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Needs Attention / Gaps */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-150 pb-3">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                    Audit Alerts &amp; Compliance Gaps
-                  </h3>
-                </div>
-                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Action Items</span>
-              </div>
-
-              <div className="space-y-3">
-                {incomingPeerReviews.length > 0 && (
-                  <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 flex items-start gap-3">
-                    <Inbox className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-black text-xs text-amber-900 block">
-                        {incomingPeerReviews.length} Peer Review(s) Waiting for Sign-Off
-                      </span>
-                      <p className="text-[11px] text-amber-800 mt-0.5">
-                        Colleges in your KAM cluster have submitted audits routed to you for peer evaluation.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setActiveSubTab("peer_inbox")}
-                        className="mt-2 text-xs font-extrabold text-amber-900 underline cursor-pointer"
-                      >
-                        Open Peer Review Inbox &rarr;
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {campusSkillRecords
-                  .filter((r) => r.score < 80)
-                  .map((r) => (
-                    <div key={r.uid} className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-3">
-                      <AlertCircle className="h-4 w-4 text-rose-500 shrink-0 mt-0.5" />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-xs text-rose-900">{r.mentor}</span>
-                          <span className="px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded text-[9px] font-black">Score: {r.score}%</span>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {incomingPeerReviews.map((audit) => (
+                    <div key={audit.uid} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-150 pb-3">
+                        <div>
+                          <span className="font-mono text-[10px] text-slate-400 font-bold block">{audit.id}</span>
+                          <div className="font-extrabold text-slate-900 text-sm mt-0.5">{audit.mentor}</div>
+                          <div className="text-xs text-indigo-700 font-bold flex items-center gap-1 mt-0.5">
+                            <Building2 className="h-3 w-3" />
+                            <span>{audit.campus}</span>
+                            <span>•</span>
+                            <span className="text-slate-500">{audit.deptName}</span>
+                          </div>
                         </div>
-                        <p className="text-[11px] text-rose-800 mt-0.5">{r.remarks || "Assessment incomplete or daily tracker entry missed."}</p>
+                        <span className="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black uppercase">
+                          Pending Sign-Off
+                        </span>
+                      </div>
+
+                      {/* Evidence Snapshot Card */}
+                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Submitted Evidence Snapshot</span>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="p-2 bg-white rounded-lg border border-slate-200">
+                            <span className="text-[9px] text-slate-400 block font-bold">Skill Score</span>
+                            <span className="font-mono font-black text-xs text-indigo-600">{audit.evidenceSnapshot?.skillScore || 90}%</span>
+                          </div>
+                          <div className="p-2 bg-white rounded-lg border border-slate-200">
+                            <span className="text-[9px] text-slate-400 block font-bold">Coursework</span>
+                            <span className="font-mono font-black text-xs text-teal-600">{audit.evidenceSnapshot?.academicScore || 100}%</span>
+                          </div>
+                          <div className="p-2 bg-white rounded-lg border border-slate-200">
+                            <span className="text-[9px] text-slate-400 block font-bold">Attendance</span>
+                            <span className="font-mono font-black text-xs text-purple-600">{audit.evidenceSnapshot?.attendanceScore || 100}%</span>
+                          </div>
+                        </div>
+
+                        {audit.evidenceSnapshot?.proofLink && (
+                          <div className="pt-1">
+                            <a
+                              href={audit.evidenceSnapshot.proofLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-indigo-600 font-bold underline inline-flex items-center gap-1 hover:text-indigo-800 transition-colors"
+                            >
+                              <span>Inspect Student Code / Task Proof Repository</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                        )}
+
+                        {audit.evidenceSnapshot?.remarks && (
+                          <p className="text-[11px] text-slate-600 italic bg-white p-2 rounded-lg border border-slate-150">
+                            &ldquo;{audit.evidenceSnapshot.remarks}&rdquo;
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Reviewer inspection form */}
+                      <div className="space-y-3 pt-1">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            Reviewer Sign-Off Inspection Notes *
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={selectedPeerAuditForReview?.uid === audit.uid ? signOffNotes : ""}
+                            onChange={(e) => {
+                              setSelectedPeerAuditForReview(audit);
+                              setSignOffNotes(e.target.value);
+                            }}
+                            placeholder="Enter verification findings and sign-off remarks..."
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedPeerAuditForReview(audit);
+                              handleSignOffPeerReview();
+                            }}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                          >
+                            <Check className="h-4 w-4" />
+                            <span>Sign Off Peer Review</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
-
-                {incomingPeerReviews.length === 0 && campusSkillRecords.every((r) => r.score >= 80) && (
-                  <div className="p-8 text-center text-slate-400 space-y-1">
-                    <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto" />
-                    <p className="font-bold text-slate-700 text-xs">All Audits Cleared</p>
-                    <p className="text-[11px] text-slate-400">No open compliance gaps or pending peer reviews on your desk.</p>
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
-          </div>
+          )}
+
+          {/* Completed Sign-Offs List */}
+          {assignedStatusFilter === "completed" && (
+            <div>
+              {completedPeerReviews.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-xs space-y-2">
+                  <p className="text-xs text-slate-400 font-medium">No completed peer reviews signed off yet.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {completedPeerReviews.map((audit) => (
+                    <div key={audit.uid} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-150 pb-3">
+                        <div>
+                          <span className="font-mono text-[10px] text-slate-400 font-bold block">{audit.id}</span>
+                          <div className="font-extrabold text-slate-900 text-sm mt-0.5">{audit.mentor}</div>
+                          <div className="text-xs text-indigo-700 font-bold flex items-center gap-1 mt-0.5">
+                            <Building2 className="h-3 w-3" />
+                            <span>{audit.campus}</span>
+                            <span>•</span>
+                            <span className="text-slate-500">{audit.deptName}</span>
+                          </div>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-black uppercase flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                          <span>Signed Off</span>
+                        </span>
+                      </div>
+
+                      <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-1">
+                        <span className="text-[10px] font-black uppercase text-emerald-800 block">Sign-Off Notes</span>
+                        <p className="text-xs text-emerald-950 font-medium">{audit.auditorNotes || "Peer audit verified and approved."}</p>
+                        <span className="text-[10px] text-slate-400 block mt-1">Audit Date: {audit.date}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {/* ==================================================================== */}
-      {/* VIEW 2: REPORTS & AUDIT LEDGER (4 SUB-DOMAINS)                       */}
+      {/* VIEW 2: 4-STAGE RECORD AUDIT WIZARD                                 */}
       {/* ==================================================================== */}
-      {activeSubTab === "ledger" && (
-        <div className="space-y-4">
-          {/* Domain switcher pills */}
-          <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {[
-                { id: "skill", label: `Skill Development (${campusSkillRecords.length})` },
-                { id: "academic", label: `Coursework Verification (${campusAcadRecords.length})` },
-                { id: "attendance", label: `Attendance Integrity (${campusAttRecords.length})` },
-                { id: "audit", label: `Internal Peer Audits (${peerAudits.length})` }
-              ].map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  onClick={() => setLedgerDomain(d.id as any)}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    ledgerDomain === d.id ? "bg-slate-900 text-white shadow-xs" : "bg-slate-100 hover:bg-slate-200 text-slate-600"
-                  }`}
-                >
-                  {d.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Search & Status Filter */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="relative min-w-[220px]">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Search mentor or subject..."
-                  value={ledgerSearch}
-                  onChange={(e) => setLedgerSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
-
-              <select
-                value={ledgerStatusFilter}
-                onChange={(e) => setLedgerStatusFilter(e.target.value)}
-                className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-bold focus:outline-hidden"
-              >
-                <option value="all">All Statuses</option>
-                <option value="Completed">Completed</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Not Completed">Not Completed</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Ledger Table */}
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
-            <div className="overflow-x-auto scroll-touch">
-              <table className="w-full border-collapse text-left text-xs min-w-[850px]">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
-                    <th className="p-3">Log ID</th>
-                    <th className="p-3">Mentor / Faculty</th>
-                    <th className="p-3">Department &amp; Course</th>
-                    {ledgerDomain === "skill" && <th className="p-3">Skill Subject</th>}
-                    {ledgerDomain === "academic" && <th className="p-3">Coursework Subject</th>}
-                    {ledgerDomain === "attendance" && <th className="p-3 text-center">&lt;75% Attendance</th>}
-                    {ledgerDomain === "audit" && (
-                      <>
-                        <th className="p-3">KAM Cluster</th>
-                        <th className="p-3">Assigned Peer Reviewer</th>
-                      </>
-                    )}
-                    {ledgerDomain !== "audit" && <th className="p-3 text-center">Score</th>}
-                    <th className="p-3 text-center">Status</th>
-                    <th className="p-3">Verification Remarks</th>
-                    <th className="p-3">Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                  {filteredLedgerRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className="p-8 text-center text-slate-400 italic">
-                        No audit records found matching your filters.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredLedgerRows.map((row: any) => {
-                      const isComplete = row.status === "Completed" || row.overall === "Completed";
-                      const scoreVal = row.score !== undefined ? row.score : null;
-                      return (
-                        <tr key={row.uid} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="p-3 font-mono text-[10.5px] font-bold text-slate-600">{row.id}</td>
-                          <td className="p-3">
-                            <div className="font-extrabold text-slate-900">{row.mentor}</div>
-                            <div className="text-[10px] text-slate-400">{row.campus}</div>
-                          </td>
-                          <td className="p-3">
-                            <div className="font-bold text-slate-800">{row.deptName}</div>
-                            <div className="text-[10px] text-slate-400">{row.department}</div>
-                          </td>
-
-                          {ledgerDomain === "skill" && (
-                            <td className="p-3 text-slate-800 font-bold max-w-[200px] truncate">
-                              <div>{row.subject}</div>
-                              {row.proof?.assignment?.link && (
-                                <a
-                                  href={row.proof.assignment.link}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-[10px] text-indigo-600 underline font-bold inline-flex items-center gap-0.5 mt-0.5"
-                                >
-                                  <span>View Proof</span>
-                                  <ExternalLink className="h-2.5 w-2.5" />
-                                </a>
-                              )}
-                            </td>
-                          )}
-
-                          {ledgerDomain === "academic" && <td className="p-3 text-slate-800 font-bold">{row.subject}</td>}
-
-                          {ledgerDomain === "attendance" && (
-                            <td className="p-3 text-center">
-                              <span className="px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 font-black text-[10px]">
-                                {row.below75} Students
-                              </span>
-                            </td>
-                          )}
-
-                          {ledgerDomain === "audit" && (
-                            <>
-                              <td className="p-3">
-                                <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-extrabold text-[10px]">
-                                  {row.kam} ({row.region})
-                                </span>
-                              </td>
-                              <td className="p-3 font-bold text-slate-800">{row.reviewerCampus}</td>
-                            </>
-                          )}
-
-                          {ledgerDomain !== "audit" && (
-                            <td className="p-3 text-center">
-                              <span
-                                className={`px-2 py-0.5 rounded-full font-black text-[10.5px] font-mono ${
-                                  scoreVal >= 80 ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"
-                                }`}
-                              >
-                                {scoreVal}%
-                              </span>
-                            </td>
-                          )}
-
-                          <td className="p-3 text-center">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[9.5px] font-black uppercase ${
-                                isComplete
-                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                  : "bg-amber-50 text-amber-700 border border-amber-200"
-                              }`}
-                            >
-                              {row.status || row.overall}
-                            </span>
-                          </td>
-
-                          <td className="p-3 text-slate-600 text-[11px] max-w-[240px] truncate" title={row.remarks || row.auditorNotes}>
-                            {row.remarks || row.auditorNotes || "Verified compliant"}
-                          </td>
-
-                          <td className="p-3 text-slate-500 font-mono text-[10.5px] whitespace-nowrap">{row.date}</td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================================================================== */}
-      {/* VIEW 3: 4-STAGE RECORD AUDIT WIZARD                                 */}
-      {/* ==================================================================== */}
-      {activeSubTab === "wizard" && (
+      {activeSubTab === "record" && (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6 max-w-3xl mx-auto">
+          {/* Audit Submitted Success Banner */}
+          {auditSubmittedSuccess && (
+            <div className="p-5 bg-emerald-50 border-2 border-emerald-200 rounded-2xl space-y-3 animate-in fade-in duration-200">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-8 w-8 text-emerald-600 shrink-0" />
+                <div>
+                  <h4 className="text-sm font-black text-emerald-900">Audit Recorded &amp; Dispatched Successfully!</h4>
+                  <p className="text-xs text-emerald-700 font-medium mt-0.5">
+                    Your mentor audit has been saved to the ledger and automatically routed to an intra-KAM peer campus for verification.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-2 border-t border-emerald-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuditSubmittedSuccess(false);
+                    setWizardStage(1);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black cursor-pointer shadow-xs transition-colors"
+                >
+                  + Record Another Mentor Audit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuditSubmittedSuccess(false);
+                    setActiveSubTab("assigned");
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 text-xs font-bold cursor-pointer transition-colors"
+                >
+                  Go to Assigned Audits
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Wizard Step Progress Tracker */}
           <div className="border-b border-slate-150 pb-4">
             <div className="flex items-center justify-between">
@@ -1602,12 +1753,28 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Audit Conducted Date</label>
+                  <input
+                    type="date"
+                    value={wizDate}
+                    onChange={(e) => setWizDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                  />
+                </div>
               </div>
 
               <div className="pt-4 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setWizardStage(2)}
+                  onClick={() => {
+                    if (!wizMentor.trim()) {
+                      toast("Please enter the mentor's name.", "warning");
+                      return;
+                    }
+                    setWizardStage(2);
+                  }}
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
                 >
                   <span>Continue to Skill Verification</span>
@@ -1617,12 +1784,12 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
             </div>
           )}
 
-          {/* STAGE 2: SKILL DEVELOPMENT VERIFICATION */}
+          {/* STAGE 2: SKILL QUALITY VERIFICATION */}
           {wizardStage === 2 && (
             <div className="space-y-4">
               <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-3 flex items-center justify-between">
                 <div>
-                  <span className="text-xs font-extrabold text-indigo-900 block">Stage 2: Skill Genuineness Verification</span>
+                  <span className="text-xs font-extrabold text-indigo-900 block">Stage 2: Skill Development Quality Check</span>
                   <span className="text-[10px] text-indigo-700">Calculated Score: {calculatedSkillScore}%</span>
                 </div>
                 <Award className="h-5 w-5 text-indigo-600" />
@@ -1630,11 +1797,11 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
 
               <div className="space-y-2 border border-slate-200 rounded-xl p-4">
                 {[
-                  { label: "Was this skill log genuinely marked, not backdated or bulk-copied?", val: wizSkillGenuine, set: setWizSkillGenuine },
-                  { label: "Was progress on this skill logged consistently against the weekly plan?", val: wizSkillWeeklyPlan, set: setWizSkillWeeklyPlan },
-                  { label: "Was the daily tracker updated consistently by the mentor?", val: wizSkillTracker, set: setWizSkillTracker },
-                  { label: "Was the related assignment completed and verified?", val: wizSkillAssignment, set: setWizSkillAssignment },
-                  { label: "Was the related assessment/test completed?", val: wizSkillAssessment, set: setWizSkillAssessment }
+                  { label: "Are daily student task tracker marks genuine (no arbitrary marks)?", val: wizSkillGenuine, set: setWizSkillGenuine },
+                  { label: "Has the weekly syllabus / skill plan been prepared and adhered to?", val: wizSkillWeeklyPlan, set: setWizSkillWeeklyPlan },
+                  { label: "Is the daily student tracker updated up to the current session?", val: wizSkillTracker, set: setWizSkillTracker },
+                  { label: "Have coding tasks / practical exercises been assigned to learners?", val: wizSkillAssignment, set: setWizSkillAssignment },
+                  { label: "Has hands-on lab assessment been completed with proof recorded?", val: wizSkillAssessment, set: setWizSkillAssessment }
                 ].map((item, i) => (
                   <div key={i} className="flex items-center justify-between p-2.5 rounded-lg hover:bg-slate-50 border border-slate-100">
                     <span className="text-xs font-medium text-slate-800 pr-4">{item.label}</span>
@@ -1652,15 +1819,13 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Assignment / Assessment Proof Link (Google Drive / GitHub)
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Student Work / GitHub Proof Link</label>
                 <input
-                  type="text"
+                  type="url"
                   value={wizSkillProofLink}
                   onChange={(e) => setWizSkillProofLink(e.target.value)}
-                  placeholder="https://drive.google.com/... or https://github.com/..."
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+                  placeholder="https://github.com/... or Google Drive folder"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
 
@@ -1859,248 +2024,6 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ==================================================================== */}
-      {/* VIEW 4: INCOMING PEER REVIEWS INBOX (PEER INSPECT & SIGN-OFF)         */}
-      {/* ==================================================================== */}
-      {activeSubTab === "peer_inbox" && (
-        <div className="space-y-5">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
-            <div className="flex items-center gap-2">
-              <Inbox className="h-5 w-5 text-amber-600" />
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                Peer Reviews Assigned to {collegeName}
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 font-medium">
-              These mentor audits were conducted by other colleges in your {activeKamInfo.region} cluster and routed to your desk for peer review sign-off.
-            </p>
-          </div>
-
-          {incomingPeerReviews.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-xs space-y-2">
-              <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto" />
-              <h4 className="text-sm font-extrabold text-slate-800">Your Peer Review Inbox is Clear</h4>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
-                No incoming audits currently pending your review. As peer campus managers submit audits in your KAM cluster, they will land here automatically.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {incomingPeerReviews.map((audit) => (
-                <div key={audit.uid} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-150 pb-3">
-                    <div>
-                      <span className="font-mono text-[10px] text-slate-400 font-bold block">{audit.id}</span>
-                      <div className="font-extrabold text-slate-900 text-sm mt-0.5">{audit.mentor}</div>
-                      <div className="text-xs text-indigo-700 font-bold flex items-center gap-1 mt-0.5">
-                        <Building2 className="h-3 w-3" />
-                        <span>{audit.campus}</span>
-                      </div>
-                    </div>
-                    <span className="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black uppercase">
-                      Pending Sign-Off
-                    </span>
-                  </div>
-
-                  {/* Evidence Snapshot Card */}
-                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Submitted Evidence Snapshot</span>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className="p-2 bg-white rounded-lg border border-slate-200">
-                        <span className="text-[9px] text-slate-400 block font-bold">Skill Score</span>
-                        <span className="font-mono font-black text-xs text-indigo-600">{audit.evidenceSnapshot?.skillScore || 90}%</span>
-                      </div>
-                      <div className="p-2 bg-white rounded-lg border border-slate-200">
-                        <span className="text-[9px] text-slate-400 block font-bold">Coursework</span>
-                        <span className="font-mono font-black text-xs text-teal-600">{audit.evidenceSnapshot?.academicScore || 100}%</span>
-                      </div>
-                      <div className="p-2 bg-white rounded-lg border border-slate-200">
-                        <span className="text-[9px] text-slate-400 block font-bold">Attendance</span>
-                        <span className="font-mono font-black text-xs text-purple-600">{audit.evidenceSnapshot?.attendanceScore || 100}%</span>
-                      </div>
-                    </div>
-
-                    {audit.evidenceSnapshot?.proofLink && (
-                      <div className="pt-1">
-                        <a
-                          href={audit.evidenceSnapshot.proofLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-indigo-600 font-bold underline inline-flex items-center gap-1"
-                        >
-                          <span>Inspect Student Code / Task Proof Repository</span>
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Reviewer inspection form */}
-                  <div className="space-y-3 pt-1">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        Reviewer Sign-Off Inspection Notes *
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={selectedPeerAuditForReview?.uid === audit.uid ? signOffNotes : ""}
-                        onChange={(e) => {
-                          setSelectedPeerAuditForReview(audit);
-                          setSignOffNotes(e.target.value);
-                        }}
-                        placeholder="Type your verification findings, cross-checked dates, and sign-off remarks..."
-                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-end">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedPeerAuditForReview(audit);
-                          handleSignOffPeerReview();
-                        }}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
-                      >
-                        <Check className="h-4 w-4" />
-                        <span>Sign Off Peer Review</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ==================================================================== */}
-      {/* VIEW 5: CAMPUS HELP DESK & TICKETS (FROM CONSOLIDATED TICKETING)    */}
-      {/* ==================================================================== */}
-      {activeSubTab === "tickets" && (
-        <div className="space-y-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
-            <div className="flex items-center gap-2">
-              <LifeBuoy className="h-5 w-5 text-orange-600" />
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                Campus Help Desk &amp; Issue Tickets ({collegeName})
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 font-medium">
-              Synchronized from the Centralized Help Desk. Tracks operational issues, LMS glitches, and classroom support SLA.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs">
-              <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 block">Total Tickets Logged</span>
-              <div className="text-2xl font-black text-slate-900 mt-1">{CAMPUS_TICKETS_SAMPLE.length}</div>
-              <span className="text-[10px] text-slate-400 font-medium">This semester</span>
-            </div>
-            <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl shadow-2xs">
-              <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800 block">Resolved Issues</span>
-              <div className="text-2xl font-black text-emerald-950 mt-1">3</div>
-              <span className="text-[10px] text-emerald-700 font-medium">75% Resolution Rate</span>
-            </div>
-            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl shadow-2xs">
-              <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 block">Active / In Progress</span>
-              <div className="text-2xl font-black text-amber-950 mt-1">1</div>
-              <span className="text-[10px] text-amber-700 font-medium">Within 24h SLA</span>
-            </div>
-            <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl shadow-2xs">
-              <span className="text-[9px] font-black uppercase tracking-wider text-indigo-800 block">SLA Compliance</span>
-              <div className="text-2xl font-black text-indigo-950 mt-1">98.2%</div>
-              <span className="text-[10px] text-indigo-700 font-medium">Excellent health</span>
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Recent Help Desk Activity</span>
-              <span className="text-[10px] font-bold text-slate-500">Live Campus Queue</span>
-            </div>
-            <div className="divide-y divide-slate-150">
-              {CAMPUS_TICKETS_SAMPLE.map((t) => (
-                <div key={t.id} className="p-4 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-xs font-bold text-slate-600">{t.id}</span>
-                    <div>
-                      <div className="font-bold text-slate-900 text-xs">{t.title}</div>
-                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400 font-medium">
-                        <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">{t.category}</span>
-                        <span>•</span>
-                        <span>{t.time}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-0.5 rounded text-[9.5px] font-black uppercase ${
-                      t.status === "Resolved" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"
-                    }`}>
-                      {t.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================================================================== */}
-      {/* VIEW 6: FACULTY NPS & STUDENT FEEDBACK (FROM MENTOR-FEEDBACK.HTML)   */}
-      {/* ==================================================================== */}
-      {activeSubTab === "feedback" && (
-        <div className="space-y-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
-            <div className="flex items-center gap-2">
-              <ThumbsUp className="h-5 w-5 text-indigo-600" />
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                Faculty Classroom Delivery &amp; NPS Ratings ({collegeName})
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 font-medium">
-              Synchronized from the Student Feedback Forms. Shows Net Promoter Score (NPS), faculty ratings, and classroom sentiment.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-5 bg-gradient-to-tr from-emerald-500 to-teal-600 text-white rounded-2xl shadow-xs space-y-1 text-center">
-              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-100 block">Campus Net Promoter Score</span>
-              <div className="text-4xl font-black mt-1">+68.4</div>
-              <span className="text-xs font-bold text-emerald-100 block mt-1">Excellent · World Class Rating</span>
-            </div>
-
-            <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-2">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-800 block">Overall Faculty Rating</span>
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-black text-slate-900">4.62</span>
-                <span className="text-xs font-bold text-slate-400">/ 5.0 Stars</span>
-              </div>
-              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                <div className="bg-emerald-500 h-full rounded-full" style={{ width: "92.4%" }} />
-              </div>
-              <span className="text-[10px] text-slate-400 font-medium block">Across 1,240 verified student submissions</span>
-            </div>
-
-            <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-2">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-800 block">Top Feedback Highlights</span>
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-extrabold">
-                  + Interactive Coding (94%)
-                </span>
-                <span className="px-2 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-[10px] font-extrabold">
-                  + Clear Doubt Clearing (91%)
-                </span>
-                <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-extrabold">
-                  - Lab Internet Speed (14%)
-                </span>
-              </div>
-            </div>
-          </div>
         </div>
       )}
     </div>

@@ -350,63 +350,111 @@ export const ExamScheduleManager: React.FC = () => {
     }
   }, [activeMainTab, collegeId]);
 
+  // Helper to format local Date object to YYYY-MM-DD cleanly without timezone shift
+  const formatLocalDate = (d: Date): string => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  // Helper to parse YYYY-MM-DD as local date (00:00:00 local time)
+  const parseLocalDate = (dateStr?: string): Date => {
+    if (!dateStr) return new Date();
+    const parts = dateStr.split("-").map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    return new Date();
+  };
+
+  // Flexible subject matching helper
+  const isDeptMatch = (sDept?: string, targetDept?: string) => {
+    if (!sDept || !targetDept) return false;
+    const cleanS = sDept.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const cleanT = targetDept.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (cleanS === cleanT) return true;
+    if (cleanS.includes(cleanT) || cleanT.includes(cleanS)) return true;
+    return false;
+  };
+
   // Dynamic subjects matching chosen Department & Semester (deduplicated by name)
   const deptSubjects = useMemo(() => {
     if (!batchDept) return [];
     const matched = (subjectsList || []).filter((s: any) => {
       if (s.college_id && s.college_id !== collegeId) return false;
-      const deptMatch =
-        s.department?.toLowerCase().trim() === batchDept.toLowerCase().trim() ||
-        s.department?.toLowerCase().includes(batchDept.toLowerCase().trim()) ||
-        batchDept.toLowerCase().includes(s.department?.toLowerCase().trim());
-      return deptMatch;
+      return isDeptMatch(s.department, batchDept);
     });
+
+    // Check if any match batchSem
+    const semMatched = matched.filter((s: any) => {
+      if (!s.semester || !batchSem) return false;
+      const sSem = s.semester.toLowerCase().replace(/\D/g, "");
+      const bSem = batchSem.toLowerCase().replace(/\D/g, "");
+      return sSem && bSem && sSem === bSem;
+    });
+
+    const pool = semMatched.length > 0 ? semMatched : matched;
 
     // Deduplicate by normalized subject name
     const seen = new Set<string>();
     const uniqueSubjects: any[] = [];
-    for (const sub of matched) {
-      const normName = sub.name.trim().toLowerCase();
-      if (!seen.has(normName)) {
+    for (const sub of pool) {
+      const normName = (sub.name || "").trim().toLowerCase();
+      if (normName && !seen.has(normName)) {
         seen.add(normName);
         uniqueSubjects.push(sub);
       }
     }
     return uniqueSubjects;
-  }, [subjectsList, batchDept, collegeId]);
+  }, [subjectsList, batchDept, batchSem, collegeId]);
 
   // Initialize or re-populate modal subject rows when department or modal opens
   useEffect(() => {
     if (!isPopupOpen) return;
 
     if (deptSubjects.length === 0) {
-      setSubjectRows([]);
+      setSubjectRows([
+        {
+          subject_name: "",
+          subject_code: "",
+          included: true,
+          exam_date: batchStartDate || formatLocalDate(new Date()),
+          day_order: batchDefaultDayOrder || "Day 1",
+          start_time: batchCustomStartTime,
+          end_time: batchCustomEndTime,
+          hall_room: batchDefaultHall || ""
+        }
+      ]);
       return;
     }
 
-    let currentDate = new Date(batchStartDate || new Date());
+    let currentDate = parseLocalDate(batchStartDate);
+    while (currentDate.getDay() === 0) {
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    const match = batchDefaultDayOrder.match(/\d+/);
+    const startDay = match ? parseInt(match[0], 10) : 1;
+
+    let startT = batchCustomStartTime;
+    let endT = batchCustomEndTime;
+    if (parseTimeToMinutes(startT) < collegeHours.startMinutes) {
+      startT = collegeHours.startTimeStr;
+    }
+    if (parseTimeToMinutes(endT) > collegeHours.endMinutes) {
+      endT = collegeHours.endTimeStr;
+    }
+
     const initialRows: SubjectFormRow[] = deptSubjects.map((sub: any, idx: number) => {
       if (idx > 0) {
         currentDate.setDate(currentDate.getDate() + 1);
-        if (currentDate.getDay() === 0) {
-          // Skip Sunday
+        while (currentDate.getDay() === 0) {
           currentDate.setDate(currentDate.getDate() + 1);
         }
       }
-      const dStr = currentDate.toISOString().slice(0, 10);
-      let startT = batchCustomStartTime;
-      let endT = batchCustomEndTime;
-
-      // Clamp strictly within college operating hours
-      if (parseTimeToMinutes(startT) < collegeHours.startMinutes) {
-        startT = collegeHours.startTimeStr;
-      }
-      if (parseTimeToMinutes(endT) > collegeHours.endMinutes) {
-        endT = collegeHours.endTimeStr;
-      }
-
-      // Auto cycle Day 1 to Day 6
-      const orderNum = (idx % 6) + 1;
+      const dStr = formatLocalDate(currentDate);
+      const orderNum = ((startDay - 1 + idx) % 6) + 1;
       const dOrder = batchDefaultDayOrder !== "None" ? `Day ${orderNum}` : "None";
 
       return {
@@ -417,12 +465,12 @@ export const ExamScheduleManager: React.FC = () => {
         day_order: dOrder,
         start_time: startT,
         end_time: endT,
-        hall_room: ""
+        hall_room: batchDefaultHall || ""
       };
     });
 
     setSubjectRows(initialRows);
-  }, [isPopupOpen, batchDept, deptSubjects]);
+  }, [isPopupOpen, batchDept, batchSem, deptSubjects]);
 
   // Auto-recalculate dates sequentially
   const handleAutoSequenceDates = () => {
@@ -431,29 +479,72 @@ export const ExamScheduleManager: React.FC = () => {
       return;
     }
 
-    let currentDate = new Date(batchStartDate);
+    let currentDate = parseLocalDate(batchStartDate);
+    while (currentDate.getDay() === 0) {
+      // Skip Sunday on start date
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    const match = batchDefaultDayOrder.match(/\d+/);
+    const startDay = match ? parseInt(match[0], 10) : 1;
+
     let seqIdx = 0;
     const updated = subjectRows.map((row) => {
       if (!row.included) return row;
       if (seqIdx > 0) {
         currentDate.setDate(currentDate.getDate() + 1);
-        if (currentDate.getDay() === 0) {
+        while (currentDate.getDay() === 0) {
           // Skip Sunday
           currentDate.setDate(currentDate.getDate() + 1);
         }
       }
-      const orderNum = (seqIdx % 6) + 1;
+      const orderNum = ((startDay - 1 + seqIdx) % 6) + 1;
       seqIdx++;
 
       return {
         ...row,
-        exam_date: currentDate.toISOString().slice(0, 10),
+        exam_date: formatLocalDate(currentDate),
         day_order: batchDefaultDayOrder !== "None" ? `Day ${orderNum}` : "None"
       };
     });
 
     setSubjectRows(updated);
     toast("Auto-sequenced consecutive exam dates and Day Orders (skipping Sundays)", "success");
+  };
+
+  const handleAddSubjectRow = () => {
+    let nextDate = parseLocalDate(batchStartDate);
+    const count = subjectRows.length;
+    for (let i = 0; i < count; i++) {
+      nextDate.setDate(nextDate.getDate() + 1);
+      while (nextDate.getDay() === 0) {
+        nextDate.setDate(nextDate.getDate() + 1);
+      }
+    }
+    while (nextDate.getDay() === 0) {
+      nextDate.setDate(nextDate.getDate() + 1);
+    }
+    const match = batchDefaultDayOrder.match(/\d+/);
+    const startDay = match ? parseInt(match[0], 10) : 1;
+    const orderNum = ((startDay - 1 + count) % 6) + 1;
+
+    setSubjectRows(prev => [
+      ...prev,
+      {
+        subject_name: "",
+        subject_code: "",
+        included: true,
+        exam_date: formatLocalDate(nextDate),
+        day_order: batchDefaultDayOrder !== "None" ? `Day ${orderNum}` : "None",
+        start_time: batchCustomStartTime,
+        end_time: batchCustomEndTime,
+        hall_room: batchDefaultHall || ""
+      }
+    ]);
+  };
+
+  const handleRemoveSubjectRow = (index: number) => {
+    setSubjectRows(prev => prev.filter((_, idx) => idx !== index));
   };
 
   // Toggle single subject inclusion
@@ -816,10 +907,10 @@ export const ExamScheduleManager: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `Campus_Exam_Marks_Registry_${collegeId}.csv`;
+    link.download = `Campus_Exam_Mark_Submissions_${collegeId}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-    toast("Campus marksheet registry exported to CSV", "success");
+    toast("Campus mark submissions exported to CSV", "success");
   };
 
   return (
@@ -866,7 +957,7 @@ export const ExamScheduleManager: React.FC = () => {
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              Marks Registry ({campusMarksList.length})
+              Mark Submissions ({campusMarksList.length})
             </button>
           </div>
 
@@ -1145,7 +1236,7 @@ export const ExamScheduleManager: React.FC = () => {
           </div>
         </>
       ) : (
-        /* MARKS REGISTRY & PERFORMANCE VIEW */
+        /* MARK SUBMISSIONS & PERFORMANCE VIEW */
         <div className="space-y-5">
           {/* Performance Summary KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
@@ -1255,7 +1346,7 @@ export const ExamScheduleManager: React.FC = () => {
             </div>
           </div>
 
-          {/* Student Exam Marks Registry Table */}
+          {/* Student Exam Mark Submissions Table */}
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <div className="overflow-x-auto max-h-[600px] scroll-touch">
               <table className="w-full text-left text-xs border-collapse min-w-[850px]">
@@ -1277,7 +1368,7 @@ export const ExamScheduleManager: React.FC = () => {
                     <tr>
                       <td colSpan={9} className="p-12 text-center text-slate-400 font-bold">
                         <RefreshCw className="h-6 w-6 animate-spin mx-auto text-indigo-600 mb-2" />
-                        Loading campus marks registry...
+                        Loading campus mark submissions...
                       </td>
                     </tr>
                   ) : filteredCampusMarks.length === 0 ? (
@@ -1555,19 +1646,37 @@ export const ExamScheduleManager: React.FC = () => {
                         {batchDept} Subjects Timetable ({subjectRows.filter((r) => r.included).length} / {subjectRows.length} Included)
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleAutoSequenceDates}
-                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-lg text-[10.5px] font-extrabold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>Auto-Sequence Consecutive Dates & Day Orders</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleAddSubjectRow}
+                        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg text-[10.5px] font-extrabold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>Add Subject</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAutoSequenceDates}
+                        className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-lg text-[10.5px] font-extrabold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>Auto-Sequence Consecutive Dates &amp; Day Orders</span>
+                      </button>
+                    </div>
                   </div>
 
                   {subjectRows.length === 0 ? (
-                    <div className="p-8 text-center bg-slate-50 border border-slate-150 rounded-2xl text-slate-400 font-medium">
-                      No subjects found for <strong>{batchDept}</strong>. Please ensure subjects are created in Curriculum & Academic Configuration.
+                    <div className="p-8 text-center bg-slate-50 border border-slate-150 rounded-2xl text-slate-400 font-medium space-y-3">
+                      <p>No subjects found for <strong>{batchDept}</strong>.</p>
+                      <button
+                        type="button"
+                        onClick={handleAddSubjectRow}
+                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>Add First Subject</span>
+                      </button>
                     </div>
                   ) : (
                     <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
@@ -1589,10 +1698,23 @@ export const ExamScheduleManager: React.FC = () => {
                                 onChange={() => toggleSubjectIncluded(idx)}
                                 className="h-4 w-4 text-indigo-600 rounded cursor-pointer accent-indigo-600"
                               />
-                              <div>
-                                <p className="font-extrabold text-slate-900 text-xs">{row.subject_name}</p>
-                                {row.subject_code && (
-                                  <p className="text-[10px] text-slate-400 font-mono">{row.subject_code}</p>
+                              <div className="flex-1">
+                                {row.subject_name ? (
+                                  <>
+                                    <p className="font-extrabold text-slate-900 text-xs">{row.subject_name}</p>
+                                    {row.subject_code && (
+                                      <p className="text-[10px] text-slate-400 font-mono">{row.subject_code}</p>
+                                    )}
+                                  </>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder="Enter Subject Name (e.g. Data Structures)"
+                                    value={row.subject_name}
+                                    onChange={(e) => updateSubjectRow(idx, { subject_name: e.target.value })}
+                                    className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold w-full outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                                  />
                                 )}
                               </div>
                             </div>
@@ -1659,9 +1781,20 @@ export const ExamScheduleManager: React.FC = () => {
                                   placeholder="Hall (optional)"
                                   value={row.hall_room}
                                   onChange={(e) => updateSubjectRow(idx, { hall_room: e.target.value })}
-                                  className="w-32 px-2.5 py-1.5 border border-dashed border-slate-300 rounded-lg text-xs font-medium bg-slate-50/60 text-slate-600 placeholder:text-slate-350 focus:border-slate-400 outline-none"
+                                  className="w-28 px-2.5 py-1.5 border border-dashed border-slate-300 rounded-lg text-xs font-medium bg-slate-50/60 text-slate-600 placeholder:text-slate-350 focus:border-slate-400 outline-none"
                                   title="Hall / Room (optional)"
                                 />
+
+                                {subjectRows.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveSubjectRow(idx)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                    title="Remove subject row"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>

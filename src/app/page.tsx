@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useApp } from "@/context/AppContext";
 import { ProfessionalLoader } from "@/components/DashboardLayout";
 import { LoadingButton } from "@/components/ui/LoadingButton";
+import { setSuperAdminSession } from "@/lib/superadmin";
 
 import {
   User,
@@ -80,8 +81,9 @@ export default function Home() {
     }
   }, [router]);
 
-  // Master Role Access Modal state for thanush@faceprep.in
+  // Master Role Access Modal — shown when the server reports a super-admin role
   const [showMasterRoleModal, setShowMasterRoleModal] = useState(false);
+  const [sessionUserName, setSessionUserName] = useState("");
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,10 +106,15 @@ export default function Home() {
 
       if (data.success) {
         localStorage.setItem("fp_logged_in", "true");
-        localStorage.setItem("fp_user_email", email.trim().toLowerCase());
-        localStorage.setItem("fp_user_name", "Thanush");
+        localStorage.setItem("fp_user_id", data.userId || "");
+        const resolvedName = data.userName || data.userEmail || email.trim();
+        localStorage.setItem("fp_user_email", (data.userEmail || email.trim()).toLowerCase());
+        localStorage.setItem("fp_user_name", resolvedName);
+        setSessionUserName(resolvedName);
 
-        const isSuperAdmin = data.isSuperAdmin || email.trim().toLowerCase() === "thanush@faceprep.in";
+        // Super-admin access is decided server-side from the stored role — never from the email
+        const isSuperAdmin = !!data.isSuperAdmin;
+        setSuperAdminSession(isSuperAdmin);
 
         if (isSuperAdmin) {
           setShowMasterRoleModal(true);
@@ -174,12 +181,6 @@ export default function Home() {
     } finally {
       setSignupLoading(false);
     }
-  };
-
-  const prefill = (emailVal: string) => {
-    setEmail(emailVal);
-    setPassword("password123");
-    setLoginError("");
   };
 
   /* ── Loading Splash ─────────────────────── */
@@ -488,7 +489,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── MASTER ROLE ACCESS SELECTION MODAL (For thanush@faceprep.in) ── */}
+      {/* ── MASTER ROLE ACCESS SELECTION MODAL (super-admin accounts only) ── */}
       {showMasterRoleModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 sm:p-8 space-y-6 animate-scaleUp max-h-[90vh] overflow-y-auto">
@@ -499,7 +500,7 @@ export default function Home() {
               </div>
               <h2 className="text-xl font-black text-slate-900 tracking-tight">Master Role Access Activated</h2>
               <p className="text-xs font-semibold text-slate-500 max-w-md mx-auto">
-                Welcome <span className="text-indigo-600 font-extrabold">Thanush</span>! You have full access to all 9 system workspaces. Choose a dashboard to launch:
+                Welcome <span className="text-indigo-600 font-extrabold">{sessionUserName || (typeof window !== "undefined" ? localStorage.getItem("fp_user_name") : "") || "Administrator"}</span>! You have full access to all 9 system workspaces. Choose a dashboard to launch:
               </p>
             </div>
 
@@ -525,8 +526,6 @@ export default function Home() {
                       setRole(w.id as any);
                       localStorage.setItem("fp_current_role", w.id);
                       localStorage.setItem("fp_logged_in", "true");
-                      localStorage.setItem("fp_user_email", "thanush@faceprep.in");
-                      localStorage.setItem("fp_user_name", "Thanush");
                       router.push(w.path);
                     }}
                     className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left flex flex-col justify-between group cursor-pointer relative overflow-hidden"

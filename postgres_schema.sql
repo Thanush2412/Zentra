@@ -908,12 +908,15 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY
 );
 
--- Default Settings & Seed Superadmin
+-- Default Settings
 INSERT INTO system_settings (key, value) VALUES ('mailing_enabled', 'true') ON CONFLICT (key) DO NOTHING;
-INSERT INTO admin_users (id, name, email) VALUES ('admin_thanush', 'Thanush', 'Thanush@faceprep.in') ON CONFLICT (id) DO NOTHING;
-INSERT INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) 
-VALUES ('admin_thanush', 'thanush@faceprep.in', 'Thanush@24', 'admin', 'admin_thanush', NOW()::text, NOW()::text) 
-ON CONFLICT (id) DO NOTHING;
+
+-- Owner / super-admin accounts are intentionally NOT seeded here: no personal identity or
+-- plaintext credential belongs in the schema. The generic seeder (src/lib/seed.ts) creates a
+-- fallback admin profile, and the real owner account is provisioned on first login from the
+-- SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD environment variables (see src/app/api/login/route.ts).
+-- An existing account can be promoted at any time with:
+--   UPDATE users SET role = 'admin' WHERE LOWER(email) = LOWER('<owner email>');
 
 -- ============================================================================
 -- 10. Performance Indexes (25 High-Traffic Indexes)
@@ -954,3 +957,46 @@ CREATE INDEX IF NOT EXISTS idx_dconfig             ON campus_daily_configs (coll
 CREATE INDEX IF NOT EXISTS idx_handover_slot       ON approved_handovers (slotId, dateStr);
 CREATE INDEX IF NOT EXISTS idx_handover_req        ON handover_requests (requestorId, status);
 CREATE INDEX IF NOT EXISTS idx_mentor_att_clg_date ON mentor_attendance (college_id, date_str);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Partner / Client NPS feedback intake (Partner-Feedback-Form submissions).
+-- Consumed by GET /api/audit/client-nps (Campus E-Audit → Client NPS view).
+-- Source form: FACE-Prep-Campus-Cloud/Partner-Feedback-Form (GitHub Pages).
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS faceprep_feedback (
+    id BIGSERIAL PRIMARY KEY,
+    full_name TEXT,
+    email_address TEXT,
+    mobile_number TEXT,
+    designation TEXT,
+    college_university TEXT,
+    recommendation_score INT,
+    best_this_period TEXT,
+    improvement_next_quarter TEXT,
+    satisfied_faculty TEXT,
+    satisfied_content TEXT,
+    satisfied_academic_ops TEXT,
+    satisfied_skill_development TEXT,
+    satisfied_placement_support TEXT,
+    submitted_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS faceprep_feedback_college_idx ON faceprep_feedback (college_university);
+CREATE INDEX IF NOT EXISTS faceprep_feedback_submitted_idx ON faceprep_feedback (submitted_at DESC);
+
+-- The public feedback form posts with the anon key, and the CM panel reads with it too.
+ALTER TABLE faceprep_feedback ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon insert" ON faceprep_feedback;
+CREATE POLICY "anon insert" ON faceprep_feedback FOR INSERT TO anon, authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "anon read" ON faceprep_feedback;
+CREATE POLICY "anon read" ON faceprep_feedback FOR SELECT TO anon, authenticated USING (true);
+
+-- PostgREST hides tables the API roles cannot reach (PGRST205) — grants are required,
+-- including USAGE on the BIGSERIAL sequence or inserts fail.
+GRANT SELECT, INSERT ON faceprep_feedback TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON SEQUENCE faceprep_feedback_id_seq TO anon, authenticated, service_role;
+
+-- Force PostgREST to pick the table up immediately.
+NOTIFY pgrst, 'reload schema';

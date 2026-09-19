@@ -48,7 +48,9 @@ export async function POST(request: Request) {
         
         const studentsInClass = await db.all("SELECT email FROM students WHERE LOWER(TRIM(classGroup)) = LOWER(TRIM(?))", [classGroup]);
         const studentEmails = studentsInClass.map((s: any) => s.email).filter(Boolean);
-        const recipientList = studentEmails.length > 0 ? studentEmails.join(",") : "thanush@faceprep.in";
+        // Env-configured ops mailbox instead of a hardcoded personal address
+        const opsFallback = process.env.SUPER_ADMIN_EMAIL || process.env.BREVO_SENDER_EMAIL || "";
+        const recipientList = studentEmails.length > 0 ? studentEmails.join(",") : opsFallback;
 
         const mailSubject = `[FACE Prep E-Campus] New Task Assigned: Week ${weekNumber} - ${subject}`;
         const htmlBody = formatZentraEmail({

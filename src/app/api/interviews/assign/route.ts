@@ -154,12 +154,14 @@ export async function POST(request: Request) {
         try {
           const placeholders = selectedStudentIds.map(() => "?").join(",");
           const fetched = await db.all(
-            `SELECT id, name, email, register_number, classGroup, department FROM students WHERE id IN (${placeholders})`,
+            `SELECT id, name, email, register_number, classgroup as "classGroup", department FROM students WHERE id IN (${placeholders})`,
             selectedStudentIds
           );
-          enrolledStudents = selectedStudentIds
-            .map((id: any) => fetched.find((s: any) => s.id === id))
-            .filter(Boolean);
+          // Preserve original ordering AND keep a stub entry even if student row not found (avoids null student_id)
+          enrolledStudents = selectedStudentIds.map((id: any) => {
+            const found = fetched.find((s: any) => s.id === id);
+            return found || { id, name: null, email: null, register_number: id };
+          });
         } catch (_) {}
       }
 
@@ -250,9 +252,10 @@ export async function POST(request: Request) {
           const st = enrolledStudents[sIndex] || null;
           sIndex++;
 
-          // Use real student ID, or null (to satisfy foreign key constraints)
-          const stId = st ? st.id : null;
-          const stName = st ? st.name : `Candidate #${slotRunningIndex + 1}`;
+          // Always store the real student ID; fall back to a generated slot ID only if truly unknown
+          const stId = st?.id || null;
+          // Use real name if available; for stubs without a name, use a readable fallback (not anonymous)
+          const stName = (st?.name && st.name.trim()) ? st.name.trim() : (st?.id ? `Student ${st.id.slice(0, 8)}` : `Candidate #${slotRunningIndex + 1}`);
           const stEmail = st?.email || undefined;
 
           const slotTiming = formatTimeSlotWindow(baseTime, slotRunningIndex);
