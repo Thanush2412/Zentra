@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   try {
     const db = await getDb();
     const body = await request.json();
-    const { mentorId, slotId, dateStr, dateFormatted, targetStaffId, reason, subjectName, course, classGroup, targetStaffName } = body;
+    const { mentorId, slotId, dateStr, dateFormatted, targetStaffId, reason, subjectName, course, classGroup, targetStaffName, requestType } = body;
 
     if (!mentorId || !slotId || !dateStr || !dateFormatted || !targetStaffId || !reason) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
@@ -109,13 +109,15 @@ export async function POST(request: Request) {
       const metaDay = slot?.day || "";
       const metaTime = slot?.time || "";
       const storedTargetStaffId = normalizedTargetStaffId.toLowerCase() === "cam-approval" ? "cam_approval" : normalizedTargetStaffId;
+      // ROLE_UI_AUDIT T2: structured type marker (e.g. "late_punch") — the client
+      // matches approvals on this instead of parsing the reason text.
 
       try {
         await db.run(
           `INSERT INTO handover_requests (
              id, requestorId, requestorName, slotId, course, day, time,
-             dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?)`,
+             dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup, request_type
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?, ?)`,
           newId,
           mentorId,
           requestor.name,
@@ -129,7 +131,8 @@ export async function POST(request: Request) {
           metaTargetStaffName,
           reason,
           new Date().toISOString(),
-          metaClassGroup
+          metaClassGroup,
+          requestType || "late_punch"
         );
       } catch (insertErr: any) {
         if (insertErr?.code === "23503" || insertErr?.message?.includes("foreign key")) {
@@ -153,15 +156,16 @@ export async function POST(request: Request) {
               metaTargetStaffName,
               reason,
               new Date().toISOString(),
-              metaClassGroup
+              metaClassGroup,
+              requestType || "late_punch"
             );
           } catch (retryErr: any) {
             // Fallback: use requestor's own mentorId as valid target FK reference while keeping targetStaffName as CAM Approval
             await db.run(
               `INSERT INTO handover_requests (
                  id, requestorId, requestorName, slotId, course, day, time,
-                 dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?)`,
+                 dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup, request_type
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?, ?)`,
               newId,
               mentorId,
               requestor.name,
@@ -175,7 +179,8 @@ export async function POST(request: Request) {
               metaTargetStaffName,
               reason,
               new Date().toISOString(),
-              metaClassGroup
+              metaClassGroup,
+              requestType || "late_punch"
             );
           }
         } else {

@@ -1,49 +1,43 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
+// Pin to Mumbai (bom1) — co-located with Supabase DB
 export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
-export async function GET() {
-  if (process.env.NODE_ENV === "production") {
-    return NextResponse.json({ success: false, message: "Debug endpoints disabled in production." }, { status: 403 });
+/**
+ * Debug migration endpoint (API_OPTIMIZATION_PLAN item 9).
+ *
+ * Gated behind the ADMIN_API_KEY header in EVERY environment — never reachable
+ * by an unauthenticated caller. Prefer the deploy-time migration runner
+ * (lib/migrations.ts) over this route.
+ */
+export async function GET(request: Request) {
+  const adminKey = process.env.ADMIN_API_KEY || "";
+  const provided = request.headers.get("x-admin-key") || "";
+  if (!adminKey || provided !== adminKey) {
+    return NextResponse.json(
+      { success: false, message: "Forbidden: valid x-admin-key header required." },
+      { status: 403 }
+    );
   }
 
   try {
     const db = await getDb();
-    
-    // Check if the column exists
-    const tableInfo = await db.all("PRAGMA table_info(users)").catch(() => []);
-    const hasColumn = Array.isArray(tableInfo) && tableInfo.some((col: any) => col.name === 'must_change_password');
-    
-    if (hasColumn) {
-      return NextResponse.json({
-        success: true,
-        message: "Column already exists",
-        columns: tableInfo.map((col: any) => col.name)
-      });
-    }
-    
-    // Try to add the column safely
-    try { await db.exec("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0;"); } catch (_) {}
-    try { await db.exec("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL;"); } catch (_) {}
-    
-    // Verify it was added
-    const newTableInfo = await db.all("PRAGMA table_info(users)").catch(() => []);
-    const nowHasColumn = Array.isArray(newTableInfo) && newTableInfo.some((col: any) => col.name === 'must_change_password');
-    
+
+    // Additive column migration (idempotent)
+    try { await db.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT 0;"); } catch (_) {}
+    try { await db.exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TEXT DEFAULT NULL;"); } catch (_) {}
+
     return NextResponse.json({
       success: true,
-      message: nowHasColumn ? "Columns added successfully" : "Column addition completed",
-      columns: Array.isArray(newTableInfo) ? newTableInfo.map((col: any) => col.name) : []
+      message: "Migration completed",
     });
-    
   } catch (error: any) {
     console.error("Migration error:", error);
-    return NextResponse.json({ 
-      success: false, 
-      message: error.message 
+    return NextResponse.json({
+      success: false,
+      message: error.message
     }, { status: 500 });
   }
 }

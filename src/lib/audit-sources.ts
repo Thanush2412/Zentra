@@ -76,8 +76,9 @@ export function sheetCsvExportUrl(sheetId: string, gid: string): string {
 // ── Supabase sources (proxied server-side only) ──
 // Both datasets live in the CURRENT E-Campus Supabase project (the legacy rysaj
 // project has been migrated away from). Env overrides exist for other deployments.
+// Credentials are env-only — no hardcoded fallbacks in source control.
 
-const CURRENT_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://scuvqabxqqtvibjutoyj.supabase.co";
+const CURRENT_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const CURRENT_SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
 export const PARTNER_FEEDBACK = {

@@ -190,10 +190,18 @@ export async function POST(request: Request) {
         ]
       );
 
+      // DATA_FLOW_AUDIT D9: return the authoritative corrected row so the client
+      // merges the full record (real id, markedBy, timestamp) instead of just the status.
+      const correctedRow = await db.get(
+        "SELECT * FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+        [studentId, slotId, dateStr]
+      );
+
       return NextResponse.json({
         success: true,
         message: "Attendance corrected successfully.",
-        newCount: currentCount + 1
+        newCount: currentCount + 1,
+        record: correctedRow || null
       });
     }
 
@@ -384,20 +392,39 @@ export async function POST(request: Request) {
       // 3. Execute attendance writes in chunks of 100 statements per batch()
       // 100 stmts × ~28KB each = ~2.8MB per HTTP call — well under Turso's limit
       const STMTS_PER_BATCH = 100;
+      let failedStatements = 0;
       for (let i = 0; i < batchStatements.length; i += STMTS_PER_BATCH) {
         const batchChunk = batchStatements.slice(i, i + STMTS_PER_BATCH);
         try {
-          await db.client.batch(batchChunk, "write");
-        } catch (batchErr: any) {
+          await db.client.batch(batchChunk, "write");        } catch (batchErr: any) {
           console.error(`[Import] batch chunk ${Math.floor(i / STMTS_PER_BATCH) + 1} failed, falling back:`, batchErr?.message);
           // Fallback: run each statement individually (still uses multi-row INSERT, just 1 per HTTP call)
+          let chunkFailed = 0;
           for (const stmt of batchChunk) {
-            try { await db.run(stmt.sql, stmt.args); } catch (_) { }
+            try {
+              await db.run(stmt.sql, stmt.args);
+            } catch (stmtErr: any) {
+              chunkFailed++;
+              console.error(`[Import] statement failed after batch fallback: ${stmtErr?.message}\nSQL: ${String(stmt.sql).slice(0, 200)}`);
+            }
+          }
+          if (chunkFailed > 0) {
+            failedStatements += chunkFailed;
+            console.error(`[Import] chunk had ${chunkFailed}/${batchChunk.length} statements fail permanently`);
           }
         }
       }
 
       if (count === 0 && upsertRows.length > 0) count = upsertRows.length;
+
+      if (failedStatements > 0) {
+        return NextResponse.json({
+          success: false,
+          message: `Imported ${count} attendance entries but ${failedStatements} statements failed permanently. Check server logs for details.`,
+          count,
+          failedStatements
+        }, { status: 207 });
+      }
 
 
       return NextResponse.json({
@@ -521,7 +548,16 @@ export async function POST(request: Request) {
       [logId, "booking", description, actorName || "Faculty", actorRole || "Mentor", timestamp]
     );
 
-    return NextResponse.json({ success: true, message: "Attendance marked successfully.", insertedCount });
+    // DATA_FLOW_AUDIT D6: return the authoritative stored rows (real DB ids, markedBy,
+    // timestamp) so the client patches state instead of synthesizing fake ids.
+    const storedRows = validItems.length > 0
+      ? await db.all(
+          "SELECT * FROM student_attendance WHERE slotId = ? AND dateStr = ?",
+          [slotId, dateStr]
+        )
+      : [];
+
+    return NextResponse.json({ success: true, message: "Attendance marked successfully.", insertedCount, records: storedRows });
   } catch (error: any) {
     console.error("API POST Attendance error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

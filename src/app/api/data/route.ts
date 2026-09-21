@@ -4,9 +4,11 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { ensureMigration } from "@/lib/migrations";
 
 export async function GET(request: Request) {
   try {
+    await ensureMigration("audit_logs_extended_columns").catch(() => {});
     const db = await getDb();
 
     const { searchParams } = new URL(request.url);
@@ -158,7 +160,7 @@ export async function GET(request: Request) {
 
     const isSME = role === "sme";
     const isAllocator = role === "allocator";
-    const needsDemo = isAdmin || isSME || isAllocator || isCAM;
+    const needsDemo = isAdmin || isSME || isAllocator || isCAM || isMentor;
 
     // Leave requests scoping
     let leaveSql: string;
@@ -220,6 +222,7 @@ export async function GET(request: Request) {
       { sql: needsDemo ? "SELECT * FROM sme_availability ORDER BY day_of_week, start_time" : "SELECT 1 WHERE 1=0", params: [] },
       { sql: isAdmin ? "SELECT * FROM campus_managers" : "SELECT 1 WHERE 1=0", params: [] },
       { sql: isAdmin ? "SELECT * FROM kam_users" : "SELECT 1 WHERE 1=0", params: [] },
+      { sql: !isStudent ? "SELECT id, mentor_id, college_id, request_type, leave_category, start_date, end_date, reason, status FROM faculty_leave_requests WHERE status = 'approved' ORDER BY start_date DESC" : "SELECT 1 WHERE 1=0", params: [] },
       { sql: "SELECT key, value FROM system_settings", params: [] }
     ];
 
@@ -240,6 +243,7 @@ export async function GET(request: Request) {
       smeAvailability,
       campusManagers,
       kamUsers,
+      facultyLeaves,
       systemSettingsRows
     ] = await db.multiQuery(queryDefs);
 
@@ -357,6 +361,7 @@ export async function GET(request: Request) {
       smeAvailability: smeAvailability || [],
       campusManagers: campusManagers || [],
       kamUsers: kamUsers || [],
+      facultyLeaves: facultyLeaves || [],
       systemSettings
     }, {
       headers: {

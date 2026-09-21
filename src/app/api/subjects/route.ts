@@ -12,8 +12,8 @@ export async function GET(request: Request) {
     const collegeId = searchParams.get("collegeId") || searchParams.get("college_id");
 
     const sql = collegeId 
-      ? "SELECT * FROM subjects WHERE college_id = ? OR college_id IS NULL ORDER BY department, name" 
-      : "SELECT * FROM subjects ORDER BY department, name";
+      ? "SELECT * FROM subjects WHERE college_id = ? OR college_id IS NULL ORDER BY department, name LIMIT 5000" 
+      : "SELECT * FROM subjects ORDER BY department, name LIMIT 5000";
     const args = collegeId ? [collegeId] : [];
 
     const subjects = await db.all(sql, ...args);

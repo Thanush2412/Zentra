@@ -19,9 +19,9 @@ export async function GET(request: Request) {
 
     let courses;
     if (collegeId && collegeId !== "all") {
-      courses = await db.all("SELECT * FROM courses WHERE college_id = ? OR college_id IS NULL ORDER BY name", collegeId);
+      courses = await db.all("SELECT * FROM courses WHERE college_id = ? OR college_id IS NULL ORDER BY name LIMIT 2000", collegeId);
     } else {
-      courses = await db.all("SELECT * FROM courses ORDER BY name");
+      courses = await db.all("SELECT * FROM courses ORDER BY name LIMIT 2000");
     }
 
     return NextResponse.json({ success: true, courses });

@@ -61,22 +61,22 @@ export async function POST(request: Request) {
     const hashedNewPass = hashPassword(trimmedNewPass);
     const nowStr = new Date().toISOString();
 
-    // Update main users table
+    // Update main users table. plain_password is no longer written — the
+    // admin-visible plaintext column is deprecated (security audit item 5).
     try {
       await db.run(
-        "UPDATE users SET password_hash = ?, plain_password = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
-        [hashedNewPass, trimmedNewPass, nowStr, user.id]
+        "UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
+        [hashedNewPass, nowStr, user.id]
       );
     } catch (error: any) {
       if (error.message?.includes('no such column')) {
         try {
-          await db.exec("ALTER TABLE users ADD COLUMN plain_password TEXT;");
           await db.exec("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0;");
           await db.exec("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL;");
         } catch (_) {}
         await db.run(
-          "UPDATE users SET password_hash = ?, plain_password = ?, updated_at = ? WHERE id = ?",
-          [hashedNewPass, trimmedNewPass, nowStr, user.id]
+          "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+          [hashedNewPass, nowStr, user.id]
         );
       } else {
         throw error;

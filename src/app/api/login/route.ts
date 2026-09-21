@@ -5,8 +5,9 @@ export const maxDuration = 60;
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { getDb, PostgresDbAdapter } from "@/lib/db";
-import { verifyPassword, hashPassword } from "@/lib/auth";
+import { verifyPassword, hashPassword, needsRehash } from "@/lib/auth";
 import { SUPER_ADMIN_ROLE, roleGrantsSuperAdmin } from "@/lib/superadmin";
+import { createSessionToken, buildSessionCookie, buildClearSessionCookie } from "@/lib/session";
 
 /** Profile tables that hold a display name for each role (whitelisted — never user input). */
 const ROLE_PROFILE_TABLES: Record<string, string> = {
@@ -110,7 +111,9 @@ export async function POST(request: Request) {
           await db.run("UPDATE login_history SET logout_time = ? WHERE id = ?", [new Date().toISOString(), lastSession.id]);
         }
       }
-      return NextResponse.json({ success: true, message: "Logged out successfully." });
+      const res = NextResponse.json({ success: true, message: "Logged out successfully." });
+      res.headers.append("Set-Cookie", buildClearSessionCookie());
+      return res;
     }
 
     const { email, password } = body;
@@ -216,8 +219,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // Transparently upgrade legacy plaintext password or unhashed password to secure hash
-    if (!String(user.password_hash).includes(":")) {
+    // Rehash-on-login: transparently upgrade legacy 1,000-iteration hashes to
+    // the current 210,000-iteration format (API_OPTIMIZATION_PLAN item 10).
+    if (needsRehash(String(user.password_hash))) {
       const newHashed = hashPassword(password);
       try {
         await db.run("UPDATE users SET password_hash = ? WHERE id = ?", [newHashed, user.id]);
@@ -247,27 +251,35 @@ export async function POST(request: Request) {
     // Check if password change is explicitly enforced
     const mustChangePassword = user.must_change_password === 1;
 
-    // Record login history safely without failing request
-    try {
-      const logId = "log_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
-      await db.run(
+    // Record login history and update last_login concurrently without blocking response latency
+    const nowStr = new Date().toISOString();
+    const logId = "log_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+    Promise.all([
+      db.run(
         "INSERT INTO login_history (id, user_id, login_time, ip, device) VALUES (?, ?, ?, ?, ?)",
-        [logId, user.id, new Date().toISOString(), "127.0.0.1", "Web Browser"]
-      );
-    } catch (_) {}
+        [logId, user.id, nowStr, "127.0.0.1", "Web Browser"]
+      ),
+      db.run("UPDATE users SET last_login = ?, updated_at = ? WHERE id = ?", [nowStr, nowStr, user.id]),
+      (user.role === 'student' && user.reference_id)
+        ? db.run("UPDATE students SET last_login = ?, updated_at = ? WHERE id = ?", [nowStr, nowStr, user.reference_id])
+        : Promise.resolve(),
+      (user.role === 'mentor' && user.reference_id)
+        ? db.run("UPDATE mentors SET last_login = ?, updated_at = ? WHERE id = ?", [nowStr, nowStr, user.reference_id])
+        : Promise.resolve()
+    ]).catch(() => {});
 
-    // Update last login timestamp safely
-    try {
-      const nowStr = new Date().toISOString();
-      await db.run("UPDATE users SET last_login = ?, updated_at = ? WHERE id = ?", [nowStr, nowStr, user.id]);
-      if (user.role === 'student' && user.reference_id) {
-        await db.run("UPDATE students SET last_login = ?, updated_at = ? WHERE id = ?", [nowStr, nowStr, user.reference_id]);
-      } else if (user.role === 'mentor' && user.reference_id) {
-        await db.run("UPDATE mentors SET last_login = ?, updated_at = ? WHERE id = ?", [nowStr, nowStr, user.reference_id]);
-      }
-    } catch (_) {}
+    // Issue the HttpOnly session cookie — all /api/* routes are gated on this
+    // by src/middleware.ts. Identity lives ONLY in the signed token, so the
+    // client can no longer spoof role/userId via query params.
+    const sessionToken = createSessionToken({
+      userId: user.reference_id || user.id,
+      role: user.role,
+      email: user.email || lowerEmail,
+      collegeId: collegeId,
+      name: userName
+    });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       role: user.role,
       userId: user.reference_id || user.id,
@@ -277,7 +289,20 @@ export async function POST(request: Request) {
       isSuperAdmin: isSuperAdmin,
       mustChangePassword: !!mustChangePassword
     });
+    response.headers.append("Set-Cookie", buildSessionCookie(sessionToken));
+    return response;
   } catch (error: any) {
+    const isClientAbort =
+      error?.code === "ECONNRESET" ||
+      error?.name === "AbortError" ||
+      error?.message?.toLowerCase().includes("aborted") ||
+      error?.message?.toLowerCase().includes("premature close");
+
+    if (isClientAbort) {
+      // Client closed or aborted connection before response finished (e.g. redirect, reload)
+      return new Response(null, { status: 499 });
+    }
+
     console.error("API POST Login error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

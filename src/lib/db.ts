@@ -86,7 +86,17 @@ export function adaptQueryForPostgres(sql: string, params: any[]): { sql: string
   return { sql: convertedSql, params: normalizeParams(params) };
 }
 
-async function executeWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 250): Promise<T> {
+/**
+ * Retries transient network errors, but ONLY for idempotent operations by
+ * default (plan item 13). Mutations (INSERT/UPDATE/DELETE/CREATE...) are NOT
+ * auto-retried after an ambiguous mid-flight failure — the server state is
+ * unknown, so a retry could double-write. Pass `force` for statements known
+ * to be idempotent (e.g. upserts with ON CONFLICT).
+ */
+async function executeWithRetry<T>(fn: () => Promise<T>, opts?: { retries?: number; delay?: number; force?: boolean; readOnly?: boolean }): Promise<T> {
+  const retries = opts?.retries ?? 3;
+  const delay = opts?.delay ?? 250;
+  const idempotent = opts?.readOnly || opts?.force || false;
   let attempt = 0;
   while (attempt < retries) {
     try {
@@ -100,8 +110,8 @@ async function executeWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 25
         err?.message?.includes("Connect Timeout") ||
         err?.message?.includes("read ECONNRESET");
 
-      if (isNetErr && attempt < retries) {
-        console.warn(`[PostgreSQL Retry] Transient network timeout/reset (attempt ${attempt}/${retries}). Retrying in ${delay * attempt}ms...`);
+      if (isNetErr && attempt < retries && idempotent) {
+        console.warn(`[PostgreSQL Retry] Transient network error on idempotent op (attempt ${attempt}/${retries}). Retrying in ${delay * attempt}ms...`);
         await new Promise(res => setTimeout(res, delay * attempt));
       } else {
         throw err;
@@ -109,6 +119,12 @@ async function executeWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 25
     }
   }
   throw new Error("PostgreSQL operation failed after maximum retries");
+}
+
+/** True when a SQL statement is read-only and therefore safe to auto-retry. */
+function isReadOnlySql(sql: string): boolean {
+  const trimmed = sql.trim().replace(/^\(+/, "").toUpperCase();
+  return trimmed.startsWith("SELECT") || trimmed.startsWith("WITH") || trimmed.startsWith("SHOW") || trimmed.startsWith("EXPLAIN");
 }
 
 const POSTGRES_CAMEL_MAP = new Map<string, string>([
@@ -195,17 +211,20 @@ function createPostgresAdapter(pool: pg.Pool): PostgresDbAdapter {
     },
     async get(sql: string, ...params: any[]) {
       const adapted = adaptQueryForPostgres(sql, params);
-      const res = await executeWithRetry(() => pool.query(adapted.sql, adapted.params));
+      const res = await executeWithRetry(() => pool.query(adapted.sql, adapted.params), { readOnly: isReadOnlySql(adapted.sql) });
       return res.rows[0] ? normalizePgRow(res.rows[0]) : undefined;
     },
     async all(sql: string, ...params: any[]) {
       const adapted = adaptQueryForPostgres(sql, params);
-      const res = await executeWithRetry(() => pool.query(adapted.sql, adapted.params));
+      const res = await executeWithRetry(() => pool.query(adapted.sql, adapted.params), { readOnly: isReadOnlySql(adapted.sql) });
       return res.rows.map(normalizePgRow);
     },
     async run(sql: string, ...params: any[]) {
       const adapted = adaptQueryForPostgres(sql, params);
-      const res = await executeWithRetry(() => pool.query(adapted.sql, adapted.params));
+      // Writes are retried only when provably idempotent (INSERT ... ON CONFLICT);
+      // plain mutations fail fast to avoid double-writes on flaky networks.
+      const isUpsert = /ON\s+CONFLICT/i.test(adapted.sql);
+      const res = await executeWithRetry(() => pool.query(adapted.sql, adapted.params), { force: isUpsert });
       return {
         lastID: undefined,
         changes: res.rowCount || 0
@@ -228,7 +247,14 @@ function createPostgresAdapter(pool: pg.Pool): PostgresDbAdapter {
 
       return await Promise.all(queries.map(q => {
         const adapted = adaptQueryForPostgres(q.sql, q.params || []);
-        return executeWithRetry(() => pool.query(adapted.sql, adapted.params)).then(r => r.rows.map(normalizePgRow)).catch(() => []);
+        return executeWithRetry(() => pool.query(adapted.sql, adapted.params), { readOnly: isReadOnlySql(adapted.sql) })
+          .then(r => r.rows.map(normalizePgRow))
+          .catch(err => {
+            // Log loudly instead of silently returning [] — silent failures here
+            // made data "disappear" with no trace (see API_OPTIMIZATION_PLAN #8).
+            console.error(`[multiQuery] Query failed and returned []: ${err?.message || err}\nSQL: ${q.sql.slice(0, 300)}`);
+            return [];
+          });
       }));
     },
     async transaction<T>(callback: (tx: DbTransactionContext) => Promise<T>): Promise<T> {
@@ -381,19 +407,32 @@ export function getDb(): Promise<PostgresDbAdapter> {
   return dbPromise;
 }
 
+// Reference data (courses/departments) changes rarely — cache it briefly so
+// repeated resolveClassGroupDetails calls in loops don't re-fetch the full
+// tables every time (see API_OPTIMIZATION_PLAN #16).
+let classGroupRefCache: { at: number; courses: any[]; depts: any[]; subjectMetadata: any[] } | null = null;
+const CLASS_GROUP_REF_TTL_MS = 60_000;
+
 export async function resolveClassGroupDetails(db: any, classGroup: string) {
   if (!classGroup) {
     return { department: "General", semester: "Semester 1", year: "Year 1" };
   }
 
-  const courses = await db.all("SELECT name, code FROM courses");
-  const depts = await db.all("SELECT name, code FROM departments");
+  let courses: any[], depts: any[], subjectMetadata: any[];
+  if (classGroupRefCache && Date.now() - classGroupRefCache.at < CLASS_GROUP_REF_TTL_MS) {
+    ({ courses, depts, subjectMetadata } = classGroupRefCache);
+  } else {
+    [courses, depts, subjectMetadata] = await Promise.all([
+      db.all("SELECT name, code FROM courses"),
+      db.all("SELECT name, code FROM departments"),
+      db.all("SELECT DISTINCT semester, year FROM subjects WHERE semester IS NOT NULL AND semester != ''")
+    ]);
+    classGroupRefCache = { at: Date.now(), courses, depts, subjectMetadata };
+  }
   const allCourseNames = Array.from(new Set([
     ...courses.map((c: any) => c.name),
     ...depts.map((d: any) => d.name)
   ])).filter(Boolean);
-
-  const subjectMetadata = await db.all("SELECT DISTINCT semester, year FROM subjects WHERE semester IS NOT NULL AND semester != ''");
 
   const cleanCG = classGroup.trim();
   const cgLower = cleanCG.toLowerCase();

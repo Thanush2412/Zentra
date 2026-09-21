@@ -4,6 +4,7 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireRole, apiAuthErrorResponse } from "@/lib/api-auth";
 
 export async function GET() {
   try {
@@ -17,6 +18,7 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    requireRole(request, "admin");
     const db = await getDb();
     const body = await request.json();
     const { id, action, role, mappingType, selectedReferenceId, collegeId, group, classGroup } = body;
@@ -144,12 +146,15 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });
   } catch (error: any) {
+    const authRes = apiAuthErrorResponse(error);
+    if (authRes) return authRes;
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
 export async function DELETE(request: Request) {
   try {
+    requireRole(request, "admin");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -161,6 +166,8 @@ export async function DELETE(request: Request) {
     await db.run("DELETE FROM signup_requests WHERE id = ?", [id]);
     return NextResponse.json({ success: true, message: "Request deleted successfully" });
   } catch (error: any) {
+    const authRes = apiAuthErrorResponse(error);
+    if (authRes) return authRes;
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

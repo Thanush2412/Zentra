@@ -8,47 +8,14 @@ import { sendMail, renderEmailShell } from "@/lib/mail";
 import { dispatchExternalInterviewNotifications } from "@/lib/interview-notifications";
 import { checkMentorAvailability } from "@/lib/availability";
 import { generateStudentGCalUrl } from "@/lib/google-calendar";
-
-// Helper to ensure table schema and columns exist in PostgreSQL
-async function ensureInterviewTables(db: any) {
-  try {
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS student_interview_slots (
-        id VARCHAR(255) PRIMARY KEY,
-        interview_id VARCHAR(255) NOT NULL,
-        allocation_id VARCHAR(255) NOT NULL,
-        student_id VARCHAR(255),
-        student_name VARCHAR(255),
-        mentor_id VARCHAR(255) NOT NULL,
-        mentor_name VARCHAR(255) NOT NULL,
-        college_id VARCHAR(255) NOT NULL,
-        slot_start_time VARCHAR(100) NOT NULL,
-        slot_end_time VARCHAR(100) NOT NULL,
-        status VARCHAR(100) DEFAULT 'scheduled',
-        subject VARCHAR(255),
-        target_date VARCHAR(50),
-        gmeet_link TEXT,
-        gcal_link TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-  } catch (_) {}
-  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS assigned_mentor_ids TEXT"); } catch (_) {}
-  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS accepted_capacity INTEGER DEFAULT 0"); } catch (_) {}
-  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS allocated_students INTEGER DEFAULT 0"); } catch (_) {}
-  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS remaining_students INTEGER DEFAULT 0"); } catch (_) {}
-  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS preferred_start_time VARCHAR(100) DEFAULT '09:00 AM'"); } catch (_) {}
-  try { await db.run("ALTER TABLE student_interviews ADD COLUMN IF NOT EXISTS gmeet_link TEXT"); } catch (_) {}
-  try { await db.run("ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS gmeet_link TEXT"); } catch (_) {}
-  try { await db.run("ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS gcal_link TEXT"); } catch (_) {}
-  try { await db.run("ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS subject VARCHAR(255)"); } catch (_) {}
-  try { await db.run("ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS target_date VARCHAR(50)"); } catch (_) {}
-}
+import { ensureMigration } from "@/lib/migrations";
 
 export async function POST(request: Request) {
   try {
     const db = await getDb();
-    await ensureInterviewTables(db);
+    // Schema ensured by the centralized migration runner (runs once per process)
+    await ensureMigration("student_interview_slots_table");
+    await ensureMigration("student_interviews_columns");
     const body = await request.json();
 
     const {
@@ -240,8 +207,18 @@ export async function POST(request: Request) {
 
       let sIndex = 0;
       let slotRunningIndex = 0;
+      // Batch-fetch all scheduled mentors in one query (was one db.get per schedule entry)
+      const scheduleMentorIds = Array.from(new Set(mentorSchedule.map((ms: any) => ms.mentor_id).filter(Boolean)));
+      const mentorById = new Map<string, any>();
+      if (scheduleMentorIds.length > 0) {
+        const mentorRows = await db.all(
+          `SELECT id, name, college_id FROM mentors WHERE id IN (${scheduleMentorIds.map(() => "?").join(",")})`,
+          scheduleMentorIds
+        );
+        for (const m of mentorRows) mentorById.set(m.id, m);
+      }
       for (const ms of mentorSchedule) {
-        const mObj = await db.get("SELECT name, college_id FROM mentors WHERE id = ?", [ms.mentor_id]);
+        const mObj = mentorById.get(ms.mentor_id);
         const mName = mObj?.name || "Mentor";
         const mCol = mObj?.college_id || interview.college_id || "campus";
         const count = Number(ms.student_count) || 3;

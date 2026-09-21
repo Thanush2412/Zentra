@@ -66,6 +66,7 @@ export function DemoAllocationDashboard() {
     createDemoRule,
     deleteDemoRule,
     leaveRequests,
+    facultyLeaves,
     holidays,
     demoSwapRequests,
     resolveDemoSwap
@@ -440,10 +441,12 @@ export function DemoAllocationDashboard() {
       };
     }
 
-    // 3. Check if they are on leave
-    const isLeave = leaveRequests?.some((l: any) => l.mentorId === mentorId && l.dateStr === dateStr && l.status === "approved");
-    if (isLeave) {
-      return { status: "blocked", label: "On Leave", details: "Leave Approved" };
+    // 3. Check if mentor is on approved faculty leave
+    const isFacultyLeave = facultyLeaves?.some(
+      (fl: any) => fl.mentor_id === mentorId && fl.status === "approved" && dateStr >= fl.start_date && dateStr <= fl.end_date
+    );
+    if (isFacultyLeave) {
+      return { status: "blocked", label: "On Leave", details: "Faculty Leave Approved" };
     }
 
     // 4. Check if they are teaching a regular class
@@ -2010,7 +2013,7 @@ export function DemoAllocationDashboard() {
   }, [filteredMentors, previewSessions, generationStep]);
 
   return (
-    <div className="flex-1 flex flex-col md:flex-row bg-slate-50/50 dark:bg-slate-900/10 text-slate-800 font-sans h-full overflow-hidden">
+    <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 font-sans h-full overflow-hidden">
 
       {/* FLOATING COLLAPSIBLE LEFT SIDEBAR NAVIGATION */}
       <aside className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-3" : "w-64 p-5"}`}>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { resolveClassGroupDetailsFromState, isCohortMatch } from "@/lib/utils";
 import { useToast } from "@/context/ToastContext";
 
@@ -380,6 +380,11 @@ interface AppContextProps {
   setWeekOffset: (offset: number) => void;
   isLoading: boolean;
   isDataLoading: boolean;
+  /** Set when the last full /api/data refresh failed — UI shows a retry banner. */
+  dataLoadError: boolean;
+  retryDataLoad: () => Promise<void>;
+  /** Set when the logged-in identity cannot be resolved — dashboards must render an error, not another user's data. */
+  currentIdentityError: string | null;
   currentShift: ShiftType;
   setCurrentShift: (shift: ShiftType) => void;
   shiftTimeSlots: Record<ShiftType, string[]>;
@@ -434,6 +439,7 @@ interface AppContextProps {
   updateDemoSession: (sessionId: string, dateStr: string, timeSlot: string, smeId: string, smeName: string) => Promise<{ success: boolean; message: string }>;
   swapDemoSessions: (session1Id: string, session2Id: string) => Promise<{ success: boolean; message: string }>;
   deleteDemoSession: (sessionId: string) => Promise<{ success: boolean; message: string }>;
+  rescheduleDemoSession: (sessionId: string, newDateStr: string, newTimeSlot: string) => Promise<{ success: boolean; message: string }>;
   requestDemoSwap: (payload: any) => Promise<{ success: boolean; message: string }>;
   resolveDemoSwap: (requestId: string, status: "approved" | "rejected" | "pending_sme") => Promise<{ success: boolean; message: string }>;
   saveSmeAvailability: (smeId: string, windows: any[], day?: string) => Promise<{ success: boolean; error?: string }>;
@@ -496,6 +502,7 @@ interface AppContextProps {
     attendanceTypeSub?: string
   ) => Promise<{ success: boolean; message: string }>;
   leaveRequests: any[];
+  facultyLeaves: any[];
   holidays: Holiday[];
   updateStudent: (student: Student) => Promise<{ success: boolean; message: string }>;
   deleteStudent: (id: string) => Promise<{ success: boolean; message: string }>;
@@ -566,6 +573,7 @@ interface AppContextProps {
   systemSettings: { mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any };
   attendanceLockEnabled: boolean;
   setSystemSettings: React.Dispatch<React.SetStateAction<{ mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any }>>;
+  logout: () => void;
 }
 
 const AppContext = createContext<AppContextProps | undefined>(undefined);
@@ -653,6 +661,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [students, setStudents] = useState<Student[]>([]);
   const [studentAttendance, setStudentAttendance] = useState<StudentAttendance[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  const [facultyLeaves, setFacultyLeaves] = useState<any[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [weeklyTasks, setWeeklyTasks] = useState<WeeklyTask[]>([]);
   const [studentTracker, setStudentTracker] = useState<StudentTrackerEntry[]>([]);
@@ -669,6 +678,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [demoRules, setDemoRules] = useState<any[]>([]);
   const [demoSwapRequests, setDemoSwapRequests] = useState<any[]>([]);
   const [currentSME, setCurrentSME] = useState<any | null>(null);
+  // ROLE_UI_AUDIT S3/E1: surfaced to dashboards when the logged-in identity cannot
+  // be resolved — replaces the old "silently show the first user's data" fallback.
+  const [currentIdentityError, setCurrentIdentityError] = useState<string | null>(null);
   const [subjectGroups, setSubjectGroups] = useState<Array<{ id: string; name: string; description: string }>>([]);
   const coursesList = departmentsList;
 
@@ -702,6 +714,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isLoading, setIsLoading] = useState(true);
   const [isDataLoading, setIsDataLoading] = useState(false);
+  const [dataLoadError, setDataLoadError] = useState(false);
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [baseDate, setBaseDate] = useState<string>(() => {
     const today = new Date();
@@ -757,23 +770,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [colleges, currentCAM, currentMentor, currentStudent, currentKAM, currentSME]);
 
-  // ── Fetch all data from the database ──────────────────────────────────────
+  // ── Fetch all data from the database ────────────────────────────────────────
+  // ── DATA_FLOW_AUDIT D4: cross-tab / cross-role change broadcast ────────────
+  // After a successful mutation, notify other tabs (and in-page listeners) that
+  // a domain changed. DashboardLayout listens and triggers a scoped refresh.
+  const broadcastDataChanged = useCallback((domain: string) => {
+    if (typeof window === "undefined") return;
+    try {
+      window.dispatchEvent(new CustomEvent("fp_data_changed", { detail: { domain, at: Date.now() } }));
+      // localStorage writes fire "storage" events in OTHER same-origin tabs.
+      localStorage.setItem("fp_data_changed", JSON.stringify({ domain, at: Date.now() }));
+    } catch (_) { /* storage may be unavailable (private mode) */ }
+  }, []);
+
+  // DATA_FLOW_AUDIT D5: coalesce concurrent refreshes and drop stale responses.
+  // The old version had no guard — two overlapping /api/data calls (login +
+  // initApp, or import + refresh) could resolve out of order and the OLDER
+  // snapshot would land last, resurrecting deleted records on screen.
+  const refreshDataSeq = useRef(0);
+  const refreshDataInFlight = useRef<Promise<any> | null>(null);
   const refreshData = async (silent: boolean = true) => {
-    setIsDataLoading(true);
-    if (!silent) {
-      startLoading("Fetching live database data…");
+    // If a refresh is already running, piggyback on it instead of racing.
+    if (refreshDataInFlight.current) {
+      return refreshDataInFlight.current;
     }
+    const seq = ++refreshDataSeq.current;
+
+    const run = async () => {
+      setIsDataLoading(true);
+      if (!silent) {
+        startLoading("Fetching live database data…");
+      }
     try {
       let role = (typeof window !== "undefined" ? localStorage.getItem("fp_current_role") : null) || currentRole || "admin";
       if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) {
         role = "admin";
       }
       let userId = "";
-      if (role === "admin") userId = (typeof window !== "undefined" ? localStorage.getItem("fp_admin_id") : "") || "admin_1";
-      else if (role === "kam") userId = (typeof window !== "undefined" ? localStorage.getItem("fp_kam_id") : "") || "";
-      else if (role === "cam") userId = (typeof window !== "undefined" ? localStorage.getItem("fp_cam_id") : "") || "";
-      else if (role === "mentor") userId = (typeof window !== "undefined" ? localStorage.getItem("fp_mentor_id") : "") || "";
-      else if (role === "student") userId = (typeof window !== "undefined" ? localStorage.getItem("fp_student_id") : "") || "";
+      if (role === "admin") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_admin_id") || localStorage.getItem("fp_user_id")) : "") || "admin_1";
+      else if (role === "kam") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_kam_id") || localStorage.getItem("fp_user_id")) : "") || "";
+      else if (role === "cam") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_cam_id") || localStorage.getItem("fp_user_id")) : "") || "";
+      else if (role === "mentor") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_mentor_id") || localStorage.getItem("fp_user_id")) : "") || "";
+      else if (role === "student") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_student_id") || localStorage.getItem("fp_user_id")) : "") || "";
+      else if (role === "sme") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_sme_id") || localStorage.getItem("fp_user_id")) : "") || "";
 
       const res = await fetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}&_t=${Date.now()}`, {
         cache: "no-store",
@@ -781,6 +820,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
+        setDataLoadError(false);
+        // D5: a newer refresh started while this one was in flight — discard this
+        // response instead of overwriting fresher state with stale data.
+        if (seq !== refreshDataSeq.current) {
+          return { mentors: [] as Mentor[], hr: [] as HRUser[], students: [] as Student[], smes: [] as any[] };
+        }
         setSlots(data.slots || []);
         setRequests(data.requests || []);
         setApprovedHandovers(data.approvedHandovers || []);
@@ -809,6 +854,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setDemoRules(data.demoRules || []);
         setSignupRequests(data.signupRequests || []);
         if (data.smeAvailability) setSmeAvailability(data.smeAvailability);
+        if (data.facultyLeaves) setFacultyLeaves(data.facultyLeaves);
 
         if (data.demoSwapRequests) setDemoSwapRequests(data.demoSwapRequests);
         if (data.kamTasks) setKamTasks(data.kamTasks);
@@ -826,6 +872,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch (e) {
       console.error("Error fetching data from API:", e);
+      if (seq === refreshDataSeq.current) setDataLoadError(true);
     } finally {
       setIsDataLoading(false);
       if (!silent) {
@@ -833,12 +880,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     return { mentors: [] as Mentor[], hr: [] as HRUser[], students: [] as Student[], smes: [] as any[] };
+    };
+
+    const promise = run().finally(() => {
+      if (refreshDataInFlight.current === promise) {
+        refreshDataInFlight.current = null;
+      }
+    });
+    refreshDataInFlight.current = promise;
+    return promise;
   };
+
+  /** Manual retry after a failed full data refresh (powers the DashboardLayout retry banner). */
+  const retryDataLoad = useCallback(async () => {
+    setDataLoadError(false);
+    await refreshData(false);
+  }, [refreshData]);
 
   // ── Surgical attendance-only refresh — re-fetches only studentAttendance from DB ──
   // Use this after bulk import or when mentor-marked data needs to reflect in CAM view
   const refreshAttendance = async (targetCollegeId?: string) => {
     try {
+      setIsDataLoading(true); // show the top sync progress line during the swap
       const role = localStorage.getItem("fp_current_role") || "";
       const userId = localStorage.getItem("fp_cam_id") || localStorage.getItem("fp_admin_id") || localStorage.getItem("fp_mentor_id") || "";
       const colParam = targetCollegeId ? `&college_id=${encodeURIComponent(targetCollegeId)}` : "";
@@ -852,6 +915,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch (e) {
       console.error("Error refreshing attendance:", e);
+    } finally {
+      setIsDataLoading(false);
     }
   };
 
@@ -1059,67 +1124,101 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentRoleState(role);
 
     const userEmail = (localStorage.getItem("fp_user_email") || "").toLowerCase().trim();
-    // Identity issued by the server at login — lets the super-admin pick any workspace and
-    // still resolve their own profile without any hardcoded account ids.
-    const sessionUserId = localStorage.getItem("fp_user_id") || "";
+    const sessionUserId = userId || localStorage.getItem("fp_user_id") || "";
+    if (sessionUserId) {
+      localStorage.setItem("fp_user_id", sessionUserId);
+    }
 
     if (role === "mentor") {
-      const selectedId = userId || localStorage.getItem("fp_mentor_id") || sessionUserId || currentMentor?.id;
-      const m = mentors.find((item) => item.id === selectedId || (!!userEmail && String(item.email || "").toLowerCase() === userEmail)) || mentors[0] || null;
-      setCurrentMentor(m);
-      setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
-      if (m) {
-        localStorage.setItem("fp_mentor_id", m.id);
+      const selectedId = userId || sessionUserId;
+      if (selectedId) localStorage.setItem("fp_mentor_id", selectedId);
+      const m = (selectedId ? mentors.find((item) => item.id === selectedId) : null)
+        || (!!userEmail ? mentors.find((item) => String(item.email || "").toLowerCase() === userEmail) : null)
+        || null;
+      if (!m) {
+        setCurrentMentor(null);
+      } else {
+        setCurrentIdentityError(null);
+        setCurrentMentor(m);
+        localStorage.setItem("fp_user_snapshot", JSON.stringify(m));
       }
+      setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
     } else if (role === "cam") {
-      const targetCamId = userId || localStorage.getItem("fp_cam_id") || sessionUserId;
+      const targetCamId = userId || sessionUserId || localStorage.getItem("fp_cam_id");
       if (targetCamId) {
         localStorage.setItem("fp_cam_id", targetCamId);
-        setCurrentMentor(null); setCurrentHR(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentStudent(null); setCurrentSME(null);
         fetch(`/api/cam?id=${encodeURIComponent(targetCamId)}`).then(r => r.json()).then(d => {
-          if (d.success) setCurrentCAM({ ...d.cam, role: "cam" as const });
+          if (d.success && d.cam) {
+            setCurrentCAM({ ...d.cam, role: "cam" as const });
+            localStorage.setItem("fp_user_snapshot", JSON.stringify(d.cam));
+          }
         });
       }
     } else if (role === "kam") {
-      const targetKamId = userId || localStorage.getItem("fp_kam_id") || sessionUserId;
+      const targetKamId = userId || sessionUserId || localStorage.getItem("fp_kam_id");
       if (targetKamId) {
         localStorage.setItem("fp_kam_id", targetKamId);
-        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentAdmin(null); setCurrentStudent(null);
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
         fetch(`/api/kam?id=${encodeURIComponent(targetKamId)}`).then(r => r.json()).then(d => {
-          if (d.success) setCurrentKAM({ ...d.kam, role: "kam" as const });
+          if (d.success && d.cam) {
+            setCurrentKAM({ ...d.cam, role: "kam" as const });
+            localStorage.setItem("fp_user_snapshot", JSON.stringify(d.cam));
+          }
         });
       }
     } else if (role === "admin") {
-      const targetAdminId = userId || localStorage.getItem("fp_admin_id") || sessionUserId;
+      const targetAdminId = userId || sessionUserId || localStorage.getItem("fp_admin_id");
       if (targetAdminId) {
         localStorage.setItem("fp_admin_id", targetAdminId);
-        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentStudent(null);
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentStudent(null); setCurrentSME(null);
         fetch(`/api/admin?id=${encodeURIComponent(targetAdminId)}`).then(r => r.json()).then(d => {
-          if (d.success) setCurrentAdmin({ ...d.admin, role: "admin" as const });
+          if (d.success && d.admin) {
+            setCurrentAdmin({ ...d.admin, role: "admin" as const });
+            localStorage.setItem("fp_user_snapshot", JSON.stringify(d.admin));
+          }
         });
       }
     } else if (role === "student") {
-      const targetStudentId = userId || localStorage.getItem("fp_student_id") || sessionUserId;
+      const targetStudentId = userId || sessionUserId || localStorage.getItem("fp_student_id");
       if (targetStudentId) {
         localStorage.setItem("fp_student_id", targetStudentId);
-        const s = students.find((item) => item.id === targetStudentId || (!!userEmail && String(item.email || "").toLowerCase() === userEmail)) || students[0] || null;
-        setCurrentStudent(s);
+        const s = (targetStudentId ? students.find((item) => item.id === targetStudentId) : null)
+          || (!!userEmail ? students.find((item) => String(item.email || "").toLowerCase() === userEmail) : null)
+          || null;
+        if (!s) {
+          setCurrentStudent(null);
+        } else {
+          setCurrentIdentityError(null);
+          setCurrentStudent(s);
+          localStorage.setItem("fp_user_snapshot", JSON.stringify(s));
+        }
         setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentSME(null);
       }
     } else if (role === "fee_manager") {
       localStorage.setItem("fp_current_role", "fee_manager");
       setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
     } else if (role === "sme") {
-      const targetSmeId = userId || localStorage.getItem("fp_sme_id") || sessionUserId;
+      const targetSmeId = userId || sessionUserId || localStorage.getItem("fp_sme_id");
       if (targetSmeId) {
         localStorage.setItem("fp_sme_id", targetSmeId);
-        const s = smes.find((item) => item.id === targetSmeId || (!!userEmail && String(item.email || "").toLowerCase() === userEmail)) || smes[0] || null;
-        setCurrentSME(s);
+        const s = (targetSmeId ? smes.find((item) => item.id === targetSmeId) : null)
+          || (!!userEmail ? smes.find((item) => String(item.email || "").toLowerCase() === userEmail) : null)
+          || null;
+        if (!s) {
+          setCurrentSME(null);
+        } else {
+          setCurrentIdentityError(null);
+          setCurrentSME(s);
+          localStorage.setItem("fp_user_snapshot", JSON.stringify(s));
+        }
         setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
       }
     } else if (role === "allocator") {
       localStorage.setItem("fp_current_role", "allocator");
-      setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
+      setCurrentMentor(null);
+      setCurrentHR(hrList[0] || null);
+      setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
     } else {
       setCurrentMentor(null);
       setCurrentHR(hrList[0] || null);
@@ -1128,6 +1227,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     refreshData();
   };
+
+  // ── High-speed instantaneous logout — wipes in-memory & local state without full reload ──
+  const logout = useCallback(() => {
+    if (typeof window !== "undefined") {
+      const currentUid = localStorage.getItem("fp_user_id") || localStorage.getItem("fp_header_id");
+      if (currentUid) {
+        fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "logout", userId: currentUid }),
+          keepalive: true
+        }).catch(() => {});
+      }
+
+      localStorage.removeItem("fp_logged_in");
+      localStorage.removeItem("fp_is_super_admin");
+      localStorage.removeItem("fp_must_change_pass");
+      localStorage.removeItem("fp_current_role");
+      localStorage.removeItem("fp_user_id");
+      localStorage.removeItem("fp_user_email");
+      localStorage.removeItem("fp_user_name");
+      localStorage.removeItem("fp_user_snapshot");
+      localStorage.removeItem("fp_mentor_id");
+      localStorage.removeItem("fp_header_id");
+      localStorage.removeItem("fp_cam_id");
+      localStorage.removeItem("fp_kam_id");
+      localStorage.removeItem("fp_admin_id");
+      localStorage.removeItem("fp_student_id");
+      localStorage.removeItem("fp_sme_id");
+      localStorage.removeItem("fp_current_shift");
+      localStorage.removeItem("fp_user_college_id");
+      sessionStorage.clear();
+    }
+
+    setCurrentMentor(null);
+    setCurrentHR(null);
+    setCurrentCAM(null);
+    setCurrentKAM(null);
+    setCurrentAdmin(null);
+    setCurrentStudent(null);
+    setCurrentSME(null);
+    setCurrentIdentityError(null);
+    setCurrentRoleState("mentor");
+    setIsLoading(false);
+    setIsDataLoading(false);
+  }, []);
 
   const setCurrentShift = (shift: ShiftType) => {
     localStorage.setItem("fp_current_shift", shift);
@@ -1225,7 +1370,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     const data = await res.json();
     if (data.success) {
-      setSlots(prev => prev.map(s => s.id === slotId ? { ...s, mentorId, day, time, course, location: cleanLocation, classGroup: classGroup ? classGroup.trim() : s.classGroup } : s));
+      // DATA_FLOW_AUDIT D2: patch with the server's authoritative row (normalized
+      // shift/classGroup/college) — falling back to form values only if the API
+      // didn't return the row.
+      if (data.slot) {
+        setSlots(prev => prev.map(s => s.id === slotId ? { ...s, ...data.slot } : s));
+      } else {
+        setSlots(prev => prev.map(s => s.id === slotId ? { ...s, mentorId, day, time, course, location: cleanLocation, classGroup: classGroup ? classGroup.trim() : s.classGroup } : s));
+      }
+      broadcastDataChanged("slots");
       return { success: true };
     } else {
       return { success: false, message: data.message || "Failed to update slot" };
@@ -1512,6 +1665,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const rescheduleDemoSession = async (
+    sessionId: string,
+    newDateStr: string,
+    newTimeSlot: string
+  ): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await fetch("/api/demo-sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reschedule",
+          sessionId,
+          mentorId: currentMentor?.id,
+          newDateStr,
+          newTimeSlot
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDemoSessions(prev =>
+          prev.map(s =>
+            s.id === sessionId
+              ? {
+                  ...s,
+                  dateStr: newDateStr,
+                  timeSlot: newTimeSlot,
+                  status: "confirmed",
+                  comments: `Rescheduled by mentor to ${newDateStr} (${newTimeSlot})`
+                }
+              : s
+          )
+        );
+        refreshData();
+        return { success: true, message: data.message || "Demo rescheduled successfully." };
+      }
+      return { success: false, message: data.message || "Failed to reschedule demo." };
+    } catch (e: any) {
+      return { success: false, message: e.message || "An unexpected error occurred." };
+    }
+  };
+
   const createDemoRule = async (subject: string, week: number, target: number): Promise<{ success: boolean; message: string }> => {
     try {
       const res = await fetch("/api/demo-rules", {
@@ -1730,24 +1924,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Surgical update: update request status in-place
       setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status } : r));
 
-      // If approved, construct and add the approved handover locally (no re-fetch needed)
-      if (status === "approved") {
-        const req = requests.find(r => r.id === requestId);
-        if (req && req.status === "pending") {
-          const isSwap = req.request_type === "swap_compensate";
-          const newHandover: ApprovedHandover = {
-            requestId,
-            slotId: req.slotId,
-            dateStr: req.dateStr,
-            originalMentorId: isSwap ? req.targetStaffId : req.requestorId,
-            coverStaffId: isSwap ? req.requestorId : req.targetStaffId,
-            coverStaffName: isSwap ? (mentors.find(m => m.id === req.requestorId)?.name || "") : (req.targetStaffName || ""),
-            course: course || req.course || "",
-            ledger_month: req.dateStr?.slice(0, 7) || ""
-          };
-          setApprovedHandovers(prev => [...prev, newHandover]);
-        }
+      // DATA_FLOW_AUDIT D3: prefer the server's authoritative handover row over a
+      // locally-constructed one (the server handles swap reversal and FK fallbacks
+      // the client can't know about).
+      if (status === "approved" && data.handover) {
+        const newHandover: ApprovedHandover = {
+          requestId: data.handover.requestId || requestId,
+          slotId: data.handover.slotId,
+          dateStr: data.handover.dateStr,
+          originalMentorId: data.handover.originalMentorId,
+          coverStaffId: data.handover.coverStaffId,
+          coverStaffName: data.handover.coverStaffName || "",
+          course: data.handover.course || "",
+          ledger_month: data.handover.ledger_month || data.handover.dateStr?.slice(0, 7) || ""
+        };
+        setApprovedHandovers(prev => prev.some(h => h.requestId === requestId) ? prev : [...prev, newHandover]);
       }
+      broadcastDataChanged("requests");
     } else {
       throw new Error(data.message || "Failed to process request");
     }
@@ -1867,37 +2060,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        setStudentAttendance(prev => {
-          const updated = [...prev];
-          const keyToIndex = new Map<string, number>();
-          for (let i = 0; i < updated.length; i++) {
-            const a = updated[i];
-            if (a.slotId === slotId && a.dateStr === dateStr) {
-              keyToIndex.set(a.studentId, i);
-            }
-          }
-
-          attendanceData.forEach(item => {
-            const idx = keyToIndex.get(item.studentId);
-            if (idx !== undefined) {
-              updated[idx] = { ...updated[idx], status: item.status as any, type, mode, attendanceTypeSub };
-            } else {
-              updated.push({
-                id: `att_${Date.now()}_${item.studentId}`,
-                studentId: item.studentId,
-                slotId,
-                dateStr,
-                status: item.status as any,
-                type,
-                mode,
-                attendanceTypeSub,
-                markedBy: actorName,
-                timestamp: new Date().toISOString()
-              });
-            }
+        // DATA_FLOW_AUDIT D6: patch with the server's authoritative rows (real DB ids,
+        // markedBy, timestamp) when available — never synthesize fake ids.
+        if (Array.isArray(data.records) && data.records.length > 0) {
+          const serverRows = data.records;
+          setStudentAttendance(prev => {
+            const rowKey = (r: any) => `${r.studentId}|${r.slotId}|${r.dateStr}`;
+            const serverKeys = new Set(serverRows.map(rowKey));
+            // Remove stale rows for the same slot+date not present in the server set
+            // (they were "not_marked" deletions) and replace matching ones.
+            const kept = prev.filter(a => !((a.slotId === slotId && a.dateStr === dateStr) && !serverKeys.has(rowKey(a))));
+            const byKey = new Map(kept.map(a => [rowKey(a), a]));
+            serverRows.forEach((r: any) => {
+              const mapped = {
+                ...r,
+                type: r.type || type,
+                mode: r.mode || mode,
+                attendanceTypeSub: r.attendanceTypeSub ?? attendanceTypeSub
+              };
+              byKey.set(rowKey(mapped), mapped as any);
+            });
+            return Array.from(byKey.values());
           });
-          return updated;
-        });
+        } else {
+          setStudentAttendance(prev => {
+            const updated = [...prev];
+            const keyToIndex = new Map<string, number>();
+            for (let i = 0; i < updated.length; i++) {
+              const a = updated[i];
+              if (a.slotId === slotId && a.dateStr === dateStr) {
+                keyToIndex.set(a.studentId, i);
+              }
+            }
+            attendanceData.forEach(item => {
+              const idx = keyToIndex.get(item.studentId);
+              if (idx !== undefined) {
+                updated[idx] = { ...updated[idx], status: item.status as any, type, mode, attendanceTypeSub };
+              }
+            });
+            return updated;
+          });
+        }
+        broadcastDataChanged("attendance");
         return { success: true, message: "Attendance marked successfully." };
       } else {
         return { success: false, message: data.message || "Failed to mark attendance." };
@@ -1935,8 +2139,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
+        // DATA_FLOW_AUDIT D9: merge the server's full corrected row (real id,
+        // markedBy, timestamp) instead of only patching status.
+        const serverRow = data.record;
         setStudentAttendance(prev => {
           const idx = prev.findIndex(a => a.studentId === studentId && a.slotId === slotId && a.dateStr === dateStr);
+          if (serverRow) {
+            if (idx >= 0) {
+              const updated = [...prev];
+              updated[idx] = { ...updated[idx], ...serverRow };
+              return updated;
+            }
+            return [...prev, serverRow];
+          }
           if (idx >= 0) {
             const updated = [...prev];
             updated[idx] = { ...updated[idx], status: newStatus as any };
@@ -1951,6 +2166,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             timestamp: new Date().toISOString()
           }];
         });
+        broadcastDataChanged("attendance");
         return { success: true, message: data.message };
       } else {
         return { success: false, message: data.message || "Failed to correct attendance." };
@@ -2473,6 +2689,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify(kamData)
       });
       const data = await res.json();
+      // DATA_FLOW_AUDIT D1: reflect the new KAM on every college assigned to them.
+      if (data.success) {
+        setColleges(prev => prev.map(c => c.kam_id === kamData.id ? { ...c, kam_name: kamData.name } : c));
+        broadcastDataChanged("kams");
+      }
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -2487,6 +2708,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify(kamData)
       });
       const data = await res.json();
+      // D1: surgical patch — colleges referencing this KAM pick up the new name.
+      if (data.success) {
+        setColleges(prev => prev.map(c => c.kam_id === kamData.id ? { ...c, kam_name: kamData.name } : c));
+        broadcastDataChanged("kams");
+      }
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -2499,6 +2725,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: "DELETE"
       });
       const data = await res.json();
+      // D1/D7: clear the stale KAM reference from college rows so campus cards
+      // stop showing the deleted user.
+      if (data.success) {
+        setColleges(prev => prev.map(c => c.kam_id === id ? { ...c, kam_id: null as any, kam_name: undefined } : c));
+        broadcastDataChanged("kams");
+      }
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -2545,6 +2777,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: "DELETE"
       });
       const data = await res.json();
+      // D7: null out the stale CAM reference on the affected college rows.
+      if (data.success) {
+        setColleges(prev => prev.map(c => (c as any).cam_id === id ? { ...c, cam_id: null as any, cam_name: undefined, cam_email: undefined } : c));
+        broadcastDataChanged("cams");
+      }
       return data;
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -2699,15 +2936,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success && data.task) {
         setWeeklyTasks(prev => {
-          const filtered = prev.filter(
-            t => !(
-              t.class_group.toLowerCase().trim() === taskData.classGroup.toLowerCase().trim() &&
-              t.subject.toLowerCase().trim() === taskData.subject.toLowerCase().trim() &&
+          // DATA_FLOW_AUDIT D8: dedupe by the returned row's id (authoritative);
+          // business-field matching missed rows whose class_group was stored
+          // normalized differently, producing visible duplicates.
+          const filtered = prev.filter(t =>
+            t.id !== data.task.id && !(
+              t.class_group?.toLowerCase().trim() === taskData.classGroup.toLowerCase().trim() &&
+              t.subject?.toLowerCase().trim() === taskData.subject.toLowerCase().trim() &&
               t.week_number === taskData.weekNumber
             )
           );
           return [...filtered, data.task];
         });
+        broadcastDataChanged("weeklyTasks");
         return { success: true, task: data.task };
       }
       return { success: false, message: data.message || "Failed to assign task." };
@@ -2736,16 +2977,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success && data.entry) {
         setStudentTracker(prev => {
-          const filtered = prev.filter(
-            e => !(
+          // D8: dedupe by authoritative id first, business fields second.
+          const filtered = prev.filter(e =>
+            e.id !== data.entry.id && !(
               e.student_id === entryData.studentId &&
-              e.class_group.toLowerCase().trim() === entryData.classGroup.toLowerCase().trim() &&
-              e.subject.toLowerCase().trim() === entryData.subject.toLowerCase().trim() &&
+              e.class_group?.toLowerCase().trim() === entryData.classGroup.toLowerCase().trim() &&
+              e.subject?.toLowerCase().trim() === entryData.subject.toLowerCase().trim() &&
               e.week_number === entryData.weekNumber
             )
           );
           return [...filtered, data.entry];
         });
+        broadcastDataChanged("studentTracker");
         return { success: true, entry: data.entry };
       }
       return { success: false, message: data.message || "Failed to update grade." };
@@ -3380,12 +3623,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     weekOffset,
     setWeekOffset,
     isLoading,
+    currentIdentityError,
     isDataLoading,
+    dataLoadError,
+    retryDataLoad,
     currentShift,
     setCurrentShift,
     shiftTimeSlots: customShiftTimeSlots,
     getTimeSlots,
     setRole,
+    logout,
     assignSlot,
     deleteSlot,
     updateSlot,
@@ -3408,6 +3655,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updateDemoSession,
     swapDemoSessions,
     deleteDemoSession,
+    rescheduleDemoSession,
     setDemoSessions,
     requestDemoSwap,
     resolveDemoSwap,
@@ -3444,6 +3692,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentStudent,
     markAttendance,
     leaveRequests,
+    facultyLeaves,
     holidays,
     weeklyTasks,
     studentTracker,
@@ -3527,13 +3776,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     weekDates,
     weekOffset,
     isLoading,
+    currentIdentityError,
     isDataLoading,
+    dataLoadError,
+    retryDataLoad,
     departmentsList,
     coursesList,
     students,
     studentAttendance,
     currentStudent,
     leaveRequests,
+    facultyLeaves,
     holidays,
     weeklyTasks,
     studentTracker,
@@ -3554,7 +3807,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     facultyShifts,
     signupRequests,
     systemSettings,
-    attendanceLockEnabled
+    attendanceLockEnabled,
+    logout
   ]);
 
   return (

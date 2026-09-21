@@ -122,10 +122,68 @@ body {
   animation: pulse-gentle 6s ease-in-out infinite;
 }
 
-/* Warm Pastel Theme — Brand-matched subtle gradient canvas */
+/* Warm Canvas Theme with Modern Architectural Micro-Grid (Brighter & Crisp) */
 .bg-warm-canvas {
-  background: linear-gradient(135deg, #f0f4ff 0%, #fdf4ff 55%, #fff8f2 100%) fixed !important;
-  background-attachment: fixed !important;
+  background-color: #fbfcfe !important;
+  background-image: 
+    linear-gradient(to right, rgba(148, 163, 184, 0.16) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.16) 1px, transparent 1px) !important;
+  background-size: 24px 24px !important;
+  background-position: 0 0 !important;
+  background-repeat: repeat !important;
+}
+
+:where(.dark, .dark *) .bg-warm-canvas {
+  background-color: #0b0f19 !important;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.08) 1px, transparent 1px) !important;
+  background-size: 24px 24px !important;
+  background-position: 0 0 !important;
+  background-repeat: repeat !important;
+}
+
+/* Standalone Modern Subtle Pattern Utility */
+.bg-dotted-grid {
+  background-image: 
+    linear-gradient(to right, rgba(148, 163, 184, 0.16) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.16) 1px, transparent 1px) !important;
+  background-size: 24px 24px !important;
+  background-position: 0 0 !important;
+  background-repeat: repeat !important;
+}
+
+:where(.dark, .dark *) .bg-dotted-grid {
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.08) 1px, transparent 1px) !important;
+  background-size: 24px 24px !important;
+  background-position: 0 0 !important;
+  background-repeat: repeat !important;
+}
+
+
+/* Modern 45° Bauhaus Diagonal Micro-Hatch Pattern for Login Page */
+.bg-diagonal-hatch {
+  background-color: #fbfcfe !important;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(99, 102, 241, 0.12),
+    rgba(99, 102, 241, 0.12) 1.2px,
+    transparent 1.2px,
+    transparent 14px
+  ) !important;
+}
+
+:where(.dark, .dark *) .bg-diagonal-hatch {
+  background-color: #0b0f19 !important;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.07),
+    rgba(255, 255, 255, 0.07) 1.2px,
+    transparent 1.2px,
+    transparent 14px
+  ) !important;
 }
 
 .sidebar-active-item {
@@ -216,12 +274,6 @@ body {
   --sidebar-bg: rgba(255, 255, 255, 0.75);
 }
 
-/* Apply CSS Variables to Layout */
-.bg-warm-canvas {
-  background: linear-gradient(135deg, #f0f4ff 0%, #fdf4ff 55%, #fff8f2 100%) fixed !important;
-  background-attachment: fixed !important;
-}
-
 .floating-sidebar {
   background-color: var(--sidebar-bg) !important;
   border-color: var(--border-color) !important;
@@ -246,7 +298,8 @@ body {
 }
 
 /* ── Layout containers use CSS Variables ────────── */
-.bg-warm-canvas   { background: linear-gradient(135deg, #f0f4ff 0%, #fdf4ff 55%, #fff8f2 100%) fixed !important; background-attachment: fixed !important; }
+.floating-sidebar { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
+.floating-header  { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
 
 .floating-sidebar { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
 .floating-header  { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
@@ -409,5 +462,22 @@ a:hover .hover-tilt-icon {
     font-weight: 700 !important;
     line-height: 1.2 !important;
   }
+}
+
+/* GPU-accelerated ultra-smooth loader spinner that never stutters during JS hydration */
+@keyframes spinSmooth {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-smooth {
+  animation: spinSmooth 0.75s linear infinite !important;
+  will-change: transform !important;
+  transform: translateZ(0) !important;
+  backface-visibility: hidden !important;
 }
 

@@ -1,38 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { ensureMigration } from "@/lib/migrations";
 
 async function ensureTable(db: any) {
-  try {
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS sme_availability (
-        id TEXT PRIMARY KEY,
-        sme_id TEXT NOT NULL,
-        day_of_week TEXT NOT NULL,
-        start_time TEXT NOT NULL,
-        end_time TEXT NOT NULL,
-        slot_type TEXT DEFAULT 'demo',
-        is_active INTEGER DEFAULT 1,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    try { await db.exec("ALTER TABLE sme_availability ADD COLUMN slot_type TEXT DEFAULT 'demo';"); } catch (_) {}
-
-    const countRes = await db.get("SELECT COUNT(*) as count FROM sme_availability");
-    if (!countRes || Number(countRes.count) === 0) {
-      const smes = await db.all("SELECT id FROM sme_users");
-      for (const s of smes) {
-        for (const d of ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]) {
-          await db.run(
-            "INSERT INTO sme_availability (id, sme_id, day_of_week, start_time, end_time, slot_type, is_active) VALUES (?, ?, ?, ?, ?, 'demo', 1)",
-            [`sme_avail_${s.id}_${d.toLowerCase()}_1`, s.id, d, "09:00 AM", "05:30 PM"]
-          ).catch(() => {});
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Error in ensureTable for sme_availability:", err);
-  }
+  // Schema + seed handled by the centralized migration runner (once per process)
+  await ensureMigration("sme_availability_table");
+  await ensureMigration("sme_availability_seed");
 }
 
 export async function GET(req: NextRequest) {

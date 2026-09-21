@@ -354,7 +354,15 @@ export async function PUT(request: Request) {
       new Date().toISOString()
     );
 
-    return NextResponse.json({ success: true });
+    // DATA_FLOW_AUDIT D2: return the authoritative updated row (with mentor name)
+    // so the client patches state with server-normalized values (shift, classGroup,
+    // resolved college) instead of its own form values.
+    const updatedSlot = await db.get(
+      "SELECT s.*, m.name as mentorName FROM slots s LEFT JOIN mentors m ON s.mentorId = m.id WHERE s.id = ?",
+      id
+    );
+
+    return NextResponse.json({ success: true, slot: updatedSlot || null });
   } catch (error: any) {
     console.error("API PUT Slot error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

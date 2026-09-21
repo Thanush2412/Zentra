@@ -4,6 +4,7 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireRole, apiAuthErrorResponse } from "@/lib/api-auth";
 
 export async function GET() {
   try {
@@ -35,6 +36,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    requireRole(request, "admin");
     const body = await request.json();
     const { key, value, updatedBy } = body;
 
@@ -75,6 +77,8 @@ export async function POST(request: Request) {
       value: strValue === "true" ? true : strValue === "false" ? false : strValue
     });
   } catch (error: any) {
+    const authRes = apiAuthErrorResponse(error);
+    if (authRes) return authRes;
     console.error("API POST settings error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

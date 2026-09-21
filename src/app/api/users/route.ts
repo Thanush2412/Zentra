@@ -5,6 +5,7 @@ export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
+import { requireRole, apiAuthErrorResponse } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
   try {
@@ -58,6 +59,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    requireRole(request, "admin");
     const db = await getDb();
     const body = await request.json();
     const { userId, action, email, role, password, reference_id, status } = body;
@@ -81,10 +83,13 @@ export async function POST(request: Request) {
       const userStatus = status || "Active";
       const nowStr = new Date().toISOString();
 
+      // plain_password column is deprecated — new users get hash-only rows
+      // (security audit item 5). Set must_change_password so default
+      // credentials are rotated on first login.
       await db.run(
-        `INSERT INTO users (id, email, password_hash, plain_password, role, reference_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [newId, cleanEmail, passHash, rawPassword, userRole, refId, userStatus, nowStr, nowStr]
+        `INSERT INTO users (id, email, password_hash, plain_password, role, reference_id, status, must_change_password, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, ?, ?, ?, 1, ?, ?)`,
+        [newId, cleanEmail, passHash, userRole, refId, userStatus, nowStr, nowStr]
       );
 
       // Auto-sync into role-specific tables so new KAMs, CAMs, Mentors appear in dropdowns instantly
@@ -178,8 +183,8 @@ export async function POST(request: Request) {
       const nowStr = new Date().toISOString();
 
       await db.run(
-        "UPDATE users SET password_hash = ?, plain_password = ?, must_change_password = 1, updated_at = ? WHERE id = ?",
-        [defaultPasswordHash, defaultPassword, nowStr, user.id]
+        "UPDATE users SET password_hash = ?, plain_password = NULL, must_change_password = 1, updated_at = ? WHERE id = ?",
+        [defaultPasswordHash, nowStr, user.id]
       );
 
       // Sync password to role specific tables
@@ -194,6 +199,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });
   } catch (error: any) {
+    const authRes = apiAuthErrorResponse(error);
+    if (authRes) return authRes;
     console.error("API POST Users error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
@@ -201,6 +208,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    requireRole(request, "admin");
     const db = await getDb();
     const body = await request.json();
     const { id, email, role, reference_id, status, newPassword } = body;
@@ -221,23 +229,23 @@ export async function PUT(request: Request) {
     const nowStr = new Date().toISOString();
 
     let passHash = existingUser.password_hash;
-    let plainPass = existingUser.plain_password || "password123";
     let mustChange = existingUser.must_change_password || 0;
     if (newPassword && newPassword.trim()) {
-      plainPass = newPassword.trim();
-      passHash = hashPassword(plainPass);
+      passHash = hashPassword(newPassword.trim());
       mustChange = 0;
     }
 
     await db.run(
       `UPDATE users
-       SET email = ?, role = ?, reference_id = ?, status = ?, password_hash = ?, plain_password = ?, must_change_password = ?, updated_at = ?
+       SET email = ?, role = ?, reference_id = ?, status = ?, password_hash = ?, plain_password = NULL, must_change_password = ?, updated_at = ?
        WHERE id = ?`,
-      [cleanEmail, userRole, refId, userStatus, passHash, plainPass, mustChange, nowStr, id]
+      [cleanEmail, userRole, refId, userStatus, passHash, mustChange, nowStr, id]
     );
 
     return NextResponse.json({ success: true, message: "User credential updated successfully." });
   } catch (error: any) {
+    const authRes = apiAuthErrorResponse(error);
+    if (authRes) return authRes;
     console.error("API PUT Users error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
@@ -245,6 +253,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    requireRole(request, "admin");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -262,6 +271,8 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: true, message: "User credential deleted successfully." });
   } catch (error: any) {
+    const authRes = apiAuthErrorResponse(error);
+    if (authRes) return authRes;
     console.error("API DELETE Users error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }

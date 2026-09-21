@@ -2,11 +2,12 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { RedirectingLoader } from "@/components/RedirectingLoader";
 
-export default function MentorIndexPage() {
+export default function mentorIndexPage() {
   const router = useRouter();
   useEffect(() => {
     router.replace("/mentor/home");
   }, [router]);
-  return null;
+  return <RedirectingLoader label="Loading Mentor Workspace…" />;
 }

@@ -1,19 +1,14 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { TabPageLoader } from "@/components/TabPageLoader";
 
 const StudentDashboard = dynamic(() => import("@/components/StudentDashboard").then(m => m.StudentDashboard), {
   ssr: false,
-  loading: () => (
-    <div className="flex-1 flex items-center justify-center p-12 text-slate-400 font-bold text-sm">
-      <div className="flex items-center gap-2">
-        <span className="h-4 w-4 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin" />
-        <span>Loading Student Portal...</span>
-      </div>
-    </div>
-  )
+  loading: () => <TabPageLoader message="Loading Student Portal…" />
 });
 
 export const VALID_STUDENT_TABS = [
@@ -33,25 +28,54 @@ export type StudentTab = (typeof VALID_STUDENT_TABS)[number];
 
 export default function StudentTabPage() {
   const params = useParams();
-  const router = useRouter();
   const rawTab = params?.tab as string;
-  const tab: StudentTab = rawTab === "marks"
+  const initialTab: StudentTab = rawTab === "marks"
     ? "exams"
     : VALID_STUDENT_TABS.includes(rawTab as StudentTab)
     ? (rawTab as StudentTab)
     : "dashboard";
 
+  const [activeTab, setActiveTab] = useState<StudentTab>(initialTab);
+
+  useEffect(() => {
+    if (rawTab) {
+      const resolved = rawTab === "marks" ? "exams" : (VALID_STUDENT_TABS.includes(rawTab as StudentTab) ? (rawTab as StudentTab) : "dashboard");
+      setActiveTab(resolved);
+    }
+  }, [rawTab]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const parts = window.location.pathname.split("/").filter(Boolean);
+      const rawFromUrl = parts[1] || "dashboard";
+      const resolved = rawFromUrl === "marks" ? "exams" : (VALID_STUDENT_TABS.includes(rawFromUrl as StudentTab) ? (rawFromUrl as StudentTab) : "dashboard");
+      setActiveTab(resolved);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const handleTabChange = useCallback((newTab: string) => {
+    if (newTab.includes("?")) {
+      window.location.href = `/student/${newTab}`;
+      return;
+    }
+    const resolved = newTab === "marks" ? "exams" : (VALID_STUDENT_TABS.includes(newTab as StudentTab) ? (newTab as StudentTab) : (newTab as StudentTab));
+    setActiveTab(resolved);
+    if (typeof window !== "undefined") {
+      const cleanTab = newTab.split("?")[0];
+      const targetUrl = `/student/${cleanTab}`;
+      if (window.location.pathname !== targetUrl) {
+        window.history.pushState(null, "", targetUrl);
+      }
+    }
+  }, []);
+
   return (
     <DashboardLayout requiredRole="student">
       <StudentDashboard
-        activeTab={tab}
-        onTabChange={(newTab) => {
-          if (newTab.includes("?")) {
-            window.location.href = `/student/${newTab}`;
-          } else {
-            router.push(`/student/${newTab}`);
-          }
-        }}
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
       />
     </DashboardLayout>
   );

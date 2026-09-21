@@ -228,34 +228,46 @@ export async function PUT(request: Request) {
 
       const slots = await db.all("SELECT id FROM slots WHERE LOWER(classGroup) = LOWER(?) AND day = ?", leaveReq.classGroup, dayOfWeek);
 
-      for (const slot of slots) {
-        const existingAtt = await db.get(
-          "SELECT id FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
+      if (slots.length > 0) {
+        const slotIds = slots.map((s: any) => s.id);
+        const slotPlaceholders = slotIds.map(() => "?").join(",");
+
+        // Single pass: fetch all existing attendance rows for this student/date
+        // at once, then batch the missing inserts (was 2 queries per slot).
+        const existingRows = await db.all(
+          `SELECT id, slotId FROM student_attendance WHERE studentId = ? AND dateStr = ? AND slotId IN (${slotPlaceholders})`,
           leaveReq.studentId,
-          slot.id,
-          leaveReq.dateStr
+          leaveReq.dateStr,
+          ...slotIds
         );
-        
-        if (existingAtt) {
-          await db.run(
-            `UPDATE student_attendance SET status = ?, markedBy = ?, timestamp = ? WHERE id = ?`,
-            attendanceStatus,
-            `Approved by ${resolverName}`,
-            new Date().toISOString(),
-            existingAtt.id
-          );
-        } else {
-          const attId = `att_${leaveReq.studentId}_${slot.id}_${leaveReq.dateStr}`;
+        const existingBySlot = new Map<string, string>();
+        for (const row of existingRows) {
+          existingBySlot.set(row.slotId, row.id);
+        }
+
+        const markedBy = `Approved by ${resolverName}`;
+        const nowIso = new Date().toISOString();
+        const toInsert: any[] = [];
+        for (const slotId of slotIds) {
+          const existingId = existingBySlot.get(slotId);
+          if (existingId) {
+            await db.run(
+              `UPDATE student_attendance SET status = ?, markedBy = ?, timestamp = ? WHERE id = ?`,
+              attendanceStatus,
+              markedBy,
+              nowIso,
+              existingId
+            );
+          } else {
+            toInsert.push([`att_${leaveReq.studentId}_${slotId}_${leaveReq.dateStr}`, leaveReq.studentId, slotId, leaveReq.dateStr, attendanceStatus, markedBy, nowIso]);
+          }
+        }
+        if (toInsert.length > 0) {
+          const valueRows = toInsert.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
           await db.run(
             `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            attId,
-            leaveReq.studentId,
-            slot.id,
-            leaveReq.dateStr,
-            attendanceStatus,
-            `Approved by ${resolverName}`,
-            new Date().toISOString()
+             VALUES ${valueRows}`,
+            ...toInsert.flat()
           );
         }
       }

@@ -91,7 +91,10 @@ export async function POST(request: Request) {
         }
       }
 
-      return NextResponse.json({ success: true, message: `Class successfully assigned to ${newCoverStaff.name}!` });
+      // DATA_FLOW_AUDIT D3: return the created handover row so the client patches
+      // state with the authoritative DB values.
+      const createdHandover = await db.get("SELECT * FROM approved_handovers WHERE id = ?", handoverId);
+      return NextResponse.json({ success: true, message: `Class successfully assigned to ${newCoverStaff.name}!`, handover: createdHandover || null });
     }
 
     if (handoverRequest.status !== "pending" && handoverRequest.status !== "pending_cam" && handoverRequest.status !== "needs_cam_allocation") {
@@ -366,7 +369,11 @@ export async function POST(request: Request) {
       console.error("Failed to send review request status email:", mailErr);
     }
 
-    return NextResponse.json({ success: true });
+    // DATA_FLOW_AUDIT D3: return the created handover row (if any) for client sync.
+    const createdHandover = status === "approved" && handoverRequest.status === "pending"
+      ? (await db.get("SELECT * FROM approved_handovers WHERE requestId = ? ORDER BY id DESC LIMIT 1", requestId) || null)
+      : null;
+    return NextResponse.json({ success: true, handover: createdHandover });
   } catch (error: any) {
     console.error("API POST Review Request error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

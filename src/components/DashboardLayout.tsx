@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { isSuperAdminSession, SUPER_ADMIN_FLAG_KEY } from "@/lib/superadmin";
 import { useApp, Role } from "@/context/AppContext";
+import { useToast } from "@/context/ToastContext";
 import {
   LogOut,
   ChevronDown,
@@ -28,12 +29,16 @@ import {
   Globe,
   Check,
   RefreshCw,
+  AlertTriangle,
   CalendarCheck2,
   Bell,
   ExternalLink,
   Inbox,
   MessageSquare,
-  ArrowUpRight
+  ArrowUpRight,
+  Clock,
+  Send,
+  Tag
 } from "lucide-react";
 
 interface DashboardLayoutProps {
@@ -56,8 +61,13 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     colleges,
     isLoading,
     isDataLoading,
-    refreshData
+    dataLoadError,
+    retryDataLoad,
+    refreshData,
+    logout
   } = useApp();
+  // ROLE_UI_AUDIT C3: toasts replace the old blocking alert() calls.
+  const { toast: showToast } = useToast();
 
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
@@ -122,6 +132,102 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
         return null;
     }
   };
+
+  /* ─── Global Feedback Modal State & Reporter Resolution ─── */
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackModalTab, setFeedbackModalTab] = useState<"submit" | "history">("submit");
+  const [myFeedbackList, setMyFeedbackList] = useState<any[]>([]);
+  const [myFeedbackLoading, setMyFeedbackLoading] = useState(false);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+
+  const getReporterDetails = () => {
+    let name = storedUserName || "";
+    let email = storedUserEmail || "";
+    let collegeId = "";
+    let collegeName = "";
+    let department = "";
+    let registerNumber = "";
+    let contactInfo = "";
+
+    if (currentRole === "student" && currentStudent) {
+      name = currentStudent.name || name;
+      email = currentStudent.email || email;
+      collegeId = currentStudent.college_id || "";
+      department = currentStudent.department || "";
+      registerNumber = currentStudent.register_number || (currentStudent as any).roll_no || "";
+      contactInfo = (currentStudent as any).contact_number || (currentStudent as any).phone || "";
+    } else if (currentRole === "mentor" && currentMentor) {
+      name = currentMentor.name || name;
+      email = currentMentor.email || email;
+      collegeId = currentMentor.college_id || "";
+      department = currentMentor.department || "";
+      registerNumber = (currentMentor as any).employee_id || currentMentor.id || "";
+      contactInfo = (currentMentor as any).phone || "";
+    } else if (currentRole === "cam" && currentCAM) {
+      name = currentCAM.name || name;
+      email = currentCAM.email || email;
+      collegeId = currentCAM.college_id || "";
+    } else if (currentRole === "admin" && currentAdmin) {
+      name = currentAdmin.name || name;
+      email = currentAdmin.email || email;
+    } else if (currentRole === "hr" && currentHR) {
+      name = currentHR.name || name;
+      email = currentHR.email || email;
+    } else if (currentRole === "kam" && currentKAM) {
+      name = currentKAM.name || name;
+      email = currentKAM.email || email;
+      collegeId = (currentKAM as any).college_id || "";
+    } else if (currentRole === "sme" && currentSME) {
+      name = currentSME.name || name;
+      email = currentSME.email || email;
+    }
+
+    if (!email && typeof window !== "undefined") {
+      email = localStorage.getItem("fp_user_email") || "";
+    }
+    if (!name && typeof window !== "undefined") {
+      name = localStorage.getItem("fp_user_name") || "";
+    }
+
+    if (collegeId && colleges?.length) {
+      const c = colleges.find((col: any) => col.id === collegeId);
+      if (c) collegeName = c.name;
+    }
+
+    return {
+      userId: email || resolveCurrentUserId() || "anonymous",
+      userName: name,
+      userRole: currentRole || "user",
+      collegeId,
+      collegeName,
+      department,
+      registerNumber,
+      contactInfo
+    };
+  };
+
+  const fetchMyFeedback = async () => {
+    const reporter = getReporterDetails();
+    const uid = reporter.userId;
+    if (!uid) return;
+    setMyFeedbackLoading(true);
+    try {
+      const res = await fetch(`/api/feedback?userId=${encodeURIComponent(uid)}`);
+      const data = await res.json();
+      if (data?.success && Array.isArray(data.reports)) {
+        setMyFeedbackList(data.reports);
+      }
+    } catch (_) {
+    } finally {
+      setMyFeedbackLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showFeedbackModal && feedbackModalTab === "history") {
+      fetchMyFeedback();
+    }
+  }, [showFeedbackModal, feedbackModalTab]);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
   const hasUnread = unreadCount > 0;
@@ -453,6 +559,28 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     }
   }, []);
 
+  // DATA_FLOW_AUDIT D4: listen for data-change broadcasts (in-page CustomEvents and
+  // cross-tab "storage" events) and refresh the affected data so all open tabs and
+  // roles stay in sync without a manual reload.
+  useEffect(() => {
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (debounce) clearTimeout(debounce);
+      // Debounce bursts of mutations (imports, bulk ops) into a single refresh.
+      debounce = setTimeout(() => { refreshData(true); }, 800);
+    };
+    window.addEventListener("fp_data_changed", scheduleRefresh);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "fp_data_changed" && e.newValue) scheduleRefresh();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      if (debounce) clearTimeout(debounce);
+      window.removeEventListener("fp_data_changed", scheduleRefresh);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [refreshData]);
+
   // Handle route protection cleanly without premature logouts
   const hasCompletedInitialLoad = useRef(false);
   const routeProtectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -500,34 +628,12 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     };
   }, [isLoading, isDataLoading, requiredRole, router, isSuperAdmin]);
 
-  const handleLogout = async () => {
-    try {
-      const currentUid = localStorage.getItem("fp_user_id") || localStorage.getItem("fp_header_id");
-      await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "logout", userId: currentUid })
-      });
-    } catch (_) {}
-
-    localStorage.removeItem("fp_logged_in");
-    localStorage.removeItem(SUPER_ADMIN_FLAG_KEY);
-    localStorage.removeItem("fp_must_change_pass");
-    localStorage.removeItem("fp_current_role");
-    localStorage.removeItem("fp_user_id");
-    localStorage.removeItem("fp_user_email");
-    localStorage.removeItem("fp_user_name");
-    localStorage.removeItem("fp_user_snapshot");
-    localStorage.removeItem("fp_mentor_id");
-    localStorage.removeItem("fp_header_id");
-    localStorage.removeItem("fp_cam_id");
-    localStorage.removeItem("fp_kam_id");
-    localStorage.removeItem("fp_admin_id");
-    localStorage.removeItem("fp_student_id");
-    localStorage.removeItem("fp_current_shift");
-
-    // Fresh redirect to login page
-    window.location.href = "/";
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const handleLogout = () => {
+    if (isLoggingOut) return; // prevent double-fire
+    setIsLoggingOut(true);
+    logout();
+    router.replace("/");
   };
 
   // Render global loading screen if app is initializing or not authorized yet
@@ -537,6 +643,23 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
   return (
     <div className="h-screen flex flex-col font-sans bg-warm-canvas text-gray-800 transition-colors duration-200 overflow-hidden relative">
+      {/* Data-load failure retry banner — replaces the old silent empty-dashboard behavior */}
+      {dataLoadError && (
+        <div className="sticky top-0 z-[60] w-full bg-rose-50 border-b border-rose-200 px-4 py-2 flex items-center justify-center gap-3">
+          <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+          <span className="text-xs font-bold text-rose-700">Couldn&apos;t reach the database — showing possibly stale data.</span>
+          <button
+            type="button"
+            onClick={() => retryDataLoad()}
+            disabled={isDataLoading}
+            className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-[11px] font-black transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            {isDataLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            {isDataLoading ? "Retrying…" : "Retry"}
+          </button>
+        </div>
+      )}
+
       {/* Top indeterminate sync progress line */}
       {isDataLoading && (
         <div className="absolute top-0 left-0 right-0 h-0.5 z-50 overflow-hidden bg-indigo-100">
@@ -968,10 +1091,13 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                   <button
                     id="logout-btn"
                     onClick={() => { setShowProfileDropdown(false); handleLogout(); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition-all cursor-pointer"
+                    disabled={isLoggingOut}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                   >
-                    <LogOut className="h-3.5 w-3.5" />
-                    Log out
+                    {isLoggingOut
+                      ? <span className="h-3.5 w-3.5 rounded-full border-2 border-rose-500 border-t-transparent animate-spin" />
+                      : <LogOut className="h-3.5 w-3.5" />}
+                    {isLoggingOut ? "Logging out…" : "Log out"}
                   </button>
                 </div>
               </div>
@@ -1005,7 +1131,8 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
       {/* Main Workspace Dashboard Content */}
       <main className="flex-grow flex flex-col relative overflow-hidden">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#00000002_1px,transparent_1px),linear-gradient(to_bottom,#00000002_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none" />
+        {/* Modern Dot Grid Background Pattern Overlay */}
+        <div className="absolute inset-0 bg-dotted-grid pointer-events-none opacity-75 dark:opacity-40 z-0" />
         {children}
 
         {/* Global Floating Feedback Button */}
@@ -1013,8 +1140,8 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
           <button
             type="button"
             onClick={() => {
-              const el = document.getElementById("global-feedback-modal");
-              if (el) el.classList.remove("hidden");
+              setShowFeedbackModal(true);
+              setFeedbackModalTab("submit");
             }}
             className="flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-slate-900 dark:bg-indigo-600 text-white font-bold text-xs shadow-lg hover:shadow-xl hover:scale-105 transition-all cursor-pointer border border-slate-700/50"
             title="Report an Issue or Feedback"
@@ -1188,10 +1315,13 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="flex-1 py-2.5 rounded-xl border border-rose-200 dark:border-rose-900/50 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    disabled={isLoggingOut}
+                    className="flex-1 py-2.5 rounded-xl border border-rose-200 dark:border-rose-900/50 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-60 disabled:cursor-wait"
                   >
-                    <LogOut className="h-3.5 w-3.5" />
-                    Log out
+                    {isLoggingOut
+                      ? <span className="h-3.5 w-3.5 rounded-full border-2 border-rose-500 border-t-transparent animate-spin" />
+                      : <LogOut className="h-3.5 w-3.5" />}
+                    {isLoggingOut ? "Logging out…" : "Log out"}
                   </button>
                 ) : (
                   <button
@@ -1223,151 +1353,379 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       )}
 
       {/* Global Feedback & Issue Modal */}
-      <div id="global-feedback-modal" className="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200">
-        <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-6 overflow-hidden">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold">
-                <AlertCircle className="h-5 w-5" />
+      {(showFeedbackModal || true) && (
+        <div
+          id="global-feedback-modal"
+          className={`${showFeedbackModal ? "flex" : "hidden"} fixed inset-0 z-50 items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200`}
+        >
+          <div className="relative w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-slate-50 to-indigo-50/40 dark:from-slate-900 dark:to-indigo-950/30">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-sm font-bold">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">Support & Feedback Center</h3>
+                  <p className="text-[11px] text-slate-400 font-medium">Report issues or track live status of your submitted tickets</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">Report Issue / Feedback</h3>
-                <p className="text-[11px] text-slate-400 font-medium">Send feedback directly to the administration</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const el = document.getElementById("global-feedback-modal");
-                if (el) el.classList.add("hidden");
-              }}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const form = e.target as HTMLFormElement;
-              const type = (form.elements.namedItem("type") as HTMLSelectElement).value;
-              const title = (form.elements.namedItem("title") as HTMLInputElement).value;
-              const description = (form.elements.namedItem("description") as HTMLTextAreaElement).value;
-              try {
-                const res = await fetch("/api/feedback", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    userId: currentUserEmail,
-                    userRole: currentRole,
-                    type,
-                    title,
-                    description
-                  })
-                });
-                const data = await res.json();
-                if (data.success) {
-                  alert("Thank you! Your feedback has been submitted to the system administrator.");
-                  form.reset();
-                  const el = document.getElementById("global-feedback-modal");
-                  if (el) el.classList.add("hidden");
-                } else {
-                  alert(data.message || "Failed to submit feedback.");
-                }
-              } catch (err: any) {
-                alert("Failed to submit feedback: " + err.message);
-              }
-            }}
-            className="mt-4 space-y-4 text-xs font-semibold text-slate-700 dark:text-slate-200"
-          >
-            <div>
-              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Issue Category</label>
-              <select name="type" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold focus:outline-none focus:border-indigo-500">
-                <option value="bug">Bug / Error Report</option>
-                <option value="feature">Feature Request</option>
-                <option value="suggestion">General Suggestion</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Title / Summary</label>
-              <input required name="title" type="text" placeholder="e.g. Schedule button non-responsive on mobile" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:border-indigo-500 font-bold" />
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Detailed Description</label>
-              <textarea required name="description" rows={4} placeholder="Describe what happened and how to reproduce it..." className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:border-indigo-500 font-medium resize-none" />
-            </div>
-            <div className="flex gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => {
+                  setShowFeedbackModal(false);
                   const el = document.getElementById("global-feedback-modal");
                   if (el) el.classList.add("hidden");
                 }}
-                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
               >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-xs shadow-md transition-all cursor-pointer hover:opacity-90"
-              >
-                Submit Feedback
+                <X className="h-4 w-4" />
               </button>
             </div>
-          </form>
+
+            {/* Navigation Tabs */}
+            <div className="flex border-b border-slate-150 dark:border-slate-800 px-6 pt-2 bg-slate-50/50 dark:bg-slate-900/50">
+              <button
+                type="button"
+                onClick={() => setFeedbackModalTab("submit")}
+                className={`flex items-center gap-2 py-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                  feedbackModalTab === "submit"
+                    ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
+                    : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                }`}
+              >
+                <Send className="h-3.5 w-3.5" />
+                <span>Submit New Issue</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFeedbackModalTab("history");
+                  fetchMyFeedback();
+                }}
+                className={`flex items-center gap-2 py-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                  feedbackModalTab === "history"
+                    ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
+                    : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                }`}
+              >
+                <ClipboardList className="h-3.5 w-3.5" />
+                <span>My Submitted Issues</span>
+                {myFeedbackList.length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                    {myFeedbackList.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)] space-y-4">
+              {feedbackModalTab === "submit" ? (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const form = e.target as HTMLFormElement;
+                    const type = (form.elements.namedItem("type") as HTMLSelectElement).value;
+                    const title = (form.elements.namedItem("title") as HTMLInputElement).value;
+                    const description = (form.elements.namedItem("description") as HTMLTextAreaElement).value;
+                    const contactPhone = (form.elements.namedItem("contactPhone") as HTMLInputElement)?.value || "";
+
+                    const reporter = getReporterDetails();
+                    setIsSubmittingFeedback(true);
+
+                    try {
+                      const res = await fetch("/api/feedback", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          userId: reporter.userId,
+                          userName: reporter.userName,
+                          userRole: reporter.userRole,
+                          collegeId: reporter.collegeId,
+                          collegeName: reporter.collegeName,
+                          department: reporter.department,
+                          registerNumber: reporter.registerNumber,
+                          contactInfo: contactPhone.trim() || reporter.contactInfo,
+                          type,
+                          title,
+                          description
+                        })
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        showToast("Feedback submitted successfully! Our administration team will review it.", "success");
+                        form.reset();
+                        fetchMyFeedback();
+                        setFeedbackModalTab("history");
+                      } else {
+                        showToast(data.message || "Failed to submit feedback.", "error");
+                      }
+                    } catch (err: any) {
+                      showToast("Failed to submit feedback: " + err.message, "error");
+                    } finally {
+                      setIsSubmittingFeedback(false);
+                    }
+                  }}
+                  className="space-y-4 text-xs font-semibold text-slate-700 dark:text-slate-200"
+                >
+                  {/* Reporter context banner */}
+                  {(() => {
+                    const rep = getReporterDetails();
+                    return (
+                      <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 text-[11px] flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-indigo-500" />
+                          <span className="font-bold text-slate-800 dark:text-slate-200">
+                            Submitting as: <span className="text-indigo-600 dark:text-indigo-400">{rep.userName || rep.userId}</span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-[10px] font-black uppercase text-slate-600 dark:text-slate-300">
+                            {rep.userRole}
+                          </span>
+                        </div>
+                        {(rep.collegeName || rep.department) && (
+                          <div className="text-[10px] text-slate-400 font-medium truncate">
+                            {rep.collegeName} {rep.department ? `(${rep.department})` : ""}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Issue Category</label>
+                      <select
+                        name="type"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold focus:outline-none focus:border-indigo-500"
+                      >
+                        <option value="bug">🐞 Bug / Error Report</option>
+                        <option value="feature">✨ Feature Request</option>
+                        <option value="suggestion">💡 General Suggestion</option>
+                        <option value="other">📝 Other / Help</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Contact Phone (Optional)</label>
+                      <input
+                        name="contactPhone"
+                        type="text"
+                        defaultValue={getReporterDetails().contactInfo}
+                        placeholder="e.g. +91 9876543210"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:border-indigo-500 font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Title / Summary</label>
+                    <input
+                      required
+                      name="title"
+                      type="text"
+                      placeholder="e.g. Date of birth is incorrect in my profile"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:border-indigo-500 font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Detailed Description</label>
+                    <textarea
+                      required
+                      name="description"
+                      rows={4}
+                      placeholder="Describe what happened, what needs correction, and any error message you encountered..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:border-indigo-500 font-medium resize-none"
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowFeedbackModal(false);
+                        const el = document.getElementById("global-feedback-modal");
+                        if (el) el.classList.add("hidden");
+                      }}
+                      className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmittingFeedback}
+                      className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isSubmittingFeedback ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Submitting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-3.5 w-3.5" />
+                          <span>Submit Ticket</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                /* History Tab: Track status of submitted issues */
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between pb-1">
+                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                      Your Reported Issues ({myFeedbackList.length})
+                    </p>
+                    <button
+                      type="button"
+                      onClick={fetchMyFeedback}
+                      className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-700 transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${myFeedbackLoading ? "animate-spin" : ""}`} />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
+
+                  {myFeedbackLoading ? (
+                    <div className="py-12 flex flex-col items-center justify-center text-slate-400">
+                      <Loader2 className="h-6 w-6 animate-spin text-indigo-600 mb-2" />
+                      <p className="text-xs font-semibold">Loading your issues...</p>
+                    </div>
+                  ) : myFeedbackList.length === 0 ? (
+                    <div className="py-12 text-center bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 p-6">
+                      <MessageSquare className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs font-bold text-slate-700 dark:text-slate-200">No issues submitted yet</p>
+                      <p className="text-[11px] text-slate-400 mt-1 max-w-xs mx-auto">
+                        If you encounter bugs, broken features, or data discrepancies, report them using the form.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setFeedbackModalTab("submit")}
+                        className="mt-3 px-3.5 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-all cursor-pointer"
+                      >
+                        Create New Report
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {myFeedbackList.map((item: any) => {
+                        const isPending = (item.status || "pending") === "pending";
+                        const isResolved = item.status === "resolved";
+
+                        return (
+                          <div
+                            key={item.id}
+                            className="bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-2.5 shadow-xs"
+                          >
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${
+                                    item.type === "bug"
+                                      ? "bg-rose-50 text-rose-700 border-rose-200"
+                                      : item.type === "feature"
+                                      ? "bg-purple-50 text-purple-700 border-purple-200"
+                                      : "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                  }`}
+                                >
+                                  {item.type || "issue"}
+                                </span>
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${
+                                    isPending
+                                      ? "bg-amber-50 text-amber-700 border-amber-300"
+                                      : isResolved
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                                      : "bg-slate-100 text-slate-600 border-slate-300"
+                                  }`}
+                                >
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full ${
+                                      isPending ? "bg-amber-500 animate-pulse" : isResolved ? "bg-emerald-500" : "bg-slate-400"
+                                    }`}
+                                  />
+                                  {isPending ? "Pending Review" : item.status}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                {item.created_at ? new Date(item.created_at).toLocaleString("en-IN", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  hour12: true
+                                }) : ""}
+                              </span>
+                            </div>
+
+                            <div>
+                              <h4 className="text-xs font-black text-slate-900 dark:text-white">{item.title}</h4>
+                              <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-wrap font-medium">
+                                {item.description}
+                              </p>
+                            </div>
+
+                            {/* Admin Resolution Remarks */}
+                            {(item.admin_notes || item.resolved_by) && (
+                              <div className="rounded-lg bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 p-2.5 space-y-1">
+                                <div className="flex items-center justify-between text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                    Admin Response
+                                  </span>
+                                  {item.resolved_at && (
+                                    <span className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400">
+                                      {new Date(item.resolved_at).toLocaleDateString("en-IN", {
+                                        day: "2-digit",
+                                        month: "short",
+                                        year: "numeric"
+                                      })}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-emerald-950 dark:text-emerald-100 font-medium whitespace-pre-wrap pl-5">
+                                  {item.admin_notes || "Resolved by administration."}
+                                </p>
+                                {item.resolved_by && (
+                                  <p className="text-[9px] text-emerald-700 dark:text-emerald-400 pl-5">
+                                    Handled by: <span className="font-semibold">{item.resolved_by}</span>
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
+                            {isPending && (
+                              <p className="text-[10px] text-slate-400 italic">
+                                ⏳ Queued for administrator review. You will receive an in-app notification once addressed.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
 export function ProfessionalLoader({ message = "Loading your workspace..." }: { message?: string }) {
   return (
-    <div className="flex-1 flex items-center justify-center min-h-screen bg-slate-50 relative overflow-hidden">
-      {/* Background Soft Orbs */}
-      <div className="absolute top-[35%] left-[35%] h-[320px] w-[320px] rounded-full bg-indigo-500/10 blur-[120px] pointer-events-none animate-pulse" />
-      <div className="absolute bottom-[35%] right-[35%] h-[320px] w-[320px] rounded-full bg-[#D528A2]/10 blur-[120px] pointer-events-none animate-pulse" />
-
-      {/* Glassmorphic Card */}
-      <div className="relative z-10 flex flex-col items-center p-8 sm:p-10 rounded-xl border border-slate-200/90 bg-white/95 backdrop-blur-xl shadow-2xl max-w-sm w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-300">
-        
-        {/* FACE Prep E-Campus Logo Header */}
-        <div className="relative mb-6 flex items-center justify-center">
-          <div className="absolute -inset-3 rounded-xl bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-[#D528A2]/20 blur-md animate-pulse" />
-          <div className="relative flex items-center justify-center px-6 py-3.5 rounded-xl bg-white border border-slate-200 shadow-md">
-            <img src="/E-Campus.png" alt="FACE Prep E-Campus Logo" className="h-10 w-auto object-contain" />
-          </div>
+    <div className="min-h-screen flex items-center justify-center bg-warm-canvas">
+      <div className="flex flex-col items-center gap-3">
+        <img src="/E-Campus.png" alt="FACE Prep E-Campus" className="h-9 w-auto object-contain" />
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 text-indigo-600 animate-spin-smooth" />
+          <span className="text-xs font-bold text-slate-500">{message}</span>
         </div>
-
-        {/* 4-Dot Bouncing Wave Animation with Vibrant Glowing Brand Colors */}
-        <div className="flex items-center justify-center gap-3 my-5">
-          <div 
-            className="h-4 w-4 rounded-full bg-indigo-600 shadow-[0_0_12px_rgba(79,70,229,0.7)] animate-bounce" 
-            style={{ animationDelay: "0s", animationDuration: "0.9s" }} 
-          />
-          <div 
-            className="h-4 w-4 rounded-full bg-purple-600 shadow-[0_0_12px_rgba(147,51,234,0.7)] animate-bounce" 
-            style={{ animationDelay: "0.15s", animationDuration: "0.9s" }} 
-          />
-          <div 
-            className="h-4 w-4 rounded-full bg-[#D528A2] shadow-[0_0_12px_rgba(213,40,162,0.7)] animate-bounce" 
-            style={{ animationDelay: "0.30s", animationDuration: "0.9s" }} 
-          />
-          <div 
-            className="h-4 w-4 rounded-full bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.7)] animate-bounce" 
-            style={{ animationDelay: "0.45s", animationDuration: "0.9s" }} 
-          />
-        </div>
-
-        {/* Loading Message */}
-        <h3 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight mt-3 mb-1">
-          {message}
-        </h3>
-        <p className="text-xs text-slate-600 dark:text-slate-300 font-bold">
-          Please wait while your environment is loaded...
-        </p>
       </div>
     </div>
   );

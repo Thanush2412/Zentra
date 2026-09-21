@@ -282,94 +282,60 @@ export async function POST(request: Request) {
 
         if (affectedDemos && affectedDemos.length > 0) {
           for (const demo of affectedDemos) {
-            const leaveReason = `Mentor ${reqRecord.mentorName} approved leave (${reqRecord.start_date} to ${reqRecord.end_date}). CAM Reason: ${reqRecord.reason || 'Leave Approved'}`;
-            
-            // Prioritize Head SME assigned to the Subject Group, then eligible domain SMEs
-            const candidateSmes = await db.all(
-              `SELECT * FROM sme_users 
-               ORDER BY CASE 
-                 WHEN (is_head_sme = 1 OR head_subject_group = ?) AND (subject LIKE ? OR ? LIKE '%' || subject || '%') THEN 0 
-                 WHEN subject LIKE ? OR ? LIKE '%' || subject || '%' THEN 1 
-                 ELSE 2 
-               END`,
-              [demo.subject, `%${demo.subject}%`, demo.subject, `%${demo.subject}%`, demo.subject]
+            const leaveReason = `Mentor ${reqRecord.mentorName} approved leave (${reqRecord.start_date} to ${reqRecord.end_date}). Pending mentor self-reschedule.`;
+
+            // Update session status to 'reallocation_required' so the mentor sees the temporary "Reschedule Demo" button
+            await db.run(
+              `UPDATE demo_sessions SET status = 'reallocation_required', comments = ? WHERE id = ?`,
+              [leaveReason, demo.id]
             );
 
-            let candidateSme: any = null;
-            for (const sme of candidateSmes) {
-              if (sme.id === demo.smeId) continue; // Try finding alternative or check current SME availability
-
-              // Check if SME is on leave on this date
-              const smeOnLeave = await db.get(
-                `SELECT id FROM faculty_leave_requests WHERE mentor_id = ? AND start_date <= ? AND end_date >= ? AND status = 'approved'`,
-                [sme.id, demo.dateStr, demo.dateStr]
-              );
-              if (smeOnLeave) continue;
-
-              // Check if SME has another demo session at dateStr and timeSlot
-              const smeDemoClash = await db.get(
-                `SELECT id FROM demo_sessions WHERE smeId = ? AND dateStr = ? AND timeSlot = ? AND status IN ('scheduled', 'confirmed')`,
-                [sme.id, demo.dateStr, demo.timeSlot]
-              );
-              if (smeDemoClash) continue;
-
-              candidateSme = sme;
-              break;
-            }
-
-            if (candidateSme) {
-              // Create a pending reallocation request for the candidate Head/Domain SME
-              const reqId = "dsr_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+            // 1. In-app notification to the assigned SME (freeing their slot and letting them know mentor will reschedule)
+            if (demo.smeId) {
+              const smeNotifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
               await db.run(
-                `INSERT INTO demo_swap_requests (
-                  id, sessionId, mentorId, mentorName, smeId, smeName, dateStr, timeSlot, subject, stream, reason, remarks, swapType,
-                  proposedMentorId, proposedMentorName, proposedSmeId, proposedSmeName, proposedDateStr, proposedTimeSlot, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reallocation', ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+                `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
+                 VALUES (?, ?, ?, ?, 0, ?, 'demo_cancelled', ?)`,
                 [
-                  reqId, demo.id, demo.mentorId, demo.mentorName, demo.smeId, demo.smeName, demo.dateStr, demo.timeSlot, demo.subject, demo.stream,
-                  leaveReason, "Auto-generated reallocation request sent to Head/Eligible SME due to approved mentor leave",
-                  demo.mentorId, demo.mentorName, candidateSme.id, candidateSme.name, demo.dateStr, demo.timeSlot,
-                  new Date().toISOString()
-                ]
-              );
-
-              // Update session to reallocation_required (does not lock as confirmed until SME accepts!)
-              await db.run(
-                `UPDATE demo_sessions SET status = 'reallocation_required', comments = ? WHERE id = ?`,
-                [leaveReason, demo.id]
-              );
-
-              // Audit log for Demo Allocator real-time progress update
-              const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
-              await db.run(
-                `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
-                 VALUES (?, 'demo_reallocation_initiated', ?, ?, 'Campus Manager', ?)`,
-                [
-                  auditId,
-                  `CAM approved leave for Mentor ${reqRecord.mentorName}. Demo session for ${demo.subject} on ${demo.dateStr} (${demo.timeSlot}) flagged as Reallocation Required. Reallocation proposal sent to ${candidateSme.name}.`,
-                  approvedBy || "Campus Manager",
-                  new Date().toISOString()
-                ]
-              );
-            } else {
-              // No free SME or slot available; mark demo as not_conducted with clear reason
-              await db.run(
-                `UPDATE demo_sessions SET status = 'not_conducted', comments = ? WHERE id = ?`,
-                [`No available SME or free slot found during approved mentor leave (${reqRecord.start_date} to ${reqRecord.end_date})`, demo.id]
-              );
-
-              const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
-              await db.run(
-                `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
-                 VALUES (?, 'demo_reallocation_failed', ?, ?, 'Campus Manager', ?)`,
-                [
-                  auditId,
-                  `CAM approved leave for Mentor ${reqRecord.mentorName}. No free SME available for ${demo.subject} on ${demo.dateStr} (${demo.timeSlot}). Demo marked as Not Conducted.`,
-                  approvedBy || "Campus Manager",
+                  smeNotifId,
+                  demo.smeId,
+                  "Demo On Hold — Mentor on Leave",
+                  `Demo session for ${demo.subject} with ${reqRecord.mentorName} on ${demo.dateStr} (${demo.timeSlot}) is on hold due to approved mentor leave. Slot has been freed; mentor will reschedule.`,
+                  "/sme/demo_list",
                   new Date().toISOString()
                 ]
               );
             }
+
+            // 2. In-app notification to the mentor prompting them to pick a new date & slot
+            if (reqRecord.mentor_id) {
+              const mentorNotifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+              await db.run(
+                `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
+                 VALUES (?, ?, ?, ?, 0, ?, 'demo_reschedule_prompt', ?)`,
+                [
+                  mentorNotifId,
+                  reqRecord.mentor_id,
+                  "Demo Reschedule Required",
+                  `Your demo for ${demo.subject} on ${demo.dateStr} falls during your approved leave. Please open Demo Evaluations to pick a new date and time slot.`,
+                  "/mentor/demo_evaluations",
+                  new Date().toISOString()
+                ]
+              );
+            }
+
+            // 3. Audit log
+            const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+            await db.run(
+              `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
+               VALUES (?, 'demo_leave_hold', ?, ?, 'Campus Manager', ?)`,
+              [
+                auditId,
+                `CAM approved leave for Mentor ${reqRecord.mentorName}. Demo session for ${demo.subject} on ${demo.dateStr} (${demo.timeSlot}) placed on hold (Reschedule Required). Evaluator SME ${demo.smeName} and Mentor notified.`,
+                approvedBy || "Campus Manager",
+                new Date().toISOString()
+              ]
+            );
           }
         }
 

@@ -1,9 +1,23 @@
 "use client";
 
 import React, { useMemo } from "react";
+import dynamic from "next/dynamic";
 import { useApp } from "@/context/AppContext";
-import { CAMDashboard } from "./CAMDashboard";
 import { isSuperAdminSession } from "@/lib/superadmin";
+
+// Lazy-loaded: the full CAM dashboard is the KAM view's entire body, but keeping
+// it dynamic lets the route-level loader paint first and splits the chunk.
+const CAMDashboard = dynamic(() => import("./CAMDashboard").then(m => m.CAMDashboard), {
+  ssr: false,
+  loading: () => (
+    <div className="flex-1 flex items-center justify-center p-16 text-slate-400 font-bold text-sm">
+      <div className="flex items-center gap-2">
+        <span className="h-4 w-4 rounded-full border-2 border-[#D528A2] border-t-transparent animate-spin" />
+        <span>Loading KAM Portfolio…</span>
+      </div>
+    </div>
+  )
+});
 
 export interface KAMDashboardProps {
   activeTab?: string;
@@ -32,6 +46,7 @@ export function KAMDashboard({ activeTab = "overview", onTabChange }: KAMDashboa
       onTabChange={onTabChange as any}
       isKAMView={true}
       allowedCollegeIds={assignedCollegeIds}
+      readOnly={true}
     />
   );
 }

@@ -62,18 +62,21 @@ export default function Home() {
   const [signupSuccess, setSignupSuccess] = useState("");
 
   // Check login state on mount
+  const [isRedirecting, setIsRedirecting] = useState(false);
+
   useEffect(() => {
     const loggedIn = localStorage.getItem("fp_logged_in") === "true";
     if (loggedIn) {
       const role = localStorage.getItem("fp_current_role");
       if (role) {
+        setIsRedirecting(true);
         const target = "/" + (role === "fee_manager" ? "fee-manager" : role);
         router.replace(target);
         return;
       }
     }
     
-    setSessionLoading(false);
+    setIsRedirecting(false);
 
     localStorage.removeItem("fp_dark_mode");
     if (typeof document !== "undefined") {
@@ -110,6 +113,9 @@ export default function Home() {
         const resolvedName = data.userName || data.userEmail || email.trim();
         localStorage.setItem("fp_user_email", (data.userEmail || email.trim()).toLowerCase());
         localStorage.setItem("fp_user_name", resolvedName);
+        if (data.collegeId) {
+          localStorage.setItem("fp_user_college_id", data.collegeId);
+        }
         setSessionUserName(resolvedName);
 
         // Super-admin access is decided server-side from the stored role — never from the email
@@ -121,7 +127,7 @@ export default function Home() {
           return;
         }
 
-        setRole(data.role, data.userId);
+        setRole(data.role, data.userId, { collegeId: data.collegeId });
         if (data.mustChangePassword) {
           localStorage.setItem("fp_must_change_pass", "true");
         } else {
@@ -183,9 +189,9 @@ export default function Home() {
     }
   };
 
-  /* ── Loading Splash ─────────────────────── */
-  if (sessionLoading || appLoading) {
-    return <ProfessionalLoader message="Connecting to database…" />;
+  /* ── Loading Splash (Only shown during active session redirection) ─────────────────────── */
+  if (isRedirecting) {
+    return <ProfessionalLoader message="Redirecting to your workspace…" />;
   }
 
 
@@ -199,15 +205,8 @@ export default function Home() {
         <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-slate-300/10 blur-[120px] pointer-events-none animate-float-reverse" />
         <div className="absolute top-[35%] left-[35%] h-[30%] w-[30%] rounded-full bg-indigo-500/5 blur-[100px] pointer-events-none animate-pulse-gentle" />
 
-        {/* Semi-transparent grid overlay */}
-        <div
-          className="absolute inset-0 pointer-events-none opacity-[0.02]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(0,0,0,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.15) 1px, transparent 1px)",
-            backgroundSize: "40px 40px",
-          }}
-        />
+        {/* Modern 45° Bauhaus Diagonal Micro-Hatch Pattern Overlay */}
+        <div className="absolute inset-0 bg-diagonal-hatch pointer-events-none opacity-40 z-0" />
 
         {/* Left panel main wrapper */}
         <div className="relative z-10 flex flex-col h-full px-12 xl:px-16 py-12 justify-between">
@@ -249,7 +248,9 @@ export default function Home() {
       </div>
 
       {/* ── RIGHT LOGIN PANEL ── */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/50 relative justify-center">
+      <div className="flex-1 flex flex-col overflow-hidden bg-diagonal-hatch relative justify-center">
+        {/* Soft Vignette Overlay */}
+        <div className="absolute inset-0 bg-radial from-transparent via-transparent to-slate-100/40 pointer-events-none z-0" />
         {/* Decorative soft glowing dots for right side */}
         <div className="absolute top-[20%] right-[-10%] h-[30%] w-[30%] rounded-full bg-slate-200/20 blur-[80px] pointer-events-none" />
         <div className="absolute bottom-[10%] left-[-15%] h-[35%] w-[35%] rounded-full bg-slate-300/10 blur-[90px] pointer-events-none" />

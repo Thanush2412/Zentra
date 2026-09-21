@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { useApp, SHIFT_TIME_SLOTS, Slot, Mentor, AuditLog, College, Subject, Department } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
+import { TabSkeleton } from "./TabSkeleton";
 import {
   Building2,
   Users,
@@ -53,7 +55,14 @@ import {
   Check,
   RefreshCw,
   Lock,
-  Unlock
+  Unlock,
+  MessageSquare,
+  Phone,
+  Tag,
+  Filter,
+  CheckCircle,
+  User,
+  CornerDownRight
 } from "lucide-react";
 import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak, isDeptSubjectMatch, isSameYear, isSameSemester } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
@@ -61,7 +70,31 @@ import { CourseInfoButton } from "./CourseInfoModal";
 import { CourseModal } from "./CourseModal";
 import { LoadingButton } from "./ui/LoadingButton";
 import { Pagination } from "@/components/ui/Pagination";
-import { CAMDashboard } from "./CAMDashboard";
+// Lazy-loaded: CAMDashboard is a huge module only needed for the campus drill-down.
+// Keeps it out of the admin bundle so the dashboard paints fast.
+const OversightHub = dynamic(() => import("./admin/OversightHub").then(m => m.OversightHub), {
+  ssr: false,
+  loading: () => (
+    <div className="flex-1 flex items-center justify-center p-16 text-slate-400 font-bold text-sm">
+      <div className="flex items-center gap-2">
+        <span className="h-4 w-4 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin" />
+        <span>Loading Oversight Hub…</span>
+      </div>
+    </div>
+  )
+});
+
+const CAMDashboard = dynamic(() => import("./CAMDashboard").then(m => m.CAMDashboard), {
+  ssr: false,
+  loading: () => (
+    <div className="flex-1 flex items-center justify-center p-16 text-slate-400 font-bold text-sm">
+      <div className="flex items-center gap-2">
+        <span className="h-4 w-4 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin" />
+        <span>Loading Campus Console…</span>
+      </div>
+    </div>
+  )
+});
 
 export const generateCampusCode = (name: string): string => {
   if (!name || !name.trim()) return "";
@@ -139,8 +172,8 @@ interface KAMUserFromDB {
 
 
 export interface AdminDashboardProps {
-  activeTab?: "overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "hierarchy" | "logs" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu";
-  onTabChange?: (tab: "overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "hierarchy" | "logs" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu") => void;
+  activeTab?: "overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "monitoring" | "oversight" | "hierarchy" | "logs" | "feedback" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu";
+  onTabChange?: (tab: "overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "monitoring" | "oversight" | "hierarchy" | "logs" | "feedback" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu") => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -189,7 +222,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     signupRequests,
     approveSignupRequest,
     rejectSignupRequest,
-    deleteSignupRequest
+    deleteSignupRequest,
+    refreshAttendance
   } = useApp();
   const { toast, confirm: showConfirm } = useToast();
 
@@ -226,6 +260,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       icon: Grid,
       items: [
         { id: "schedules", label: "Schedules", icon: Grid },
+        { id: "oversight", label: "Oversight Hub", icon: Eye },
         { id: "monitoring", label: "Attendance Monitoring", icon: Clock },
         { id: "holidays", label: "Holidays", icon: Calendar },
         { id: "announcements", label: "Announcements", icon: Megaphone }
@@ -237,12 +272,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       items: [
         { id: "settings", label: "Email Controls & Settings", icon: Sliders },
         { id: "sessions", label: "Login Sessions", icon: History },
+        { id: "feedback", label: "User Feedback", icon: MessageSquare },
         { id: "logs", label: "Audit Logs", icon: History }
       ]
     }
   ];
 
-  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "monitoring" | "hierarchy" | "logs" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu">("overview");
+  const [localActiveTab, setLocalActiveTab] = useState<"overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "monitoring" | "oversight" | "hierarchy" | "logs" | "feedback" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu">("overview");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
@@ -267,6 +303,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [usersList, setUsersList] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
 
+  // ── User Feedback viewer (Admin → User Feedback) ─────────────────────────
+  const [feedbackReports, setFeedbackReports] = useState<any[]>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackSearch, setFeedbackSearch] = useState("");
+  const [feedbackStatusFilter, setFeedbackStatusFilter] = useState<"all" | "pending" | "resolved" | "closed">("all");
+  const [feedbackTypeFilter, setFeedbackTypeFilter] = useState<string>("all");
+  const [feedbackStatusUpdating, setFeedbackStatusUpdating] = useState<string | null>(null);
+  const [resolvingReport, setResolvingReport] = useState<any | null>(null);
+  const [resolutionNote, setResolutionNote] = useState<string>("");
+
   // Global System Settings & Mailing Control State
   const [systemSettings, setSystemSettings] = useState<{ mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any }>({ mailing_enabled: true, attendance_lock_enabled: true });
   const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
@@ -286,11 +332,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsFetchingPreview(true);
     setClearAttPreviewCount(null);
     try {
+      // ROLE_UI_AUDIT A1 (P1): build ONE canonical param set and use it for both
+      // preview and delete — the old preview fetch ignored department/classGroup
+      // filters, so the count could disagree with what DELETE would remove.
       const params = new URLSearchParams({ startDate: clearAttStartDate, endDate: clearAttEndDate });
       if (clearAttCollegeId && clearAttCollegeId !== "all") params.set("collegeId", clearAttCollegeId);
       if (clearAttDept && clearAttDept !== "all") params.set("department", clearAttDept);
       if (clearAttClassGroup && clearAttClassGroup !== "all") params.set("classGroup", clearAttClassGroup);
-      const res = await fetch(`/api/attendance?college_id=${clearAttCollegeId !== "all" ? clearAttCollegeId : ""}&startDate=${clearAttStartDate}&endDate=${clearAttEndDate}`);
+      const res = await fetch(`/api/attendance?${params.toString()}`);
       const data = await res.json();
       if (data.success) {
         setClearAttPreviewCount(data.count ?? (data.records?.length ?? 0));
@@ -332,20 +381,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (data.success) {
         toast(`Cleared ${data.deletedCount ?? 0} attendance record(s) from ${clearAttStartDate} to ${clearAttEndDate}.`, "success");
         setClearAttPreviewCount(null);
-        // Surgical update: remove attendance records that fall within the cleared date range and scope
-        setStudentAttendance(prev => prev.filter(a => {
-          const recDate = a.dateStr || (a as any).date;
-          if (!recDate || recDate < clearAttStartDate || recDate > clearAttEndDate) return true;
-          if (clearAttCollegeId !== "all" || clearAttDept !== "all" || clearAttClassGroup !== "all") {
-            const student = students.find(s => s.id === a.studentId);
-            if (student) {
-              if (clearAttCollegeId !== "all" && student.college_id !== clearAttCollegeId) return true;
-              if (clearAttDept !== "all" && student.department !== clearAttDept) return true;
-              if (clearAttClassGroup !== "all" && student.classGroup !== clearAttClassGroup && (student as any).class_group !== clearAttClassGroup) return true;
-            }
-          }
-          return false;
-        }));
+        // DATA_FLOW_AUDIT D10: refetch attendance from the server instead of a
+        // client-side surgical filter — the old filter couldn't match students
+        // missing from the (LIMITed) students array, leaving ghost records on screen.
+        await refreshAttendance(clearAttCollegeId !== "all" ? clearAttCollegeId : undefined);
       } else {
         toast(data.message || "Failed to clear attendance.", "error");
       }
@@ -842,12 +881,159 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const [modalError, setModalError] = useState<string | null>(null);
+  // Shared busy flag for modal submit buttons that had none (campus, mentor,
+  // subject, announcement, group) — prevents double submits and shows a spinner.
+  const [modalBusy, setModalBusy] = useState(false);
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState("");
   const [collegeFilter, setCollegeFilter] = useState("all");
   const [dayFilter, setDayFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState("all");
+
+  // ── Attendance Monitoring (native Admin data table) ────────────────────
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [attStartDate, setAttStartDate] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30);
+    return d.toISOString().split("T")[0];
+  });
+  const [attEndDate, setAttEndDate] = useState(todayStr);
+  const [attCollegeFilter, setAttCollegeFilter] = useState("all");
+  const [attDeptFilter, setAttDeptFilter] = useState("all");
+  const [attBatchFilter, setAttBatchFilter] = useState("all");
+  const [attSearch, setAttSearch] = useState("");
+  const [attSort, setAttSort] = useState<{ key: "name" | "pct" | "present" | "absent" | "total"; dir: "asc" | "desc" }>({ key: "pct", dir: "asc" });
+  const [attPage, setAttPage] = useState(1);
+  const [isExportingAtt, setIsExportingAtt] = useState(false);
+  const ATT_PAGE_SIZE = 25;
+
+  // Heavy-tab skeleton: show shimmer on the tab's very first paint while its
+  // memos/data settle (auto-clears after mount so interactions stay snappy).
+  const [showTabSkeleton, setShowTabSkeleton] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setShowTabSkeleton(false), 350);
+    return () => clearTimeout(t);
+  }, []);
+
+  // College-scoped department & batch options for the monitoring filters
+  const attDeptOptions = useMemo(() => {
+    const set = new Set<string>();
+    students.filter(s => attCollegeFilter === "all" || s.college_id === attCollegeFilter).forEach(s => { if (s.department) set.add(s.department); });
+    return Array.from(set).sort();
+  }, [students, attCollegeFilter]);
+  const attBatchOptions = useMemo(() => {
+    const set = new Set<string>();
+    students.filter(s => (attCollegeFilter === "all" || s.college_id === attCollegeFilter) && (attDeptFilter === "all" || s.department === attDeptFilter)).forEach(s => { if (s.classGroup) set.add(s.classGroup); });
+    return Array.from(set).sort();
+  }, [students, attCollegeFilter, attDeptFilter]);
+
+  // Students matching the current filter selections
+  const attFilteredStudents = useMemo(() => {
+    const q = attSearch.trim().toLowerCase();
+    return students.filter(s =>
+      (attCollegeFilter === "all" || s.college_id === attCollegeFilter) &&
+      (attDeptFilter === "all" || s.department === attDeptFilter) &&
+      (attBatchFilter === "all" || s.classGroup === attBatchFilter) &&
+      (!q || s.name.toLowerCase().includes(q) || (s.roll_number || "").toLowerCase().includes(q) || (s.register_number || "").toLowerCase().includes(q))
+    );
+  }, [students, attCollegeFilter, attDeptFilter, attBatchFilter, attSearch]);
+
+  // Per-student attendance aggregation for the selected date window
+  const attRows = useMemo(() => {
+    const byStudent = new Map<string, { present: number; absent: number }>();
+    for (const rec of studentAttendance) {
+      if (!rec.dateStr) continue;
+      if (attStartDate && rec.dateStr < attStartDate) continue;
+      if (attEndDate && rec.dateStr > attEndDate) continue;
+      const agg = byStudent.get(rec.studentId) || { present: 0, absent: 0 };
+      if (rec.status === "absent") agg.absent += 1;
+      else if (rec.status === "present" || rec.status === "late" || rec.status === "od") agg.present += 1;
+      byStudent.set(rec.studentId, agg);
+    }
+    const studentMap = new Map(students.map(s => [s.id, s]));
+    const collegeMap = new Map(colleges.map(c => [c.id, c.name]));
+    const rows = attFilteredStudents.filter(s => byStudent.has(s.id)).map(s => {
+      const agg = byStudent.get(s.id)!;
+      const total = agg.present + agg.absent;
+      return {
+        student: s,
+        campus: collegeMap.get(s.college_id || "") || "—",
+        present: agg.present,
+        absent: agg.absent,
+        total,
+        pct: total > 0 ? Math.round((agg.present / total) * 100) : 0,
+      };
+    });
+    const dir = attSort.dir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      switch (attSort.key) {
+        case "name": return a.student.name.localeCompare(b.student.name) * dir;
+        case "present": return (a.present - b.present) * dir;
+        case "absent": return (a.absent - b.absent) * dir;
+        case "total": return (a.total - b.total) * dir;
+        case "pct":
+        default: return (a.pct - b.pct) * dir;
+      }
+    });
+    return rows;
+  }, [studentAttendance, students, colleges, attFilteredStudents, attStartDate, attEndDate, attSort]);
+
+  // Summary stats for the stat cards
+  const attStats = useMemo(() => {
+    const withData = attRows;
+    const onTrack = withData.filter(r => r.pct >= 75).length;
+    const atRisk = withData.filter(r => r.pct >= 65 && r.pct < 75).length;
+    const critical = withData.filter(r => r.pct < 65).length;
+    const avg = withData.length > 0 ? Math.round(withData.reduce((sum, r) => sum + r.pct, 0) / withData.length) : 0;
+    return { total: withData.length, onTrack, atRisk, critical, avg };
+  }, [attRows]);
+
+  const attTotalPages = Math.max(1, Math.ceil(attRows.length / ATT_PAGE_SIZE));
+  const attSafePage = Math.min(Math.max(1, attPage), attTotalPages);
+  const attPaginated = attRows.slice((attSafePage - 1) * ATT_PAGE_SIZE, attSafePage * ATT_PAGE_SIZE);
+
+  const attSetPreset = (preset: string) => {
+    const today = new Date().toISOString().split("T")[0];
+    if (preset === "all") { setAttStartDate("2026-06-15"); setAttEndDate(today); }
+    else if (preset === "this_month") { const now = new Date(); setAttStartDate(new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0]); setAttEndDate(today); }
+    else if (preset === "past_30") { const d = new Date(); d.setDate(d.getDate() - 30); setAttStartDate(d.toISOString().split("T")[0]); setAttEndDate(today); }
+    else if (preset === "past_7") { const d = new Date(); d.setDate(d.getDate() - 7); setAttStartDate(d.toISOString().split("T")[0]); setAttEndDate(today); }
+    setAttPage(1);
+  };
+
+  const handleExportAttendance = async () => {
+    if (attRows.length === 0) { toast("No attendance data to export for the selected range.", "warning"); return; }
+    setIsExportingAtt(true);
+    try {
+      const XLSX = await import("xlsx");
+      const exportData = attRows.map((r, i) => ({
+        "Sl. No.": i + 1,
+        "Roll No": r.student.roll_number || r.student.register_number || "—",
+        "Name": r.student.name,
+        "Campus": r.campus,
+        "Department": r.student.department || "—",
+        "Batch": r.student.classGroup || "—",
+        "Present": r.present,
+        "Absent": r.absent,
+        "Total Marked": r.total,
+        "Attendance %": r.pct,
+      }));
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      XLSX.utils.book_append_sheet(wb, ws, "Attendance Summary");
+      XLSX.writeFile(wb, `Attendance_Summary_${attStartDate}_to_${attEndDate}.xlsx`);
+      toast(`Exported attendance summary for ${attRows.length} students.`, "success");
+    } catch {
+      toast("Failed to export attendance summary.", "error");
+    } finally {
+      setIsExportingAtt(false);
+    }
+  };
+
+  const attToggleSort = (key: "name" | "pct" | "present" | "absent" | "total") => {
+    setAttSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "name" ? "asc" : "desc" });
+    setAttPage(1);
+  };
 
   // Pagination States
   const [mentorsPage, setMentorsPage] = useState(1);
@@ -902,6 +1088,101 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       [nodeId]: !prev[nodeId]
     }));
   };
+
+  // ── User Feedback: fetch + status update ───────────────────────────────────
+  const fetchFeedbackReports = async () => {
+    setFeedbackLoading(true);
+    try {
+      const res = await fetch("/api/feedback");
+      const data = await res.json();
+      if (data.success) {
+        setFeedbackReports(data.reports || []);
+      } else {
+        toast(data.message || "Failed to load feedback reports.", "error");
+      }
+    } catch (err: any) {
+      toast("Error loading feedback: " + err.message, "error");
+    } finally {
+      setFeedbackLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "feedback") {
+      fetchFeedbackReports();
+    }
+  }, [activeTab]);
+
+  const handleFeedbackStatus = async (id: string, status: "pending" | "resolved" | "closed", note?: string) => {
+    setFeedbackStatusUpdating(id);
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          status,
+          resolvedBy: currentAdmin?.name || "Admin",
+          adminNotes: note !== undefined ? note : (status === "resolved" ? "Resolved by Admin" : status === "closed" ? "Closed by Admin" : "")
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFeedbackReports(prev => prev.map(r => r.id === id ? {
+          ...r,
+          status,
+          admin_notes: note !== undefined ? note : (status === "resolved" ? (r.admin_notes || "Resolved by Admin") : r.admin_notes),
+          resolved_by: status !== "pending" ? (currentAdmin?.name || "Admin") : null,
+          resolved_at: status !== "pending" ? new Date().toISOString() : null
+        } : r));
+        toast(`Feedback marked as ${status}.`, "success");
+        if (resolvingReport?.id === id) {
+          setResolvingReport(null);
+          setResolutionNote("");
+        }
+      } else {
+        toast(data.message || "Failed to update feedback status.", "error");
+      }
+    } catch (err: any) {
+      toast("Error updating feedback: " + err.message, "error");
+    } finally {
+      setFeedbackStatusUpdating(null);
+    }
+  };
+
+  const filteredFeedbackReports = useMemo(() => {
+    const q = feedbackSearch.toLowerCase().trim();
+    return feedbackReports.filter(r => {
+      if (feedbackStatusFilter !== "all" && (r.status || "pending") !== feedbackStatusFilter) return false;
+      if (feedbackTypeFilter !== "all" && (r.type || "other").toLowerCase() !== feedbackTypeFilter.toLowerCase()) return false;
+      if (!q) return true;
+      return [
+        r.title,
+        r.description,
+        r.user_id,
+        r.user_role,
+        r.user_name,
+        r.college_name,
+        r.department,
+        r.register_number,
+        r.contact_info,
+        r.type,
+        r.admin_notes,
+        r.resolved_by
+      ].some((v: any) => String(v || "").toLowerCase().includes(q));
+    });
+  }, [feedbackReports, feedbackSearch, feedbackStatusFilter, feedbackTypeFilter]);
+
+  const feedbackCounts = useMemo(() => ({
+    all: feedbackReports.length,
+    pending: feedbackReports.filter(r => (r.status || "pending") === "pending").length,
+    resolved: feedbackReports.filter(r => r.status === "resolved").length,
+    closed: feedbackReports.filter(r => r.status === "closed").length,
+    bug: feedbackReports.filter(r => r.type === "bug").length,
+    feature: feedbackReports.filter(r => r.type === "feature").length,
+    suggestion: feedbackReports.filter(r => r.type === "suggestion").length,
+    other: feedbackReports.filter(r => !["bug", "feature", "suggestion"].includes(r.type)).length
+  }), [feedbackReports]);
 
   const fetchAdminDetails = async () => {
     try {
@@ -1035,6 +1316,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     e.preventDefault();
     if (!annForm.title.trim()) return;
+    setModalBusy(true);
     try {
       const res = await fetch("/api/announcements", {
         method: "POST",
@@ -1051,6 +1333,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (err) {
       console.error("Compose announcement error:", err);
+    } finally {
+      setModalBusy(false);
     }
   };
 
@@ -1517,6 +1801,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleCampusSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError(null);
+    setModalBusy(true);
     try {
       const finalMap = {
         ...semesterConfigsMap,
@@ -1693,6 +1978,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setModalError(err.message || "An unexpected error occurred.");
     } finally {
       setActionLoading('submit_campus', false);
+      setModalBusy(false);
     }
   };
 
@@ -1971,7 +2257,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setModalError("Name, Email, and Mentor Group are required.");
       return;
     }
-
+    setModalBusy(true);
     // Auto generate avatar initials if empty
     let initials = mentorForm.avatar.trim();
     if (!initials) {
@@ -2011,6 +2297,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setModalError(err.message || "An unexpected error occurred.");
     } finally {
       setActionLoading('submit_mentor', false);
+      setModalBusy(false);
     }
   };
 
@@ -2259,6 +2546,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setModalError("Course / Department is required.");
       return;
     }
+    setModalBusy(true);
     if (!subjectForm.college_id) {
       setModalError("Please select a campus for this subject.");
       return;
@@ -2355,6 +2643,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (err: any) {
       setModalError(err.message || "An unexpected error occurred.");
+    } finally {
+      setModalBusy(false);
     }
   };
 
@@ -2418,7 +2708,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setModalError("Group Name is required.");
       return;
     }
-
+    setModalBusy(true);
     try {
       let res;
       const selectedSme = smes.find(s => s.id === groupForm.lead_sme_id);
@@ -2453,6 +2743,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (err: any) {
       setModalError(err.message || "An unexpected error occurred.");
+    } finally {
+      setModalBusy(false);
     }
   };
 
@@ -2739,6 +3031,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div key={group.title} className="group/nav-group relative">
                   {/* Category Header Row */}
                   <div
+                    onClick={() => {
+                      if (group.items.length > 0) {
+                        setActiveTab(group.items[0].id as any);
+                      }
+                    }}
                     className={`w-full flex items-center justify-between rounded-md transition-all duration-150 cursor-pointer ${isCollapsed ? "justify-center p-3" : "px-4 py-3"
                       } ${hasActiveItem
                         ? "bg-[#D528A2]/10 text-[#D528A2] font-black shadow-xs border border-[#D528A2]/20"
@@ -2822,7 +3119,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             { id: "more_menu", label: "More", icon: Menu },
           ].map(t => {
             const Icon = t.icon;
-            const isActive = activeTab === t.id || (t.id === "more_menu" && ["courses", "subjects", "kams", "cams", "smes", "users", "holidays", "announcements", "logs"].includes(activeTab));
+            const isActive = activeTab === t.id || (t.id === "more_menu" && ["courses", "subjects", "kams", "cams", "smes", "users", "holidays", "announcements", "feedback", "logs"].includes(activeTab));
             return (
               <button
                 key={t.id}
@@ -4631,7 +4928,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {/* ── Tab: Global Schedule Grid ── */}
-          {activeTab === "schedules" && (
+          {activeTab === "schedules" && showTabSkeleton && <TabSkeleton cards={0} />}
+          {activeTab === "schedules" && !showTabSkeleton && (
             <div className="space-y-6 animate-fadeIn">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
                 <div className="flex items-center gap-2">
@@ -4765,13 +5063,139 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
-          {/* ── Tab: Attendance Monitoring Central ── */}
-          {activeTab === "monitoring" && (
-            <div className="space-y-4 animate-fadeIn">
-              <CAMDashboard
-                activeTab="monitoring"
-                overrideCollegeId="all"
-              />
+          {/* ── Tab: Oversight Hub (cross-campus infographics) ── */}
+          {activeTab === "oversight" && <OversightHub />}
+
+          {/* ── Tab: Attendance Monitoring Central (native Admin data table) ── */}
+          {activeTab === "monitoring" && showTabSkeleton && <TabSkeleton />}
+          {activeTab === "monitoring" && !showTabSkeleton && (
+            <div className="space-y-6 animate-fadeIn">
+              {/* Header */}
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-indigo-655" />
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">Attendance Monitoring Central</h2>
+                    <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Per-student attendance summary across all campuses for the selected date range</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportAttendance}
+                  disabled={isExportingAtt}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer active:scale-95 disabled:opacity-50"
+                >
+                  {isExportingAtt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  <span>{isExportingAtt ? "Exporting…" : "Export Excel"}</span>
+                </button>
+              </div>
+
+              {/* Stat cards */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {[{ label: "Students Tracked", value: attStats.total, cls: "text-indigo-600" }, { label: "Average %", value: `${attStats.avg}%`, cls: "text-violet-600" }, { label: "On Track (≥75%)", value: attStats.onTrack, cls: "text-emerald-600" }, { label: "At Risk (65–74%)", value: attStats.atRisk, cls: "text-amber-600" }, { label: "Critical (<65%)", value: attStats.critical, cls: "text-rose-600" }].map(card => (
+                  <div key={card.label} className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">
+                    <div className={`text-xl font-black ${card.cls}`}>{card.value}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mt-0.5">{card.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Filter bar */}
+              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">From:</span>
+                  <input type="date" value={attStartDate} onChange={e => { setAttStartDate(e.target.value); setAttPage(1); }} className="text-xs font-bold text-gray-800 outline-none cursor-pointer bg-transparent" />
+                </div>
+                <div className="flex items-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">To:</span>
+                  <input type="date" value={attEndDate} onChange={e => { setAttEndDate(e.target.value); setAttPage(1); }} className="text-xs font-bold text-gray-800 outline-none cursor-pointer bg-transparent" />
+                </div>
+                <div className="flex items-center gap-1 flex-wrap">
+                  {[{ key: "all", label: "All" }, { key: "this_month", label: "This Month" }, { key: "past_30", label: "30D" }, { key: "past_7", label: "7D" }].map(p => (
+                    <button key={p.key} type="button" onClick={() => attSetPreset(p.key)} className="px-2 py-1 bg-white hover:bg-gray-100 border border-gray-200 rounded-lg text-gray-600 transition-all cursor-pointer active:scale-95 text-[10px] font-bold">{p.label}</button>
+                  ))}
+                </div>
+                <div className="hidden lg:block w-px h-6 bg-gray-200" />
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-gray-400" />
+                  <input type="text" placeholder="Search name, roll no..." value={attSearch} onChange={e => { setAttSearch(e.target.value); setAttPage(1); }} className="pl-8 pr-3 py-1.5 border border-gray-200 bg-gray-50 text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 font-semibold w-44" />
+                </div>
+                <select value={attCollegeFilter} onChange={e => { setAttCollegeFilter(e.target.value); setAttDeptFilter("all"); setAttBatchFilter("all"); setAttPage(1); }} className="py-1.5 px-2.5 border border-gray-200 rounded-xl bg-gray-50 text-xs font-bold cursor-pointer outline-none">
+                  <option value="all">All Campuses</option>
+                  {colleges.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <select value={attDeptFilter} onChange={e => { setAttDeptFilter(e.target.value); setAttBatchFilter("all"); setAttPage(1); }} className="py-1.5 px-2.5 border border-gray-200 rounded-xl bg-gray-50 text-xs font-bold cursor-pointer outline-none">
+                  <option value="all">All Departments</option>
+                  {attDeptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+                <select value={attBatchFilter} onChange={e => { setAttBatchFilter(e.target.value); setAttPage(1); }} className="py-1.5 px-2.5 border border-gray-200 rounded-xl bg-gray-50 text-xs font-bold cursor-pointer outline-none">
+                  <option value="all">All Batches</option>
+                  {attBatchOptions.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+
+              {/* Data table */}
+              {attPaginated.length === 0 ? (
+                <div className="text-center py-16 border border-gray-200 rounded-xl bg-gray-55/50">
+                  <Clock className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-555 font-semibold">No attendance records found for this filter and date range.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 max-h-[62vh]">
+                    <table className="w-full border-collapse text-left text-xs min-w-[900px]">
+                      <thead className="sticky top-0 z-10">
+                        <tr className="bg-gray-50 border-b border-gray-200 text-gray-555 font-bold uppercase text-[9px] tracking-wider">
+                          <th className="p-3 w-12">#</th>
+                          <th className="p-3 cursor-pointer hover:text-indigo-600" onClick={() => attToggleSort("name")}>Roll No</th>
+                          <th className="p-3">Name</th>
+                          <th className="p-3">Campus</th>
+                          <th className="p-3">Department</th>
+                          <th className="p-3">Batch</th>
+                          <th className="p-3 text-center cursor-pointer hover:text-indigo-600 text-emerald-700" onClick={() => attToggleSort("present")}>Present</th>
+                          <th className="p-3 text-center cursor-pointer hover:text-indigo-600 text-rose-700" onClick={() => attToggleSort("absent")}>Absent</th>
+                          <th className="p-3 text-center cursor-pointer hover:text-indigo-600" onClick={() => attToggleSort("total")}>Total</th>
+                          <th className="p-3 text-center cursor-pointer hover:text-indigo-600 text-indigo-700" onClick={() => attToggleSort("pct")}>%</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-150 bg-white">
+                        {attPaginated.map((row, idx) => (
+                          <tr key={row.student.id} className="hover:bg-gray-55/30 transition-colors">
+                            <td className="p-3 text-gray-400 font-bold">{(attSafePage - 1) * ATT_PAGE_SIZE + idx + 1}</td>
+                            <td className="p-3 text-gray-700 font-bold whitespace-nowrap">{row.student.roll_number || row.student.register_number || "—"}</td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                                <div className="h-6 w-6 rounded-full btn-gradient flex items-center justify-center font-extrabold text-white text-[9px] shrink-0">{row.student.name.charAt(0).toUpperCase()}</div>
+                                <span className="font-bold text-gray-900 whitespace-nowrap">{row.student.name}</span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-gray-600 font-semibold whitespace-nowrap">{row.campus}</td>
+                            <td className="p-3 text-gray-600 font-semibold whitespace-nowrap">{row.student.department || "—"}</td>
+                            <td className="p-3 text-gray-600 font-semibold whitespace-nowrap">{row.student.classGroup || "—"}</td>
+                            <td className="p-3 text-center font-black text-emerald-600">{row.present}</td>
+                            <td className="p-3 text-center font-black text-rose-600">{row.absent}</td>
+                            <td className="p-3 text-center font-bold text-gray-700">{row.total}</td>
+                            <td className="p-3 text-center">
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black border ${row.pct >= 75 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : row.pct >= 65 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-rose-50 text-rose-700 border-rose-200"}`}>{row.pct}%</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* Pagination */}
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-[10px] font-bold text-gray-400">Showing {attPaginated.length} of {attRows.length} students with marked attendance</span>
+                    {attTotalPages > 1 && (
+                      <div className="flex items-center gap-1">
+                        <button type="button" onClick={() => setAttPage(p => Math.max(1, p - 1))} disabled={attSafePage === 1} className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-100 cursor-pointer disabled:opacity-40">← Prev</button>
+                        <span className="px-2 text-[10px] font-bold text-gray-500">Page {attSafePage} / {attTotalPages}</span>
+                        <button type="button" onClick={() => setAttPage(p => Math.min(attTotalPages, p + 1))} disabled={attSafePage === attTotalPages} className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-100 cursor-pointer disabled:opacity-40">Next →</button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -4879,6 +5303,492 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ── Tab: User Feedback ── */}
+          {activeTab === "feedback" && (
+            <div className="space-y-3.5 animate-fadeIn">
+              {/* Header */}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-150 pb-2.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
+                    <MessageSquare className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-extrabold text-gray-900">User Feedback & Issue Reports</h2>
+                      {feedbackCounts.pending > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black border border-amber-200">
+                          {feedbackCounts.pending} Pending
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-gray-500 font-medium mt-0.5">
+                      Review bug reports, feature requests, and feedback submitted by Students, Mentors, and Staff
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={fetchFeedbackReports}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-2xs transition-all cursor-pointer"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${feedbackLoading ? "animate-spin text-indigo-600" : ""}`} />
+                  Refresh Feed
+                </button>
+              </div>
+
+              {/* Status Summary KPI Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {([
+                  ["all", "All Submissions", feedbackCounts.all, "border-indigo-300 bg-indigo-50/50 text-indigo-700", "Total tickets"],
+                  ["pending", "Pending Review", feedbackCounts.pending, "border-amber-300 bg-amber-50/50 text-amber-700", "Needs admin action"],
+                  ["resolved", "Resolved", feedbackCounts.resolved, "border-emerald-300 bg-emerald-50/50 text-emerald-700", "Action completed"],
+                  ["closed", "Closed", feedbackCounts.closed, "border-slate-300 bg-slate-50 text-slate-700", "Dismissed / Inactive"]
+                ] as const).map(([key, label, count, activeCls, sub]) => {
+                  const isSelected = feedbackStatusFilter === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setFeedbackStatusFilter(key as any)}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                        isSelected
+                          ? `${activeCls} ring-2 ring-indigo-400/40 shadow-2xs`
+                          : "bg-white border-gray-200 hover:border-gray-300 hover:shadow-2xs"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xl font-extrabold text-gray-900">{count}</span>
+                        {key === "pending" && count > 0 && (
+                          <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
+                        )}
+                      </div>
+                      <p className="text-xs font-bold text-gray-800 mt-0.5">{label}</p>
+                      <p className="text-[10px] text-gray-400 font-medium">{sub}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Filters Bar: Category Pills + Search */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white p-2.5 rounded-xl border border-gray-200 shadow-2xs">
+                {/* Category Pills */}
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1 flex items-center gap-1">
+                    <Filter className="h-3 w-3" /> Category:
+                  </span>
+                  {[
+                    { id: "all", label: "All Types", count: feedbackCounts.all },
+                    { id: "bug", label: "Bugs", count: feedbackCounts.bug },
+                    { id: "feature", label: "Features", count: feedbackCounts.feature },
+                    { id: "suggestion", label: "Suggestions", count: feedbackCounts.suggestion },
+                    { id: "other", label: "Other", count: feedbackCounts.other },
+                  ].map((cat) => {
+                    const isSelected = feedbackTypeFilter === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => setFeedbackTypeFilter(cat.id)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isSelected
+                            ? "bg-indigo-600 text-white shadow-2xs"
+                            : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                        }`}
+                      >
+                        <span>{cat.label}</span>
+                        <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                          isSelected ? "bg-white/20 text-white" : "bg-gray-200 text-gray-600"
+                        }`}>
+                          {cat.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Search Bar */}
+                <div className="relative w-full sm:w-72">
+                  <Search className="absolute left-3 top-2 h-3.5 w-3.5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search student, roll, college, dept..."
+                    value={feedbackSearch}
+                    onChange={(e) => setFeedbackSearch(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-8.5 pr-4 py-1.5 text-xs font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                  />
+                  {feedbackSearch && (
+                    <button
+                      onClick={() => setFeedbackSearch("")}
+                      className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Feed List */}
+              {feedbackLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 text-gray-400 bg-white rounded-xl border border-gray-200">
+                  <Loader2 className="h-6 w-6 animate-spin text-indigo-600 mb-2" />
+                  <p className="text-xs font-bold text-gray-500">Loading user feedback reports...</p>
+                </div>
+              ) : filteredFeedbackReports.length === 0 ? (
+                <div className="text-center py-12 bg-white rounded-xl border border-gray-200 p-6">
+                  <div className="h-10 w-10 rounded-xl bg-indigo-50 text-indigo-400 flex items-center justify-center mx-auto mb-2.5">
+                    <MessageSquare className="h-5 w-5" />
+                  </div>
+                  <p className="text-xs font-extrabold text-gray-700">No Feedback Reports Found</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5 max-w-sm mx-auto">
+                    {feedbackSearch || feedbackStatusFilter !== "all" || feedbackTypeFilter !== "all"
+                      ? "No records match your active search or filters. Try clearing the filter."
+                      : "User submissions from the floating \"Report Issue / Feedback\" modal will appear here."}
+                  </p>
+                  {(feedbackSearch || feedbackStatusFilter !== "all" || feedbackTypeFilter !== "all") && (
+                    <button
+                      onClick={() => {
+                        setFeedbackSearch("");
+                        setFeedbackStatusFilter("all");
+                        setFeedbackTypeFilter("all");
+                      }}
+                      className="mt-2.5 px-3 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold transition-all"
+                    >
+                      Reset All Filters
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {filteredFeedbackReports.map((r: any) => {
+                    const isPending = (r.status || "pending") === "pending";
+                    const isResolved = r.status === "resolved";
+                    const isClosed = r.status === "closed";
+
+                    return (
+                      <div
+                        key={r.id}
+                        className="bg-white border border-gray-200/90 hover:border-indigo-300 rounded-xl p-3 shadow-2xs hover:shadow-xs transition-all space-y-2"
+                      >
+                        {/* Top Row: Meta Badges + Actions */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Category Badge */}
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider border ${
+                                r.type === "bug"
+                                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                                  : r.type === "feature"
+                                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                                  : r.type === "suggestion"
+                                  ? "bg-sky-50 text-sky-700 border-sky-200"
+                                  : "bg-slate-100 text-slate-700 border-slate-200"
+                              }`}
+                            >
+                              <Tag className="h-2.5 w-2.5" />
+                              {r.type || "other"}
+                            </span>
+
+                            {/* Status Badge */}
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider border ${
+                                isPending
+                                  ? "bg-amber-50 text-amber-700 border-amber-300"
+                                  : isResolved
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                                  : "bg-slate-100 text-slate-600 border-slate-300"
+                              }`}
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${
+                                  isPending ? "bg-amber-500 animate-pulse" : isResolved ? "bg-emerald-500" : "bg-slate-400"
+                                }`}
+                              />
+                              {r.status || "pending"}
+                            </span>
+
+                            {/* Timestamp */}
+                            <span className="flex items-center gap-1 text-[10px] text-gray-400 font-medium ml-1">
+                              <Clock className="h-3 w-3" />
+                              {r.created_at
+                                ? new Date(r.created_at).toLocaleString("en-IN", {
+                                    day: "2-digit",
+                                    month: "short",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    hour12: true,
+                                  })
+                                : ""}
+                            </span>
+                          </div>
+
+                          {/* Quick Actions */}
+                          <div className="flex items-center gap-1.5">
+                            {isPending && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setResolvingReport(r);
+                                    setResolutionNote("");
+                                  }}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold shadow-2xs transition-all cursor-pointer"
+                                >
+                                  <MessageSquare className="h-3 w-3" />
+                                  Resolve with Note
+                                </button>
+                                <button
+                                  disabled={feedbackStatusUpdating === r.id}
+                                  onClick={() => handleFeedbackStatus(r.id, "resolved")}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-bold shadow-2xs transition-all cursor-pointer"
+                                  title="Mark as resolved without custom remarks"
+                                >
+                                  {feedbackStatusUpdating === r.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="h-3 w-3" />
+                                  )}
+                                  Quick Resolve
+                                </button>
+                                <button
+                                  disabled={feedbackStatusUpdating === r.id}
+                                  onClick={() => handleFeedbackStatus(r.id, "closed")}
+                                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 border border-slate-200 text-[11px] font-bold transition-all cursor-pointer"
+                                >
+                                  Close
+                                </button>
+                              </>
+                            )}
+                            {(isResolved || isClosed) && (
+                              <button
+                                disabled={feedbackStatusUpdating === r.id}
+                                onClick={() => handleFeedbackStatus(r.id, "pending")}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 text-gray-700 border border-gray-300 text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                                Reopen Ticket
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Reporter Identity Banner (Compact single-line) */}
+                        <div className="rounded-lg bg-slate-50/90 border border-slate-200/80 px-2.5 py-1.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            {/* Left: Avatar + Name + Role + Reg Number + College */}
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="h-6 w-6 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white font-extrabold text-[9px] shadow-2xs shrink-0">
+                                {(() => {
+                                  const dName = r.user_name || (r.user_id && r.user_id.includes("@") ? r.user_id.split("@")[0] : "User");
+                                  return dName.slice(0, 2).toUpperCase();
+                                })()}
+                              </div>
+                              <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-black text-gray-900 truncate">
+                                  {r.user_name || (r.user_id && r.user_id.includes("@")
+                                    ? r.user_id.split("@")[0].replace(/[._0-9-]/g, " ").trim().split(/\s+/).map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+                                    : (r.user_id || "Anonymous User"))}
+                                </span>
+                                <span
+                                  className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider border ${
+                                    (r.user_role || "").toLowerCase() === "student"
+                                      ? "bg-indigo-100 text-indigo-800 border-indigo-200"
+                                      : (r.user_role || "").toLowerCase() === "mentor"
+                                      ? "bg-teal-100 text-teal-800 border-teal-200"
+                                      : (r.user_role || "").toLowerCase() === "cam"
+                                      ? "bg-violet-100 text-violet-800 border-violet-200"
+                                      : "bg-gray-100 text-gray-800 border-gray-200"
+                                  }`}
+                                >
+                                  {r.user_role || "User"}
+                                </span>
+                                {r.register_number && r.register_number !== "—" && (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-white border border-gray-200 text-[9px] font-mono font-bold text-gray-600">
+                                    <Tag className="h-2 w-2 text-gray-400" />
+                                    {r.register_number}
+                                  </span>
+                                )}
+                                {(r.college_name || r.department) && (
+                                  <span className="text-[11px] text-gray-500 font-medium inline-flex items-center gap-1 ml-0.5">
+                                    <span className="text-gray-300">•</span>
+                                    {r.college_name && (
+                                      <span className="inline-flex items-center gap-0.5 text-gray-700 font-semibold">
+                                        <Building2 className="h-3 w-3 text-indigo-500 shrink-0" />
+                                        {r.college_name}
+                                      </span>
+                                    )}
+                                    {r.department && (
+                                      <span className="inline-flex items-center gap-0.5 text-gray-600">
+                                        <GraduationCap className="h-3 w-3 text-indigo-400 shrink-0" />
+                                        {r.department}
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Right: Contact details */}
+                            <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                              {r.user_id && (
+                                <a
+                                  href={`mailto:${r.user_id}`}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-gray-200 hover:border-indigo-300 text-gray-700 hover:text-indigo-600 transition-colors font-medium text-[10px]"
+                                  title="Send Email"
+                                >
+                                  <Mail className="h-3 w-3 text-indigo-500" />
+                                  <span>{r.user_id}</span>
+                                </a>
+                              )}
+                              {r.contact_info && (
+                                <a
+                                  href={`tel:${r.contact_info}`}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-gray-200 hover:border-emerald-300 text-gray-700 hover:text-emerald-600 transition-colors font-medium text-[10px]"
+                                  title="Call reporter"
+                                >
+                                  <Phone className="h-3 w-3 text-emerald-500" />
+                                  <span>{r.contact_info}</span>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Issue Title & Description */}
+                        <div className="space-y-1">
+                          <h3 className="text-xs font-bold text-gray-900 leading-snug">
+                            {r.title}
+                          </h3>
+                          <div className="p-2.5 rounded-lg bg-slate-50/70 border-l-2 border-indigo-400 text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-normal">
+                            {r.description}
+                          </div>
+                        </div>
+
+                        {/* Admin Resolution Callout */}
+                        {(r.admin_notes || r.resolved_by) && (
+                          <div className="rounded-lg bg-emerald-50/80 border border-emerald-200/90 p-2 space-y-0.5">
+                            <div className="flex items-center justify-between text-xs font-bold text-emerald-800">
+                              <span className="inline-flex items-center gap-1">
+                                <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
+                                Admin Resolution Remarks
+                              </span>
+                              {r.resolved_at && (
+                                <span className="text-[9px] font-mono text-emerald-600 font-semibold">
+                                  {new Date(r.resolved_at).toLocaleString("en-IN", {
+                                    day: "2-digit",
+                                    month: "short",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    hour12: true,
+                                  })}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-emerald-950 font-medium pl-4.5 whitespace-pre-wrap">
+                              {r.admin_notes || "Ticket has been reviewed and resolved."}
+                            </p>
+                            {r.resolved_by && (
+                              <p className="text-[10px] text-emerald-700 font-bold pl-4.5 pt-0.5">
+                                Handled by: <span className="underline">{r.resolved_by}</span>
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ── Resolve Ticket with Note Modal ── */}
+              {resolvingReport && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+                  <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-200 p-6 overflow-hidden space-y-4">
+                    <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                          <CheckCircle2 className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-gray-900">Resolve Ticket & Respond</h3>
+                          <p className="text-[11px] text-gray-400">Reporter will receive your note and in-app notification</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setResolvingReport(null);
+                          setResolutionNote("");
+                        }}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs space-y-1">
+                      <p className="font-bold text-gray-800 line-clamp-1">{resolvingReport.title}</p>
+                      <p className="text-gray-500 text-[11px]">
+                        Raised by <span className="font-semibold text-gray-700">{resolvingReport.user_name || resolvingReport.user_id}</span> ({resolvingReport.user_role})
+                        {resolvingReport.college_name ? ` • ${resolvingReport.college_name}` : ""}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                        Resolution Note / Action Taken
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={resolutionNote}
+                        onChange={(e) => setResolutionNote(e.target.value)}
+                        placeholder="e.g. Corrected date of birth in database. Please verify your profile."
+                        className="w-full p-3 rounded-xl border border-gray-200 text-xs font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      />
+                      {/* Quick preset chips */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        <span className="text-[10px] text-gray-400 font-bold self-center">Quick insert:</span>
+                        {[
+                          "Issue verified and corrected.",
+                          "Record updated in database.",
+                          "Feature planned for next release.",
+                          "Contacted user with clarification."
+                        ].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setResolutionNote(preset)}
+                            className="text-[10px] px-2 py-0.5 rounded-md bg-gray-100 hover:bg-indigo-50 hover:text-indigo-700 text-gray-600 font-medium transition-colors border border-gray-200 cursor-pointer"
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-2 border-t border-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setResolvingReport(null);
+                          setResolutionNote("");
+                        }}
+                        className="flex-1 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={feedbackStatusUpdating === resolvingReport.id}
+                        onClick={() => handleFeedbackStatus(resolvingReport.id, "resolved", resolutionNote.trim() || "Resolved by Admin")}
+                        className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      >
+                        {feedbackStatusUpdating === resolvingReport.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                        Confirm & Resolve
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -8728,9 +9638,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </button>
                     <button
                       type="submit"
-                      className="btn-gradient px-6 py-2 text-white rounded-xl shadow-sm transition-all font-extrabold cursor-pointer"
+                      disabled={modalBusy}
+                      className="btn-gradient px-6 py-2 text-white rounded-xl shadow-sm transition-all font-extrabold cursor-pointer disabled:opacity-60"
                     >
-                      {editingSubject 
+                      {modalBusy
+                        ? "Saving..."
+                        : editingSubject 
                         ? "Save Changes" 
                         : subjectModalTab === "bulk"
                           ? `Create ${dynamicSubjects.filter(s => s.name && s.name.trim() !== "").length} Subjects`
@@ -8937,9 +9850,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer"
+                    disabled={modalBusy}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer disabled:opacity-60"
                   >
-                    {editingGroup ? "Save Mentor Group" : "Create Mentor Group"}
+                    {modalBusy ? "Saving..." : editingGroup ? "Save Mentor Group" : "Create Mentor Group"}
                   </button>
                 </div>
               </form>
@@ -9028,9 +9942,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+                    disabled={modalBusy}
+                    className="btn-gradient px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer disabled:opacity-60"
                   >
-                    Publish Notice
+                    {modalBusy ? "Publishing..." : "Publish Notice"}
                   </button>
                 </div>
               </form>

@@ -48,38 +48,47 @@ export async function POST(request: Request) {
       regionalColleges = [];
     }
 
-    // Insert pending CAM capacity request rows for each regional college
-    for (const col of regionalColleges) {
-      const cams = await db.all("SELECT * FROM campus_managers WHERE college_id = ?", [col.id]);
-      const primaryCam = cams[0] || { id: `cam_${col.id}`, name: `${col.name} CM` };
+    // Insert pending CAM capacity request rows for each regional college.
+    // Batched: single IN(...) query for CAMs + single query for existing
+    // responses, then multi-row INSERT (was 2 queries per college in a loop).
+    let insertedCount = 0;
+    if (regionalColleges.length > 0) {
+      const collegeIds = regionalColleges.map(c => c.id);
+      const placeholders = collegeIds.map(() => "?").join(",");
 
-      const existing = await db.get(
-        "SELECT * FROM cam_capacity_responses WHERE interview_id = ? AND college_id = ?",
-        [interview_id, col.id]
+      const camRows = await db.all(
+        `SELECT college_id, id, name FROM campus_managers WHERE college_id IN (${placeholders}) ORDER BY created_at ASC`,
+        ...collegeIds
       );
+      const camByCollege = new Map<string, any>();
+      for (const cam of camRows) {
+        if (!camByCollege.has(cam.college_id)) camByCollege.set(cam.college_id, cam);
+      }
 
-      if (!existing) {
-        const respId = `cap_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const existingRows = await db.all(
+        `SELECT college_id FROM cam_capacity_responses WHERE interview_id = ? AND college_id IN (${placeholders})`,
+        interview_id, ...collegeIds
+      );
+      const existingSet = new Set(existingRows.map((r: any) => r.college_id));
+
+      const toInsert = regionalColleges.filter(col => !existingSet.has(col.id));
+      if (toInsert.length > 0) {
+        const values: any[] = [];
+        const valueRows: string[] = [];
+        for (const col of toInsert) {
+          const primaryCam = camByCollege.get(col.id) || { id: `cam_${col.id}`, name: `${col.name} CM` };
+          const respId = `cap_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          valueRows.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+          values.push(respId, interview_id, col.id, col.name, primaryCam.id, primaryCam.name, 0, 0, 0, "pending", now, now);
+        }
         await db.run(
           `INSERT INTO cam_capacity_responses (
             id, interview_id, college_id, college_name, cam_id, cam_name,
             accepted_student_capacity, actual_available_capacity, unfulfilled_capacity, status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            respId,
-            interview_id,
-            col.id,
-            col.name,
-            primaryCam.id,
-            primaryCam.name,
-            0,
-            0,
-            0,
-            "pending",
-            now,
-            now
-          ]
+          ) VALUES ${valueRows.join(", ")}`,
+          ...values
         );
+        insertedCount = toInsert.length;
       }
     }
 

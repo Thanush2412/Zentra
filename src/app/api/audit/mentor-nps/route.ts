@@ -90,13 +90,42 @@ function rowsToObjects(rows: string[][]): Record<string, string>[] {
   });
 }
 
+// In-memory TTL cache for Google Sheets CSVs (plan item 17): one dead/slow
+// sheet used to stall every request; repeated requests re-fetched live.
+const SHEETS_CACHE_TTL_MS = 5 * 60 * 1000;
+const sheetsCache = new Map<string, { at: number; rows: Record<string, string>[] }>();
+const SHEETS_FETCH_TIMEOUT_MS = 8000;
+
+async function fetchWithTimeout(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SHEETS_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { cache: "no-store", signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchCollegeRows(monthSheetId: string, collegeName: string): Promise<Record<string, string>[]> {
+  const cacheKey = `${monthSheetId}::${collegeName}`;
+  const hit = sheetsCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < SHEETS_CACHE_TTL_MS) return hit.rows;
+
   const url = gvizUrl(monthSheetId, collegeName);
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) return [];
-  const text = await res.text();
-  if (text.trim().startsWith("<")) return []; // sheet tab missing → HTML error page
-  return rowsToObjects(parseCsv(text));
+  try {
+    const res = await fetchWithTimeout(url);
+    if (!res.ok) return [];
+    const text = await res.text();
+    if (text.trim().startsWith("<")) return []; // sheet tab missing → HTML error page
+    const rows = rowsToObjects(parseCsv(text));
+    sheetsCache.set(cacheKey, { at: Date.now(), rows });
+    return rows;
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      console.warn(`[mentor-nps] Sheet fetch timed out after ${SHEETS_FETCH_TIMEOUT_MS}ms: ${cacheKey}`);
+    }
+    return [];
+  }
 }
 
 // ── Helper parsing and month normalization ──────────────────────────────────
@@ -167,7 +196,7 @@ async function fetchTrend(collegeName: string): Promise<TrendPoint[]> {
   if (!cfg) return [];
   for (const gid of cfg.gids) {
     try {
-      const res = await fetch(sheetCsvExportUrl(cfg.sheetId, gid), { cache: "no-store" });
+      const res = await fetchWithTimeout(sheetCsvExportUrl(cfg.sheetId, gid));
       if (!res.ok) continue;
       const text = await res.text();
       if (text.trim().startsWith("<")) continue;
@@ -316,35 +345,25 @@ function computeFollowups(rows: Record<string, string>[]) {
 
 // ── Postgres cache (survives when Sheets are slow/unavailable) ───────────────
 
+// Cache table DDL lives in lib/migrations.ts — ensured once per process.
 async function ensureCacheTable(db: any) {
-  try {
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS mentor_nps_monthly (
-        id SERIAL PRIMARY KEY,
-        college_name TEXT NOT NULL,
-        month_key TEXT NOT NULL,
-        nps_index INTEGER,
-        promoters INTEGER DEFAULT 0,
-        passives INTEGER DEFAULT 0,
-        detractors INTEGER DEFAULT 0,
-        total_responses INTEGER DEFAULT 0,
-        avg_rating NUMERIC,
-        mentor_count INTEGER DEFAULT 0,
-        payload TEXT,
-        synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE (college_name, month_key)
-      );
-    `);
-  } catch (_) {}
+  const { ensureMigration } = await import("@/lib/migrations");
+  await ensureMigration("mentor_nps_monthly_cache");
 }
 
 async function readCache(db: any, collegeName: string): Promise<any[]> {
   try {
+    // Ensure the table exists before reading — previously this was a silent
+    // no-op on fresh deploys, so the cache fallback never populated.
+    await ensureCacheTable(db);
     return await db.all(
       "SELECT month_key, nps_index, promoters, passives, detractors, total_responses, avg_rating, mentor_count, payload, synced_at FROM mentor_nps_monthly WHERE college_name = ? ORDER BY month_key ASC",
       collegeName
     );
-  } catch (_) { return []; }
+  } catch (err) {
+    console.warn("Mentor NPS cache read failed:", err);
+    return [];
+  }
 }
 
 // ── Handler ──────────────────────────────────────────────────────────────────

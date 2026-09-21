@@ -600,7 +600,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
       case "completed":
         return <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-800 text-[10px] font-black uppercase tracking-wider flex items-center gap-1"><Award className="h-3 w-3 shrink-0" /> Completed</span>;
       case "reallocation_required":
-        return <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-800 text-[10px] font-black uppercase tracking-wider flex items-center gap-1"><AlertTriangle className="h-3 w-3 shrink-0" /> Reallocation Required</span>;
+        return <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-800 text-[10px] font-black uppercase tracking-wider flex items-center gap-1"><AlertTriangle className="h-3 w-3 shrink-0" /> On Hold (Awaiting Mentor Reschedule)</span>;
       case "pending":
       case "pending_sme":
         return <span className="px-2.5 py-0.5 rounded-md bg-violet-50 text-violet-700 border border-violet-200 dark:bg-violet-950/20 dark:text-violet-400 dark:border-violet-800 text-[10px] font-black uppercase tracking-wider flex items-center gap-1"><Clock className="h-3 w-3 shrink-0" /> Pending Approval</span>;
@@ -612,7 +612,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
   };
 
   return (
-    <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 font-sans h-full overflow-hidden dark:bg-gradient-to-br dark:from-slate-900 dark:via-slate-950 dark:to-pink-950 dark:text-slate-100">
+    <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 dark:text-slate-100 font-sans h-full overflow-hidden">
 
       {/* ── 5 SME Sidebar Items Navigation ── */}
       <aside ref={sidebarRef} className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-3" : "w-64 p-5"}`}>
@@ -1310,15 +1310,18 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                           <div>
                             <div className="flex items-center gap-2">
                               <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">{demo.mentorName}</h4>
-                              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[9px] font-black uppercase">Reallocation Required</span>
+                              <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-black uppercase">
+                                On Hold (Awaiting Mentor Reschedule)
+                              </span>
                             </div>
                             <p className="text-[10px] text-slate-500 font-semibold mt-0.5">{demo.dateStr} • {demo.timeSlot} • {demo.subject}</p>
-                            <p className="text-[9.5px] text-amber-700 italic mt-0.5">Reason: CAM Approved Mentor Leave</p>
+                            <p className="text-[9.5px] text-amber-700 italic mt-0.5">{demo.comments || "CAM Approved Mentor Leave. Mentor has been prompted to reschedule."}</p>
                           </div>
 
-                          <button onClick={() => handleOpenSwapModal(demo)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer">
-                            <RefreshCw className="h-3.5 w-3.5" /> Reallocate Slot
-                          </button>
+                          <div className="px-3.5 py-1.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5 shrink-0">
+                            <Clock className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                            <span>Slot Freed — Waiting for Mentor to Reschedule</span>
+                          </div>
                         </div>
                       ))}
                     </div>

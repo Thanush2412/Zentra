@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "db:sync": "node scripts/sync_db.mjs",
-    "db:migrate:postgres": "node scripts/migrate_sqlite_to_postgres.mjs"
+    "db:migrate:postgres": "node scripts/migrate_sqlite_to_postgres.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -38,6 +39,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   }
 }

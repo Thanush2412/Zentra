@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useApp } from "../context/AppContext";
+import { useToast } from "@/context/ToastContext";
 import {
   DollarSign, TrendingUp, TrendingDown, Users, Building2, Search, Filter,
   Download, CheckCircle2, Clock, AlertCircle, ChevronDown, ChevronRight,
@@ -127,6 +128,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   onTabChange
 }) => {
   const { colleges: ctxColleges, coursesList: ctxCourses, slots: ctxSlots, subjectsList: ctxSubjects } = useApp();
+  const { toast: toastFe } = useToast();
 
   const [localActiveTab, setLocalActiveTab] = useState<TabType>("overview");
   const activeTab = propActiveTab || localActiveTab;
@@ -201,7 +203,9 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/fees?role=fee_manager");
+      // ROLE_UI_AUDIT F2: scope is derived from the session cookie server-side —
+      // the client must not pass its role as a query param.
+      const res = await fetch("/api/fees");
       const json = await res.json();
       if (json.success) setData(json);
     } catch (e) {
@@ -435,7 +439,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
       XLSX.utils.book_append_sheet(workbook, worksheet, "Fee Directory Report");
       XLSX.writeFile(workbook, `Student_Fee_Report_${new Date().toISOString().split("T")[0]}.xlsx`);
     } catch (e: any) {
-      alert("Failed to export report: " + e.message);
+      toastFe("Failed to export report: " + e.message);
     }
   };
 
@@ -605,10 +609,10 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
         setEditingFeeId(null);
         await fetchData();
       } else {
-        alert(json.message || "Failed to update fee record.");
+        toastFe(json.message || "Failed to update fee record.");
       }
     } catch (err: any) {
-      alert("Error saving payment: " + err.message);
+      toastFe("Error saving payment: " + err.message);
     } finally {
       setSavingFeeId(null);
     }
@@ -642,10 +646,10 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
         setNewProofLink("");
         await fetchData();
       } else {
-        alert(json.message || "Failed to create fee record.");
+        toastFe(json.message || "Failed to create fee record.");
       }
     } catch (err: any) {
-      alert("Error creating fee: " + err.message);
+      toastFe("Error creating fee: " + err.message);
     } finally {
       setSavingFeeId(null);
     }
@@ -664,10 +668,10 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
       if (json.success) {
         await fetchData();
       } else {
-        alert(json.message || "Failed to delete fee record.");
+        toastFe(json.message || "Failed to delete fee record.");
       }
     } catch (err: any) {
-      alert("Error deleting fee: " + err.message);
+      toastFe("Error deleting fee: " + err.message);
     }
   };
 

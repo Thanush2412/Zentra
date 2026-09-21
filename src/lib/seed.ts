@@ -781,7 +781,11 @@ export async function seedDatabase() {
       description TEXT NOT NULL,
       actorName TEXT NOT NULL,
       actorRole TEXT NOT NULL,
-      timestamp TEXT NOT NULL
+      timestamp TEXT NOT NULL,
+      old_status TEXT,
+      new_status TEXT,
+      reason TEXT,
+      changed_by TEXT
     );
 
      CREATE TABLE IF NOT EXISTS subjects (

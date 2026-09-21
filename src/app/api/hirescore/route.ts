@@ -4,6 +4,7 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireRole, apiAuthErrorResponse } from "@/lib/api-auth";
 
 const HIRE_SCORE_API_BASE = "https://hire-score-fawn.vercel.app/api";
 
@@ -54,6 +55,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    requireRole(request, "admin", "kam", "cam");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const college_id = searchParams.get("college_id");
@@ -144,6 +146,8 @@ export async function POST(request: Request) {
       totalHireScoreStudents: hireStudents.length
     });
   } catch (error: any) {
+    const authRes = apiAuthErrorResponse(error);
+    if (authRes) return authRes;
     console.error("Sync HireScore error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }

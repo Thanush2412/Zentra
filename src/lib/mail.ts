@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { getDb } from "./db";
 
 /**
  * Brand UI Constants matching FACE Prep E-Campus website design system
@@ -7,7 +8,7 @@ const BRAND = {
   name: "FACE Prep",
   subtext: "E-CAMPUS",
   tagline: "University Operations Platform",
-  portalUrl: "https://zentra-ruddy-chi.vercel.app",
+  portalUrl: "https://e-campus.faceprepcampus.com",
   primaryPink: "#D528A2",
   peachCoral: "#F4A863",
   darkHeaderBg: "linear-gradient(135deg, #0F172A 0%, #1E1B4B 100%)",
@@ -365,7 +366,6 @@ export async function sendMail({ to, subject, htmlBody }: { to: string; subject:
   try {
     // 0. GLOBAL ADMIN TOGGLE CHECK
     try {
-      const { getDb } = await import("@/lib/db");
       const db = await getDb();
       const setting = await db.get("SELECT value FROM system_settings WHERE key = 'mailing_enabled'");
       if (setting && (setting.value === "false" || setting.value === "0")) {

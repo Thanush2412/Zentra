@@ -28,6 +28,16 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "Missing required fields for booking" }, { status: 400 });
       }
 
+      // Check if mentor is on approved leave on this date
+      const mentorLeave = await db.get(
+        `SELECT id, request_type FROM faculty_leave_requests 
+         WHERE mentor_id = ? AND status = 'approved' AND start_date <= ? AND end_date >= ?`,
+        [mentorId, dateStr, dateStr]
+      );
+      if (mentorLeave) {
+        return NextResponse.json({ success: false, message: `Cannot allocate demo: Mentor is on approved ${mentorLeave.request_type || 'leave'} on ${dateStr}.` });
+      }
+
       // Check if slot is already booked for a demo
       const existingDemo = await db.get(
         "SELECT id FROM demo_sessions WHERE mentorId = ? AND dateStr = ? AND timeSlot = ?",
@@ -64,6 +74,14 @@ export async function POST(request: Request) {
 
       for (const sess of sessions) {
         const { mentorId, mentorName, smeId, smeName, dateStr, timeSlot, subject, stream, week } = sess;
+
+        // Skip if mentor is on approved leave
+        const mentorLeave = await db.get(
+          `SELECT id FROM faculty_leave_requests 
+           WHERE mentor_id = ? AND status = 'approved' AND start_date <= ? AND end_date >= ?`,
+          [mentorId, dateStr, dateStr]
+        );
+        if (mentorLeave) continue;
 
         // Skip if a session for this mentor, date, and time slot already exists
         const existingDemo = await db.get(
@@ -159,6 +177,92 @@ export async function POST(request: Request) {
       );
 
       return NextResponse.json({ success: true, message: "Evaluation saved successfully!" });
+
+    } else if (action === "reschedule") {
+      const { sessionId, mentorId, newDateStr, newTimeSlot } = body;
+      if (!sessionId || !mentorId || !newDateStr || !newTimeSlot) {
+        return NextResponse.json({ success: false, message: "Missing required fields for rescheduling" }, { status: 400 });
+      }
+
+      const session = await db.get("SELECT * FROM demo_sessions WHERE id = ?", [sessionId]);
+      if (!session) {
+        return NextResponse.json({ success: false, message: "Demo session not found." }, { status: 404 });
+      }
+
+      if (session.mentorId !== mentorId) {
+        return NextResponse.json({ success: false, message: "Unauthorized: You can only reschedule your own demo session." }, { status: 403 });
+      }
+
+      // 1. Verify mentor is not on approved leave on newDateStr
+      const mentorLeave = await db.get(
+        `SELECT id, request_type FROM faculty_leave_requests 
+         WHERE mentor_id = ? AND status = 'approved' AND start_date <= ? AND end_date >= ?`,
+        [mentorId, newDateStr, newDateStr]
+      );
+      if (mentorLeave) {
+        return NextResponse.json({ success: false, message: `Cannot reschedule: You have an approved ${mentorLeave.request_type || 'leave'} on ${newDateStr}.` }, { status: 400 });
+      }
+
+      // 2. Check Mentor Existing Demo Clash
+      const mentorDemoClash = await db.get(
+        "SELECT id FROM demo_sessions WHERE mentorId = ? AND dateStr = ? AND timeSlot = ? AND id != ? AND status NOT IN ('not_conducted')",
+        [mentorId, newDateStr, newTimeSlot, sessionId]
+      );
+      if (mentorDemoClash) {
+        return NextResponse.json({ success: false, message: "You already have another demo session scheduled at this date/time." }, { status: 400 });
+      }
+
+      // 3. Check SME Existing Demo Clash
+      const smeDemoClash = await db.get(
+        "SELECT id FROM demo_sessions WHERE smeId = ? AND dateStr = ? AND timeSlot = ? AND id != ? AND status NOT IN ('not_conducted')",
+        [session.smeId, newDateStr, newTimeSlot, sessionId]
+      );
+      if (smeDemoClash) {
+        return NextResponse.json({ success: false, message: `Assigned SME ${session.smeName} already has another demo session at this date/time.` }, { status: 400 });
+      }
+
+      // Update demo session to confirmed with the new date & slot
+      await db.run(
+        `UPDATE demo_sessions 
+         SET dateStr = ?, timeSlot = ?, status = 'confirmed', comments = ?
+         WHERE id = ?`,
+        [`Rescheduled by mentor from ${session.dateStr} (${session.timeSlot}) to ${newDateStr} (${newTimeSlot})`, sessionId]
+      );
+
+      // In-app notification to SME
+      if (session.smeId) {
+        const smeNotifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+        await db.run(
+          `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
+           VALUES (?, ?, ?, ?, 0, ?, 'demo_rescheduled', ?)`,
+          [
+            smeNotifId,
+            session.smeId,
+            "Demo Session Rescheduled by Mentor",
+            `Demo session for ${session.subject} with ${session.mentorName} has been rescheduled to ${newDateStr} at ${newTimeSlot}.`,
+            "/sme/demo_list",
+            new Date().toISOString()
+          ]
+        );
+      }
+
+      // Audit Log
+      const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+      await db.run(
+        `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
+         VALUES (?, 'demo_rescheduled', ?, ?, 'Mentor', ?)`,
+        [
+          auditId,
+          `Mentor ${session.mentorName} rescheduled demo for ${session.subject} with SME ${session.smeName} from ${session.dateStr} (${session.timeSlot}) to ${newDateStr} (${newTimeSlot}).`,
+          session.mentorName,
+          new Date().toISOString()
+        ]
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: `Demo successfully rescheduled to ${newDateStr} (${newTimeSlot})! SME has been notified.`
+      });
     }
 
     return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });

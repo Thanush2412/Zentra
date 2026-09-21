@@ -482,7 +482,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       dob: editDob,
       phone: editPhone,
       parent_phone: editParentPhone,
-      aadhar_number: editAadharNumber,
+      // ROLE_UI_AUDIT S1 (P0): never send Aadhaar from student self-edit — the
+      // field is CAM/Admin-managed. Omitting it keeps the stored value intact.
       linkedin_link: editLinkedinLink,
       github_id: editGithubId,
       project_drive_link: editProjectDriveLink,
@@ -4622,21 +4623,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                     <div className="space-y-1">
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Aadhar Card Number</span>
-                      {isEditingProfile ? (
-                        <input
-                          type="text"
-                          value={editAadharNumber}
-                          onChange={e => setEditAadharNumber(e.target.value)}
-                          placeholder="e.g. 1234-5678-9012"
-                          className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
-                        />
-                      ) : (
-                        <span className="text-xs font-extrabold text-slate-855 block font-mono">
-                          {currentStudent.aadhar_number
-                            ? `XXXX-XXXX-${currentStudent.aadhar_number.replace(/\D/g, "").slice(-4) || "XXXX"}`
-                            : <span className="text-slate-400 italic font-sans">Not Added</span>}
-                        </span>
-                      )}
+                      {/* ROLE_UI_AUDIT S1 (P0): Aadhaar is sensitive PII — students can no
+                          longer edit it themselves; only CAM/Admin can change it. */}
+                      <span className="text-xs font-extrabold text-slate-855 block font-mono">
+                        {currentStudent.aadhar_number
+                          ? `XXXX-XXXX-${currentStudent.aadhar_number.replace(/\D/g, "").slice(-4) || "XXXX"}`
+                          : <span className="text-slate-400 italic font-sans">Not Added</span>}
+                        <span className="ml-2 text-[9px] font-semibold text-slate-400 font-sans normal-case">(managed by campus office)</span>
+                      </span>
                     </div>
 
                     <div className="space-y-1">

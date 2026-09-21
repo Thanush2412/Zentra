@@ -53,7 +53,12 @@ import {
   Save,
   ArrowRight,
   Building,
-  CalendarRange
+  CalendarRange,
+  Book,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  FolderKanban
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -63,7 +68,7 @@ const MentorExamMarksStudio = dynamic(() => import("./MentorExamMarksStudio").th
 import { MentorWeeklyPlanStudio } from "./WeeklyPlanStudio";
 
 import { CourseInfoButton } from "./CourseInfoModal";
-import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, calculateWeekOffsetForDate, isSlotOverlappingExamWindow } from "@/lib/utils";
+import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, calculateWeekOffsetForDate, isSlotOverlappingExamWindow, parseTimeToMinutes } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 
 const formatPunchTime = (timeStr?: string | null) => {
@@ -99,7 +104,12 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   const [latePunchExplanation, setLatePunchExplanation] = useState("");
   const [submittingLatePunchReq, setSubmittingLatePunchReq] = useState(false);
 
-  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
+  // ROLE_UI_AUDIT T4 (P1): local date, NOT toISOString() — UTC dates shift a day
+  // for IST after 5:30 PM, misdating punches near midnight.
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
 
   // College start time & 30-minute deadline calculation
   const collegeObj = colleges.find(c => c.id === mentor.college_id);
@@ -116,16 +126,15 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   }, [collegeObj]);
 
   const { isDeadlinePassed, collegeStartTimeFormatted, deadlineTimeFormatted } = useMemo(() => {
-    const match = collegeStartTimeStr.match(/(\d{1,2})[.:]\s*(\d{2})\s*(A\.?M\.?|P\.?M\.?)/i);
+    // ROLE_UI_AUDIT T1 (P1): use the shared parser instead of the fragile regex —
+    // it handles 24-hour times ("14:30"), "8.30AM", and AM/PM variants.
+    const totalMinutes = parseTimeToMinutes(collegeStartTimeStr);
     const now = new Date();
     let hours = 8;
     let minutes = 30;
-    if (match) {
-      hours = parseInt(match[1], 10);
-      minutes = parseInt(match[2], 10);
-      const period = match[3].replace(/\./g, "").toUpperCase();
-      if (period === "PM" && hours !== 12) hours += 12;
-      if (period === "AM" && hours === 12) hours = 0;
+    if (totalMinutes > 0) {
+      hours = Math.floor(totalMinutes / 60);
+      minutes = totalMinutes % 60;
     }
 
     const startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
@@ -141,12 +150,18 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
     };
   }, [collegeStartTimeStr]);
 
+  // ROLE_UI_AUDIT T2: match on the structured requestType marker ("late_punch")
+  // with a legacy fallback to the old reason-text sniffing for pre-existing rows.
+  const isLatePunchRequest = (r: any) =>
+    r.requestType === "late_punch" || r.request_type === "late_punch" ||
+    r.reason?.includes("Late Mentor Attendance Punch") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Mentor Punch");
+
   const approvedLateCamReq = useMemo(() => {
     return requests.find(r =>
       r.requestorId === mentor.id &&
       r.dateStr === todayStr &&
       r.status === "approved" &&
-      (r.reason?.includes("Late Mentor Attendance Punch") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Mentor Punch"))
+      isLatePunchRequest(r)
     );
   }, [requests, mentor.id, todayStr]);
 
@@ -155,7 +170,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
       r.requestorId === mentor.id &&
       r.dateStr === todayStr &&
       (r.status === "pending" || r.status === "pending_cam") &&
-      (r.reason?.includes("Late Mentor Attendance Punch") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Mentor Punch"))
+      isLatePunchRequest(r)
     );
   }, [requests, mentor.id, todayStr]);
 
@@ -369,7 +384,8 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
                       targetStaffName: "CAM Approval (Late Mentor Attendance Punch)",
                       reason: "[Late Mentor Attendance Punch] " + latePunchExplanation.trim(),
                       course: "Late Mentor Attendance Punch",
-                      classGroup: mentor.mentor_group || mentor.department || "Faculty"
+                      classGroup: mentor.mentor_group || mentor.department || "Faculty",
+                      requestType: "late_punch"
                     })
                   });
                   const json = await res.json();
@@ -429,7 +445,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
 };
 
 /* ─── Faculty Leave & Permission Request Panel ─── */
-const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({ mentor, slots = [] }) => {
+const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSessions?: any[] }> = ({ mentor, slots = [], demoSessions = [] }) => {
   const { toast } = useToast();
   const [panelTab, setPanelTab] = useState<"leave_apps" | "incoming_covers" | "punch_history">("leave_apps");
 
@@ -516,6 +532,19 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
     }
     return affected;
   }, [slots, mentor.id, startDate, endDate, requestType]);
+
+  const impactedDemos = useMemo(() => {
+    if (!startDate) return [];
+    const effectiveEnd = requestType === "Permission" ? startDate : (endDate || startDate);
+    return (demoSessions || []).filter((ds: any) => {
+      const mId = ds.mentorId || ds.mentor_id;
+      return mId === mentor.id &&
+        ds.status !== "completed" &&
+        ds.status !== "not_conducted" &&
+        ds.dateStr >= startDate &&
+        ds.dateStr <= effectiveEnd;
+    });
+  }, [demoSessions, mentor.id, startDate, endDate, requestType]);
 
   // Automatically prefetch available cover mentors whenever affected slots change
   useEffect(() => {
@@ -1208,6 +1237,19 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
                   </div>
                 )}
 
+                {/* Demo Conflict Warning */}
+                {impactedDemos.length > 0 && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs space-y-1">
+                    <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span>Demo Review Conflict ({impactedDemos.length} Scheduled Session{impactedDemos.length > 1 ? "s" : ""})</span>
+                    </div>
+                    <p className="text-[11px] text-amber-700 font-medium">
+                      You have {impactedDemos.length} demo session(s) scheduled during this leave window. Once approved, the system will place them on hold and enable you to self-reschedule to an available slot with your assigned SME evaluator.
+                    </p>
+                  </div>
+                )}
+
                 {/* Mandatory Reason Field */}
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
@@ -1410,9 +1452,806 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[] }> = ({
   );
 };
 
+/* ─── Mentor Study Materials Studio & Courseware Hub ─── */
+interface MentorStudyMaterialsStudioProps {
+  mentor: Mentor;
+  mentorSubjects: string[];
+  mentorClasses: string[];
+  subjectsList: any[];
+}
+
+const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
+  mentor,
+  mentorSubjects = [],
+  mentorClasses = [],
+  subjectsList = []
+}) => {
+  const { toast } = useToast();
+  const [materials, setMaterials] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedSubject, setSelectedSubject] = useState<string>(mentorSubjects[0] || "");
+  const [selectedUnit, setSelectedUnit] = useState<number | "all">("all");
+  const [selectedType, setSelectedType] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Upload / Edit Modal
+  const [showModal, setShowModal] = useState(false);
+  const [editingItem, setEditingItem] = useState<any | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Form Fields
+  const [formSubject, setFormSubject] = useState(selectedSubject || mentorSubjects[0] || "");
+  const [formClassGroup, setFormClassGroup] = useState<string>("");
+  const [formUnit, setFormUnit] = useState<number>(1);
+  const [formType, setFormType] = useState<string>("notes");
+  const [formTitle, setFormTitle] = useState("");
+  const [formDescription, setFormDescription] = useState("");
+  const [formFileUrl, setFormFileUrl] = useState("");
+  const [formFileSize, setFormFileSize] = useState("");
+
+  // Preview Modal
+  const [previewItem, setPreviewItem] = useState<any | null>(null);
+  // Deleting item tracking
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchMaterials = useCallback(async (subj?: string) => {
+    setLoading(true);
+    try {
+      const targetSubj = subj !== undefined ? subj : selectedSubject;
+      const url = targetSubj ? `/api/materials?subject=${encodeURIComponent(targetSubj)}` : `/api/materials`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        setMaterials(data.materials || []);
+      }
+    } catch (err: any) {
+      console.error("Error fetching study materials:", err);
+      toast("Failed to load study materials", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedSubject, toast]);
+
+  useEffect(() => {
+    if (mentorSubjects.length > 0 && !selectedSubject) {
+      setSelectedSubject(mentorSubjects[0]);
+    }
+  }, [mentorSubjects, selectedSubject]);
+
+  useEffect(() => {
+    fetchMaterials(selectedSubject);
+  }, [selectedSubject, fetchMaterials]);
+
+  const handleOpenUpload = (itemToEdit?: any) => {
+    if (itemToEdit) {
+      setEditingItem(itemToEdit);
+      setFormSubject(itemToEdit.subject || selectedSubject || mentorSubjects[0] || "");
+      setFormClassGroup(itemToEdit.class_group || "");
+      setFormUnit(itemToEdit.unit_number || 1);
+      setFormType(itemToEdit.material_type || "notes");
+      setFormTitle(itemToEdit.title || "");
+      setFormDescription(itemToEdit.description || "");
+      setFormFileUrl(itemToEdit.file_url || itemToEdit.external_url || "");
+      setFormFileSize(itemToEdit.file_size || "");
+    } else {
+      setEditingItem(null);
+      setFormSubject(selectedSubject || mentorSubjects[0] || "");
+      setFormClassGroup("");
+      setFormUnit(1);
+      setFormType("notes");
+      setFormTitle("");
+      setFormDescription("");
+      setFormFileUrl("");
+      setFormFileSize("");
+    }
+    setShowModal(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formSubject.trim() || !formTitle.trim()) {
+      toast("Subject and Title are required", "error");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        id: editingItem?.id || undefined,
+        subject: formSubject.trim(),
+        unit_number: formUnit,
+        title: formTitle.trim(),
+        description: formDescription.trim() || null,
+        material_type: formType,
+        file_url: formFileUrl.trim() || null,
+        external_url: formFileUrl.trim() || null,
+        file_size: formFileSize.trim() || null,
+        uploaded_by: mentor.name,
+        mentor_id: mentor.id,
+        class_group: formClassGroup.trim() || null,
+        college_id: mentor.college_id || null
+      };
+
+      const res = await fetch("/api/materials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        toast(editingItem ? "Study material updated successfully!" : "Study material published to student portal!", "success");
+        setShowModal(false);
+        setEditingItem(null);
+        await fetchMaterials(selectedSubject);
+      } else {
+        toast(data.message || "Failed to save study material", "error");
+      }
+    } catch (err: any) {
+      toast("Error: " + err.message, "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this study material? Students will no longer see it.")) {
+      return;
+    }
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/materials?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        toast("Material deleted successfully", "success");
+        setMaterials(prev => prev.filter(m => m.id !== id));
+      } else {
+        toast(data.message || "Failed to delete material", "error");
+      }
+    } catch (err: any) {
+      toast("Error: " + err.message, "error");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // Filtered materials
+  const filteredMaterials = (materials || []).filter(item => {
+    const matchesSubject = !selectedSubject || isSubjectNameMatch(item.subject, selectedSubject) || item.subject.toLowerCase().trim() === selectedSubject.toLowerCase().trim();
+    const matchesUnit = selectedUnit === "all" || item.unit_number === selectedUnit;
+    const matchesType = selectedType === "all" ||
+      item.material_type === selectedType ||
+      (selectedType === "ppt" && item.material_type === "slides") ||
+      (selectedType === "slides" && item.material_type === "ppt") ||
+      (selectedType === "notes" && item.material_type === "notes") ||
+      (selectedType === "assignment" && item.material_type === "question_bank") ||
+      (selectedType === "question_bank" && item.material_type === "assignment");
+    const matchesSearch = !searchQuery ||
+      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (item.class_group && item.class_group.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesSubject && matchesUnit && matchesType && matchesSearch;
+  });
+
+  // Calculate unique units with uploads
+  const unitsWithUploads = Array.from(new Set(materials.map(m => m.unit_number))).filter(Boolean);
+
+  // Available subjects for selector: combine assigned subjects and all subjects
+  const displaySubjects = mentorSubjects.length > 0
+    ? mentorSubjects
+    : subjectsList.map((s: any) => s.name || s);
+
+  return (
+    <div className="space-y-6 animate-fadeIn pb-12">
+      {/* ── Top Header Banner & Stats Bar ── */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
+          <div className="flex items-center gap-3.5">
+            <div className="h-10 w-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+              <Book className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-black text-slate-900 leading-tight">
+                  Study Materials &amp; Courseware Hub
+                </h2>
+                <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/60 text-[9px] font-black uppercase">
+                  Faculty Publishing Studio
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Upload verified unit-wise notes, PPTs, question banks, and video reference links for your enrolled students.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => fetchMaterials(selectedSubject)}
+              className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 transition-colors cursor-pointer shadow-2xs"
+              title="Refresh Materials"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin text-indigo-600" : ""}`} />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenUpload()}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+            >
+              <Plus className="h-4 w-4" />
+              Upload Study Material
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Stats Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+          <div className="p-3 bg-slate-50/70 rounded-xl border border-slate-150">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Materials</span>
+            <span className="text-lg font-black text-slate-800 mt-0.5 block">{materials.length}</span>
+          </div>
+          <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
+            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Units Covered</span>
+            <span className="text-lg font-black text-indigo-900 mt-0.5 block">{unitsWithUploads.length} / 5 Units</span>
+          </div>
+          <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
+            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Active Subject</span>
+            <span className="text-xs font-black text-emerald-900 mt-1 block truncate" title={selectedSubject}>
+              {selectedSubject || "All Subjects"}
+            </span>
+          </div>
+          <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100">
+            <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider block">Student Sync Status</span>
+            <span className="text-xs font-black text-purple-900 mt-1 block flex items-center gap-1">
+              <CheckCircle className="h-3.5 w-3.5 text-purple-600 shrink-0" /> Real-time Live
+            </span>
+          </div>
+        </div>
+
+        {/* Subject Pills Filter */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">
+              Filter by Assigned Subject ({displaySubjects.length})
+            </label>
+            {selectedSubject && (
+              <button
+                type="button"
+                onClick={() => setSelectedSubject("")}
+                className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+              >
+                Show All Subjects
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {displaySubjects.map((subjName: string) => {
+              const isSelected = selectedSubject.toLowerCase().trim() === subjName.toLowerCase().trim();
+              return (
+                <button
+                  key={subjName}
+                  type="button"
+                  onClick={() => setSelectedSubject(subjName)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border shadow-2xs ${
+                    isSelected
+                      ? "bg-slate-900 border-slate-900 text-white ring-2 ring-indigo-200 scale-105"
+                      : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  <GraduationCap className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-indigo-300" : "text-slate-400"}`} />
+                  <span>{subjName}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Filter Toolbar: Units & Types ── */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Unit Filter Pills */}
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
+            <button
+              type="button"
+              onClick={() => setSelectedUnit("all")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                selectedUnit === "all"
+                  ? "bg-white text-indigo-700 shadow-2xs border border-slate-200"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              All Units
+            </button>
+            {[1, 2, 3, 4, 5].map((u) => (
+              <button
+                key={u}
+                type="button"
+                onClick={() => setSelectedUnit(u)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  selectedUnit === u
+                    ? "bg-white text-indigo-700 shadow-2xs border border-slate-200"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Unit {u}
+              </button>
+            ))}
+          </div>
+
+          {/* Search Box */}
+          <div className="relative flex-1 min-w-[220px] max-w-sm">
+            <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search title, description, cohort..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all shadow-2xs"
+            />
+          </div>
+        </div>
+
+        {/* Material Type Pills */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+          <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider mr-1">Type:</span>
+          {[
+            { id: "all", label: "All Types" },
+            { id: "notes", label: "PDF Notes" },
+            { id: "ppt", label: "Slides (PPT)" },
+            { id: "assignment", label: "Question Banks / Tasks" },
+            { id: "video", label: "Video Reference" },
+            { id: "syllabus", label: "Syllabus" }
+          ].map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setSelectedType(t.id)}
+              className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
+                selectedType === t.id
+                  ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                  : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Materials Grid List ── */}
+      {loading ? (
+        <div className="py-20 text-center text-sm font-bold text-slate-400 flex flex-col items-center justify-center gap-3 bg-white border border-slate-200 rounded-2xl">
+          <Loader2 className="h-7 w-7 text-indigo-600 animate-spin" />
+          <span>Loading study materials...</span>
+        </div>
+      ) : filteredMaterials.length === 0 ? (
+        <div className="bg-white border border-dashed border-slate-200 rounded-2xl p-12 text-center space-y-4 shadow-xs">
+          <div className="h-12 w-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto border border-indigo-100">
+            <BookOpen className="h-6 w-6" />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-slate-800">No Study Materials Found</h3>
+            <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+              {selectedUnit !== "all"
+                ? `No materials found for Unit ${selectedUnit} in ${selectedSubject || "this filter"}. Click the button below to upload notes or PPTs.`
+                : `You have not yet published any notes, PPTs, or question banks for ${selectedSubject || "this course"}.`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleOpenUpload()}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all inline-flex items-center gap-2 shadow-xs cursor-pointer"
+          >
+            <Plus className="h-4 w-4" />
+            Publish First Study Material
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filteredMaterials.map((mat) => {
+            const isPPT = mat.material_type === "ppt" || mat.material_type === "slides";
+            const isQuestionBank = mat.material_type === "question_bank" || mat.material_type === "assignment";
+            const isVideo = mat.material_type === "video";
+            const isSyllabus = mat.material_type === "syllabus";
+            const formattedDate = mat.created_at ? parseDbDate(mat.created_at).toLocaleDateString() : "Active Semester";
+            const targetUrl = mat.file_url || mat.external_url;
+
+            return (
+              <div
+                key={mat.id}
+                className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs hover:shadow-md hover:border-indigo-200 transition-all flex flex-col justify-between space-y-4 group"
+              >
+                <div className="space-y-3">
+                  {/* Card Header Badges */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-wider shadow-2xs">
+                        Unit {mat.unit_number}
+                      </span>
+                      <span
+                        className={`px-2.5 py-1 rounded-xl text-[9.5px] font-black uppercase tracking-wider border ${
+                          isPPT
+                            ? "bg-amber-50 text-amber-800 border-amber-200"
+                            : isQuestionBank
+                              ? "bg-purple-50 text-purple-800 border-purple-200"
+                              : isVideo
+                                ? "bg-rose-50 text-rose-800 border-rose-200"
+                                : isSyllabus
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                  : "bg-indigo-50 text-indigo-800 border-indigo-200"
+                        }`}
+                      >
+                        {isPPT
+                          ? "Slides (PPT)"
+                          : isQuestionBank
+                            ? "Question Bank / Task"
+                            : isVideo
+                              ? "Video Lecture"
+                              : isSyllabus
+                                ? "Syllabus"
+                                : "Lecture Notes"}
+                      </span>
+                      {mat.class_group && (
+                        <span className="px-2 py-0.5 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 text-[9px] font-bold">
+                          {mat.class_group}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenUpload(mat)}
+                        className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                        title="Edit Material"
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingId === mat.id}
+                        onClick={() => handleDelete(mat.id)}
+                        className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-colors cursor-pointer disabled:opacity-50"
+                        title="Delete Material"
+                      >
+                        {deletingId === mat.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-rose-600" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Card Title & Subject */}
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 group-hover:text-indigo-600 transition-colors leading-snug">
+                      {mat.title}
+                    </h4>
+                    <span className="text-[10px] font-bold text-slate-400 block mt-0.5">
+                      Subject: {mat.subject}
+                    </span>
+                  </div>
+
+                  {/* Description */}
+                  {mat.description && (
+                    <p className="text-xs text-slate-500 font-medium line-clamp-2 leading-relaxed">
+                      {mat.description}
+                    </p>
+                  )}
+                </div>
+
+                {/* Card Footer: Metadata & Actions */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3 text-[10.5px]">
+                  <div className="text-slate-400 font-semibold truncate">
+                    <span>Published: {formattedDate}</span>
+                    {mat.file_size && <span className="ml-1 text-slate-500">• {mat.file_size}</span>}
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {targetUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewItem(mat)}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer"
+                        title="Preview details"
+                      >
+                        <Eye className="h-3 w-3" />
+                        <span>Preview</span>
+                      </button>
+                    )}
+                    {targetUrl ? (
+                      <a
+                        href={targetUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-lg font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                      >
+                        <span>Open Resource</span>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 italic">No link attached</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Publish / Edit Study Material Modal ── */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <form
+            onSubmit={handleSubmit}
+            className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 space-y-0 flex flex-col max-h-[90vh]"
+          >
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 flex items-center justify-center border border-indigo-100 dark:border-indigo-800">
+                  <Book className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white leading-tight">
+                    {editingItem ? "Edit Study Material" : "Publish New Study Material"}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                    Materials published here will immediately appear in your students&apos; study portal.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingItem(null);
+                }}
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Modal Form Body */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+              {/* Subject Field */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Course Subject <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={formSubject}
+                  onChange={(e) => setFormSubject(e.target.value)}
+                  required
+                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="" disabled>Select Subject</option>
+                  {displaySubjects.map((s: string) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Class Group / Target Cohort */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Target Class / Cohort <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <select
+                  value={formClassGroup}
+                  onChange={(e) => setFormClassGroup(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="">All Students (General / Enrolled)</option>
+                  {mentorClasses.map((cg: string) => (
+                    <option key={cg} value={cg}>{cg}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Unit Number & Material Type Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Curriculum Unit <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={formUnit}
+                    onChange={(e) => setFormUnit(parseInt(e.target.value, 10) || 1)}
+                    required
+                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {[1, 2, 3, 4, 5].map(u => (
+                      <option key={u} value={u}>Unit {u}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Material Type <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={formType}
+                    onChange={(e) => setFormType(e.target.value)}
+                    required
+                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="notes">Lecture Notes (PDF / Doc)</option>
+                    <option value="ppt">Presentation Slides (PPT / Canva)</option>
+                    <option value="assignment">Question Bank / Assignment</option>
+                    <option value="video">Recorded Video Lecture</option>
+                    <option value="syllabus">Syllabus &amp; Blueprint</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Title Field */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Material Title / Chapter Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Unit 2: Stack Applications & Expression Evaluation"
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-slate-400"
+                />
+              </div>
+
+              {/* Description / Summary Field */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Description / Topic Highlights <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Brief overview of the topics covered, recommended reading, or exam tips..."
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-slate-400"
+                />
+              </div>
+
+              {/* Resource URL / Cloud File Link */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Resource Link / Document URL <span className="text-slate-400 font-normal">(Google Drive, OneDrive, GitHub, YouTube)</span>
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://drive.google.com/file/d/..."
+                  value={formFileUrl}
+                  onChange={(e) => setFormFileUrl(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-slate-400"
+                />
+              </div>
+
+              {/* Format / File Size Label */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Format / Size Badge <span className="text-slate-400 font-normal">(e.g. &quot;PDF • 2.4 MB&quot;, &quot;PPTX • 25 Slides&quot;)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. PDF • 2.4 MB or 30-min Video"
+                  value={formFileSize}
+                  onChange={(e) => setFormFileSize(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-slate-400"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="p-4 border-t border-slate-100 flex items-center justify-end gap-2.5 bg-slate-50 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingItem(null);
+                }}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Publishing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-3.5 w-3.5" />
+                    <span>{editingItem ? "Save Changes" : "Publish Material"}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ── Document Preview Modal ── */}
+      {previewItem && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200 p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-lg bg-slate-900 text-white font-black text-[10px] uppercase">
+                  Unit {previewItem.unit_number}
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 font-black text-[10px] uppercase border border-indigo-200">
+                  {previewItem.material_type}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewItem(null)}
+                className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div>
+              <h3 className="text-base font-black text-slate-900">{previewItem.title}</h3>
+              <p className="text-xs text-slate-400 font-bold mt-0.5">Subject: {previewItem.subject}</p>
+            </div>
+
+            {previewItem.description && (
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-150 text-xs text-slate-600 font-medium">
+                {previewItem.description}
+              </div>
+            )}
+
+            <div className="text-[11px] text-slate-500 space-y-1">
+              {previewItem.class_group && <div>Cohort: <strong>{previewItem.class_group}</strong></div>}
+              {previewItem.file_size && <div>Format / Size: <strong>{previewItem.file_size}</strong></div>}
+              <div>Uploaded By: <strong>{previewItem.uploaded_by || mentor.name}</strong></div>
+            </div>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setPreviewItem(null)}
+                className="flex-1 py-2 text-xs font-bold text-slate-600 border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+              {(previewItem.file_url || previewItem.external_url) && (
+                <a
+                  href={previewItem.file_url || previewItem.external_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <span>Open Resource</span>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export interface MentorDashboardProps {
-  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan";
-  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan") => void;
+  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "materials" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan";
+  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "materials" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan") => void;
 }
 
 export const MentorDashboard: React.FC<MentorDashboardProps> = ({
@@ -1462,6 +2301,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     demoSwapRequests,
     resolveDemoSwap,
     requestDemoSwap,
+    rescheduleDemoSession,
+    facultyLeaves,
+    smeAvailability,
     colleges,
     isDataLoading,
     attendanceLockEnabled,
@@ -1635,6 +2477,26 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [selectedProposedPeer, setSelectedProposedPeer] = useState<any | null>(null);
   const [demoSwapSubmitting, setDemoSwapSubmitting] = useState<boolean>(false);
 
+  // Mentor Trigger-Based Demo Reschedule State (No SME replacement, mentor sets date & slot)
+  const [rescheduleModalSession, setRescheduleModalSession] = useState<any | null>(null);
+  const [rescheduleTargetDate, setRescheduleTargetDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+    return d.toISOString().split("T")[0];
+  });
+  const [rescheduleSelectedSlot, setRescheduleSelectedSlot] = useState<string>("");
+  const [rescheduleSubmitting, setRescheduleSubmitting] = useState<boolean>(false);
+
+  const handleOpenRescheduleModal = (session: any) => {
+    setRescheduleModalSession(session);
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+    setRescheduleTargetDate(d.toISOString().split("T")[0]);
+    setRescheduleSelectedSlot("");
+  };
+
   // ── Academic Tracker state hooks (Date-wise period topic/unit logging) ──────
   const [acadTrackerSubject, setAcadTrackerSubject] = useState<string>("");
   const [acadTrackerUnitFilter, setAcadTrackerUnitFilter] = useState<string>("all");
@@ -1799,7 +2661,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
 
   // Active Dashboard Tab State
-  const [localActiveTab, setLocalActiveTab] = useState<"home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews">("home");
+  const [localActiveTab, setLocalActiveTab] = useState<"home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "materials" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan">("home");
   const activeTab = propActiveTab || localActiveTab;
 
   // useTransition: marks tab switches as non-urgent so the current UI stays
@@ -3840,6 +4702,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   { id: "attendance", label: "Student Attendance", icon: ClipboardList },
                   { id: "exams", label: "Exam Marks Entry", icon: FileText },
                   { id: "academic_tracker", label: "Academic Tracker", icon: BookOpen },
+                  { id: "materials", label: "Study Materials Hub", icon: Book },
                   { id: "tracker", label: "Skill Development Tracker", icon: GraduationCap },
                   { id: "weekly_plan", label: "Weekly Teaching Plan", icon: CalendarRange },
                   { id: "leave_requests", label: "Leave & Permissions", icon: CalendarCheck2 },
@@ -3996,6 +4859,20 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 <div>
                   <span className="block text-xs font-bold text-slate-800">My Demo</span>
                   <span className="text-[10px] text-slate-400 font-medium">Grade candidate presentations</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("materials")}
+                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+              >
+                <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 group-hover:scale-105 transition-transform">
+                  <Book className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="block text-xs font-bold text-slate-800">Study Materials Hub</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Publish notes, PPTs & question banks</span>
                 </div>
               </button>
 
@@ -10286,13 +11163,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       <div className="space-y-4">
                         {pendingDemos.map(demo => (
                           <div key={demo.id} className="p-4 bg-slate-50/50 border border-slate-150 rounded-xl space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-150 text-indigo-600 text-[8px] font-black uppercase rounded">
+                            <div className="flex justify-between items-center gap-2">
+                              <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-150 text-indigo-600 text-[8px] font-black uppercase rounded truncate">
                                 {demo.subject}
                               </span>
-                              <span className="px-2 py-0.5 bg-amber-55 text-amber-800 text-[8px] font-black uppercase rounded border border-amber-200">
-                                Pending
-                              </span>
+                              {demo.status === "reallocation_required" ? (
+                                <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 text-[8px] font-black uppercase rounded shrink-0 animate-pulse">
+                                  Reschedule Required (Leave Impacted)
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 bg-amber-55 text-amber-800 text-[8px] font-black uppercase rounded border border-amber-200 shrink-0">
+                                  {demo.status === "confirmed" ? "Confirmed" : "Pending"}
+                                </span>
+                              )}
                             </div>
                             <div>
                               <p className="text-[11.5px] font-bold text-slate-800">{demo.dateStr}</p>
@@ -10302,19 +11185,41 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               Evaluator: <span className="font-bold text-slate-705">{demo.smeName}</span>
                             </div>
 
-                            <button
-                              onClick={() => {
-                                setDemoSwapModalSession(demo);
-                                setDemoSwapReason("I am unavailable");
-                                setDemoSwapRemarks("");
-                                setDemoSwapStep(1);
-                                setSelectedProposedPeer(null);
-                              }}
-                              className="w-full mt-2 py-1.5 bg-white hover:bg-slate-105 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] font-black rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-1 transition-all"
-                            >
-                              <RefreshCw className="h-2.5 w-2.5 text-indigo-500" />
-                              Request Internal Swap
-                            </button>
+                            {demo.status === "reallocation_required" ? (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenRescheduleModal(demo)}
+                                className="w-full mt-2 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black rounded-lg shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                              >
+                                <Calendar className="h-3.5 w-3.5" />
+                                Reschedule Demo →
+                              </button>
+                            ) : (
+                              <div className="flex gap-1.5 mt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRescheduleModal(demo)}
+                                  className="flex-1 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[10px] font-black rounded-lg border border-slate-200 flex items-center justify-center gap-1 transition-all cursor-pointer"
+                                >
+                                  <Calendar className="h-3 w-3 text-slate-500" />
+                                  Reschedule
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDemoSwapModalSession(demo);
+                                    setDemoSwapReason("I am unavailable");
+                                    setDemoSwapRemarks("");
+                                    setDemoSwapStep(1);
+                                    setSelectedProposedPeer(null);
+                                  }}
+                                  className="flex-1 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-[10px] font-black rounded-lg border border-slate-200 flex items-center justify-center gap-1 transition-all cursor-pointer"
+                                >
+                                  <RefreshCw className="h-2.5 w-2.5 text-indigo-500" />
+                                  Peer Swap
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -10447,10 +11352,22 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
 
 
+        {/* Tab: Study Materials Hub */}
+        {activeTab === "materials" && currentMentor && (
+          <div className="space-y-6 font-sans">
+            <MentorStudyMaterialsStudio
+              mentor={currentMentor}
+              mentorSubjects={mentorSubjects}
+              mentorClasses={mentorClasses}
+              subjectsList={subjectsList}
+            />
+          </div>
+        )}
+
         {/* Tab: Leave & Permissions */}
         {activeTab === "leave_requests" && currentMentor && (
           <div className="space-y-6 font-sans">
-            <MentorFacultyLeavePanel mentor={currentMentor} slots={slots} />
+            <MentorFacultyLeavePanel mentor={currentMentor} slots={slots} demoSessions={demoSessions} />
           </div>
         )}
 
@@ -10906,6 +11823,277 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* ─── Mentor Self-Directed Demo Reschedule Modal ─── */}
+      {rescheduleModalSession && (() => {
+        const targetDateObj = new Date(rescheduleTargetDate + "T12:00:00");
+        const targetDayName = targetDateObj.toLocaleDateString("en-US", { weekday: "long" });
+        const targetFormatted = targetDateObj.toLocaleDateString("en-IN", {
+          weekday: "long",
+          day: "numeric",
+          month: "short",
+          year: "numeric"
+        });
+
+        const isSunday = targetDateObj.getDay() === 0;
+        const holidayConflict = (holidays || []).find(h => h.date === rescheduleTargetDate);
+
+        // Standard academic time slots
+        const availableCollegeSlots = [
+          "09:00 AM - 10:00 AM",
+          "10:00 AM - 11:00 AM",
+          "11:15 AM - 12:15 PM",
+          "12:15 PM - 01:15 PM",
+          "02:00 PM - 03:00 PM",
+          "03:00 PM - 04:00 PM",
+          "04:00 PM - 05:00 PM"
+        ];
+
+        // Mentor approved leave on target date
+        const mentorLeaveOnDate = (facultyLeaves || []).find(
+          (fl: any) => fl.mentor_id === (currentMentor?.id || (rescheduleModalSession as any).mentorId) &&
+            fl.status === "approved" &&
+            rescheduleTargetDate >= fl.start_date &&
+            rescheduleTargetDate <= fl.end_date
+        );
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-xl shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4 flex flex-col max-h-[90vh]">
+              
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setRescheduleModalSession(null)}
+                className="absolute right-4 top-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              {/* Modal Header */}
+              <div className="flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
+                <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 text-amber-600 rounded-xl border border-amber-200 dark:border-amber-800/60">
+                  <Calendar className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase text-slate-800 dark:text-white tracking-wider">
+                    Reschedule Demo Session
+                  </h3>
+                  <p className="text-[10.5px] text-slate-500 font-semibold mt-0.5">
+                    Select a suitable date & available slot based on your schedule and SME availability.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 overflow-y-auto pr-1 flex-1">
+                {/* Current Session Summary Card */}
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-2 text-xs">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="font-extrabold text-slate-800 dark:text-white text-xs">
+                      {rescheduleModalSession.subject}
+                    </span>
+                    <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 rounded font-black text-[9px] uppercase border border-indigo-200 dark:border-indigo-800">
+                      Cohort: {rescheduleModalSession.stream || "General"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-1 text-[10.5px]">
+                    <div>
+                      <span className="text-[9px] font-black uppercase text-slate-400 block">Assigned Evaluator</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200 block mt-0.5">{rescheduleModalSession.smeName}</span>
+                      <span className="text-[9px] text-emerald-600 font-bold block">✓ SME Maintained (No Replacement)</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-black uppercase text-slate-400 block">Original Schedule</span>
+                      <span className="font-bold text-slate-600 dark:text-slate-300 block mt-0.5">{rescheduleModalSession.dateStr}</span>
+                      <span className="text-[9.5px] text-slate-500">{rescheduleModalSession.timeSlot}</span>
+                    </div>
+                  </div>
+
+                  {rescheduleModalSession.status === "reallocation_required" && (
+                    <div className="p-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg text-[10px] text-amber-800 dark:text-amber-300 font-medium">
+                      ⚠️ <strong>Leave Impacted:</strong> Your leave has been approved. Please select another suitable date & time below.
+                    </div>
+                  )}
+                </div>
+
+                {/* Step 1: Target Date Picker (Mentor Sets by Themselves) */}
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-300 block mb-1.5 flex items-center justify-between">
+                    <span>1. Target Date (Set by You)</span>
+                    <span className="text-indigo-600 font-bold normal-case text-xs">{targetFormatted}</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={rescheduleTargetDate}
+                    min={new Date().toISOString().split("T")[0]}
+                    onChange={(e) => {
+                      setRescheduleTargetDate(e.target.value);
+                      setRescheduleSelectedSlot("");
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                  />
+                </div>
+
+                {/* Date Conflict Warnings */}
+                {isSunday && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                    <span>Selected date is Sunday (Campus Closed). Please choose another date.</span>
+                  </div>
+                )}
+
+                {holidayConflict && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                    <span>Selected date is a holiday: {holidayConflict.title || "Holiday"}.</span>
+                  </div>
+                )}
+
+                {mentorLeaveOnDate && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                    <span>You are on approved {mentorLeaveOnDate.request_type || "leave"} on this date. Please pick a date after your leave ends.</span>
+                  </div>
+                )}
+
+                {/* Step 2: Slot Selection (Filtered by Mentor Free + SME Free) */}
+                {!isSunday && !holidayConflict && !mentorLeaveOnDate && (
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-300 block mb-2 flex items-center justify-between">
+                      <span>2. Select an Available Time Slot</span>
+                      <span className="text-[9.5px] text-slate-400 font-semibold normal-case">
+                        Showing slots free for you & {rescheduleModalSession.smeName}
+                      </span>
+                    </label>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {availableCollegeSlots.map(slot => {
+                        // Check if mentor has a class on targetDayName at this slot
+                        const mentorClass = (slots || []).find(
+                          (s: any) => s.mentorId === (currentMentor?.id || (rescheduleModalSession as any).mentorId) &&
+                            s.day?.toLowerCase() === targetDayName.toLowerCase() &&
+                            (s.time === slot || s.time?.replace(/\./g, ":").includes(slot.replace(/\./g, ":")) || slot.replace(/\./g, ":").includes(s.time?.replace(/\./g, ":")))
+                        );
+
+                        // Check if mentor has another demo at this date & slot
+                        const mentorOtherDemo = (demoSessions || []).find(
+                          (ds: any) => ds.mentorId === (currentMentor?.id || (rescheduleModalSession as any).mentorId) &&
+                            ds.dateStr === rescheduleTargetDate &&
+                            ds.timeSlot === slot &&
+                            ds.id !== rescheduleModalSession.id &&
+                            ds.status !== "not_conducted"
+                        );
+
+                        // Check if SME has another demo at this date & slot
+                        const smeDemoClash = (demoSessions || []).find(
+                          (ds: any) => ds.smeId === rescheduleModalSession.smeId &&
+                            ds.dateStr === rescheduleTargetDate &&
+                            ds.timeSlot === slot &&
+                            ds.id !== rescheduleModalSession.id &&
+                            ds.status !== "not_conducted"
+                        );
+
+                        // Is this slot mutually free?
+                        const isFree = !mentorClass && !mentorOtherDemo && !smeDemoClash;
+                        const isSelected = rescheduleSelectedSlot === slot;
+
+                        let clashReason = "";
+                        if (mentorClass) clashReason = `Class: ${mentorClass.course || "Lecture"}`;
+                        else if (mentorOtherDemo) clashReason = "You have another demo";
+                        else if (smeDemoClash) clashReason = "SME busy with demo";
+
+                        return (
+                          <button
+                            key={slot}
+                            type="button"
+                            disabled={!isFree}
+                            onClick={() => setRescheduleSelectedSlot(slot)}
+                            className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 cursor-pointer ${
+                              isSelected
+                                ? "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-600 ring-2 ring-indigo-500 shadow-xs"
+                                : isFree
+                                  ? "bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:border-indigo-300 hover:bg-slate-50"
+                                  : "bg-slate-50/60 dark:bg-slate-800/20 border-slate-200/50 dark:border-slate-800 opacity-60 cursor-not-allowed"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between w-full">
+                              <span className={`text-xs font-black ${isSelected ? "text-indigo-700 dark:text-indigo-300" : isFree ? "text-slate-800 dark:text-white" : "text-slate-400"}`}>
+                                {slot}
+                              </span>
+                              {isSelected ? (
+                                <CheckCircle className="h-4 w-4 text-indigo-600 shrink-0" />
+                              ) : isFree ? (
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                              ) : null}
+                            </div>
+
+                            <div className="text-[9.5px]">
+                              {isFree ? (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                                  ✓ Mutually Free
+                                </span>
+                              ) : (
+                                <span className="text-rose-500 font-medium">
+                                  {clashReason}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setRescheduleModalSession(null)}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!rescheduleSelectedSlot || isSunday || !!holidayConflict || !!mentorLeaveOnDate || rescheduleSubmitting}
+                  onClick={async () => {
+                    setRescheduleSubmitting(true);
+                    const res = await rescheduleDemoSession(
+                      rescheduleModalSession.id,
+                      rescheduleTargetDate,
+                      rescheduleSelectedSlot
+                    );
+                    setRescheduleSubmitting(false);
+                    if (res.success) {
+                      toast(res.message || "Demo rescheduled successfully!", "success");
+                      setRescheduleModalSession(null);
+                    } else {
+                      toast(res.message || "Failed to reschedule demo", "error");
+                    }
+                  }}
+                  className="px-5 py-2.5 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {rescheduleSubmitting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Rescheduling…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-3.5 w-3.5" />
+                      <span>Confirm Reschedule</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
