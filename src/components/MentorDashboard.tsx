@@ -2620,7 +2620,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
   const [weeklyPlansForVerification, setWeeklyPlansForVerification] = useState<any[]>([]);
   const [weeklyPlansLoaded, setWeeklyPlansLoaded] = useState(false);
-  const [planVerificationChoice, setPlanVerificationChoice] = useState<"as_planned" | "with_changes" | "not_conducted">("as_planned");
+  const [planVerificationChoice, setPlanVerificationChoice] = useState<"as_planned" | "with_changes" | "not_conducted" | null>(null);
   const [planActualTopic, setPlanActualTopic] = useState("");
   const matchedPlannedTask = useMemo(() => {
     if (!selectedCell?.slot || !selectedCell?.dateStr) return null;
@@ -4519,7 +4519,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     setRangeEndId("");
 
     // Reset weekly-plan verification state for the newly selected period
-    setPlanVerificationChoice("as_planned");
+    setPlanVerificationChoice(null);
     setPlanActualTopic("");
 
     // Initialize local attendance
@@ -7501,6 +7501,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             if (attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired" && !hasCAMApproval) {
               setFormError(windowCheck.message || "Attendance window is closed.");
               return;
+            }
+
+            if (matchedPlannedTask && selectedCell.type !== "covering" && attendanceType === "Regular" && selectedCell.dateStr === todayStr) {
+              if (!planVerificationChoice) {
+                setFormError("Please verify the weekly plan status (Conducted as Planned, with Changes, or Not Conducted) before saving attendance.");
+                return;
+              }
             }
 
             setIsSubmittingAttendance(true);
