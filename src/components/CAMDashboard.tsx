@@ -19341,7 +19341,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* Table */}
                   <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
-                    <table className="w-full border-collapse text-left text-xs font-semibold min-w-[640px]">
+                    <table className="w-full border-collapse text-left text-xs font-semibold min-w-[1200px]">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
                           <th className="p-3 border-r border-slate-100">Date &amp; Time</th>
@@ -19379,7 +19379,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <span className="px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200 text-purple-700 text-[10px] font-black inline-flex items-center gap-1">
                                     📝 Exam Mark Edit
                                   </span>
-                                ) : req.status === "needs_cam_allocation" ? (
+                                ) : (
+                                  <div className="flex flex-col gap-1 mb-1">
+                                    <span className="px-2 py-0.5 w-max rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-black inline-flex items-center gap-1">
+                                      👥 Substitution
+                                    </span>
+                                    {req.targetStaffName && <span className="font-semibold text-indigo-900 truncate" title={req.targetStaffName}>{req.targetStaffName}</span>}
+                                  </div>
+                                )}
+                                {req.status === "needs_cam_allocation" ? (
                                   <span className="text-amber-700 italic font-semibold text-[11px]">
                                     ⚡ Needs Faculty Mapping
                                   </span>
