@@ -19389,7 +19389,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 )}
                                 {req.status === "needs_cam_allocation" ? (
                                   <span className="text-amber-700 italic font-semibold text-[11px]">
-                                    ⚡ Needs Faculty Mapping
+                                    <div className="flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> <span>Needs Faculty Mapping</span></div>
                                   </span>
                                 ) : (
                                   <span className="font-bold text-indigo-700">{req.targetStaffName || "Cover Staff"}</span>
@@ -19401,27 +19401,33 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <td className="p-3 border-r border-slate-100">
                                 {isExam ? (
                                   <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-purple-50 border-purple-200 text-purple-700 flex items-center gap-1 w-fit">
+                                    <FileText className="w-3 h-3" />
                                     <span>Exam Mark Edit</span>
                                   </span>
                                 ) : isLate ? (
                                   <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 animate-pulse flex items-center gap-1 w-fit">
+                                    <Clock className="w-3 h-3" />
                                     <span>Late Attendance</span>
                                   </span>
                                 ) : req.status === "needs_cam_allocation" ? (
                                   <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-indigo-50 border-indigo-200 text-indigo-700 flex items-center gap-1 w-fit">
-                                    <span>🛡️ Needs CAM Allocation</span>
+                                    <ShieldCheck className="w-3 h-3" />
+                                    <span>Needs CM Allocation</span>
                                   </span>
                                 ) : req.status === "rejected" ? (
                                   <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 flex items-center gap-1 w-fit">
-                                    <span>❌ Cover Declined</span>
+                                    <XCircle className="w-3 h-3" />
+                                    <span>Cover Declined</span>
                                   </span>
                                 ) : req.status === "pending_cam" ? (
-                                  <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-indigo-50 border-indigo-150 text-indigo-700 animate-pulse">
-                                    Pending CM Review
+                                  <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-indigo-50 border-indigo-150 text-indigo-700 flex items-center gap-1 w-fit animate-pulse">
+                                    <Clock className="w-3 h-3" />
+                                    <span>Awaiting CM Review</span>
                                   </span>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-amber-50 border-amber-100 text-amber-700">
-                                    Pending Colleague
+                                  <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-amber-50 border-amber-100 text-amber-700 flex items-center gap-1 w-fit">
+                                    <Clock className="w-3 h-3" />
+                                    <span>Awaiting Colleague</span>
                                   </span>
                                 )}
                               </td>
