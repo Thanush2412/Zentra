@@ -3,16 +3,52 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import { useToast } from "../context/ToastContext";
-import { getCollegePeriodTimeSlots } from "@/lib/utils";
+import { getCollegePeriodTimeSlots, parseTimeToMinutes } from "@/lib/utils";
 import {
   UserCheck, Award, BookOpen, Users, GraduationCap, CheckCircle2,
-  AlertCircle, Clock, XCircle, Search, Plus, Video, Send, Check,
+  AlertCircle, Clock, XCircle, Search, Plus, Minus, Video, Send, Check,
   Building, Calendar, MessageSquare, BarChart3, Layers, Info,
   ShieldCheck, RefreshCw, ChevronDown, ChevronUp, Star, FileText,
   ExternalLink, AlertTriangle, Loader2, Filter, Trash2, HelpCircle,
   CheckCircle, ArrowRight, User, Sparkles, ChevronLeft, ChevronRight, X,
   Globe, CheckSquare, Activity, Eye, History, ListFilter, Download, FileSpreadsheet
 } from "lucide-react";
+
+// ─── Structured Period Slot Helper ──────────────────────────────────────────
+
+export interface StructuredPeriodSlot {
+  periodNumber: number;
+  periodLabel: string; // "Period 1"
+  timeSlot: string;    // "9.00 AM - 9.50 AM"
+  fullLabel: string;   // "Period 1 (9.00 AM - 9.50 AM)"
+  shortLabel: string;  // "P1: 9.00 - 9.50 AM"
+  startMinutes: number;
+}
+
+export function getStructuredCollegePeriodSlots(
+  collegeId?: string,
+  colleges: any[] = [],
+  slots: any[] = []
+): StructuredPeriodSlot[] {
+  const rawSlots = getCollegePeriodTimeSlots(collegeId, colleges, slots);
+  const sorted = Array.from(new Set(rawSlots)).sort((a, b) => {
+    const startA = parseTimeToMinutes((a.split("-")[0] || "").trim());
+    const startB = parseTimeToMinutes((b.split("-")[0] || "").trim());
+    return startA - startB;
+  });
+
+  return sorted.map((slotStr, index) => {
+    const periodNumber = index + 1;
+    return {
+      periodNumber,
+      periodLabel: `Period ${periodNumber}`,
+      timeSlot: slotStr,
+      fullLabel: `Period ${periodNumber} (${slotStr})`,
+      shortLabel: `P${periodNumber}: ${slotStr}`,
+      startMinutes: parseTimeToMinutes((slotStr.split("-")[0] || "").trim()),
+    };
+  });
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -1417,11 +1453,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   const [remarks, setRemarks] = useState("");
   const [isSavingEval, setIsSavingEval] = useState(false);
 
-  // CM Allocation & Mentor Free Period Time Mapping
+  // CM Allocation & Mentor Free Period Time Mapping (Multi-Period Selection & Per-Period Student Counts)
   const [expandedAllocation, setExpandedAllocation] = useState<string | null>(null);
-  const [mappedMentorIds, setMappedMentorIds] = useState<string[]>([]);
-  const [mentorSlotMap, setMentorSlotMap] = useState<Record<string, string>>({});
-  const [mentorCountMap, setMentorCountMap] = useState<Record<string, number>>({});
+  const [mentorSlotConfigs, setMentorSlotConfigs] = useState<Record<string, Record<string, number>>>({});
   const [showAllCampusMentors, setShowAllCampusMentors] = useState(false);
   const [camStudentCount, setCamStudentCount] = useState(10);
   const [camTimeSlot, setCamTimeSlot] = useState("8.20 AM - 9.10 AM");
@@ -1430,6 +1464,95 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   const [isMarkingComplete, setIsMarkingComplete] = useState<string | null>(null);
   const [viewingStudentRosterModal, setViewingStudentRosterModal] = useState<any | null>(null);
   const [rosterInitialTab, setRosterInitialTab] = useState<"mentors" | "students" | "logs">("students");
+
+  // Derived Multi-Period Allocation Metrics
+  const activeMappedMentorIds = useMemo(() => {
+    return Object.keys(mentorSlotConfigs).filter(id => {
+      const sMap = mentorSlotConfigs[id];
+      return sMap && Object.keys(sMap).length > 0;
+    });
+  }, [mentorSlotConfigs]);
+
+  const totalAssignedCandidates = useMemo(() => {
+    return Object.values(mentorSlotConfigs).reduce((sum, sMap) => {
+      return sum + Object.values(sMap || {}).reduce((sub, count) => sub + (Number(count) || 0), 0);
+    }, 0);
+  }, [mentorSlotConfigs]);
+
+  const toggleMentorPeriod = (mentorId: string, timeSlot: string, defaultCandidates: number = 3) => {
+    setMentorSlotConfigs(prev => {
+      const mentorSlots = { ...(prev[mentorId] || {}) };
+      const norm = timeSlot.trim();
+      const existingKey = Object.keys(mentorSlots).find(k => k.toLowerCase().replace(/\s+/g, "") === norm.toLowerCase().replace(/\s+/g, ""));
+      if (existingKey) {
+        delete mentorSlots[existingKey];
+      } else {
+        mentorSlots[norm] = defaultCandidates;
+      }
+
+      const updated = { ...prev };
+      if (Object.keys(mentorSlots).length === 0) {
+        delete updated[mentorId];
+      } else {
+        updated[mentorId] = mentorSlots;
+      }
+
+      const newTotal = Object.values(updated).reduce((sum, sMap) => {
+        return sum + Object.values(sMap || {}).reduce((sub, count) => sub + (Number(count) || 0), 0);
+      }, 0);
+      setCamStudentCount(Math.max(1, newTotal));
+      return updated;
+    });
+  };
+
+  const updateMentorPeriodCount = (mentorId: string, timeSlot: string, newCount: number) => {
+    const safeCount = Math.max(1, Math.min(100, newCount));
+    setMentorSlotConfigs(prev => {
+      const mentorSlots = { ...(prev[mentorId] || {}) };
+      const norm = timeSlot.trim();
+      const existingKey = Object.keys(mentorSlots).find(k => k.toLowerCase().replace(/\s+/g, "") === norm.toLowerCase().replace(/\s+/g, "")) || norm;
+      mentorSlots[existingKey] = safeCount;
+
+      const updated = { ...prev, [mentorId]: mentorSlots };
+      const newTotal = Object.values(updated).reduce((sum, sMap) => {
+        return sum + Object.values(sMap || {}).reduce((sub, count) => sub + (Number(count) || 0), 0);
+      }, 0);
+      setCamStudentCount(Math.max(1, newTotal));
+      return updated;
+    });
+  };
+
+  const setMentorAllFreePeriods = (mentorId: string, freeSlots: string[], defaultCandidates: number = 3) => {
+    if (freeSlots.length === 0) return;
+    setMentorSlotConfigs(prev => {
+      const mentorSlots = { ...(prev[mentorId] || {}) };
+      freeSlots.forEach(fs => {
+        const norm = fs.trim();
+        const existingKey = Object.keys(mentorSlots).find(k => k.toLowerCase().replace(/\s+/g, "") === norm.toLowerCase().replace(/\s+/g, ""));
+        if (!existingKey) {
+          mentorSlots[norm] = defaultCandidates;
+        }
+      });
+      const updated = { ...prev, [mentorId]: mentorSlots };
+      const newTotal = Object.values(updated).reduce((sum, sMap) => {
+        return sum + Object.values(sMap || {}).reduce((sub, count) => sub + (Number(count) || 0), 0);
+      }, 0);
+      setCamStudentCount(Math.max(1, newTotal));
+      return updated;
+    });
+  };
+
+  const clearMentorPeriods = (mentorId: string) => {
+    setMentorSlotConfigs(prev => {
+      const updated = { ...prev };
+      delete updated[mentorId];
+      const newTotal = Object.values(updated).reduce((sum, sMap) => {
+        return sum + Object.values(sMap || {}).reduce((sub, count) => sub + (Number(count) || 0), 0);
+      }, 0);
+      setCamStudentCount(Math.max(1, newTotal));
+      return updated;
+    });
+  };
 
   const openRosterModal = (req: any, tab: "mentors" | "students" | "logs" = "students") => {
     setViewingStudentRosterModal(req);
@@ -1769,14 +1892,32 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   };
 
   const handleAssign = async (interviewId: string) => {
-    if (mappedMentorIds.length === 0) { toast("Select at least one mentor.", "warning"); return; }
-    if (!camStudentCount || camStudentCount < 1) { toast("Set a valid student count.", "warning"); return; }
+    const mentorSchedulePayload: Array<{ mentor_id: string; time_slot: string; student_count: number }> = [];
+    Object.entries(mentorSlotConfigs).forEach(([mId, slotsObj]) => {
+      Object.entries(slotsObj).forEach(([slotStr, count]) => {
+        if (Number(count) > 0) {
+          mentorSchedulePayload.push({
+            mentor_id: mId,
+            time_slot: slotStr,
+            student_count: Number(count),
+          });
+        }
+      });
+    });
 
-    const mentorSchedulePayload = mappedMentorIds.map(id => ({
-      mentor_id: id,
-      time_slot: mentorSlotMap[id] || camTimeSlot,
-      student_count: mentorCountMap[id] || 3
-    }));
+    const activeMentorIds = Array.from(new Set(mentorSchedulePayload.map(s => s.mentor_id)));
+
+    if (activeMentorIds.length === 0) {
+      toast("Select at least one faculty mentor and period.", "warning");
+      return;
+    }
+
+    const totalCalculatedStudents = mentorSchedulePayload.reduce((acc, s) => acc + s.student_count, 0);
+    const effectiveStudentCount = camStudentCount > 0 ? camStudentCount : totalCalculatedStudents;
+    if (effectiveStudentCount < 1) {
+      toast("Set a valid student count.", "warning");
+      return;
+    }
 
     const targetReq = interviewsList.find(i => i.id === interviewId);
     const hostColId = targetReq?.origin_college_id || targetReq?.college_id || defaultCollegeId;
@@ -1800,7 +1941,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     if (cohortStudents.length === 0) {
       cohortStudents = pool;
     }
-    const selectedIds = cohortStudents.slice(0, camStudentCount).map(s => s.id);
+    const selectedIds = cohortStudents.slice(0, effectiveStudentCount).map(s => s.id);
 
     setIsAssigning(true);
     try {
@@ -1809,8 +1950,8 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           interview_id: interviewId,
-          mapped_mentor_ids: mappedMentorIds,
-          student_count: camStudentCount,
+          mapped_mentor_ids: activeMentorIds,
+          student_count: effectiveStudentCount,
           time_slot: camTimeSlot,
           mentor_schedule: mentorSchedulePayload,
           cm_name: currentUserName,
@@ -1820,8 +1961,10 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       });
       const data = await res.json();
       if (data.success) {
-        toast("Flexible mentor schedule saved & marked on calendar! Notification emails dispatched.", "success");
-        setExpandedAllocation(null); setMappedMentorIds([]); setMentorSlotMap({}); setMentorCountMap({}); setCmGmeetLink("");
+        toast("Flexible multi-period mentor schedule saved & marked on calendar! Notification emails dispatched.", "success");
+        setExpandedAllocation(null);
+        setMentorSlotConfigs({});
+        setCmGmeetLink("");
         fetchInterviews();
       } else {
         toast(data.message || "Failed to assign.", "error");
@@ -3634,6 +3777,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                         onClick={() => {
                           if (isOpen) {
                             setExpandedAllocation(null);
+                            setMentorSlotConfigs({});
                           } else {
                             const currentCollegeId = defaultCollegeId || currentMentor?.college_id;
                             const isHost = req.college_id === currentCollegeId || req.origin_college_id === currentCollegeId;
@@ -3651,7 +3795,30 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
                             setExpandedAllocation(req.id);
                             setCamStudentCount(initialCount);
-                            setMappedMentorIds(req.assigned_mentor_ids ? JSON.parse(req.assigned_mentor_ids) : []);
+
+                            // Initialize mentor configs
+                            const initialConfigs: Record<string, Record<string, number>> = {};
+                            if (req.student_slots && Array.isArray(req.student_slots) && req.student_slots.length > 0) {
+                              req.student_slots.forEach((stSlot: any) => {
+                                if (stSlot.mentor_id) {
+                                  const slotTime = (stSlot.slot_start_time && stSlot.slot_end_time) 
+                                    ? `${stSlot.slot_start_time} - ${stSlot.slot_end_time}` 
+                                    : (req.preferred_start_time || "8.20 AM - 9.10 AM");
+                                  if (!initialConfigs[stSlot.mentor_id]) initialConfigs[stSlot.mentor_id] = {};
+                                  initialConfigs[stSlot.mentor_id][slotTime] = (initialConfigs[stSlot.mentor_id][slotTime] || 0) + 1;
+                                }
+                              });
+                            } else if (req.assigned_mentor_ids) {
+                              try {
+                                const ids = JSON.parse(req.assigned_mentor_ids);
+                                if (Array.isArray(ids)) {
+                                  ids.forEach((mId: string) => {
+                                    initialConfigs[mId] = { [req.preferred_start_time || "8.20 AM - 9.10 AM"]: 3 };
+                                  });
+                                }
+                              } catch (_) {}
+                            }
+                            setMentorSlotConfigs(initialConfigs);
                             setCmGmeetLink(req.gmeet_link || "");
                           }
                         }}
@@ -3840,441 +4007,513 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                       ) : (
                         /* 2. Evaluating CAM Panel: Map Available Mentors from Evaluating Campus */
                         <>
-                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
-                            <h3 className="text-xs font-black text-slate-800 flex items-center gap-2">
-                              <Users className="w-4 h-4 text-[#D528A2]" />
-                              Map Available Faculty Mentors from Your Campus During Free Periods — {req.subject}
-                            </h3>
-                            <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">
-                              Target Date: {req.target_date} ({new Date(req.target_date).toLocaleDateString("en-US", { weekday: "long" })})
-                            </span>
-                          </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {/* Student Count Input + Auto-Calculate as per Time */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] text-slate-500 uppercase font-extrabold tracking-wider block">
-                              Student Count for Session
-                            </label>
-                            {mappedMentorIds.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setCamStudentCount(Math.max(1, mappedMentorIds.length * 3))}
-                                className="text-[9px] font-black text-[#D528A2] hover:underline cursor-pointer flex items-center gap-1"
-                                title="1 slot (50m) ÷ 15m = ~3 students per mentor"
-                              >
-                                <Sparkles className="w-3 h-3" /> Auto-Calc ({mappedMentorIds.length * 3})
-                              </button>
-                            )}
-                          </div>
-                          <input
-                            type="number" min={1} max={500} value={camStudentCount}
-                            onChange={e => setCamStudentCount(Number(e.target.value))}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
-                            required
-                          />
-                          <p className="text-[9px] text-slate-400 font-medium">
-                            {mappedMentorIds.length > 0
-                              ? `${mappedMentorIds.length} Mentor(s) selected ➔ Recommended ~${mappedMentorIds.length * 3} students in 1 slot`
-                              : "Select mentors below to auto-calculate capacity"}
-                          </p>
-                        </div>
-                        
-                        {/* Interview Time Slot Selector */}
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 uppercase font-extrabold tracking-wider block">
-                            Interview Time Slot <span className="text-[#D528A2]">(Auto-Selects Free Faculty)</span>
-                          </label>
                           {(() => {
                             const targetCollegeId = req.college_id || defaultCollegeId || currentMentor?.college_id;
-                            const collegeTimeSlots = getCollegePeriodTimeSlots(targetCollegeId, activeCollegesList, slots);
+                            const structuredSlots = getStructuredCollegePeriodSlots(targetCollegeId, activeCollegesList, slots);
+                            const targetDayName = req.target_date 
+                              ? new Date(req.target_date.includes("T") ? req.target_date : `${req.target_date}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" }) 
+                              : "Wednesday";
 
-                            return (
-                              <select
-                                value={camTimeSlot}
-                                onChange={e => {
-                                  const newSlot = e.target.value;
-                                  setCamTimeSlot(newSlot);
-
-                                  const targetDayName = req.target_date 
-                                    ? new Date(req.target_date.includes("T") ? req.target_date : `${req.target_date}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" }) 
-                                    : "Friday";
-                                  const mentorsToEvaluate = showAllCampusMentors 
-                                    ? campusMentors 
-                                    : (subjectMentors.length > 0 ? subjectMentors : campusMentors);
-
-                                  // Find all faculty mentors who are FREE in this slot
-                                  const freeMentors = mentorsToEvaluate.filter(m => {
-                                    const mentorBusySlots = (slots || []).filter(s => s.mentorId === m.id && (s.day || "").toLowerCase().trim() === targetDayName.toLowerCase().trim());
-                                    const busyTimes = mentorBusySlots.map(s => (s.time || "").trim());
-                                    return !busyTimes.some(b => b.toLowerCase().replace(/\s+/g, "") === newSlot.toLowerCase().replace(/\s+/g, ""));
-                                  });
-
-                                  const freeIds = freeMentors.map(m => m.id);
-
-                                  if (freeIds.length > 0) {
-                                    setMappedMentorIds(freeIds);
-                                    const newSlotMap: Record<string, string> = {};
-                                    const newCountMap: Record<string, number> = {};
-                                    freeIds.forEach(id => {
-                                      newSlotMap[id] = newSlot;
-                                      newCountMap[id] = 3;
-                                    });
-                                    setMentorSlotMap(newSlotMap);
-                                    setMentorCountMap(newCountMap);
-                                    setCamStudentCount(freeIds.length * 3);
-                                  } else {
-                                    setMappedMentorIds([]);
-                                    setCamStudentCount(0);
-                                  }
-                                }}
-                                className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
-                              >
-                                {collegeTimeSlots.map(t => (
-                                  <option key={t} value={t}>{t}</option>
-                                ))}
-                              </select>
-                            );
-                          })()}
-                          <p className="text-[9px] text-slate-400 font-medium">
-                            Auto-checks all faculty free in this slot &amp; updates capacity
-                          </p>
-                        </div>
-
-                        {/* Google Meet Link (Only for External) vs In-Person Campus Notice */}
-                        {req.type === "external" ? (
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] text-slate-500 uppercase font-extrabold tracking-wider block">
-                              Google Meet Link <span className="text-slate-400 font-normal">(Virtual Cross-Campus Panel)</span>
-                            </label>
-                            <input
-                              type="url" value={cmGmeetLink}
-                              onChange={e => setCmGmeetLink(e.target.value)}
-                              placeholder="https://meet.google.com/xxx-xxxx-xxx"
-                              className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-300"
-                            />
-                            <p className="text-[9px] text-slate-400 font-medium">
-                              Auto-dispatched with isolated calendar invite per candidate
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="p-3 bg-teal-50/70 border border-teal-200/80 rounded-xl flex items-start gap-2 text-teal-900 text-xs">
-                            <User className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                            <div>
-                              <strong className="block font-bold text-[11px]">In-Person Campus Evaluation</strong>
-                              <span className="text-[10px] text-teal-700">Internal interviews are conducted physically in faculty cabins/labs. No Google Meet link required.</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Available Mentors & Free Period Schedule Matrix */}
-                      <div className="space-y-3 pt-2 border-t border-slate-200/80">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <label className="text-[10px] text-slate-700 uppercase font-black tracking-wider block">
-                              Faculty Mentors Availability on {new Date(req.target_date).toLocaleDateString("en-US", { weekday: "long" })}
-                            </label>
-                            <span className="text-[9px] font-bold text-slate-500">
-                              Select mentors and configure their individual time slots and student batches
-                            </span>
-                          </div>
-
-                          {/* Flexible Scope Toggle */}
-                          <div className="inline-flex p-0.5 rounded-lg bg-slate-100 border border-slate-200 text-[10px] font-bold">
-                            <button
-                              type="button"
-                              onClick={() => setShowAllCampusMentors(false)}
-                              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                                !showAllCampusMentors ? "bg-white text-[#D528A2] shadow-2xs font-black" : "text-slate-500 hover:text-slate-800"
-                              }`}
-                            >
-                              Subject Faculty ({subjectMentors.length})
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setShowAllCampusMentors(true)}
-                              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                                showAllCampusMentors ? "bg-white text-[#D528A2] shadow-2xs font-black" : "text-slate-500 hover:text-slate-800"
-                              }`}
-                            >
-                              All Campus Faculty ({campusMentors.length})
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                          {(() => {
-                            const mentorsToDisplay = showAllCampusMentors 
+                            const mentorsToEvaluate = showAllCampusMentors 
                               ? campusMentors 
                               : (subjectMentors.length > 0 ? subjectMentors : campusMentors);
 
-                            if (mentorsToDisplay.length === 0) {
-                              return (
-                                <p className="text-xs text-slate-400 italic py-3 bg-white rounded-xl border border-slate-200 text-center">
-                                  No faculty mentors found at this campus.
-                                </p>
-                              );
-                            }
+                            const totalPeriodsScheduled = Object.values(mentorSlotConfigs).reduce((acc, sMap) => acc + Object.keys(sMap || {}).length, 0);
 
-                            const targetCollegeId = req.college_id || defaultCollegeId || currentMentor?.college_id;
-                            const collegeTimeSlots = getCollegePeriodTimeSlots(targetCollegeId, activeCollegesList, slots);
+                            return (
+                              <div className="space-y-4">
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                                  <h3 className="text-xs font-black text-slate-800 flex items-center gap-2">
+                                    <Users className="w-4 h-4 text-[#D528A2]" />
+                                    Map Available Faculty Mentors During Free Periods — {req.subject}
+                                  </h3>
+                                  <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">
+                                    Target Date: {req.target_date} ({targetDayName})
+                                  </span>
+                                </div>
 
-                            return mentorsToDisplay.map(m => {
-                              const checked = mappedMentorIds.includes(m.id);
-                              const targetDayName = req.target_date 
-                                ? new Date(req.target_date.includes("T") ? req.target_date : `${req.target_date}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" }) 
-                                : "Friday";
-                              const mentorBusySlots = (slots || []).filter(s => 
-                                s.mentorId === m.id && 
-                                (s.day || "").toLowerCase().trim() === targetDayName.toLowerCase().trim()
-                              );
-                              const busyTimes = mentorBusySlots.map(s => (s.time || "").trim());
-                              const freeSlots = collegeTimeSlots.filter(t => !busyTimes.some(b => b.toLowerCase().replace(/\s+/g, "") === t.toLowerCase().replace(/\s+/g, "")));
-                              
-                              const assignedMentorSlot = mentorSlotMap[m.id] || camTimeSlot;
-                              const isFreeInAssignedSlot = freeSlots.some(t => t.toLowerCase().replace(/\s+/g, "") === assignedMentorSlot.toLowerCase().replace(/\s+/g, ""));
-                              const mentorCount = mentorCountMap[m.id] || 3;
-
-                              return (
-                                <div
-                                  key={m.id}
-                                  className={`p-3 rounded-xl border transition-all ${
-                                    checked
-                                      ? "bg-indigo-50/70 border-indigo-300 shadow-2xs"
-                                      : "bg-white border-slate-200 hover:border-slate-300"
-                                  }`}
-                                >
-                                  <div className="flex items-start gap-2.5">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  {/* Student Count Input + Auto-Calculate as per Time */}
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <label className="text-[10px] text-slate-500 uppercase font-extrabold tracking-wider block">
+                                        Total Candidate Capacity
+                                      </label>
+                                      {totalAssignedCandidates > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setCamStudentCount(totalAssignedCandidates)}
+                                          className="text-[9px] font-black text-[#D528A2] hover:underline cursor-pointer flex items-center gap-1"
+                                          title="Sync total student count with configured periods across all mentors"
+                                        >
+                                          <Sparkles className="w-3 h-3" /> Auto-Calc ({totalAssignedCandidates})
+                                        </button>
+                                      )}
+                                    </div>
                                     <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      id={`mentor_chk_${m.id}`}
-                                      onChange={e => {
-                                        if (e.target.checked) {
-                                          const newMapped = [...mappedMentorIds, m.id];
-                                          setMappedMentorIds(newMapped);
-                                          const defaultSlot = freeSlots[0] || camTimeSlot;
-                                          setMentorSlotMap(prev => ({ ...prev, [m.id]: defaultSlot }));
-                                          setMentorCountMap(prev => ({ ...prev, [m.id]: 3 }));
-                                          const newTotal = newMapped.reduce((acc, id) => acc + (id === m.id ? 3 : (mentorCountMap[id] || 3)), 0);
-                                          setCamStudentCount(newTotal);
-                                        } else {
-                                          const newMapped = mappedMentorIds.filter(id => id !== m.id);
-                                          setMappedMentorIds(newMapped);
-                                          const newTotal = newMapped.reduce((acc, id) => acc + (mentorCountMap[id] || 3), 0);
-                                          setCamStudentCount(Math.max(1, newTotal));
-                                        }
-                                      }}
-                                      className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 mt-0.5 cursor-pointer"
+                                      type="number" min={1} max={500} value={camStudentCount}
+                                      onChange={e => setCamStudentCount(Number(e.target.value))}
+                                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
+                                      required
                                     />
-                                    <div className="flex-1 min-w-0 space-y-1.5">
-                                      <div className="flex flex-wrap items-center justify-between gap-1.5">
-                                        <div className="flex items-center gap-1.5">
-                                          <label htmlFor={`mentor_chk_${m.id}`} className="font-extrabold text-slate-800 text-xs cursor-pointer hover:text-indigo-600">
-                                            {m.name}
-                                          </label>
-                                          <span className="text-[10px] text-slate-400 font-medium">({m.department || "Faculty"})</span>
-                                        </div>
-
-                                        {isFreeInAssignedSlot ? (
-                                          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                            ✓ Free in {assignedMentorSlot}
-                                          </span>
-                                        ) : (
-                                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                            In Class in {assignedMentorSlot}
-                                          </span>
-                                        )}
-                                      </div>
-
-                                      {/* Clean Free Slots Pills */}
-                                      <div className="flex flex-wrap items-center gap-1 text-[10px]">
-                                        <span className="text-slate-400 font-bold uppercase text-[9px] mr-0.5">Free:</span>
-                                        {freeSlots.length === 0 ? (
-                                          <span className="text-rose-500 font-semibold text-[9px]">Fully booked today</span>
-                                        ) : (
-                                          freeSlots.map(fs => {
-                                            const isSelected = assignedMentorSlot === fs;
-                                            return (
-                                              <button
-                                                key={fs}
-                                                type="button"
-                                                onClick={() => {
-                                                  setMentorSlotMap(prev => ({ ...prev, [m.id]: fs }));
-                                                  if (!mappedMentorIds.includes(m.id)) {
-                                                    const newMapped = [...mappedMentorIds, m.id];
-                                                    setMappedMentorIds(newMapped);
-                                                    const newTotal = newMapped.reduce((acc, id) => acc + (id === m.id ? 3 : (mentorCountMap[id] || 3)), 0);
-                                                    setCamStudentCount(newTotal);
-                                                  }
-                                                }}
-                                                className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer ${
-                                                  isSelected
-                                                    ? "bg-emerald-600 text-white shadow-2xs font-extrabold"
-                                                    : "bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200"
-                                                }`}
-                                              >
-                                                {fs}
-                                              </button>
-                                            );
-                                          })
-                                        )}
-                                      </div>
-
-                                      {/* Subtle Busy Line */}
-                                      {mentorBusySlots.length > 0 && (
-                                        <div className="text-[9px] text-slate-400 font-medium">
-                                          <span className="font-semibold text-slate-500">In Class:</span> {mentorBusySlots.map((b: any) => `${b.time} (${b.course || 'Class'})`).join(", ")}
-                                        </div>
-                                      )}
-
-                                      {/* Per-Mentor Config (When Checked) */}
-                                      {checked && (
-                                        <div className="mt-1.5 pt-1.5 border-t border-indigo-150 flex flex-wrap items-center gap-3 bg-white/70 p-2 rounded-lg border border-indigo-100">
-                                          <div className="flex items-center gap-1.5 text-xs">
-                                            <label className="text-[9px] text-slate-500 font-bold uppercase">Time Slot:</label>
-                                            <select
-                                              value={assignedMentorSlot}
-                                              onChange={e => {
-                                                const newSlot = e.target.value;
-                                                setMentorSlotMap(prev => ({ ...prev, [m.id]: newSlot }));
-                                              }}
-                                              className="p-1 border border-slate-200 rounded-md text-xs font-bold bg-white outline-none cursor-pointer"
-                                            >
-                                              {collegeTimeSlots.map(s => (
-                                                <option key={s} value={s}>{s} {freeSlots.includes(s) ? "(Free)" : "(Class)"}</option>
-                                              ))}
-                                            </select>
-                                          </div>
-
-                                          <div className="flex items-center gap-1.5 text-xs">
-                                            <label className="text-[9px] text-slate-500 font-bold uppercase">Candidates:</label>
-                                            <input
-                                              type="number"
-                                              min={1}
-                                              max={100}
-                                              value={mentorCount}
-                                              onChange={e => {
-                                                const count = Math.max(1, parseInt(e.target.value) || 1);
-                                                setMentorCountMap(prev => {
-                                                  const updated = { ...prev, [m.id]: count };
-                                                  const newTotal = mappedMentorIds.reduce((acc, id) => acc + (updated[id] || 3), 0);
-                                                  setCamStudentCount(newTotal);
-                                                  return updated;
-                                                });
-                                              }}
-                                              className="w-14 p-1 border border-slate-200 rounded-md text-xs font-bold bg-white text-center outline-none"
-                                            />
-                                            <span className="text-[9px] text-slate-400 font-medium">(15m each)</span>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
+                                    <p className="text-[9px] text-slate-400 font-medium">
+                                      {activeMappedMentorIds.length > 0
+                                        ? `${activeMappedMentorIds.length} Mentor(s) scheduled across ${totalPeriodsScheduled} period(s) ➔ Total ${totalAssignedCandidates} candidates`
+                                        : "Select faculty mentors and their free periods below to calculate capacity"}
+                                    </p>
                                   </div>
-                                </div>
-                              );
-                            });
-                          })()}
-                        </div>
-                      </div>
+                                  
+                                  {/* Quick Period Selector (Auto-selects free faculty for that period) */}
+                                  <div className="space-y-1.5">
+                                    <label className="text-[10px] text-slate-500 uppercase font-extrabold tracking-wider block">
+                                      Quick Period Selector <span className="text-[#D528A2]">(Auto-Selects Free Faculty)</span>
+                                    </label>
+                                    <select
+                                      value={camTimeSlot}
+                                      onChange={e => {
+                                        const newSlot = e.target.value;
+                                        setCamTimeSlot(newSlot);
 
-                      {/* Dedicated Priority Allocation & Remaining Students Section */}
-                      {(() => {
-                        const cleanCG = (req.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
-                        const cohortStudents = students.filter(s =>
-                          (s.classGroup && (s.classGroup.toLowerCase() === cleanCG.toLowerCase() || s.classGroup.toLowerCase().includes(cleanCG.toLowerCase()))) ||
-                          (s.department && (s.department.toLowerCase() === cleanCG.toLowerCase() || s.department.toLowerCase().includes(cleanCG.toLowerCase())))
-                        );
+                                        // Find all faculty mentors who are FREE in this slot
+                                        const freeMentors = mentorsToEvaluate.filter(m => {
+                                          const mentorBusySlots = (slots || []).filter(s => s.mentorId === m.id && (s.day || "").toLowerCase().trim() === targetDayName.toLowerCase().trim());
+                                          const busyTimes = mentorBusySlots.map(s => (s.time || "").trim());
+                                          return !busyTimes.some(b => b.toLowerCase().replace(/\s+/g, "") === newSlot.toLowerCase().replace(/\s+/g, ""));
+                                        });
 
-                        if (cohortStudents.length === 0) return null;
+                                        const newConfigs: Record<string, Record<string, number>> = {};
+                                        freeMentors.forEach(m => {
+                                          newConfigs[m.id] = { [newSlot]: 3 };
+                                        });
+                                        setMentorSlotConfigs(newConfigs);
+                                        setCamStudentCount(Math.max(1, freeMentors.length * 3));
+                                      }}
+                                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
+                                    >
+                                      {structuredSlots.map(s => (
+                                        <option key={s.timeSlot} value={s.timeSlot}>
+                                          {s.fullLabel}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <p className="text-[9px] text-slate-400 font-medium">
+                                      Selects all faculty free in this period with 3 students each
+                                    </p>
+                                  </div>
 
-                        const capacity = camStudentCount || 10;
-                        const selectedList = cohortStudents.slice(0, capacity);
-                        const remainingList = cohortStudents.slice(capacity);
-
-                        return (
-                          <div className="space-y-3 pt-3 border-t border-slate-200/80">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                                <Users className="w-3.5 h-3.5 text-[#D528A2]" /> Priority Cohort Allocation ({cohortStudents.length} Enrolled)
-                              </span>
-                              <span className="text-[10px] font-bold text-slate-500">
-                                Allocated: <strong className="text-indigo-600 font-extrabold">{selectedList.length}</strong> • Remaining: <strong className="text-amber-600 font-extrabold">{remainingList.length}</strong>
-                              </span>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              {/* Selected Students Panel */}
-                              <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-2">
-                                <div className="flex items-center justify-between text-[11px] font-black text-emerald-900">
-                                  <span>[SELECTED] for this evaluation ({selectedList.length}/{capacity})</span>
-                                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full uppercase">Top Priority</span>
-                                </div>
-                                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-                                  {selectedList.map((st, idx) => (
-                                    <div key={st.id || idx} className="p-1.5 rounded-lg bg-white border border-emerald-150 text-xs flex items-center justify-between">
-                                      <div className="flex items-center gap-1.5 min-w-0">
-                                        <span className="text-[9.5px] font-black font-mono text-emerald-700 bg-emerald-50 px-1 rounded">#{idx + 1}</span>
-                                        <span className="font-bold text-slate-800 truncate">{st.name}</span>
-                                      </div>
-                                      <span className="text-[9.5px] font-mono text-slate-400 shrink-0">{st.roll_number || st.register_number || st.id}</span>
+                                  {/* Google Meet Link (Only for External) vs In-Person Campus Notice */}
+                                  {req.type === "external" ? (
+                                    <div className="space-y-1.5">
+                                      <label className="text-[10px] text-slate-500 uppercase font-extrabold tracking-wider block">
+                                        Google Meet Link <span className="text-slate-400 font-normal">(Virtual Cross-Campus Panel)</span>
+                                      </label>
+                                      <input
+                                        type="url" value={cmGmeetLink}
+                                        onChange={e => setCmGmeetLink(e.target.value)}
+                                        placeholder="https://meet.google.com/xxx-xxxx-xxx"
+                                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-300"
+                                      />
+                                      <p className="text-[9px] text-slate-400 font-medium">
+                                        Auto-dispatched with isolated calendar invite per candidate
+                                      </p>
                                     </div>
-                                  ))}
-                                </div>
-                              </div>
-
-                              {/* Remaining Students Panel */}
-                              <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/40 space-y-2">
-                                <div className="flex items-center justify-between text-[11px] font-black text-amber-900">
-                                  <span>REMAINING STUDENTS (Unallocated) ({remainingList.length})</span>
-                                  <span className="text-[9px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full uppercase">Next Cycle</span>
-                                </div>
-                                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-                                  {remainingList.length === 0 ? (
-                                    <p className="text-[11px] text-emerald-700 italic py-3 text-center">All cohort students are allocated in this cycle!</p>
                                   ) : (
-                                    remainingList.map((st, idx) => (
-                                      <div key={st.id || idx} className="p-1.5 rounded-lg bg-white border border-amber-150 text-xs flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                          <span className="text-[9.5px] font-black font-mono text-amber-700 bg-amber-50 px-1 rounded">#{selectedList.length + idx + 1}</span>
-                                          <span className="font-semibold text-slate-700 truncate">{st.name}</span>
-                                        </div>
-                                        <span className="text-[9.5px] font-mono text-slate-400 shrink-0">{st.roll_number || st.register_number || st.id}</span>
+                                    <div className="p-3 bg-teal-50/70 border border-teal-200/80 rounded-xl flex items-start gap-2 text-teal-900 text-xs">
+                                      <User className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+                                      <div>
+                                        <strong className="block font-bold text-[11px]">In-Person Campus Evaluation</strong>
+                                        <span className="text-[10px] text-teal-700">Internal interviews are conducted physically in faculty cabins/labs. No Google Meet link required.</span>
                                       </div>
-                                    ))
+                                    </div>
                                   )}
                                 </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
 
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-200">
-                        <div className="text-xs text-slate-600 font-semibold">
-                          <strong className="text-indigo-600 font-black">{mappedMentorIds.length}</strong> mentor(s) scheduled
-                          • Total Capacity: <strong className="text-slate-900 font-black">{camStudentCount} Students</strong>
-                          {mappedMentorIds.length > 0 && (
-                            <span className="text-[10px] text-slate-400 ml-1">
-                              ({mappedMentorIds.map(id => {
-                                const m = mentors.find(x => x.id === id);
-                                return `${m?.name || id}: ${mentorSlotMap[id] || camTimeSlot} (${mentorCountMap[id] || 3} st)`;
-                              }).join(", ")})
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => handleAssign(req.id)}
-                          disabled={isAssigning || mappedMentorIds.length === 0 || !camStudentCount || camStudentCount < 1}
-                          className="btn-gradient flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-extrabold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0"
-                        >
-                          {isAssigning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                          {isAssigning ? "Dispatching..." : "Assign & Mark Calendar"}
-                        </button>
-                      </div>
-                    </>
+                                {/* Available Mentors & Free Period Schedule Matrix */}
+                                <div className="space-y-3 pt-2 border-t border-slate-200/80">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                      <label className="text-[10px] text-slate-700 uppercase font-black tracking-wider block">
+                                        Faculty Mentors Availability on {targetDayName}
+                                      </label>
+                                      <span className="text-[9px] font-bold text-slate-500">
+                                        Select multiple periods per faculty mentor and configure student candidate counts
+                                      </span>
+                                    </div>
+
+                                    {/* Flexible Scope Toggle */}
+                                    <div className="inline-flex p-0.5 rounded-lg bg-slate-100 border border-slate-200 text-[10px] font-bold">
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowAllCampusMentors(false)}
+                                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                                          !showAllCampusMentors ? "bg-white text-[#D528A2] shadow-2xs font-black" : "text-slate-500 hover:text-slate-800"
+                                        }`}
+                                      >
+                                        Subject Faculty ({subjectMentors.length})
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowAllCampusMentors(true)}
+                                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                                          showAllCampusMentors ? "bg-white text-[#D528A2] shadow-2xs font-black" : "text-slate-500 hover:text-slate-800"
+                                        }`}
+                                      >
+                                        All Campus Faculty ({campusMentors.length})
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                                    {mentorsToEvaluate.length === 0 ? (
+                                      <p className="text-xs text-slate-400 italic py-4 bg-white rounded-xl border border-slate-200 text-center">
+                                        No faculty mentors found at this campus.
+                                      </p>
+                                    ) : (
+                                      mentorsToEvaluate.map(m => {
+                                        const mentorBusySlots = (slots || []).filter(s => 
+                                          s.mentorId === m.id && 
+                                          (s.day || "").toLowerCase().trim() === targetDayName.toLowerCase().trim()
+                                        );
+                                        const busyTimes = mentorBusySlots.map(s => (s.time || "").trim());
+
+                                        const freeStructuredSlots = structuredSlots.filter(st => 
+                                          !busyTimes.some(b => b.toLowerCase().replace(/\s+/g, "") === st.timeSlot.toLowerCase().replace(/\s+/g, ""))
+                                        );
+                                        const busyStructuredSlots = structuredSlots.filter(st => 
+                                          busyTimes.some(b => b.toLowerCase().replace(/\s+/g, "") === st.timeSlot.toLowerCase().replace(/\s+/g, ""))
+                                        );
+
+                                        const configuredSlots = mentorSlotConfigs[m.id] || {};
+                                        const activeSlotKeys = Object.keys(configuredSlots);
+                                        const isMentorActive = activeSlotKeys.length > 0;
+                                        const mentorCandidateTotal = Object.values(configuredSlots).reduce((s, c) => s + (Number(c) || 0), 0);
+
+                                        return (
+                                          <div
+                                            key={m.id}
+                                            className={`p-3.5 rounded-xl border transition-all ${
+                                              isMentorActive
+                                                ? "bg-indigo-50/50 border-indigo-300 shadow-xs"
+                                                : "bg-white border-slate-200 hover:border-slate-300"
+                                            }`}
+                                          >
+                                            <div className="flex items-start gap-3">
+                                              {/* Checkbox to toggle mentor */}
+                                              <input
+                                                type="checkbox"
+                                                checked={isMentorActive}
+                                                id={`mentor_chk_${m.id}`}
+                                                onChange={e => {
+                                                  if (e.target.checked) {
+                                                    const initialSlot = freeStructuredSlots[0]?.timeSlot || camTimeSlot;
+                                                    setMentorSlotConfigs(prev => {
+                                                      const updated = { ...prev, [m.id]: { [initialSlot]: 3 } };
+                                                      const newTotal = Object.values(updated).reduce((sum, sMap) => sum + Object.values(sMap || {}).reduce((sub, count) => sub + (Number(count) || 0), 0), 0);
+                                                      setCamStudentCount(Math.max(1, newTotal));
+                                                      return updated;
+                                                    });
+                                                  } else {
+                                                    clearMentorPeriods(m.id);
+                                                  }
+                                                }}
+                                                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 mt-1 cursor-pointer shrink-0"
+                                              />
+
+                                              <div className="flex-1 min-w-0 space-y-2">
+                                                {/* Header Row: Mentor Name & Period Summary Badge */}
+                                                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                                  <div className="flex items-center gap-1.5">
+                                                    <label htmlFor={`mentor_chk_${m.id}`} className="font-black text-slate-800 text-xs cursor-pointer hover:text-indigo-600">
+                                                      {m.name}
+                                                    </label>
+                                                    <span className="text-[10px] text-slate-400 font-medium">({m.department || "Faculty"})</span>
+                                                  </div>
+
+                                                  <div className="flex items-center gap-1.5">
+                                                    {isMentorActive ? (
+                                                      <span className="text-[9.5px] font-extrabold text-emerald-800 bg-emerald-100/90 px-2.5 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                        {activeSlotKeys.length} Period(s) Assigned • {mentorCandidateTotal} Candidates (~{mentorCandidateTotal * 15}m)
+                                                      </span>
+                                                    ) : (
+                                                      <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                                                        {freeStructuredSlots.length} Free Periods Available
+                                                      </span>
+                                                    )}
+
+                                                    {/* Quick Multi-Period Action Helpers */}
+                                                    {freeStructuredSlots.length > 0 && (
+                                                      <div className="flex items-center gap-1">
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => setMentorAllFreePeriods(m.id, freeStructuredSlots.map(s => s.timeSlot), 3)}
+                                                          className="text-[9px] font-black text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-md transition-all cursor-pointer"
+                                                          title="Select all free periods for this mentor"
+                                                        >
+                                                          + All Free ({freeStructuredSlots.length})
+                                                        </button>
+                                                        {isMentorActive && (
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => clearMentorPeriods(m.id)}
+                                                            className="text-[9px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-md transition-all cursor-pointer"
+                                                          >
+                                                            Clear
+                                                          </button>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+
+                                                {/* Interactive Free Period Chips with Period Numbers */}
+                                                <div className="space-y-1">
+                                                  <div className="flex items-center gap-1 text-[9px] font-extrabold uppercase text-slate-400">
+                                                    <Clock className="w-3 h-3 text-slate-400" />
+                                                    <span>Free Periods (Click to toggle on/off):</span>
+                                                  </div>
+                                                  <div className="flex flex-wrap items-center gap-1.5">
+                                                    {freeStructuredSlots.length === 0 ? (
+                                                      <span className="text-rose-500 font-semibold text-[9px]">Fully booked with classes today</span>
+                                                    ) : (
+                                                      freeStructuredSlots.map(fs => {
+                                                        const isSelected = activeSlotKeys.some(k => k.toLowerCase().replace(/\s+/g, "") === fs.timeSlot.toLowerCase().replace(/\s+/g, ""));
+                                                        const slotCandidateCount = configuredSlots[fs.timeSlot] || 3;
+
+                                                        return (
+                                                          <button
+                                                            key={fs.timeSlot}
+                                                            type="button"
+                                                            onClick={() => toggleMentorPeriod(m.id, fs.timeSlot, 3)}
+                                                            className={`px-2.5 py-1 rounded-lg text-[9.5px] font-bold transition-all cursor-pointer flex items-center gap-1 border shadow-2xs ${
+                                                              isSelected
+                                                                ? "bg-emerald-600 text-white border-emerald-700 shadow-emerald-600/20 font-black"
+                                                                : "bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border-slate-200 hover:border-emerald-300"
+                                                            }`}
+                                                            title={`Click to ${isSelected ? "remove" : "add"} ${fs.fullLabel}`}
+                                                          >
+                                                            {isSelected ? (
+                                                              <Check className="w-3 h-3 stroke-[3]" />
+                                                            ) : (
+                                                              <Plus className="w-3 h-3 text-slate-400" />
+                                                            )}
+                                                            <span>{fs.periodLabel}: {fs.timeSlot}</span>
+                                                            {isSelected && (
+                                                              <span className="bg-emerald-800 text-emerald-100 text-[8.5px] px-1.5 py-0.2 rounded font-black ml-0.5">
+                                                                {slotCandidateCount} st
+                                                              </span>
+                                                            )}
+                                                          </button>
+                                                        );
+                                                      })
+                                                    )}
+                                                  </div>
+                                                </div>
+
+                                                {/* In Class Busy Periods (If any) */}
+                                                {busyStructuredSlots.length > 0 && (
+                                                  <div className="text-[9px] text-slate-400 font-medium flex items-center gap-1">
+                                                    <span className="font-semibold text-slate-500">In Class:</span>
+                                                    <span className="truncate">
+                                                      {busyStructuredSlots.map(b => `${b.periodLabel} (${b.timeSlot})`).join(", ")}
+                                                    </span>
+                                                  </div>
+                                                )}
+
+                                                {/* Selected Periods Configuration & Student Count Steppers */}
+                                                {isMentorActive && (
+                                                  <div className="mt-2 pt-2 border-t border-indigo-150 space-y-2 bg-white/90 p-2.5 rounded-xl border border-indigo-100">
+                                                    <div className="text-[9px] font-black uppercase text-indigo-900 flex items-center justify-between">
+                                                      <span>Configured Period Batches for {m.name}:</span>
+                                                      <span className="text-slate-500 font-bold">{activeSlotKeys.length} Period(s) • ~15m per Candidate</span>
+                                                    </div>
+
+                                                    <div className="space-y-1.5">
+                                                      {activeSlotKeys.map(slotKey => {
+                                                        const slotCandidateCount = configuredSlots[slotKey] || 3;
+                                                        const matchingPeriod = structuredSlots.find(s => s.timeSlot.toLowerCase().replace(/\s+/g, "") === slotKey.toLowerCase().replace(/\s+/g, ""));
+
+                                                        return (
+                                                          <div
+                                                            key={slotKey}
+                                                            className="flex flex-wrap items-center justify-between gap-2 p-2 bg-indigo-50/40 rounded-lg border border-indigo-200/80 text-xs"
+                                                          >
+                                                            <div className="flex items-center gap-2">
+                                                              <span className="text-[9.5px] font-black text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md font-mono">
+                                                                {matchingPeriod?.periodLabel || "Slot"}
+                                                              </span>
+                                                              <span className="font-bold text-slate-800 text-xs">
+                                                                {matchingPeriod ? matchingPeriod.timeSlot : slotKey}
+                                                              </span>
+                                                            </div>
+
+                                                            {/* Stepper for candidate count */}
+                                                            <div className="flex items-center gap-2">
+                                                              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5 shadow-2xs">
+                                                                <button
+                                                                  type="button"
+                                                                  onClick={() => updateMentorPeriodCount(m.id, slotKey, slotCandidateCount - 1)}
+                                                                  disabled={slotCandidateCount <= 1}
+                                                                  className="p-1 rounded text-slate-600 hover:text-indigo-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                                                  title="Decrease students"
+                                                                >
+                                                                  <Minus className="w-3 h-3" />
+                                                                </button>
+                                                                <input
+                                                                  type="number"
+                                                                  min={1}
+                                                                  max={50}
+                                                                  value={slotCandidateCount}
+                                                                  onChange={e => updateMentorPeriodCount(m.id, slotKey, parseInt(e.target.value) || 1)}
+                                                                  className="w-10 text-center font-black text-xs text-slate-900 outline-none"
+                                                                />
+                                                                <button
+                                                                  type="button"
+                                                                  onClick={() => updateMentorPeriodCount(m.id, slotKey, slotCandidateCount + 1)}
+                                                                  className="p-1 rounded text-slate-600 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer"
+                                                                  title="Increase students"
+                                                                >
+                                                                  <Plus className="w-3 h-3" />
+                                                                </button>
+                                                             </div>
+                                                              <span className="text-[10px] font-extrabold text-slate-700">Candidates</span>
+                                                              <span className="text-[9px] text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded">
+                                                                ~{slotCandidateCount * 15}m duration
+                                                              </span>
+                                                              <button
+                                                                type="button"
+                                                                onClick={() => toggleMentorPeriod(m.id, slotKey)}
+                                                                className="p-1 text-slate-400 hover:text-rose-600 rounded transition-all cursor-pointer"
+                                                                title="Remove this period"
+                                                              >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                              </button>
+                                                            </div>
+                                                          </div>
+                                                        );
+                                                      })}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Dedicated Priority Allocation & Remaining Students Section */}
+                                {(() => {
+                                  const cleanCG = (req.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
+                                  const cohortStudents = students.filter(s =>
+                                    (s.classGroup && (s.classGroup.toLowerCase() === cleanCG.toLowerCase() || s.classGroup.toLowerCase().includes(cleanCG.toLowerCase()))) ||
+                                    (s.department && (s.department.toLowerCase() === cleanCG.toLowerCase() || s.department.toLowerCase().includes(cleanCG.toLowerCase())))
+                                  );
+
+                                  if (cohortStudents.length === 0) return null;
+
+                                  const capacity = camStudentCount || totalAssignedCandidates || 10;
+                                  const selectedList = cohortStudents.slice(0, capacity);
+                                  const remainingList = cohortStudents.slice(capacity);
+
+                                  return (
+                                    <div className="space-y-3 pt-3 border-t border-slate-200/80">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                          <Users className="w-3.5 h-3.5 text-[#D528A2]" /> Priority Cohort Allocation ({cohortStudents.length} Enrolled)
+                                        </span>
+                                        <span className="text-[10px] font-bold text-slate-500">
+                                          Allocated: <strong className="text-indigo-600 font-extrabold">{selectedList.length}</strong> • Remaining: <strong className="text-amber-600 font-extrabold">{remainingList.length}</strong>
+                                        </span>
+                                      </div>
+
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {/* Selected Students Panel */}
+                                        <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-2">
+                                          <div className="flex items-center justify-between text-[11px] font-black text-emerald-900">
+                                            <span>[SELECTED] for this evaluation ({selectedList.length}/{capacity})</span>
+                                            <span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full uppercase">Top Priority</span>
+                                          </div>
+                                          <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                            {selectedList.map((st, idx) => (
+                                              <div key={st.id || idx} className="p-1.5 rounded-lg bg-white border border-emerald-150 text-xs flex items-center justify-between">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                  <span className="text-[9.5px] font-black font-mono text-emerald-700 bg-emerald-50 px-1 rounded">#{idx + 1}</span>
+                                                  <span className="font-bold text-slate-800 truncate">{st.name}</span>
+                                                </div>
+                                                <span className="text-[9.5px] font-mono text-slate-400 shrink-0">{st.roll_number || st.register_number || st.id}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+
+                                        {/* Remaining Students Panel */}
+                                        <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/40 space-y-2">
+                                          <div className="flex items-center justify-between text-[11px] font-black text-amber-900">
+                                            <span>REMAINING STUDENTS (Unallocated) ({remainingList.length})</span>
+                                            <span className="text-[9px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full uppercase">Next Cycle</span>
+                                          </div>
+                                          <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                            {remainingList.length === 0 ? (
+                                              <p className="text-[11px] text-emerald-700 italic py-3 text-center">All cohort students are allocated in this cycle!</p>
+                                            ) : (
+                                              remainingList.map((st, idx) => (
+                                                <div key={st.id || idx} className="p-1.5 rounded-lg bg-white border border-amber-150 text-xs flex items-center justify-between">
+                                                  <div className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="text-[9.5px] font-black font-mono text-amber-700 bg-amber-50 px-1 rounded">#{selectedList.length + idx + 1}</span>
+                                                    <span className="font-semibold text-slate-700 truncate">{st.name}</span>
+                                                  </div>
+                                                  <span className="text-[9.5px] font-mono text-slate-400 shrink-0">{st.roll_number || st.register_number || st.id}</span>
+                                                </div>
+                                              ))
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* Bottom Summary Bar & Action */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-200">
+                                  <div className="text-xs text-slate-600 font-semibold space-y-1">
+                                    <div>
+                                      <strong className="text-indigo-600 font-black">{activeMappedMentorIds.length}</strong> mentor(s) scheduled across <strong className="text-indigo-600 font-black">{totalPeriodsScheduled}</strong> period slot(s)
+                                      • Total Capacity: <strong className="text-slate-900 font-black">{camStudentCount} Students</strong>
+                                    </div>
+                                    {activeMappedMentorIds.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 text-[10px] text-slate-500">
+                                        {activeMappedMentorIds.map(id => {
+                                          const m = mentors.find(x => x.id === id);
+                                          const sObj = mentorSlotConfigs[id] || {};
+                                          const slotSummary = Object.entries(sObj).map(([sStr, cnt]) => {
+                                            const matchP = structuredSlots.find(p => p.timeSlot.toLowerCase().replace(/\s+/g, "") === sStr.toLowerCase().replace(/\s+/g, ""));
+                                            return `${matchP?.periodLabel || sStr} (${cnt} st)`;
+                                          }).join(", ");
+                                          return (
+                                            <span key={id} className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md font-medium text-slate-700">
+                                              <strong>{m?.name || id}:</strong> {slotSummary}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => handleAssign(req.id)}
+                                    disabled={isAssigning || activeMappedMentorIds.length === 0 || !camStudentCount || camStudentCount < 1}
+                                    className="btn-gradient flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-extrabold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                                  >
+                                    {isAssigning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                                    {isAssigning ? "Dispatching..." : "Assign & Mark Calendar"}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </>
                   )}
                 </div>
                   )}

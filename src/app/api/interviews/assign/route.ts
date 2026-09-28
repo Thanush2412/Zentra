@@ -38,25 +38,50 @@ export async function POST(request: Request) {
 
     const assignedTimeSlot = time_slot || interview.preferred_start_time || "09:00 AM";
 
-    // Validate mentor availability on target date and time
-    for (const mId of mapped_mentor_ids) {
-      try {
-        const avail = await checkMentorAvailability(db, {
-          mentorId: mId,
-          dateStr: interview.target_date,
-          timeSlot: assignedTimeSlot,
-          excludeInterviewId: interview_id
-        });
-        if (!avail.available) {
-          const mInfo = await db.get("SELECT name FROM mentors WHERE id = ?", [mId]);
-          const mName = mInfo?.name || mId;
-          return NextResponse.json({
-            success: false,
-            message: `Cannot assign mentor ${mName}: ${avail.reason}`
-          }, { status: 400 });
+    // Validate mentor availability on target date and time (per-mentor slot check)
+    const mentorSchedule = Array.isArray(body.mentor_schedule) ? body.mentor_schedule : [];
+    if (mentorSchedule.length > 0) {
+      for (const ms of mentorSchedule) {
+        if (!ms.mentor_id) continue;
+        try {
+          const avail = await checkMentorAvailability(db, {
+            mentorId: ms.mentor_id,
+            dateStr: interview.target_date,
+            timeSlot: ms.time_slot || assignedTimeSlot,
+            excludeInterviewId: interview_id
+          });
+          if (!avail.available) {
+            const mInfo = await db.get("SELECT name FROM mentors WHERE id = ?", [ms.mentor_id]);
+            const mName = mInfo?.name || ms.mentor_id;
+            return NextResponse.json({
+              success: false,
+              message: `Cannot assign mentor ${mName} at ${ms.time_slot || assignedTimeSlot}: ${avail.reason}`
+            }, { status: 400 });
+          }
+        } catch (availErr) {
+          console.warn("Mentor availability check warning:", availErr);
         }
-      } catch (availErr) {
-        console.warn("Mentor availability check warning:", availErr);
+      }
+    } else {
+      for (const mId of mapped_mentor_ids) {
+        try {
+          const avail = await checkMentorAvailability(db, {
+            mentorId: mId,
+            dateStr: interview.target_date,
+            timeSlot: assignedTimeSlot,
+            excludeInterviewId: interview_id
+          });
+          if (!avail.available) {
+            const mInfo = await db.get("SELECT name FROM mentors WHERE id = ?", [mId]);
+            const mName = mInfo?.name || mId;
+            return NextResponse.json({
+              success: false,
+              message: `Cannot assign mentor ${mName}: ${avail.reason}`
+            }, { status: 400 });
+          }
+        } catch (availErr) {
+          console.warn("Mentor availability check warning:", availErr);
+        }
       }
     }
 
@@ -110,7 +135,6 @@ export async function POST(request: Request) {
     );
 
     // Populate student-level slot records for individual student tracking
-    const mentorSchedule = Array.isArray(body.mentor_schedule) ? body.mentor_schedule : [];
     if (mentorSchedule.length > 0) {
       const isInternal = interview.type === "internal";
       const selectedStudentIds = Array.isArray(body.selected_student_ids) ? body.selected_student_ids.filter(Boolean) : [];
@@ -185,9 +209,25 @@ export async function POST(request: Request) {
         }
       }
 
-      // Helper to increment minutes and format e.g. "09:15 AM"
+      // Helper to increment minutes and format e.g. "09:15 AM" starting from the slot's actual start time
       const formatTimeSlotWindow = (baseTimeStr: string, slotIndex: number) => {
-        const startMins = 540 + (slotIndex * 15); // default 9:00 AM (540m) + 15m intervals
+        let baseMins = 540;
+        if (baseTimeStr) {
+          const firstPart = baseTimeStr.split("-")[0].trim().replace(/\./g, ":");
+          const match = firstPart.match(/^(\d+)(?::(\d+))?\s*(AM|PM)?$/i);
+          if (match) {
+            let hours = parseInt(match[1], 10);
+            const minutes = match[2] ? parseInt(match[2], 10) : 0;
+            const ampm = match[3];
+            if (ampm) {
+              const isPM = ampm.toUpperCase() === "PM";
+              if (isPM && hours < 12) hours += 12;
+              if (!isPM && hours === 12) hours = 0;
+            }
+            baseMins = hours * 60 + minutes;
+          }
+        }
+        const startMins = baseMins + (slotIndex * 15);
         const endMins = startMins + 15;
         const toTimeStr = (m: number) => {
           let hrs = Math.floor(m / 60);
@@ -235,7 +275,7 @@ export async function POST(request: Request) {
           const stName = (st?.name && st.name.trim()) ? st.name.trim() : (st?.id ? `Student ${st.id.slice(0, 8)}` : `Candidate #${slotRunningIndex + 1}`);
           const stEmail = st?.email || undefined;
 
-          const slotTiming = formatTimeSlotWindow(baseTime, slotRunningIndex);
+          const slotTiming = formatTimeSlotWindow(baseTime, k);
           slotRunningIndex++;
 
           // Internal interviews do NOT use Google Meet (in-person physical on campus)
