@@ -19193,7 +19193,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   >
                     <div className="flex items-center justify-between">
                       <p className={`text-[10px] font-bold uppercase tracking-wider ${approvalsCategoryFilter === "late_attendance" ? "text-rose-100" : "text-rose-600"}`}>
-                        ⏰ Late Attendance
+<Clock className="w-3.5 h-3.5 inline-block mr-1"/> Late Attendance
                       </p>
                       {lateAttCount > 0 && <span className="h-2 w-2 rounded-full bg-rose-400 animate-ping" />}
                     </div>
@@ -19211,7 +19211,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     }`}
                   >
                     <p className={`text-[10px] font-bold uppercase tracking-wider ${approvalsCategoryFilter === "handovers" ? "text-indigo-100" : "text-indigo-600"}`}>
-                      👥 Class Substitutions
+<Users className="w-3.5 h-3.5 inline-block mr-1"/> Class Substitutions
                     </p>
                     <p className={`text-2xl font-black mt-1 ${approvalsCategoryFilter === "handovers" ? "text-white" : "text-indigo-600"}`}>
                       {handoverCount}
@@ -19227,7 +19227,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     }`}
                   >
                     <p className={`text-[10px] font-bold uppercase tracking-wider ${approvalsCategoryFilter === "exam_marks" ? "text-purple-100" : "text-purple-600"}`}>
-                      📝 Exam Mark Edits
+                      Exam Mark Edits
                     </p>
                     <p className={`text-2xl font-black mt-1 ${approvalsCategoryFilter === "exam_marks" ? "text-white" : "text-purple-600"}`}>
                       {examMarkCount}
@@ -19304,7 +19304,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           : "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200"
                       }`}
                     >
-                      <span>⏰ Late Attendance</span>
+                      <span>Late Attendance</span>
                       <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${approvalsCategoryFilter === "late_attendance" ? "bg-white text-rose-600" : "bg-rose-200 text-rose-800"}`}>
                         {lateAttCount}
                       </span>
@@ -19318,7 +19318,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
                       }`}
                     >
-                      <span>👥 Substitutions</span>
+                      <span>Substitutions</span>
                       <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${approvalsCategoryFilter === "handovers" ? "bg-white text-indigo-600" : "bg-indigo-200 text-indigo-800"}`}>
                         {handoverCount}
                       </span>
@@ -19332,7 +19332,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           : "bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200"
                       }`}
                     >
-                      <span>📝 Exam Marks</span>
+                      <span>Exam Marks</span>
                       <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${approvalsCategoryFilter === "exam_marks" ? "bg-white text-purple-600" : "bg-purple-200 text-purple-800"}`}>
                         {examMarkCount}
                       </span>
@@ -19373,16 +19373,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <td className="p-3 border-r border-slate-100">
                                 {isLate ? (
                                   <span className="px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-black inline-flex items-center gap-1">
-                                    ⏰ Period Attendance Unlock
+                                    Period Attendance Unlock
                                   </span>
                                 ) : isExam ? (
                                   <span className="px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200 text-purple-700 text-[10px] font-black inline-flex items-center gap-1">
-                                    📝 Exam Mark Edit
+                                    Exam Mark Edit
                                   </span>
                                 ) : (
                                   <div className="flex flex-col gap-1 mb-1">
                                     <span className="px-2 py-0.5 w-max rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-black inline-flex items-center gap-1">
-                                      👥 Substitution
+                                      Substitution
                                     </span>
                                     {req.targetStaffName && <span className="font-semibold text-indigo-900 truncate" title={req.targetStaffName}>{req.targetStaffName}</span>}
                                   </div>
@@ -19401,11 +19401,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <td className="p-3 border-r border-slate-100">
                                 {isExam ? (
                                   <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-purple-50 border-purple-200 text-purple-700 flex items-center gap-1 w-fit">
-                                    <span>📝 Exam Mark Edit</span>
+                                    <span>Exam Mark Edit</span>
                                   </span>
                                 ) : isLate ? (
                                   <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 animate-pulse flex items-center gap-1 w-fit">
-                                    <span>⏰ Late Attendance</span>
+                                    <span>Late Attendance</span>
                                   </span>
                                 ) : req.status === "needs_cam_allocation" ? (
                                   <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-indigo-50 border-indigo-200 text-indigo-700 flex items-center gap-1 w-fit">
