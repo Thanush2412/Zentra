@@ -387,6 +387,23 @@ export async function PATCH(request: Request) {
 
     const updated = await db.get("SELECT * FROM mentor_weekly_plans WHERE id = ?", id);
 
+    if (status === "Verified" && updated && updated.mentor_id) {
+      const notifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6);
+      const title = "Weekly Plan Approved";
+      const message = `Your Weekly Plan for ${updated.subject || 'your subject'} (Week ${updated.week_number || ''}) has been approved by ${verifiedBy || "Subject Matter Expert"}.`;
+      await db.run(
+        `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
+         VALUES (?, ?, ?, ?, 0, ?, ?, ?)`,
+        notifId,
+        updated.mentor_id,
+        title,
+        message,
+        "/mentor/weekly-plan",
+        "weekly_plan_approved",
+        new Date().toISOString()
+      ).catch((e) => console.error("Failed to insert notification:", e));
+    }
+
     return NextResponse.json({
       success: true,
       message: `Weekly plan marked as ${status}.`,
