@@ -74,6 +74,84 @@ export function DemoAllocationDashboard() {
 
   const { toast } = useToast();
 
+  // ── Leave-driven Demo Reallocation queue (Allocator review) ──
+  const [demoReallocations, setDemoReallocations] = useState<any[]>([]);
+  const [loadingReallocations, setLoadingReallocations] = useState(false);
+  const [decidingReallocId, setDecidingReallocId] = useState<string | null>(null);
+  const [reallocNotesMap, setReallocNotesMap] = useState<Record<string, string>>({});
+
+  const fetchDemoReallocations = useCallback(async () => {
+    setLoadingReallocations(true);
+    try {
+      const res = await fetch("/api/demo-reallocations?status=all");
+      const json = await res.json();
+      if (json.success) setDemoReallocations(json.requests || []);
+    } catch (_) {
+      setDemoReallocations([]);
+    } finally {
+      setLoadingReallocations(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchDemoReallocations();
+  }, [fetchDemoReallocations]);
+
+  const decideDemoReallocation = async (requestId: string, decision: "approved" | "rejected") => {
+    setDecidingReallocId(requestId);
+    const notes = (reallocNotesMap[requestId] || "").trim();
+    try {
+      const res = await fetch("/api/demo-reallocations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "resolve",
+          requestId,
+          decision,
+          decidedBy: "Demo Allocator",
+          decisionNotes: notes || undefined
+        })
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast(json.message || `Reallocation ${decision}.`, "success");
+        setReallocNotesMap(prev => {
+          const next = { ...prev };
+          delete next[requestId];
+          return next;
+        });
+        await fetchDemoReallocations();
+        // Targeted refetch of demo sessions if endpoint exists, otherwise update local state
+        try {
+          const dsRes = await fetch("/api/demo-sessions");
+          const dsJson = await dsRes.json();
+          if (dsJson.success && dsJson.sessions) {
+            setDemoSessions(dsJson.sessions);
+          }
+        } catch (_) {}
+      } else {
+        toast(json.message || `Failed to ${decision} reallocation`, "error");
+      }
+    } catch (e: any) {
+      toast("Error: " + e.message, "error");
+    } finally {
+      setDecidingReallocId(null);
+    }
+  };
+
+  // Helper to calculate semester week number from date
+  const calculateWeekNumber = (dateStr: string): number => {
+    try {
+      const d = new Date(dateStr + "T00:00:00");
+      if (isNaN(d.getTime())) return 1;
+      const startOfYear = new Date(d.getFullYear(), 0, 1);
+      const pastDays = (d.getTime() - startOfYear.getTime()) / 86400000;
+      return Math.max(1, Math.ceil((pastDays + startOfYear.getDay() + 1) / 7));
+    } catch {
+      return 1;
+    }
+  };
+
   // Filters State
   const [selectedCollegeId, setSelectedCollegeId] = useState<string>("");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("All");
@@ -81,13 +159,15 @@ export function DemoAllocationDashboard() {
   // Date selection - defaults dynamically to current date
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
+  // Dynamic Week Number Selection
+  const [selectedWeek, setSelectedWeek] = useState<number>(() => calculateWeekNumber(new Date().toISOString().slice(0, 10)));
+
   // Scheduling generation states
   const [targetDemosCount, setTargetDemosCount] = useState<number>(1);
   const [previewSessions, setPreviewSessions] = useState<any[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState<"idle" | "generating" | "done">("idle");
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showSwapRequestsModal, setShowSwapRequestsModal] = useState(false);
   const [swapRequestsTab, setSwapRequestsTab] = useState<"pending" | "resolved">("pending");
 
@@ -122,9 +202,6 @@ export function DemoAllocationDashboard() {
       localStorage.setItem("fp_mentor_demo_targets", JSON.stringify(updated));
     }
   };
-
-  // Head SME mapping state
-  const [headSmeMap, setHeadSmeMap] = useState<Record<string, string>>({});
 
   // Dept rules input state — local editable values before saving
   const [deptRuleInputs, setDeptRuleInputs] = useState<Record<string, number>>({});
@@ -417,6 +494,17 @@ export function DemoAllocationDashboard() {
     return Array.from(new Set(list));
   }, [selectedCollegeId, colleges]);
 
+  // Helper: check if a faculty member (mentor/SME) is on approved faculty leave on a date
+  const isFacultyOnLeave = (facultyId: string, dateStr: string) => {
+    return facultyLeaves?.some(
+      (fl: any) =>
+        (fl.mentor_id === facultyId || fl.mentorId === facultyId) &&
+        fl.status === "approved" &&
+        dateStr >= fl.start_date &&
+        dateStr <= fl.end_date
+    );
+  };
+
   // Helper: check if a mentor has a class, demo, or is blocked on a specific day/date/time
   const getMentorStatusAtSlot = (mentorId: string, dateStr: string, dbTimeSlot: string, currentPreviews: any[] = []) => {
     // 1. Check if they have a demo session in database
@@ -442,9 +530,7 @@ export function DemoAllocationDashboard() {
     }
 
     // 3. Check if mentor is on approved faculty leave
-    const isFacultyLeave = facultyLeaves?.some(
-      (fl: any) => fl.mentor_id === mentorId && fl.status === "approved" && dateStr >= fl.start_date && dateStr <= fl.end_date
-    );
+    const isFacultyLeave = isFacultyOnLeave(mentorId, dateStr);
     if (isFacultyLeave) {
       return { status: "blocked", label: "On Leave", details: "Faculty Leave Approved" };
     }
@@ -510,10 +596,11 @@ export function DemoAllocationDashboard() {
     return !hasDemo;
   };
 
-  // Derived: Total available free slots for the filtered mentors over the selected dates
+  // Derived: Total available free slots for the filtered mentors over the selected dates (excluding holidays)
   const totalFreeSlotsCount = useMemo(() => {
     let count = 0;
     currentWeekDates.forEach(date => {
+      if (holidays.some(h => h.date === date.dateStr)) return;
       collegeTimeSlots.forEach(time => {
         if (time.toLowerCase().includes("lunch") || time.toLowerCase().includes("break")) return;
         filteredMentors.forEach(mentor => {
@@ -524,7 +611,7 @@ export function DemoAllocationDashboard() {
       });
     });
     return count;
-  }, [filteredMentors, currentWeekDates, collegeTimeSlots]);
+  }, [filteredMentors, currentWeekDates, collegeTimeSlots, holidays]);
 
   // Helper: Hard block for 3 consecutive busy periods
   const checkConsecutiveHardClash = (entityId: string, isSme: boolean, dateStr: string, timeSlot: string, currentGenerated: any[] = []) => {
@@ -583,54 +670,63 @@ export function DemoAllocationDashboard() {
   const validateProposedSwap = (req: any) => {
     if (!req) return { valid: false, message: "Invalid request details." };
 
-    if (req.swapType === "mentor") {
-      const mentorStatus = getMentorStatusAtSlot(req.proposedMentorId, req.dateStr, req.timeSlot);
+    const isMentorSwap = req.swapType === "mentor" || req.swapType === "internal";
+    const isTimeSwap = req.swapType === "time" || req.swapType === "reallocation";
+
+    if (isMentorSwap) {
+      const targetMentorId = req.proposedMentorId || req.mentorId;
+      const targetMentorName = req.proposedMentorName || req.mentorName;
+      const mentorStatus = getMentorStatusAtSlot(targetMentorId, req.dateStr, req.timeSlot);
       if (mentorStatus.status !== "free") {
-        return { valid: false, message: `Mentor ${req.proposedMentorName} is busy: ${mentorStatus.label || mentorStatus.details}` };
+        return { valid: false, message: `Mentor ${targetMentorName} is busy: ${mentorStatus.label || mentorStatus.details}` };
       }
 
-      const dailyLoad = demoSessions.filter(ds => ds.mentorId === req.proposedMentorId && ds.dateStr === req.dateStr).length;
+      const dailyLoad = demoSessions.filter(ds => ds.mentorId === targetMentorId && ds.dateStr === req.dateStr).length;
       if (dailyLoad >= 2) {
-        return { valid: false, message: `Mentor ${req.proposedMentorName} daily load exceeds limit (2/day).` };
+        return { valid: false, message: `Mentor ${targetMentorName} daily load exceeds limit (2/day).` };
       }
 
-      if (checkConsecutiveHardClash(req.proposedMentorId, false, req.dateStr, req.timeSlot)) {
-        return { valid: false, message: `Mentor ${req.proposedMentorName} consecutive limit exceeded.` };
+      if (checkConsecutiveHardClash(targetMentorId, false, req.dateStr, req.timeSlot)) {
+        return { valid: false, message: `Mentor ${targetMentorName} consecutive limit exceeded.` };
       }
 
       return { valid: true, message: "Conflict-Free Match" };
 
-    } else if (req.swapType === "time") {
-      const isHoliday = holidays.some(h => h.date === req.proposedDateStr);
+    } else if (isTimeSwap) {
+      const targetDate = req.proposedDateStr || req.dateStr;
+      const targetTime = req.proposedTimeSlot || req.timeSlot;
+      const targetSmeId = req.proposedSmeId || req.smeId;
+
+      const isHoliday = holidays.some(h => h.date === targetDate);
       if (isHoliday) return { valid: false, message: `Proposed date is a holiday.` };
 
-      const mentorStatus = getMentorStatusAtSlot(req.mentorId, req.proposedDateStr, req.proposedTimeSlot);
+      const mentorStatus = getMentorStatusAtSlot(req.mentorId, targetDate, targetTime);
       if (mentorStatus.status !== "free") {
         return { valid: false, message: `Mentor ${req.mentorName} is busy: ${mentorStatus.label || mentorStatus.details}` };
       }
 
-      if (!isSmeFree(req.proposedSmeId, req.proposedDateStr, req.proposedTimeSlot)) {
+      if (!isSmeFree(targetSmeId, targetDate, targetTime)) {
         return { valid: false, message: `SME ${req.smeName} is busy.` };
       }
 
-      if (!isGroupFree(req.stream, req.proposedDateStr, req.proposedTimeSlot)) {
+      if (!isGroupFree(req.stream, targetDate, targetTime)) {
         return { valid: false, message: `Group stream ${req.stream} is busy.` };
       }
 
-      const mentorDailyLoad = demoSessions.filter(ds => ds.mentorId === req.mentorId && ds.dateStr === req.proposedDateStr).length;
+      const mentorDailyLoad = demoSessions.filter(ds => ds.mentorId === req.mentorId && ds.dateStr === targetDate).length;
       if (mentorDailyLoad >= 2) {
         return { valid: false, message: `Mentor ${req.mentorName} daily load exceeds limit (2/day).` };
       }
 
-      const smeDailyLoad = demoSessions.filter(ds => ds.smeId === req.proposedSmeId && ds.dateStr === req.proposedDateStr).length;
+      const smeDailyLoad = demoSessions.filter(ds => ds.smeId === targetSmeId && ds.dateStr === targetDate).length;
       if (smeDailyLoad >= 2) {
         return { valid: false, message: `SME ${req.smeName} daily load exceeds limit (2/day).` };
       }
 
-      if (checkConsecutiveHardClash(req.mentorId, false, req.proposedDateStr, req.proposedTimeSlot)) {
+      if (checkConsecutiveHardClash(req.mentorId, false, targetDate, targetTime)) {
         return { valid: false, message: `Mentor ${req.mentorName} consecutive limit exceeded.` };
       }
-      if (checkConsecutiveHardClash(req.proposedSmeId, true, req.proposedDateStr, req.proposedTimeSlot)) {
+      if (checkConsecutiveHardClash(targetSmeId, true, targetDate, targetTime)) {
         return { valid: false, message: `SME ${req.smeName} consecutive limit exceeded.` };
       }
 
@@ -640,462 +736,212 @@ export function DemoAllocationDashboard() {
     return { valid: false, message: "Unsupported swap type." };
   };
 
-  const runSchedulerEngine = (previousAllocations: any[] = []) => {
+  // ── Excel Timetable Slot SME Auto-Assigner (Rule Engine) ──
+  // Takes uploaded timetable slots (or target mentor slots) and automatically
+  // assigns qualified, conflict-free SMEs as per configured department rules.
+  const autoAssignSmesToSlots = useCallback((targetSlots: any[], previousAllocations: any[] = []) => {
     const generated: any[] = [];
-    const mentorsToSchedule = filteredMentors;
-
-    const datesToSchedule = currentWeekDates
-      .map(w => w.dateStr)
-      .filter(dateStr => !holidays.some(h => h.date === dateStr));
-
-    const regularSlots = collegeTimeSlots.filter(t => {
-      const lower = t.toLowerCase();
-      const isStandard = standardShiftSlots.includes(t.trim().toLowerCase());
-      return isStandard && !lower.includes("lunch") && !lower.includes("break");
-    });
-
-    const slotsToEvaluate = collegeTimeSlots.filter(t => {
-      const lower = t.toLowerCase();
-      return !lower.includes("lunch") && !lower.includes("break");
-    });
-
-    // Build list of demands (weekly demo counts required)
-    interface Demand {
-      mentor: any;
-      stream: string;
-      subjectGroup: string;
-      targetIdx: number;
-    }
-    let demands: Demand[] = [];
-    for (const mentor of mentorsToSchedule) {
-      const subjectGroup = getMentorGroup(mentor);
-      const mentorClasses = slots.filter(s => s.mentorId === mentor.id && s.classGroup);
-      const stream = (mentorClasses.length > 0 ? mentorClasses[0].classGroup : null) || "General Stream";
-
-      const target = mentorTargets[mentor.id] !== undefined
-        ? mentorTargets[mentor.id]
-        : (demoRules?.find(r => r.subject?.toLowerCase().trim() === subjectGroup.toLowerCase().trim())?.target || targetDemosCount);
-
-      for (let targetIdx = 0; targetIdx < target; targetIdx++) {
-        demands.push({ mentor, stream, subjectGroup, targetIdx });
-      }
-    }
-
-    interface Candidate {
-      demand: Demand;
-      dateStr: string;
-      timeSlot: string;
-      sme: any;
-      score: number;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // PHASE 1: Regular College Hours + Different Days (Max 1 demo per mentor per day)
-    // ─────────────────────────────────────────────────────────────────────────
-    while (demands.length > 0) {
-      const candidates: Candidate[] = [];
-
-      for (const demand of demands) {
-        const mentor = demand.mentor;
-        let eligibleSmes = getSmesForSubjectGroup(demand.subjectGroup).sort((a: any, b: any) => {
-          const aHead = (a.is_head_sme || a.head_subject_group === demand.subjectGroup) ? 1 : 0;
-          const bHead = (b.is_head_sme || b.head_subject_group === demand.subjectGroup) ? 1 : 0;
-          return bHead - aHead;
-        });
-        if (eligibleSmes.length === 0) {
-          eligibleSmes = [...smes];
-        }
-        if (eligibleSmes.length === 0) continue;
-
-        for (const dateStr of datesToSchedule) {
-          // Strict Rule: Max 1 demo per mentor per day in Phase 1
-          const mentorDailyLoad = generated.filter(g => g.mentorId === mentor.id && g.dateStr === dateStr).length;
-          if (mentorDailyLoad >= 1) continue;
-
-          for (const timeSlot of regularSlots) {
-            const mentorStatus = getMentorStatusAtSlot(mentor.id, dateStr, timeSlot, generated);
-            if (mentorStatus.status !== "free") continue;
-
-            const hasGroupDemoClash = generated.some(g =>
-              g.stream === demand.stream && g.dateStr === dateStr && g.timeSlot === timeSlot
-            );
-            if (hasGroupDemoClash) continue;
-
-            if (!isGroupFree(demand.stream, dateStr, timeSlot)) continue;
-
-            for (const sme of eligibleSmes) {
-              const isSmeOnLeave = leaveRequests?.some((l: any) => l.mentorId === sme.id && l.dateStr === dateStr && l.status === "approved");
-              if (isSmeOnLeave) continue;
-
-              if (!isSmeFree(sme.id, dateStr, timeSlot, generated)) continue;
-
-              // SME daily limit
-              const smeDailyLoad = generated.filter(g => g.smeId === sme.id && g.dateStr === dateStr).length;
-              if (smeDailyLoad >= 2) continue;
-
-              // Check consecutive hard clash (3 consecutive)
-              if (checkConsecutiveHardClash(sme.id, true, dateStr, timeSlot, generated)) continue;
-
-              // Compute Score (Core hierarchy: Group -> Subject -> Subject Group -> Head SME -> Demo Slot)
-              let score = 0;
-              const isHeadSme = sme.is_head_sme === 1 || sme.head_subject_group === demand.subjectGroup;
-              if (isHeadSme) score += 50; // Priority score boost for Subject Group Head SME
-
-              score += 30; // Group free weight
-
-              const mentorWeeklyLoad = generated.filter(g => g.mentorId === mentor.id).length;
-              score += Math.max(0, 25 - (mentorWeeklyLoad * (25 / targetDemosCount))); // Mentor weekly load
-
-              const smeWeeklyLoad = generated.filter(g => g.smeId === sme.id).length;
-              score += Math.max(0, 20 - (smeWeeklyLoad * 4)); // SME weekly load
-
-              const dayLoad = generated.filter(g => g.dateStr === dateStr).length;
-              score += Math.max(0, 15 - (dayLoad * 3)); // Day spread load balancing
-
-              const slotLoad = generated.filter(g => g.timeSlot === timeSlot).length;
-              score += Math.max(0, 10 - (slotLoad * 2)); // Period spread load balancing
-
-              if (sme.subject?.toLowerCase().trim() === demand.subjectGroup.toLowerCase().trim()) score += 5; // Subject match
-
-              const wasScheduledPreviously = previousAllocations.some(p =>
-                p.mentorId === mentor.id && p.dateStr === dateStr && p.timeSlot === timeSlot
-              );
-              if (wasScheduledPreviously) score -= 25; // Regenerate rotation penalty
-
-              // Soft consecutive penalty check
-              const hasConsecutiveMentorDemo = checkHasSingleConsecutive(mentor.id, false, dateStr, timeSlot, generated);
-              const hasConsecutiveSmeDemo = checkHasSingleConsecutive(sme.id, true, dateStr, timeSlot, generated);
-              if (hasConsecutiveMentorDemo || hasConsecutiveSmeDemo) {
-                score -= 15;
-              }
-
-              score += Math.random() * 0.01; // Tie-breaker
-
-              candidates.push({ demand, dateStr, timeSlot, sme, score });
-            }
-          }
-        }
-      }
-
-      if (candidates.length === 0) break;
-
-      candidates.sort((a, b) => b.score - a.score);
-      const best = candidates[0];
-
-      generated.push({
-        mentorId: best.demand.mentor.id,
-        mentorName: best.demand.mentor.name,
-        collegeName: colleges.find(c => c.id === best.demand.mentor.college_id)?.name || "",
-        smeId: best.sme.id,
-        smeName: best.sme.name,
-        dateStr: best.dateStr,
-        timeSlot: best.timeSlot,
-        subject: best.demand.subjectGroup,
-        stream: best.demand.stream,
-        week: 1
-      });
-
-      const dIndex = demands.findIndex(d =>
-        d.mentor.id === best.demand.mentor.id && d.targetIdx === best.demand.targetIdx
-      );
-      if (dIndex !== -1) demands.splice(dIndex, 1);
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // PHASE 2: Regular College Hours + Allow Second Demo on Same Day (Max 2 demos)
-    // ─────────────────────────────────────────────────────────────────────────
-    while (demands.length > 0) {
-      const candidates: Candidate[] = [];
-
-      for (const demand of demands) {
-        const mentor = demand.mentor;
-        let eligibleSmes = smes.filter(sme =>
-          sme.subject?.toLowerCase().trim() === demand.subjectGroup.toLowerCase().trim()
-        );
-        if (eligibleSmes.length === 0) continue;
-
-        for (const dateStr of datesToSchedule) {
-          // Relaxed rule: Allow up to 2 demos per mentor per day in Phase 2
-          const mentorDailyLoad = generated.filter(g => g.mentorId === mentor.id && g.dateStr === dateStr).length;
-          if (mentorDailyLoad >= 2) continue;
-
-          for (const timeSlot of regularSlots) {
-            const mentorStatus = getMentorStatusAtSlot(mentor.id, dateStr, timeSlot, generated);
-            if (mentorStatus.status !== "free") continue;
-
-            if (checkConsecutiveHardClash(mentor.id, false, dateStr, timeSlot, generated)) continue;
-
-            const hasGroupDemoClash = generated.some(g =>
-              g.stream === demand.stream && g.dateStr === dateStr && g.timeSlot === timeSlot
-            );
-            if (hasGroupDemoClash) continue;
-
-            if (!isGroupFree(demand.stream, dateStr, timeSlot)) continue;
-
-            for (const sme of eligibleSmes) {
-              const isSmeOnLeave = leaveRequests?.some((l: any) => l.mentorId === sme.id && l.dateStr === dateStr && l.status === "approved");
-              if (isSmeOnLeave) continue;
-
-              if (!isSmeFree(sme.id, dateStr, timeSlot, generated)) continue;
-
-              const smeDailyLoad = generated.filter(g => g.smeId === sme.id && g.dateStr === dateStr).length;
-              if (smeDailyLoad >= 2) continue;
-
-              if (checkConsecutiveHardClash(sme.id, true, dateStr, timeSlot, generated)) continue;
-
-              let score = 0;
-              score += 30; // Group free
-
-              const mentorWeeklyLoad = generated.filter(g => g.mentorId === mentor.id).length;
-              score += Math.max(0, 25 - (mentorWeeklyLoad * (25 / targetDemosCount)));
-
-              const smeWeeklyLoad = generated.filter(g => g.smeId === sme.id).length;
-              score += Math.max(0, 20 - (smeWeeklyLoad * 4));
-
-              const dayLoad = generated.filter(g => g.dateStr === dateStr).length;
-              score += Math.max(0, 15 - (dayLoad * 3));
-
-              const slotLoad = generated.filter(g => g.timeSlot === timeSlot).length;
-              score += Math.max(0, 10 - (slotLoad * 2));
-
-              if (sme.subject?.toLowerCase().trim() === demand.subjectGroup.toLowerCase().trim()) score += 5;
-
-              const wasScheduledPreviously = previousAllocations.some(p =>
-                p.mentorId === mentor.id && p.dateStr === dateStr && p.timeSlot === timeSlot
-              );
-              if (wasScheduledPreviously) score -= 25;
-
-              // Soft consecutive penalty check
-              const hasConsecutiveMentorDemo = checkHasSingleConsecutive(mentor.id, false, dateStr, timeSlot, generated);
-              const hasConsecutiveSmeDemo = checkHasSingleConsecutive(sme.id, true, dateStr, timeSlot, generated);
-              if (hasConsecutiveMentorDemo || hasConsecutiveSmeDemo) {
-                score -= 15;
-              }
-
-              score += Math.random() * 0.01;
-
-              candidates.push({ demand, dateStr, timeSlot, sme, score });
-            }
-          }
-        }
-      }
-
-      if (candidates.length === 0) break;
-
-      candidates.sort((a, b) => b.score - a.score);
-      const best = candidates[0];
-
-      generated.push({
-        mentorId: best.demand.mentor.id,
-        mentorName: best.demand.mentor.name,
-        collegeName: colleges.find(c => c.id === best.demand.mentor.college_id)?.name || "",
-        smeId: best.sme.id,
-        smeName: best.sme.name,
-        dateStr: best.dateStr,
-        timeSlot: best.timeSlot,
-        subject: best.demand.subjectGroup,
-        stream: best.demand.stream,
-        week: 1
-      });
-
-      const dIndex = demands.findIndex(d =>
-        d.mentor.id === best.demand.mentor.id && d.targetIdx === best.demand.targetIdx
-      );
-      if (dIndex !== -1) demands.splice(dIndex, 1);
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // PHASE 3: Beyond College Hours (Last resort fallback)
-    // ─────────────────────────────────────────────────────────────────────────
-    while (demands.length > 0) {
-      const candidates: Candidate[] = [];
-
-      for (const demand of demands) {
-        const mentor = demand.mentor;
-        let eligibleSmes = smes.filter(sme =>
-          sme.subject?.toLowerCase().trim() === demand.subjectGroup.toLowerCase().trim()
-        );
-        if (eligibleSmes.length === 0) continue;
-
-        for (const dateStr of datesToSchedule) {
-          const mentorDailyLoad = generated.filter(g => g.mentorId === mentor.id && g.dateStr === dateStr).length;
-          if (mentorDailyLoad >= 2) continue;
-
-          for (const timeSlot of slotsToEvaluate) {
-            const mentorStatus = getMentorStatusAtSlot(mentor.id, dateStr, timeSlot, generated);
-            if (mentorStatus.status !== "free") continue;
-
-            if (checkConsecutiveHardClash(mentor.id, false, dateStr, timeSlot, generated)) continue;
-
-            const hasGroupDemoClash = generated.some(g =>
-              g.stream === demand.stream && g.dateStr === dateStr && g.timeSlot === timeSlot
-            );
-            if (hasGroupDemoClash) continue;
-
-            if (!isGroupFree(demand.stream, dateStr, timeSlot)) continue;
-
-            for (const sme of eligibleSmes) {
-              const isSmeOnLeave = leaveRequests?.some((l: any) => l.mentorId === sme.id && l.dateStr === dateStr && l.status === "approved");
-              if (isSmeOnLeave) continue;
-
-              if (!isSmeFree(sme.id, dateStr, timeSlot, generated)) continue;
-
-              const smeDailyLoad = generated.filter(g => g.smeId === sme.id && g.dateStr === dateStr).length;
-              if (smeDailyLoad >= 2) continue;
-
-              if (checkConsecutiveHardClash(sme.id, true, dateStr, timeSlot, generated)) continue;
-
-              let score = 0;
-              score += 30; // Group free
-
-              const mentorWeeklyLoad = generated.filter(g => g.mentorId === mentor.id).length;
-              score += Math.max(0, 25 - (mentorWeeklyLoad * (25 / targetDemosCount)));
-
-              const smeWeeklyLoad = generated.filter(g => g.smeId === sme.id).length;
-              score += Math.max(0, 20 - (smeWeeklyLoad * 4));
-
-              const dayLoad = generated.filter(g => g.dateStr === dateStr).length;
-              score += Math.max(0, 15 - (dayLoad * 3));
-
-              const slotLoad = generated.filter(g => g.timeSlot === timeSlot).length;
-              score += Math.max(0, 10 - (slotLoad * 2));
-
-              if (sme.subject?.toLowerCase().trim() === demand.subjectGroup.toLowerCase().trim()) score += 5;
-
-              const wasScheduledPreviously = previousAllocations.some(p =>
-                p.mentorId === mentor.id && p.dateStr === dateStr && p.timeSlot === timeSlot
-              );
-              if (wasScheduledPreviously) score -= 25;
-
-              // Soft consecutive penalty check
-              const hasConsecutiveMentorDemo = checkHasSingleConsecutive(mentor.id, false, dateStr, timeSlot, generated);
-              const hasConsecutiveSmeDemo = checkHasSingleConsecutive(sme.id, true, dateStr, timeSlot, generated);
-              if (hasConsecutiveMentorDemo || hasConsecutiveSmeDemo) {
-                score -= 15;
-              }
-
-              // Beyond-Hours Penalty (Fallback only)
-              const isBeyondHoursSlot = !standardShiftSlots.includes(timeSlot.trim().toLowerCase());
-              if (isBeyondHoursSlot) {
-                score -= 35;
-              }
-
-              score += Math.random() * 0.01;
-
-              candidates.push({ demand, dateStr, timeSlot, sme, score });
-            }
-          }
-        }
-      }
-
-      if (candidates.length === 0) break;
-
-      candidates.sort((a, b) => b.score - a.score);
-      const best = candidates[0];
-
-      generated.push({
-        mentorId: best.demand.mentor.id,
-        mentorName: best.demand.mentor.name,
-        collegeName: colleges.find(c => c.id === best.demand.mentor.college_id)?.name || "",
-        smeId: best.sme.id,
-        smeName: best.sme.name,
-        dateStr: best.dateStr,
-        timeSlot: best.timeSlot,
-        subject: best.demand.subjectGroup,
-        stream: best.demand.stream,
-        week: 1
-      });
-
-      const dIndex = demands.findIndex(d =>
-        d.mentor.id === best.demand.mentor.id && d.targetIdx === best.demand.targetIdx
-      );
-      if (dIndex !== -1) demands.splice(dIndex, 1);
-    }
-
     const exceptions: any[] = [];
-    for (const demand of demands) {
-      const mentor = demand.mentor;
-      const subjectGroup = demand.subjectGroup;
 
-      const matchingSmes = smes.filter(s => s.subject?.toLowerCase().trim() === subjectGroup.toLowerCase().trim());
-      if (matchingSmes.length === 0) {
-        exceptions.push({
-          id: "exc_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9),
-          mentorId: mentor.id,
-          mentorName: mentor.name,
-          subject: subjectGroup,
-          stream: demand.stream,
-          reason: "No SME Available",
-          recommendation: `Add a Subject Matter Expert for "${subjectGroup}" subject group.`
-        });
-        continue;
-      }
-
-      const isMentorOnLeaveAllDays = datesToSchedule.every(d =>
-        leaveRequests?.some((l: any) => l.mentorId === mentor.id && l.dateStr === d && l.status === "approved")
-      );
-      if (isMentorOnLeaveAllDays) {
-        exceptions.push({
-          id: "exc_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9),
-          mentorId: mentor.id,
-          mentorName: mentor.name,
-          subject: subjectGroup,
-          stream: demand.stream,
-          reason: "SME Leave Conflict",
-          recommendation: `Schedule during weeks where mentor or SME leaves do not conflict.`
-        });
-        continue;
-      }
-
-      const mentorFreeSlots = datesToSchedule.some(d =>
-        regularSlots.some(t => getMentorStatusAtSlot(mentor.id, d, t, generated).status === "free")
-      );
-      if (!mentorFreeSlots) {
-        exceptions.push({
-          id: "exc_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9),
-          mentorId: mentor.id,
-          mentorName: mentor.name,
-          subject: subjectGroup,
-          stream: demand.stream,
-          reason: "Mentor Timetable Busy",
-          recommendation: `Clear some classes for ${mentor.name} in their timetable or select a different week.`
-        });
-        continue;
-      }
-
-      const groupFreeSlots = datesToSchedule.some(d =>
-        regularSlots.some(t => isGroupFree(demand.stream, d, t))
-      );
-      if (!groupFreeSlots) {
-        exceptions.push({
-          id: "exc_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9),
-          mentorId: mentor.id,
-          mentorName: mentor.name,
-          subject: subjectGroup,
-          stream: demand.stream,
-          reason: "Group Timetable Busy",
-          recommendation: `Choose beyond college hours slots or modify the class group timetable.`
-        });
-        continue;
-      }
-
-      exceptions.push({
-        id: "exc_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9),
-        mentorId: mentor.id,
-        mentorName: mentor.name,
-        subject: subjectGroup,
-        stream: demand.stream,
-        reason: "Timetable Clash (No common free slot)",
-        recommendation: `Force schedule manually by clicking Resolve Manual or relax constraints.`
-      });
+    if (!targetSlots || targetSlots.length === 0) {
+      return { generated, exceptions };
     }
+
+    targetSlots.forEach((slotInput, idx) => {
+      const mentorId = slotInput.mentorId;
+      const mentorName = slotInput.mentorName || mentors.find(m => m.id === mentorId)?.name || "Mentor";
+      const dateStr = slotInput.dateStr;
+      const timeSlot = slotInput.timeSlot;
+      const subjectGroup = (slotInput.subject || getMentorGroup(mentors.find(m => m.id === mentorId)) || "General").trim();
+      const stream = slotInput.stream || "General Stream";
+      const week = slotInput.week || selectedWeek || 1;
+      const preAssignedSmeId = slotInput.smeId;
+      const preAssignedSmeName = slotInput.smeName;
+
+      // 1. Check if date is a holiday
+      const isHol = holidays.some(h => h.date === dateStr);
+      if (isHol) {
+        exceptions.push({
+          id: "exc_hol_" + idx + "_" + Date.now(),
+          mentorId,
+          mentorName,
+          subject: subjectGroup,
+          stream,
+          reason: "Holiday Conflict",
+          recommendation: `Date ${dateStr} is a college holiday. Upload timetable slots on working days.`
+        });
+        return;
+      }
+
+      // 2. Check if mentor is on approved leave
+      if (isFacultyOnLeave(mentorId, dateStr)) {
+        exceptions.push({
+          id: "exc_mleave_" + idx + "_" + Date.now(),
+          mentorId,
+          mentorName,
+          subject: subjectGroup,
+          stream,
+          reason: "Mentor Leave Conflict",
+          recommendation: `Mentor ${mentorName} is on approved faculty leave on ${dateStr}.`
+        });
+        return;
+      }
+
+      // 3. If pre-assigned SME is provided in Excel, validate them first
+      if (preAssignedSmeId) {
+        const smeObj = smes.find(s => s.id === preAssignedSmeId || s.name.toLowerCase() === (preAssignedSmeName || "").toLowerCase());
+        if (smeObj) {
+          const isSmeLeave = isFacultyOnLeave(smeObj.id, dateStr);
+          const isFree = isSmeFree(smeObj.id, dateStr, timeSlot, [...generated, ...previousAllocations]);
+
+          if (!isSmeLeave && isFree) {
+            generated.push({
+              mentorId,
+              mentorName,
+              collegeName: slotInput.collegeName || currentCollege?.name || "College",
+              smeId: smeObj.id,
+              smeName: smeObj.name,
+              dateStr,
+              timeSlot,
+              subject: subjectGroup,
+              stream,
+              week
+            });
+            return;
+          }
+        }
+      }
+
+      // 4. Rule-Based Auto-Assignment: Find qualified SME for this subject & slot
+      const eligibleSmes = getSmesForSubjectGroup(subjectGroup);
+
+      if (eligibleSmes.length === 0) {
+        exceptions.push({
+          id: "exc_nosme_" + idx + "_" + Date.now(),
+          mentorId,
+          mentorName,
+          subject: subjectGroup,
+          stream,
+          reason: "No Qualified SME",
+          recommendation: `No SME registered with subject expertise for '${subjectGroup}'. Register an SME or update subject mapping.`
+        });
+        return;
+      }
+
+      // Score candidates based on rules
+      interface SmeCandidate {
+        sme: any;
+        score: number;
+      }
+      const candidates: SmeCandidate[] = [];
+
+      eligibleSmes.forEach(sme => {
+        // Must not be on faculty leave
+        if (isFacultyOnLeave(sme.id, dateStr)) return;
+
+        // Must be free at slot time
+        if (!isSmeFree(sme.id, dateStr, timeSlot, [...generated, ...previousAllocations])) return;
+
+        // Daily cap check (max 2/day)
+        const existingSmeDemos = [
+          ...demoSessions.filter(ds => ds.smeId === sme.id && ds.dateStr === dateStr && ds.status !== "not_conducted" && ds.status !== "cancelled"),
+          ...previousAllocations.filter(pa => pa.smeId === sme.id && pa.dateStr === dateStr),
+          ...generated.filter(g => g.smeId === sme.id && g.dateStr === dateStr)
+        ].length;
+        if (existingSmeDemos >= 2) return;
+
+        // Consecutive hard clash (3 consecutive)
+        if (checkConsecutiveHardClash(sme.id, true, dateStr, timeSlot, [...generated, ...previousAllocations])) return;
+
+        let score = 0;
+        const isHeadSme = sme.is_head_sme === 1 || sme.head_subject_group === subjectGroup;
+        if (isHeadSme) score += 50; // Priority boost for Head SME
+
+        if (sme.subject?.toLowerCase().trim() === subjectGroup.toLowerCase().trim()) score += 30; // Direct subject match
+
+        const smeWeeklyLoad = generated.filter(g => g.smeId === sme.id).length;
+        score += Math.max(0, 20 - (smeWeeklyLoad * 4)); // Load balancing
+
+        // Soft consecutive check penalty
+        const hasConsecutive = checkHasSingleConsecutive(sme.id, true, dateStr, timeSlot, [...generated, ...previousAllocations]);
+        if (hasConsecutive) score -= 15;
+
+        score += Math.random() * 0.01;
+
+        candidates.push({ sme, score });
+      });
+
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.score - a.score);
+        const best = candidates[0].sme;
+
+        generated.push({
+          mentorId,
+          mentorName,
+          collegeName: slotInput.collegeName || currentCollege?.name || "College",
+          smeId: best.id,
+          smeName: best.name,
+          dateStr,
+          timeSlot,
+          subject: subjectGroup,
+          stream,
+          week
+        });
+      } else {
+        exceptions.push({
+          id: "exc_clash_" + idx + "_" + Date.now(),
+          mentorId,
+          mentorName,
+          subject: subjectGroup,
+          stream,
+          reason: "SME Availability / Capacity Conflict",
+          recommendation: `All SMEs for '${subjectGroup}' are occupied or on leave at ${timeSlot} on ${dateStr}. Adjust slot or assign manually.`
+        });
+      }
+    });
 
     return { generated, exceptions };
-  };
+  }, [mentors, smes, demoSessions, holidays, facultyLeaves, selectedWeek, currentCollege, isFacultyOnLeave, isSmeFree, checkConsecutiveHardClash, checkHasSingleConsecutive, getSmesForSubjectGroup, getMentorGroup]);
 
   const handleTriggerGenerate = () => {
     if (!selectedCollegeId) {
       toast("Please select a college first", "error");
+      return;
+    }
+
+    // Build target slots from mentors' free availability windows or imported slots
+    const targetSlots: any[] = [];
+    const datesToSchedule = currentWeekDates
+      .map(w => w.dateStr)
+      .filter(dateStr => !holidays.some(h => h.date === dateStr));
+
+    filteredMentors.forEach(mentor => {
+      const subjectGroup = getMentorGroup(mentor);
+      const mentorClasses = slots.filter(s => s.mentorId === mentor.id && s.classGroup);
+      const stream = (mentorClasses.length > 0 ? mentorClasses[0].classGroup : null) || "General Stream";
+
+      datesToSchedule.forEach(dateStr => {
+        collegeTimeSlots.forEach(timeSlot => {
+          if (timeSlot.toLowerCase().includes("lunch") || timeSlot.toLowerCase().includes("break")) return;
+          const status = getMentorStatusAtSlot(mentor.id, dateStr, timeSlot);
+          if (status.status === "free") {
+            targetSlots.push({
+              mentorId: mentor.id,
+              mentorName: mentor.name,
+              collegeName: currentCollege?.name || "College",
+              dateStr,
+              timeSlot,
+              subject: subjectGroup,
+              stream,
+              week: selectedWeek
+            });
+          }
+        });
+      });
+    });
+
+    if (targetSlots.length === 0) {
+      toast("No free timetable slots found to auto-assign SMEs.", "warning");
       return;
     }
 
@@ -1107,20 +953,20 @@ export function DemoAllocationDashboard() {
     setShowPreviewModal(true);
 
     setTimeout(() => {
-      const { generated, exceptions } = runSchedulerEngine(prevSessions);
+      const { generated, exceptions } = autoAssignSmesToSlots(targetSlots, prevSessions);
       setPreviewSessions(generated);
       setExceptions(exceptions);
       setGenerationStep("done");
       setIsGenerating(false);
 
       if (generated.length === 0 && exceptions.length === 0) {
-        toast("No slots were generated. Mentors or SMEs may be fully occupied.", "warning");
+        toast("No SME assignments could be made. SMEs may be fully occupied.", "warning");
       } else if (exceptions.length > 0) {
-        toast(`Generated ${generated.length} sessions. Found ${exceptions.length} scheduling exceptions.`, "warning");
+        toast(`Auto-assigned SMEs for ${generated.length} slots. ${exceptions.length} unassigned due to rules/conflicts.`, "warning");
       } else {
-        toast(`Successfully previewed ${generated.length} demo allocations.`, "success");
+        toast(`Successfully auto-assigned SMEs for ${generated.length} timetable slots as per rules!`, "success");
       }
-    }, 1000);
+    }, 800);
   };
 
   const handleSavePreview = async () => {
@@ -1370,6 +1216,7 @@ export function DemoAllocationDashboard() {
     const getMentorDayFreePeriods = (mentorId: string, dayName: string, collegeId?: string) => {
       const mentorSlots = getCollegeSpecificSlots(collegeId);
       const freeList: string[] = [];
+      const targetDate = currentWeekDates.find(w => w.day.toLowerCase().trim() === dayName.toLowerCase().trim())?.dateStr;
 
       mentorSlots.forEach((slot, sIdx) => {
         const isLunchOrBreak = slot.toLowerCase().includes("lunch") || slot.toLowerCase().includes("break");
@@ -1380,7 +1227,7 @@ export function DemoAllocationDashboard() {
           s.day?.toLowerCase().trim() === dayName.toLowerCase().trim() &&
           s.time?.trim().toLowerCase() === slot.trim().toLowerCase()
         );
-        const isBlocked = leaveRequests?.some((l: any) => l.mentorId === mentorId && l.status === "approved");
+        const isBlocked = targetDate ? isFacultyOnLeave(mentorId, targetDate) : facultyLeaves?.some((fl: any) => (fl.mentor_id === mentorId || fl.mentorId === mentorId) && fl.status === "approved");
 
         if (!hasClass && !isBlocked) {
           freeList.push(`P${sIdx + 1} (${slot})`);
@@ -1399,6 +1246,7 @@ export function DemoAllocationDashboard() {
       days.forEach(day => {
         const dayShort = day.slice(0, 3);
         const freePeriodNums: number[] = [];
+        const targetDate = currentWeekDates.find(w => w.day.toLowerCase().trim() === day.toLowerCase().trim())?.dateStr;
 
         mentorSlots.forEach((slot, sIdx) => {
           const isLunchOrBreak = slot.toLowerCase().includes("lunch") || slot.toLowerCase().includes("break");
@@ -1409,7 +1257,7 @@ export function DemoAllocationDashboard() {
             s.day?.toLowerCase().trim() === day.toLowerCase().trim() &&
             s.time?.trim().toLowerCase() === slot.trim().toLowerCase()
           );
-          const isBlocked = leaveRequests?.some((l: any) => l.mentorId === mentorId && l.status === "approved");
+          const isBlocked = targetDate ? isFacultyOnLeave(mentorId, targetDate) : facultyLeaves?.some((fl: any) => (fl.mentor_id === mentorId || fl.mentorId === mentorId) && fl.status === "approved");
 
           if (!hasClass && !isBlocked) {
             freePeriodNums.push(sIdx + 1);
@@ -1447,11 +1295,12 @@ export function DemoAllocationDashboard() {
     const cellValidationRanges: Record<string, string> = {};
 
     days.forEach((day) => {
+      const targetDate = currentWeekDates.find(w => w.day.toLowerCase().trim() === day.toLowerCase().trim())?.dateStr;
       timeSlots.forEach((slot) => {
         // Filter mentors across ALL colleges in this Mentor Group who are FREE during this specific period
         const freeMentorsForSlot = relevantMentors.filter(m => {
           const hasClass = slots.some(s => s.mentorId === m.id && s.day === day && s.time === slot);
-          const isBlocked = leaveRequests?.some((l: any) => l.mentorId === m.id && l.status === "approved");
+          const isBlocked = targetDate ? isFacultyOnLeave(m.id, targetDate) : facultyLeaves?.some((fl: any) => (fl.mentor_id === m.id || fl.mentorId === m.id) && fl.status === "approved");
           return !hasClass && !isBlocked;
         });
 
@@ -1802,7 +1651,7 @@ export function DemoAllocationDashboard() {
           const rawSme = String(row["Assigned SME"] || row["SME"] || row["sme"] || row["Evaluator"] || "").trim();
           const rawSubject = String(row["Subject Group"] || row["Subject"] || row["subject"] || row["Department"] || currentTargetGroup).trim();
           const rawStream = String(row["Class Cohort"] || row["Class Group"] || row["Stream"] || row["stream"] || "").trim();
-          const rawWeek = parseInt(String(row["Week Number"] || row["Week"] || "1"), 10) || 1;
+          const rawWeek = parseInt(String(row["Week Number"] || row["Week"] || selectedWeek || "1"), 10) || selectedWeek || 1;
 
           if (!rawDay && !rawMentor && !rawSme) return;
 
@@ -1839,62 +1688,78 @@ export function DemoAllocationDashboard() {
             warnings.push(`Row ${rowNum}: Mentor '${rawMentor}' not found in database.`);
           }
 
-          // Match SME
-          let matchedSme = smes.find(s =>
+          // Match SME (optional in Excel — if missing, Auto-Scheduler will assign as per rule)
+          let matchedSme = rawSme ? smes.find(s =>
             s.name.toLowerCase().trim() === rawSme.toLowerCase() ||
             s.email.toLowerCase().trim() === rawSme.toLowerCase() ||
             s.id.toLowerCase() === rawSme.toLowerCase()
-          );
+          ) : undefined;
 
           if (!matchedSme && rawSme) {
             matchedSme = smes.find(s => s.name.toLowerCase().includes(rawSme.toLowerCase()));
           }
 
+          // If SME is not specified in Excel, run Auto-Scheduler Rule Engine for this slot
+          if (!matchedSme && matchedMentor && targetDateStr && rawTime) {
+            const singleSlotRuleCheck = autoAssignSmesToSlots([{
+              mentorId: matchedMentor.id,
+              mentorName: matchedMentor.name,
+              collegeName: currentCollege?.name || "College",
+              dateStr: targetDateStr,
+              timeSlot: rawTime,
+              subject: rawSubject || currentTargetGroup,
+              stream: rawStream || "General Stream",
+              week: rawWeek
+            }], parsedSessions);
+
+            if (singleSlotRuleCheck.generated.length > 0) {
+              const assigned = singleSlotRuleCheck.generated[0];
+              matchedSme = smes.find(s => s.id === assigned.smeId);
+            }
+          }
+
           if (!matchedSme) {
-            warnings.push(`Row ${rowNum}: SME '${rawSme}' not found in database.`);
+            warnings.push(`Row ${rowNum}: Could not auto-assign SME for '${rawSubject || currentTargetGroup}' at ${rawTime} on ${targetDateStr} (SMEs busy or on leave).`);
           }
 
           // Conflict checks if mentor & SME matched
-          let hasConflict = false;
-          let conflictReason = "";
+          const conflictReasons: string[] = [];
 
           if (matchedMentor && matchedSme && targetDateStr && rawTime) {
             // Check holiday
             const isHol = holidays.some(h => h.date === targetDateStr);
             if (isHol) {
-              hasConflict = true;
-              conflictReason = "Selected day is a college holiday.";
+              conflictReasons.push("Selected day is a college holiday.");
             }
 
-            // Check mentor leave
-            const isMentorLeave = leaveRequests?.some((l: any) => l.mentorId === matchedMentor.id && l.dateStr === targetDateStr && l.status === "approved");
+            // Check mentor faculty leave
+            const isMentorLeave = isFacultyOnLeave(matchedMentor.id, targetDateStr);
             if (isMentorLeave) {
-              hasConflict = true;
-              conflictReason = `Mentor ${matchedMentor.name} is on approved leave.`;
+              conflictReasons.push(`Mentor ${matchedMentor.name} is on approved faculty leave.`);
             }
 
-            // Check SME leave
-            const isSmeLeave = leaveRequests?.some((l: any) => l.mentorId === matchedSme.id && l.dateStr === targetDateStr && l.status === "approved");
+            // Check SME faculty leave
+            const isSmeLeave = isFacultyOnLeave(matchedSme.id, targetDateStr);
             if (isSmeLeave) {
-              hasConflict = true;
-              conflictReason = `SME ${matchedSme.name} is on approved leave.`;
+              conflictReasons.push(`SME ${matchedSme.name} is on approved faculty leave.`);
             }
 
             // Check mentor timetable class / occupied slot
             const mentorStatus = getMentorStatusAtSlot(matchedMentor.id, targetDateStr, rawTime, parsedSessions);
             if (mentorStatus.status !== "free" && mentorStatus.status !== "preview") {
-              hasConflict = true;
-              conflictReason = `Mentor ${matchedMentor.name} is busy: ${mentorStatus.label || mentorStatus.details}`;
+              conflictReasons.push(`Mentor ${matchedMentor.name} is busy: ${mentorStatus.label || mentorStatus.details}`);
             }
 
             // Check SME double booking
             if (!isSmeFree(matchedSme.id, targetDateStr, rawTime, parsedSessions)) {
-              hasConflict = true;
-              conflictReason = `SME ${matchedSme.name} is already booked at ${rawTime}.`;
+              conflictReasons.push(`SME ${matchedSme.name} is already booked at ${rawTime}.`);
             }
           }
 
-          if (hasConflict && conflictReason) {
+          const hasConflict = conflictReasons.length > 0;
+          const conflictReason = conflictReasons.join(" | ");
+
+          if (hasConflict) {
             warnings.push(`Row ${rowNum}: ${conflictReason}`);
           }
 
@@ -1907,7 +1772,7 @@ export function DemoAllocationDashboard() {
             mentorName: matchedMentor ? matchedMentor.name : (rawMentor || "Unknown Mentor"),
             collegeName: currentCollege?.name || "College",
             smeId: matchedSme ? matchedSme.id : "",
-            smeName: matchedSme ? matchedSme.name : (rawSme || "Unknown SME"),
+            smeName: matchedSme ? matchedSme.name : "Unassigned SME",
             subject: rawSubject || currentTargetGroup,
             stream: rawStream || "General Stream",
             week: rawWeek,
@@ -1973,7 +1838,12 @@ export function DemoAllocationDashboard() {
   const handleExportDemoSchedule = async () => {
     const activeCollegeName = currentCollege?.name || "All_Colleges";
     const exportRows = demoSessions
-      .filter(ds => selectedCollegeId === "all" || mentors.find(m => m.id === ds.mentorId)?.college_id === selectedCollegeId)
+      .filter(ds => {
+        const matchesCollege = selectedCollegeId === "all" || mentors.find(m => m.id === ds.mentorId)?.college_id === selectedCollegeId;
+        const matchesWeek = currentWeekDates.some(w => w.dateStr === ds.dateStr);
+        const isActive = ds.status !== "cancelled" && ds.status !== "not_conducted";
+        return matchesCollege && matchesWeek && isActive;
+      })
       .map(ds => {
         const dayInfo = currentWeekDates.find(w => w.dateStr === ds.dateStr);
         return {
@@ -2071,9 +1941,9 @@ export function DemoAllocationDashboard() {
             >
               <RefreshCw className="h-4 w-4 shrink-0" />
               {!isCollapsed && <span>Reallocation Queue</span>}
-              {demoSwapRequests.filter((r: any) => r.status === "pending").length > 0 && (
+              {((demoSwapRequests?.filter((r: any) => r.status === "pending").length || 0) + (demoReallocations?.filter((r: any) => r.status === "pending").length || 0)) > 0 && (
                 <span className="ml-auto px-2 py-0.5 bg-rose-500 text-white rounded-full text-[9px] font-black">
-                  {demoSwapRequests.filter((r: any) => r.status === "pending").length}
+                  {(demoSwapRequests?.filter((r: any) => r.status === "pending").length || 0) + (demoReallocations?.filter((r: any) => r.status === "pending").length || 0)}
                 </span>
               )}
             </button>
@@ -2361,17 +2231,19 @@ export function DemoAllocationDashboard() {
                                                   key={mentor.id}
                                                   onClick={() => {
                                                     if (isFree) {
+                                                      const mentorGroup = getMentorGroup(mentor);
+                                                      const matchingSme = getSmesForSubjectGroup(mentorGroup)[0] || smes[0];
                                                       setEditSession({
                                                         id: "",
                                                         mentorId: mentor.id,
                                                         mentorName: mentor.name,
-                                                        smeId: smes[0]?.id || "",
-                                                        smeName: smes[0]?.name || "",
+                                                        smeId: matchingSme?.id || "",
+                                                        smeName: matchingSme?.name || "",
                                                         dateStr: date.dateStr,
                                                         timeSlot: time,
-                                                        subject: mentor.mentor_group || "General",
+                                                        subject: mentorGroup,
                                                         stream: (slots.filter(s => s.mentorId === mentor.id && s.classGroup)[0]?.classGroup) || "General Stream",
-                                                        week: 1
+                                                        week: selectedWeek
                                                       });
                                                     } else if (isDemo) {
                                                       setEditSession(statusObj.session);
@@ -2722,6 +2594,116 @@ export function DemoAllocationDashboard() {
             subtitle="Review pending SME & mentor swap proposals and inspect automated scheduling exceptions."
           >
             <div className="space-y-6">
+              {/* ── Leave-Driven Demo Reallocation Requests (Allocator Approval) ── */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">Leave Demo Reallocations</h3>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9.5px] font-black uppercase border border-amber-200">
+                      {demoReallocations.filter(r => r.status === "pending").length} Pending Approval
+                    </span>
+                  </div>
+                  <button
+                    onClick={fetchDemoReallocations}
+                    className="p-1.5 rounded-md border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition-all cursor-pointer"
+                    title="Refresh"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${loadingReallocations ? "animate-spin" : ""}`} />
+                  </button>
+                </div>
+
+                {demoReallocations.filter(r => r.status === "pending").length === 0 ? (
+                  <div className="text-center py-6 text-slate-400 font-bold text-xs border border-dashed border-slate-200 rounded-xl">
+                    No pending demo reallocation requests. All clear!
+                  </div>
+                ) : (
+                  demoReallocations.filter(r => r.status === "pending").map(req => (
+                    <div key={req.id} className="p-4 rounded-xl bg-white border border-slate-200 space-y-3">
+                      <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-black text-slate-900">{req.subject}</span>
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 text-[9px] font-black uppercase">
+                              Week {req.week ?? "—"}
+                            </span>
+                            <span className={`px-1.5 py-0.5 rounded border text-[9px] font-black uppercase ${req.request_kind === "reschedule"
+                              ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                              : "bg-amber-100 border border-amber-200 text-amber-800"
+                              }`}>
+                              {req.request_kind === "reschedule" ? "Mentor Reschedule Request" : req.request_kind === "sme_swap" ? "SME Reallocation" : "Mentor Leave Reallocation"}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px] font-medium text-slate-600">
+                            <div>Applying Mentor: <span className="font-bold text-slate-800">{req.mentor_name}</span></div>
+                            <div>SME Evaluator: <span className="font-bold text-slate-800">{req.sme_name}</span></div>
+                            <div className="text-rose-700">
+                              Original slot: <span className="font-bold">{req.original_date_str} • {req.original_time_slot}</span>
+                            </div>
+                            <div className="text-emerald-700">
+                              Proposed slot: <span className="font-bold">{req.proposed_date_str} • {req.proposed_time_slot}</span>
+                            </div>
+                          </div>
+                          {req.reason && (
+                            <p className="text-[10.5px] text-slate-500 italic">Reason: {req.reason}</p>
+                          )}
+                          <p className="text-[10px] text-slate-400">
+                            Proposed by {req.proposed_by || req.mentor_name} • Target period is reserved (blocked for other bookings) until you decide.
+                          </p>
+                        </div>
+
+                        <div className="shrink-0 flex flex-col gap-2 w-full md:w-64">
+                          <input
+                            type="text"
+                            placeholder="Decision notes (optional)"
+                            value={reallocNotesMap[req.id] || ""}
+                            onChange={e => setReallocNotesMap(prev => ({ ...prev, [req.id]: e.target.value }))}
+                            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] font-medium text-slate-800 focus:outline-none focus:border-indigo-400"
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={decidingReallocId === req.id}
+                              onClick={() => decideDemoReallocation(req.id, "rejected")}
+                              className="flex-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              type="button"
+                              disabled={decidingReallocId === req.id}
+                              onClick={() => decideDemoReallocation(req.id, "approved")}
+                              className="flex-1 px-3.5 py-1.5 bg-gradient-to-r from-[#D528A2] to-pink-600 text-white rounded-xl text-xs font-extrabold shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              {decidingReallocId === req.id ? "Working…" : "Approve Move"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+
+                {/* Resolved log */}
+                {demoReallocations.filter(r => r.status !== "pending").length > 0 && (
+                  <details className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <summary className="text-[11px] font-black uppercase tracking-wider text-slate-500 cursor-pointer">
+                      Resolution Log ({demoReallocations.filter(r => r.status !== "pending").length})
+                    </summary>
+                    <div className="mt-2 divide-y divide-slate-100">
+                      {demoReallocations.filter(r => r.status !== "pending").slice(0, 20).map(req => (
+                        <div key={req.id} className="py-2 flex items-center justify-between gap-3 text-[11px]">
+                          <span className="font-bold text-slate-700">{req.subject} — {req.mentor_name}</span>
+                          <span className="text-slate-500">{req.original_date_str} → {req.proposed_date_str} • {req.proposed_time_slot}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${req.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                            {req.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+
               {/* Swap Requests Table */}
               <div className="space-y-3">
                 <div className="flex border-b border-slate-200">
@@ -2752,14 +2734,14 @@ export function DemoAllocationDashboard() {
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-black text-slate-900">{req.smeName}</span>
                               <span className="px-2 py-0.5 bg-[#D528A2]/10 text-[#D528A2] rounded-md text-[9px] font-extrabold uppercase">
-                                {req.swapType === "mentor" ? "Mentor Swap" : "Time Slot Swap"}
+                                {(req.swapType === "mentor" || req.swapType === "internal") ? "Mentor Swap" : "Time Slot Swap"}
                               </span>
                             </div>
                             <p className="text-xs text-slate-600 font-semibold mt-1">
                               Original: {req.mentorName} ({req.dateStr} • {req.timeSlot})
                             </p>
                             <p className="text-xs font-bold text-[#D528A2] mt-0.5">
-                              Proposed: {req.swapType === "mentor" ? req.proposedMentorName : `${req.proposedDateStr} • ${req.proposedTimeSlot}`}
+                              Proposed: {(req.swapType === "mentor" || req.swapType === "internal") ? (req.proposedMentorName || req.targetMentorName) : `${req.proposedDateStr} • ${req.proposedTimeSlot}`}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -3008,102 +2990,7 @@ export function DemoAllocationDashboard() {
           </div>
         )}
 
-        {/* 🔹 DEPARTMENT RULES SETTINGS MODAL */}
-        {showSettingsModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4 flex flex-col max-h-[85vh]">
 
-              <button
-                onClick={() => setShowSettingsModal(false)}
-                className="absolute right-4 top-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-
-              <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
-                <Settings className="h-5 w-5 text-indigo-500" />
-                <div>
-                  <h3 className="text-sm font-black uppercase text-slate-850 dark:text-white tracking-wider">
-                    Department Rules Settings
-                  </h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
-                    Set the number of demos per week for each department
-                  </p>
-                </div>
-              </div>
-
-              {/* Column headers */}
-              <div className="grid grid-cols-[1fr_80px_56px] gap-3 px-1 text-[9px] font-black uppercase text-slate-400 tracking-widest shrink-0">
-                <span>Department</span>
-                <span className="text-center">Demos / Week</span>
-                <span className="text-center">Action</span>
-              </div>
-
-              <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 py-1">
-                {mentorGroups.map((groupName) => {
-                  const existing = demoRules?.find(r => r.subject?.toLowerCase().trim() === groupName.toLowerCase().trim());
-                  const dbVal = existing ? existing.target : 1;
-                  const localVal = deptRuleInputs[groupName] !== undefined ? deptRuleInputs[groupName] : dbVal;
-                  const isDirty = localVal !== dbVal;
-
-                  return (
-                    <div key={groupName} className="grid grid-cols-[1fr_80px_56px] gap-3 items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-150 dark:border-slate-800">
-                      <div className="space-y-0.5 min-w-0">
-                        <span className="text-xs font-black text-slate-800 dark:text-slate-100 block truncate">{groupName}</span>
-                        <span className="text-[8.5px] text-slate-400 font-semibold block">
-                          Saved: {dbVal} demo{dbVal !== 1 ? "s" : ""}/wk
-                        </span>
-                      </div>
-
-                      <input
-                        type="number"
-                        min={1}
-                        max={14}
-                        value={localVal}
-                        onChange={(e) => {
-                          const val = Math.max(1, parseInt(e.target.value) || 1);
-                          setDeptRuleInputs(prev => ({ ...prev, [groupName]: val }));
-                        }}
-                        className={`w-full text-center px-2 py-2 text-sm font-black border rounded-xl bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 transition-all ${isDirty
-                          ? "border-indigo-400 text-indigo-700 focus:ring-indigo-200"
-                          : "border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 focus:ring-slate-200"
-                          }`}
-                      />
-
-                      <button
-                        onClick={async () => {
-                          await saveDepartmentRule(groupName, localVal);
-                          setDeptRuleInputs(prev => {
-                            const next = { ...prev };
-                            delete next[groupName];
-                            return next;
-                          });
-                        }}
-                        disabled={!isDirty}
-                        className={`w-full py-2 rounded-xl text-[10px] font-black transition-all ${isDirty
-                          ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm cursor-pointer"
-                          : "bg-slate-100 dark:bg-slate-800 text-slate-350 cursor-not-allowed"
-                          }`}
-                      >
-                        Save
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 shrink-0">
-                <button
-                  onClick={() => setShowSettingsModal(false)}
-                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-550 font-bold rounded-xl text-xs transition-colors cursor-pointer"
-                >
-                  Close Settings
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
 
 
         {/* MANUAL OVERRIDE / CREATE MODAL */}
@@ -3320,17 +3207,19 @@ export function DemoAllocationDashboard() {
                         onClick={() => {
                           setCellPopover(null); // close popover
                           if (isFree) {
+                            const mentorGroup = getMentorGroup(mentor);
+                            const matchingSme = getSmesForSubjectGroup(mentorGroup)[0] || smes[0];
                             setEditSession({
                               id: "",
                               mentorId: mentor.id,
                               mentorName: mentor.name,
-                              smeId: smes[0]?.id || "",
-                              smeName: smes[0]?.name || "",
+                              smeId: matchingSme?.id || "",
+                              smeName: matchingSme?.name || "",
                               dateStr: cellPopover.dateStr,
                               timeSlot: cellPopover.timeSlot,
-                              subject: mentor.mentor_group || "General",
+                              subject: mentorGroup,
                               stream: (slots.filter(s => s.mentorId === mentor.id && s.classGroup)[0]?.classGroup) || "General Stream",
-                              week: 1
+                              week: selectedWeek
                             });
                           } else if (isDemo) {
                             setEditSession(statusObj.session);
@@ -3444,7 +3333,7 @@ export function DemoAllocationDashboard() {
                             <div className="text-right">
                               <span className="text-[9px] font-black uppercase text-slate-400 block">Proposed Action</span>
                               <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-pink-450 rounded-lg text-[9px] font-black uppercase">
-                                {req.swapType === "mentor" ? "Change Mentor" : "Change Slot"}
+                                {(req.swapType === "mentor" || req.swapType === "internal") ? "Change Mentor" : "Change Slot"}
                               </span>
                             </div>
                           </div>
@@ -3460,9 +3349,9 @@ export function DemoAllocationDashboard() {
 
                             <div className="p-3 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-xl space-y-1">
                               <span className="text-[8.5px] font-black uppercase text-indigo-500 block mb-1">Proposed Match</span>
-                              {req.swapType === "mentor" ? (
+                              {(req.swapType === "mentor" || req.swapType === "internal") ? (
                                 <>
-                                  <p className="font-bold text-indigo-650 dark:text-indigo-400">{req.proposedMentorName}</p>
+                                  <p className="font-bold text-indigo-650 dark:text-indigo-400">{req.proposedMentorName || req.targetMentorName}</p>
                                   <p className="text-[10px] text-slate-500">{req.dateStr} • {req.timeSlot}</p>
                                   <p className="text-[9px] text-slate-450">Replacing candidate faculty</p>
                                 </>

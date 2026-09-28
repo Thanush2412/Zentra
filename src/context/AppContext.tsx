@@ -307,6 +307,8 @@ export interface AcademicTrackerEntry {
   mentor_id: string;
   mentor_name?: string;
   college_id?: string;
+  weekly_plan_id?: string | null;
+  weekly_plan_week?: number | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -410,7 +412,8 @@ interface AppContextProps {
     reason: string,
     subjectName?: string,
     classGroup?: string,
-    targetStaffName?: string
+    targetStaffName?: string,
+    requestType?: string
   ) => Promise<void>;
   requestSwapCompensate: (
     requestorId: string,
@@ -433,7 +436,7 @@ interface AppContextProps {
   updateMentor: (mentor: Omit<Mentor, "role">) => Promise<{ success: boolean; message: string }>;
   deleteMentor: (id: string) => Promise<{ success: boolean; message: string }>;
   bookDemoSession: (mentorId: string, mentorName: string, smeId: string, smeName: string, dateStr: string, timeSlot: string, subject: string, stream: string, week: number) => Promise<{ success: boolean; message: string }>;
-  evaluateDemoSession: (sessionId: string, marks: number, comments: string) => Promise<{ success: boolean; message: string }>;
+  evaluateDemoSession: (sessionId: string, marks: number, comments: string, checklist?: any[]) => Promise<{ success: boolean; message: string }>;
   correctStudentAttendance: (studentId: string, slotId: string, dateStr: string, newStatus: "present" | "absent" | "od", reason: string, isAdminOverride?: boolean) => Promise<{ success: boolean; message: string }>;
   bulkBookDemoSessions: (sessions: Array<{ mentorId: string; mentorName: string; smeId: string; smeName: string; dateStr: string; timeSlot: string; subject: string; stream: string; week: number }>) => Promise<{ success: boolean; message: string }>;
   updateDemoSession: (sessionId: string, dateStr: string, timeSlot: string, smeId: string, smeName: string) => Promise<{ success: boolean; message: string }>;
@@ -1208,9 +1211,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const placeholderKam = { id: targetKamId, name: userName || "Key Account Manager", email: userEmail, college_id: collegeId, role: "kam" as const };
         setCurrentKAM(placeholderKam as any);
         fetch(`/api/kam?id=${encodeURIComponent(targetKamId)}`).then(r => r.json()).then(d => {
-          if (d.success && d.cam) {
-            setCurrentKAM({ ...d.cam, role: "kam" as const });
-            localStorage.setItem("fp_user_snapshot", JSON.stringify(d.cam));
+          const kamData = d.kam || d.cam;
+          if (d.success && kamData) {
+            setCurrentKAM({ ...kamData, role: "kam" as const });
+            localStorage.setItem("fp_user_snapshot", JSON.stringify(kamData));
           }
         }).catch(() => {});
       }
@@ -1451,12 +1455,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     reason: string,
     subjectName?: string,
     classGroup?: string,
-    targetStaffName?: string
+    targetStaffName?: string,
+    requestType?: string
   ) => {
     const res = await fetch("/api/requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mentorId, slotId, dateStr, dateFormatted, targetStaffId, reason, subjectName, classGroup, targetStaffName })
+      body: JSON.stringify({ mentorId, slotId, dateStr, dateFormatted, targetStaffId, reason, subjectName, classGroup, targetStaffName, requestType })
     });
     const data = await res.json();
     if (data.success) {
@@ -1480,7 +1485,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         day: data.request?.day || reqSlot?.day || "",
         time: data.request?.time || reqSlot?.time || "",
         status: data.request?.status || (isCamTarget ? "pending_cam" : "pending"),
-        timestamp: data.request?.timestamp || new Date().toISOString()
+        timestamp: data.request?.timestamp || new Date().toISOString(),
+        request_type: requestType || data.request?.request_type || (isCamTarget ? "late_attendance" : undefined)
       };
       setRequests(prev => [newRequest, ...prev]);
     } else {
@@ -1584,19 +1590,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const evaluateDemoSession = async (
     sessionId: string,
     marks: number,
-    comments: string
+    comments: string,
+    checklist?: any[]
   ): Promise<{ success: boolean; message: string }> => {
     const res = await fetch("/api/demo-sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "evaluate",
-        sessionId, marks, comments
+        sessionId, marks, comments, checklist
       })
     });
-    const data = await res.json();
-    if (data.success) {
-      setDemoSessions(prev => prev.map(s => s.id === sessionId ? { ...s, marks, comments, status: "evaluated" } : s));
+    const data = await res.json();        if (data.success) {
+      // DB sets status 'completed' (see /api/demo-sessions evaluate) — keep local
+      // state consistent so badges/KPIs don't show a phantom "evaluated" state.
+      setDemoSessions(prev => prev.map(s => s.id === sessionId ? { ...s, marks, comments, status: "completed" } : s));
       return { success: true, message: data.message || "Evaluation saved successfully!" };
     } else {
       return { success: false, message: data.message || "Failed to save evaluation." };
@@ -1741,21 +1749,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success) {
-        setDemoSessions(prev =>
-          prev.map(s =>
-            s.id === sessionId
-              ? {
-                  ...s,
-                  dateStr: newDateStr,
-                  timeSlot: newTimeSlot,
-                  status: "confirmed",
-                  comments: `Rescheduled by mentor to ${newDateStr} (${newTimeSlot})`
-                }
-              : s
-          )
-        );
-        refreshData();
-        return { success: true, message: data.message || "Demo rescheduled successfully." };
+        // Phase B: the API no longer moves the slot — it creates a pending request
+        // for the Demo Allocator. Refresh so the "reallocation required" state and
+        // any allocator decision flow back into every dashboard.
+        await refreshData();
+        return { success: true, message: data.message || "Reschedule request sent to the Demo Allocator for approval." };
       }
       return { success: false, message: data.message || "Failed to reschedule demo." };
     } catch (e: any) {
@@ -3103,6 +3101,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     mentorId: string;
     mentorName?: string;
     collegeId?: string;
+    weeklyPlanId?: string;
+    weeklyPlanWeek?: number;
   }) => {
     try {
       const res = await fetch("/api/academic-tracker", {

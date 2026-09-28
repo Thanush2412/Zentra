@@ -16,6 +16,7 @@ import {
   MapPin,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   Search,
@@ -55,6 +56,34 @@ interface BookItem {
   status: "Available" | "Issued";
   expectedReturn?: string;
 }
+
+// Official HackerRank Hexagon SVG Logo
+const HackerRankLogo: React.FC<{ className?: string }> = ({ className = "h-5 w-5" }) => (
+  <svg viewBox="0 0 32 32" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M16 0L1.713 8.248v15.504L16 32l14.287-8.248V8.248L16 0z"
+      fill="#00EA64"
+    />
+    <path
+      d="M13.882 22.353h-2.824V9.647h2.824v4.941h4.236V9.647h2.824v12.706h-2.824v-5.224h-4.236v5.224z"
+      fill="#000000"
+    />
+  </svg>
+);
+
+// Official LeetCode Emblem SVG Logo
+const LeetCodeLogo: React.FC<{ className?: string }> = ({ className = "h-5 w-5" }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M13.483 0a1.374 1.374 0 0 0-.961.438L7.116 6.226l-3.854 4.126a5.266 5.266 0 0 0-1.209 2.104 5.35 5.35 0 0 0-.125.513 5.527 5.527 0 0 0 .062 2.362 5.83 5.83 0 0 0 .349 1.017 5.938 5.938 0 0 0 1.271 1.818l4.277 4.193.039.038c2.248 2.165 5.852 2.133 8.063-.074l2.396-2.392c.54-.54.54-1.414.003-1.955a1.378 1.378 0 0 0-1.951-.003l-2.396 2.392a3.021 3.021 0 0 1-4.205.038l-.02-.019-4.276-4.193a3.14 3.14 0 0 1-.671-.963 3.04 3.04 0 0 1-.186-1.265 2.923 2.923 0 0 1 .636-1.11l3.854-4.126 5.406-5.788a1.37 1.37 0 0 0-.012-1.936A1.365 1.365 0 0 0 13.483 0z"
+      fill="#FFA116"
+    />
+    <path
+      d="M9.833 11.233a1.38 1.38 0 0 0-1.38 1.38 1.38 1.38 0 0 0 1.38 1.38h11.78a1.38 1.38 0 0 0 1.38-1.38 1.38 1.38 0 0 0-1.38-1.38h-11.78z"
+      fill="#FFFFFF"
+    />
+  </svg>
+);
 
 export interface StudentDashboardProps {
   activeTab?: "dashboard" | "schedule" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu";
@@ -375,6 +404,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [attendanceMonthOffset, setAttendanceMonthOffset] = useState<number>(0);
 
   const [studentInterviews, setStudentInterviews] = useState<any[]>([]);
+  const [studentAchievements, setStudentAchievements] = useState<any[]>([]);
+  const [loadingStudentAchievements, setLoadingStudentAchievements] = useState(false);
 
   useEffect(() => {
     if (currentStudent?.id && (activeTab === "interviews" || studentInterviews.length === 0)) {
@@ -388,6 +419,144 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         .catch(() => { });
     }
   }, [currentStudent?.id, currentStudent?.classGroup, currentStudent?.college_id, activeTab]);
+
+  useEffect(() => {
+    if (!currentStudent?.id) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingStudentAchievements(true);
+      try {
+        const res = await fetch(`/api/achievements?studentId=${encodeURIComponent(currentStudent.id)}`);
+        const data = await res.json();
+        if (!cancelled && data.success && Array.isArray(data.records)) {
+          setStudentAchievements(data.records);
+        }
+      } catch (err) {
+        console.error("Failed to fetch student achievements:", err);
+      } finally {
+        if (!cancelled) setLoadingStudentAchievements(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentStudent?.id]);
+
+  // HackerRank & LeetCode Contest links (Fetched dynamically per college from external database)
+  const [contestData, setContestData] = useState<{
+    collegeMatched?: string;
+    hackerrank?: {
+      hasContest: boolean;
+      contestUrl: string;
+      contestName: string;
+      allContests?: Array<{ id: string; name: string; contestUrl: string; slug?: string }>;
+    };
+    leetcode?: {
+      hasContest: boolean;
+      contestUrl: string;
+      viewToken?: string;
+      practiceCount?: number;
+    };
+  } | null>(null);
+  const [loadingContests, setLoadingContests] = useState(false);
+
+  // Live LeetCode & HackerRank student performance data
+  const [codingStatsData, setCodingStatsData] = useState<{
+    collegeMatched?: string;
+    student?: { registerNumber: string; name: string; email: string };
+    leetcode?: {
+      found: boolean;
+      username?: string | null;
+      profileUrl?: string | null;
+      ranking?: number | null;
+      solvedTotal: number;
+      solvedEasy: number;
+      solvedMedium: number;
+      solvedHard: number;
+      lastSyncedAt?: string | null;
+    };
+    hackerrank?: {
+      found: boolean;
+      contestName?: string;
+      contestSlug?: string | null;
+      rank?: number | null;
+      solved: number;
+      attempted: number;
+      computedScore: number;
+      totalQuestions: number;
+      username?: string | null;
+      profileUrl?: string | null;
+      lastScrapedAt?: string | null;
+    };
+  } | null>(null);
+  const [loadingCodingStats, setLoadingCodingStats] = useState(false);
+
+  useEffect(() => {
+    if (!currentStudent) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingContests(true);
+      try {
+        const params = new URLSearchParams();
+        if (currentStudent.college_id) params.set("collegeId", currentStudent.college_id);
+        const clgObj = colleges?.find(c => c.id === currentStudent.college_id);
+        if (clgObj?.name) params.set("collegeName", clgObj.name);
+        if (currentStudent.department) params.set("department", currentStudent.department);
+        if (currentStudent.classGroup) params.set("classGroup", currentStudent.classGroup);
+
+        const res = await fetch(`/api/student/contest-links?${params.toString()}`);
+        const data = await res.json();
+        if (!cancelled && data.success) {
+          setContestData(data);
+        }
+      } catch (err) {
+        console.error("Failed to load student contest links:", err);
+      } finally {
+        if (!cancelled) setLoadingContests(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentStudent?.id, currentStudent?.college_id, currentStudent?.department, currentStudent?.classGroup, colleges]);
+
+  useEffect(() => {
+    if (!currentStudent) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingCodingStats(true);
+      try {
+        const params = new URLSearchParams();
+        if (currentStudent.id) params.set("studentId", currentStudent.id);
+        const reg = currentStudent.register_number || currentStudent.roll_number;
+        if (reg) params.set("registerNumber", reg);
+        if (currentStudent.email) params.set("email", currentStudent.email);
+        if (currentStudent.name) params.set("name", currentStudent.name);
+        if (currentStudent.college_id) params.set("collegeId", currentStudent.college_id);
+        const clgObj = colleges?.find(c => c.id === currentStudent.college_id);
+        if (clgObj?.name) params.set("collegeName", clgObj.name);
+        if (currentStudent.leetcode_link) params.set("leetcodeUrl", currentStudent.leetcode_link);
+        if (currentStudent.hackerrank_link) params.set("hackerrankUrl", currentStudent.hackerrank_link);
+
+        const res = await fetch(`/api/coding-stats?${params.toString()}`);
+        const data = await res.json();
+        if (!cancelled && data.success) {
+          setCodingStatsData(data);
+        }
+      } catch (err) {
+        console.error("Failed to load student coding statistics:", err);
+      } finally {
+        if (!cancelled) setLoadingCodingStats(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [
+    currentStudent?.id,
+    currentStudent?.register_number,
+    currentStudent?.roll_number,
+    currentStudent?.email,
+    currentStudent?.name,
+    currentStudent?.college_id,
+    currentStudent?.leetcode_link,
+    currentStudent?.hackerrank_link,
+    colleges
+  ]);
 
   useEffect(() => {
     try {
@@ -1391,14 +1560,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-extrabold tracking-tight text-slate-900 leading-none">
               {activeTab === "dashboard" && "Dashboard"}
-              {activeTab === "schedule" && "Weekly Class Timetable"}
-              {activeTab === "interviews" && "Academic Mock Interviews"}
-              {activeTab === "tracker" && "Skill Development & Lab Evaluations"}
-              {activeTab === "exams" && "Examinations & Test Marks"}
-              {(activeTab === "materials" || activeTab === "library") && "Subject Materials & Study Resources"}
-              {activeTab === "fees" && "Online Dues & Fees Administration"}
-              {activeTab === "profile" && "My Profile Portal"}
-              {activeTab === "more_menu" && "More Services & Portals"}
+              {activeTab === "schedule" && "Class Timetable"}
+              {activeTab === "interviews" && "Mock Interviews"}
+              {activeTab === "tracker" && "Skill Development"}
+              {activeTab === "exams" && "Exams & Marks"}
+              {(activeTab === "materials" || activeTab === "library") && "Study Materials"}
+              {activeTab === "fees" && "Fee Details"}
+              {activeTab === "profile" && "My Profile"}
+              {activeTab === "more_menu" && "More Options"}
             </h1>
             <div className="h-1.5 w-1.5 rounded-full bg-indigo-600" />
             {(() => {
@@ -1417,7 +1586,33 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             })()}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* HackerRank Direct Department Contest Link */}
+            {contestData?.hackerrank?.contestUrl && (
+              <a
+                href={contestData.hackerrank.contestUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-slate-900 hover:bg-slate-800 transition-all hover:scale-105 shadow-2xs group cursor-pointer"
+                title={contestData.hackerrank.contestName ? `HackerRank: ${contestData.hackerrank.contestName}` : "HackerRank Contest"}
+              >
+                <HackerRankLogo className="h-5 w-5 drop-shadow-sm group-hover:scale-105 transition-transform" />
+              </a>
+            )}
+
+            {/* LeetCode Direct Contest Link */}
+            {contestData?.leetcode?.contestUrl && (
+              <a
+                href={contestData.leetcode.contestUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-slate-900 hover:bg-slate-800 transition-all hover:scale-105 shadow-2xs group cursor-pointer"
+                title="LeetCode Contest"
+              >
+                <LeetCodeLogo className="h-5 w-5 drop-shadow-sm group-hover:scale-105 transition-transform" />
+              </a>
+            )}
+
             <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full text-indigo-700">
               <Sparkles className="h-3.5 w-3.5" />
               <span className="text-[9px] font-extrabold uppercase tracking-widest">
@@ -3761,53 +3956,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Conducted Lecture Topics & Syllabus Log Panel */}
-                  {(() => {
-                    const conductedLogs = (academicTracker || []).filter(
-                      log => isSubjMatch(log.subject, activeAcadSubjName) &&
-                        isCgMatch(log.class_group, currentStudent?.classGroup, currentStudent?.department)
-                    ).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
-                    if (conductedLogs.length === 0) return null;
-
-                    return (
-                      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
-                            <BookOpen className="h-4 w-4 text-indigo-600" />
-                            <span>Faculty Lecture Logs &amp; Conducted Topics ({conductedLogs.length} sessions)</span>
-                          </h4>
-                          <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
-                            Live Syllabus Tracker
-                          </span>
-                        </div>
-                        <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto pr-1">
-                          {conductedLogs.map((log, lIdx) => (
-                            <div key={log.id || `clog_${lIdx}`} className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                              <div className="space-y-0.5">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-extrabold text-slate-800">{log.topic}</span>
-                                  {log.unit && (
-                                    <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase">
-                                      {log.unit.startsWith("Unit") ? log.unit : `Unit ${log.unit}`}
-                                    </span>
-                                  )}
-                                </div>
-                                {log.comments && (
-                                  <p className="text-[11px] text-slate-500 italic">&ldquo;{log.comments}&rdquo;</p>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 shrink-0">
-                                {log.date && <span>{log.date}</span>}
-                                {log.period_slot && <span>• {log.period_slot}</span>}
-                                {log.mentor_name && <span className="text-slate-600 font-semibold">• {log.mentor_name}</span>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
 
                   {/* 15 Weeks Academic Tasks & Scoped Marks List */}
                   <div className="space-y-4">
@@ -4968,6 +5117,320 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Live Coding & Competitive Programming Performance Section */}
+              <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-6">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-amber-500 text-slate-950 flex items-center justify-center font-black text-sm shadow-xs">
+                      &lt;/&gt;
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                        <span>💻 Live Coding &amp; Contest Performance</span>
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Live DB Synchronized
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                        Real-time algorithmic problems solved, college contest rankings, and verified competitive programming standing.
+                      </p>
+                    </div>
+                  </div>
+
+                  {codingStatsData?.collegeMatched && (
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200">
+                      🏛️ {codingStatsData.collegeMatched}
+                    </span>
+                  )}
+                </div>
+
+                {loadingCodingStats ? (
+                  <div className="p-8 text-center text-xs font-bold text-slate-400 animate-pulse flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+                    <span>Syncing latest LeetCode &amp; HackerRank metrics...</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {/* LeetCode Card */}
+                    <div className="p-5 rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50/40 via-white to-orange-50/30 shadow-xs space-y-4 relative overflow-hidden">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-9 w-9 rounded-xl bg-slate-900 border border-amber-500/30 flex items-center justify-center shadow-xs p-1.5">
+                            <LeetCodeLogo className="h-6 w-6" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">LeetCode Progress</h4>
+                            <p className="text-[11px] text-slate-500 font-medium">
+                              {codingStatsData?.leetcode?.username ? `@${codingStatsData.leetcode.username}` : (currentStudent.leetcode_link ? "Linked Profile" : "Campus Algorithm Lab")}
+                            </p>
+                          </div>
+                        </div>
+
+                        {codingStatsData?.leetcode?.ranking ? (
+                          <span className="px-2 py-0.5 rounded-full text-[9.5px] font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
+                            Rank #{codingStatsData.leetcode.ranking.toLocaleString()}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[9.5px] font-black bg-slate-100 text-slate-600 border border-slate-200">
+                            {codingStatsData?.leetcode?.found ? "Active Solver" : "Unranked"}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Total Solved Hero Number */}
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-black text-slate-900">
+                          {codingStatsData?.leetcode?.solvedTotal || 0}
+                        </span>
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                          Problems Solved
+                        </span>
+                      </div>
+
+                      {/* Solved Difficulty Distribution Pills */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200/70 text-center">
+                          <span className="text-[9.5px] font-black uppercase text-emerald-700 tracking-wider block">Easy</span>
+                          <span className="text-sm font-black text-emerald-900">{codingStatsData?.leetcode?.solvedEasy || 0}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200/70 text-center">
+                          <span className="text-[9.5px] font-black uppercase text-amber-700 tracking-wider block">Medium</span>
+                          <span className="text-sm font-black text-amber-900">{codingStatsData?.leetcode?.solvedMedium || 0}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200/70 text-center">
+                          <span className="text-[9.5px] font-black uppercase text-rose-700 tracking-wider block">Hard</span>
+                          <span className="text-sm font-black text-rose-900">{codingStatsData?.leetcode?.solvedHard || 0}</span>
+                        </div>
+                      </div>
+
+                      {/* Profile Action Link */}
+                      <div className="pt-2 border-t border-amber-100 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {codingStatsData?.leetcode?.lastSyncedAt
+                            ? `Last Synced: ${new Date(codingStatsData.leetcode.lastSyncedAt).toLocaleDateString()}`
+                            : "Auto-synced with college database"}
+                        </span>
+                        <a
+                          href={codingStatsData?.leetcode?.profileUrl || contestData?.leetcode?.contestUrl || "https://leetcode.com"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-[#FFA116] hover:bg-amber-500 text-slate-950 text-xs font-black transition-all flex items-center gap-1 shadow-2xs"
+                        >
+                          <span>Open Profile</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* HackerRank Card */}
+                    <div className="p-5 rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/40 via-white to-teal-50/30 shadow-xs space-y-4 relative overflow-hidden">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-9 w-9 rounded-xl bg-slate-900 border border-emerald-500/30 flex items-center justify-center shadow-xs p-1.5">
+                            <HackerRankLogo className="h-6 w-6" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">HackerRank Contest Standing</h4>
+                            <p className="text-[11px] text-slate-500 font-medium truncate max-w-[180px]">
+                              {codingStatsData?.hackerrank?.contestName || "Campus Weekly Contest"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {codingStatsData?.hackerrank?.rank ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-2xs">
+                            🏆 Rank #{codingStatsData.hackerrank.rank}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[9.5px] font-black bg-slate-100 text-slate-600 border border-slate-200">
+                            {codingStatsData?.hackerrank?.found ? "Participant" : "Active"}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Contest Score / Solved Hero Numbers */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-white/80 p-3 rounded-xl border border-emerald-100">
+                          <span className="text-[9.5px] font-black uppercase text-slate-400 tracking-wider block">Contest Score</span>
+                          <span className="text-2xl font-black text-slate-900">
+                            {codingStatsData?.hackerrank?.computedScore || 0}
+                          </span>
+                        </div>
+                        <div className="bg-white/80 p-3 rounded-xl border border-emerald-100">
+                          <span className="text-[9.5px] font-black uppercase text-slate-400 tracking-wider block">Questions Solved</span>
+                          <span className="text-2xl font-black text-emerald-700">
+                            {codingStatsData?.hackerrank?.solved || 0}
+                            <span className="text-xs font-bold text-slate-400 ml-1">
+                              / {codingStatsData?.hackerrank?.totalQuestions || "—"}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Additional Metrics Strip */}
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 bg-emerald-50/50 p-2.5 rounded-xl border border-emerald-100">
+                        <span>Attempted: <strong>{codingStatsData?.hackerrank?.attempted || 0} Tasks</strong></span>
+                        <span>User: <strong>{codingStatsData?.hackerrank?.username || "Verified"}</strong></span>
+                      </div>
+
+                      {/* Contest Action Link */}
+                      <div className="pt-2 border-t border-emerald-100 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {codingStatsData?.hackerrank?.lastScrapedAt
+                            ? `Scraped: ${new Date(codingStatsData.hackerrank.lastScrapedAt).toLocaleDateString()}`
+                            : "College Leaderboard Sync"}
+                        </span>
+                        <a
+                          href={codingStatsData?.hackerrank?.profileUrl || contestData?.hackerrank?.contestUrl || "https://www.hackerrank.com/contests"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-[#00EA64] hover:bg-emerald-400 text-slate-950 text-xs font-black transition-all flex items-center gap-1 shadow-2xs"
+                        >
+                          <span>Open Contest</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Honors & Student Achievements Section */}
+              <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-5">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                      <Award className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                        <span>🏆 Honors, Accolades &amp; Achievements</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-50 text-[#D528A2] border border-pink-100">
+                          {studentAchievements.length} Verified
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                        Hackathon wins, symposium recognitions, paper publications, and campus honors verified by Campus Management.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {loadingStudentAchievements ? (
+                  <div className="p-8 text-center text-xs font-bold text-slate-400 animate-pulse">
+                    Loading student accolades...
+                  </div>
+                ) : studentAchievements.length === 0 ? (
+                  <div className="p-8 border border-dashed border-slate-200 rounded-2xl text-center space-y-2 bg-slate-50/50">
+                    <Award className="h-8 w-8 text-slate-300 mx-auto" />
+                    <h4 className="text-xs font-extrabold text-slate-700">No Verified Achievements Logged Yet</h4>
+                    <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                      Achievements recorded by the Campus Manager for hackathons, paper presentations, and sports meets will be highlighted here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {studentAchievements.map((ach) => {
+                      const isTopPrize = ["Winner", "1st Place", "Gold Medalist"].includes(ach.badge);
+                      let achPhotosList: string[] = [];
+                      if (ach.photos) {
+                        try {
+                          achPhotosList = typeof ach.photos === "string" ? JSON.parse(ach.photos) : (Array.isArray(ach.photos) ? ach.photos : []);
+                        } catch (_) {
+                          achPhotosList = [ach.photos];
+                        }
+                      }
+
+                      return (
+                        <div
+                          key={ach.id}
+                          className="p-5 rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50/50 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group"
+                        >
+                          <div className="space-y-2.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[9.5px] font-black uppercase tracking-wide border ${
+                                  isTopPrize
+                                    ? "bg-amber-100 text-amber-800 border-amber-300"
+                                    : ach.badge === "Runner-Up" || ach.badge === "2nd Place" || ach.badge === "Silver Medalist"
+                                      ? "bg-slate-100 text-slate-800 border-slate-300"
+                                      : ach.badge === "Paper Published" || ach.badge === "Certification"
+                                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                        : "bg-indigo-100 text-indigo-800 border-indigo-300"
+                                }`}
+                              >
+                                {ach.badge || "Accolade"}
+                              </span>
+
+                              <span className="text-[10.5px] font-mono font-bold text-slate-400">
+                                {ach.date_str || "Verified"}
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="text-[9.5px] font-extrabold uppercase tracking-wider text-indigo-600 block">
+                                {ach.category || "Accolade"}
+                              </span>
+                              <h4 className="text-sm font-black text-slate-900 leading-snug mt-0.5">
+                                {ach.title}
+                              </h4>
+                              {ach.topic && (
+                                <p className="text-xs font-bold text-indigo-900 mt-1 flex items-center gap-1">
+                                  <span className="text-[10px] uppercase font-black text-slate-400">Topic:</span>
+                                  <span>{ach.topic}</span>
+                                </p>
+                              )}
+                            </div>
+
+                            {ach.event_name && (
+                              <div className="p-2 rounded-xl bg-slate-100/70 border border-slate-200/60 text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                                <Sparkles className="h-3.5 w-3.5 text-[#D528A2] shrink-0" />
+                                <span className="truncate">Event: <strong className="text-slate-900">{ach.event_name}</strong></span>
+                              </div>
+                            )}
+
+                            {ach.reward_prize && (
+                              <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-black text-emerald-900 flex items-center gap-1.5">
+                                <Award className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                <span>Prize: {ach.reward_prize}</span>
+                              </div>
+                            )}
+
+                            {ach.description && (
+                              <p className="text-xs text-slate-600 line-clamp-2 font-normal leading-relaxed">
+                                {ach.description}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap text-xs">
+                            {ach.proof_link ? (
+                              <a
+                                href={ach.proof_link.startsWith("http") ? ach.proof_link : `https://${ach.proof_link}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                <span>Certificate Proof</span>
+                              </a>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-semibold">Campus Verified</span>
+                            )}
+
+                            {achPhotosList.length > 0 && (
+                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                                📸 {achPhotosList.length} photo(s)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Attendance & Engagement Stats Card */}

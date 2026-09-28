@@ -15,6 +15,7 @@ import {
   Sparkles,
   TrendingUp,
   Download,
+  ExternalLink,
   FileSpreadsheet
 } from "lucide-react";
 import {
@@ -31,7 +32,11 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "subjects" | "timeline" | "attendance">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "subjects" | "timeline" | "attendance" | "achievements" | "coding">("overview");
+  const [achievements, setAchievements] = useState<any[]>([]);
+  const [loadingAchievements, setLoadingAchievements] = useState(false);
+  const [codingStats, setCodingStats] = useState<any | null>(null);
+  const [loadingCodingStats, setLoadingCodingStats] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -53,9 +58,38 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
         if (isMounted) setLoading(false);
       }
     }
+    async function fetchAchievements() {
+      setLoadingAchievements(true);
+      try {
+        const res = await fetch(`/api/achievements?studentId=${encodeURIComponent(studentId)}`);
+        const json = await res.json();
+        if (json.success && isMounted) {
+          setAchievements(json.records || []);
+        }
+      } catch (_) {}
+      finally {
+        if (isMounted) setLoadingAchievements(false);
+      }
+    }
+    async function fetchCodingStats() {
+      setLoadingCodingStats(true);
+      try {
+        const query = collegeId ? `&collegeId=${encodeURIComponent(collegeId)}` : "";
+        const res = await fetch(`/api/coding-stats?studentId=${encodeURIComponent(studentId)}${query}`);
+        const json = await res.json();
+        if (json.success && isMounted) {
+          setCodingStats(json);
+        }
+      } catch (_) {}
+      finally {
+        if (isMounted) setLoadingCodingStats(false);
+      }
+    }
     fetchStudent360();
+    fetchAchievements();
+    fetchCodingStats();
     return () => { isMounted = false; };
-  }, [studentId]);
+  }, [studentId, collegeId]);
 
   // Close on Escape Key
   useEffect(() => {
@@ -142,6 +176,32 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
         const wsTimeline = XLSX.utils.aoa_to_sheet([timelineHeaders, ...timelineRows]);
         wsTimeline["!cols"] = [{ wch: 14 }, { wch: 16 }, { wch: 30 }, { wch: 14 }, { wch: 45 }];
         XLSX.utils.book_append_sheet(wb, wsTimeline, "Activity Timeline");
+      }
+
+      // Sheet 5: Live Coding & Contests
+      if (codingStats) {
+        const lc = codingStats.leetcode || {};
+        const hr = codingStats.hackerrank || {};
+        const codingHeaders = ["Platform / Dimension", "Metric Name", "Value"];
+        const codingRows = [
+          ["LeetCode", "Total Solved", lc.solvedTotal || 0],
+          ["LeetCode", "Easy Solved", lc.solvedEasy || 0],
+          ["LeetCode", "Medium Solved", lc.solvedMedium || 0],
+          ["LeetCode", "Hard Solved", lc.solvedHard || 0],
+          ["LeetCode", "Global Ranking", lc.ranking || "Unranked"],
+          ["LeetCode", "Username", lc.username || "—"],
+          ["LeetCode", "Profile URL", lc.profileUrl || "—"],
+          ["HackerRank", "Contest Name", hr.contestName || "—"],
+          ["HackerRank", "College Contest Rank", hr.rank ? `#${hr.rank}` : "—"],
+          ["HackerRank", "Contest Score", hr.computedScore || 0],
+          ["HackerRank", "Questions Solved", `${hr.solved || 0} / ${hr.totalQuestions || "—"}`],
+          ["HackerRank", "Attempted", hr.attempted || 0],
+          ["HackerRank", "Username", hr.username || "—"],
+          ["HackerRank", "Contest Profile", hr.profileUrl || "—"]
+        ];
+        const wsCoding = XLSX.utils.aoa_to_sheet([codingHeaders, ...codingRows]);
+        wsCoding["!cols"] = [{ wch: 20 }, { wch: 30 }, { wch: 40 }];
+        XLSX.utils.book_append_sheet(wb, wsCoding, "Coding & Contests");
       }
 
       const safeName = student.name.replace(/[^a-zA-Z0-9]/g, "_");
@@ -271,12 +331,14 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
         </div>
 
         {/* Compact Navigation Tabs */}
-        <div className="flex border-b border-slate-200 bg-slate-50/90 px-4 gap-1 shrink-0">
+        <div className="flex border-b border-slate-200 bg-slate-50/90 px-4 gap-1 shrink-0 overflow-x-auto custom-scrollbar">
           {[
             { key: "overview", label: "Progress & Analytics", icon: Award },
+            { key: "coding", label: `💻 Coding (${codingStats?.leetcode?.solvedTotal ? `${codingStats.leetcode.solvedTotal} LC` : "Stats"})`, icon: Sparkles },
             { key: "subjects", label: "Subject Breakdown", icon: BookOpen },
             { key: "timeline", label: "Timeline", icon: Clock },
-            { key: "attendance", label: "Attendance Logs", icon: Calendar }
+            { key: "attendance", label: "Attendance Logs", icon: Calendar },
+            { key: "achievements", label: `🏆 Honors (${achievements.length})`, icon: Sparkles }
           ].map(t => {
             const Icon = t.icon;
             const isActive = activeTab === t.key;
@@ -284,7 +346,7 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
               <button
                 key={t.key}
                 onClick={() => setActiveTab(t.key as any)}
-                className={`flex items-center gap-1.5 py-2 px-2.5 text-[11px] font-extrabold border-b-2 transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 py-2 px-2.5 text-[11px] font-extrabold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
                   isActive
                     ? "border-[#D528A2] text-[#D528A2] bg-white font-black"
                     : "border-transparent text-slate-500 hover:text-slate-900"
@@ -302,6 +364,31 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
           {/* 1. Overview Tab */}
           {activeTab === "overview" && (
             <div className="space-y-4">
+              {/* Quick Coding Metrics Strip in Overview */}
+              {codingStats && (
+                <div className="p-3 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-xl text-white flex items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-black text-xs">
+                      &lt;/&gt;
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-black uppercase text-pink-300 tracking-wider block">Competitive Coding Standing</span>
+                      <p className="text-xs font-bold text-slate-200 mt-0.5">
+                        {codingStats.leetcode?.found ? `LeetCode: ${codingStats.leetcode.solvedTotal} Solved` : "LeetCode: Active"}
+                        {" • "}
+                        {codingStats.hackerrank?.rank ? `HackerRank: Rank #${codingStats.hackerrank.rank}` : `HackerRank: ${codingStats.hackerrank?.solved || 0} Solved`}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("coding")}
+                    className="px-2.5 py-1 bg-white/15 hover:bg-white/25 rounded-lg text-[10px] font-extrabold text-white border border-white/20 transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    View Coding Dossier →
+                  </button>
+                </div>
+              )}
               <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-2">
                 <div className="flex items-center justify-between">
                   <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-wider">
@@ -452,6 +539,293 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* 5. 🏆 Student Honors & Verified Achievements Tab */}
+          {activeTab === "achievements" && (
+            <div className="space-y-3">
+              {loadingAchievements ? (
+                <div className="py-12 text-center text-xs font-bold text-slate-400 animate-pulse">
+                  Loading verified student achievements...
+                </div>
+              ) : achievements.length === 0 ? (
+                <div className="p-8 border border-dashed border-slate-200 bg-slate-50/50 rounded-2xl text-center space-y-2">
+                  <Award className="h-8 w-8 text-slate-300 mx-auto" />
+                  <h4 className="text-xs font-extrabold text-slate-700">No Verified Achievements Logged</h4>
+                  <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                    When the Campus Manager records hackathon wins, research papers, or symposium prizes for this student, they will be listed here and in the Campus E-Audit.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {achievements.map((ach) => {
+                    const isTopPrize = ["Winner", "1st Place", "Gold Medalist"].includes(ach.badge);
+                    let achPhotosList: string[] = [];
+                    if (ach.photos) {
+                      try {
+                        achPhotosList = typeof ach.photos === "string" ? JSON.parse(ach.photos) : (Array.isArray(ach.photos) ? ach.photos : []);
+                      } catch (_) {
+                        achPhotosList = [ach.photos];
+                      }
+                    }
+
+                    return (
+                      <div
+                        key={ach.id}
+                        className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-all space-y-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide border ${
+                              isTopPrize
+                                ? "bg-amber-100 text-amber-800 border-amber-300"
+                                : ach.badge === "Runner-Up" || ach.badge === "2nd Place" || ach.badge === "Silver Medalist"
+                                  ? "bg-slate-100 text-slate-800 border-slate-300"
+                                  : ach.badge === "Paper Published" || ach.badge === "Certification"
+                                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                    : "bg-indigo-100 text-indigo-800 border-indigo-300"
+                            }`}
+                          >
+                            {ach.badge || "Accolade"}
+                          </span>
+
+                          <span className="text-[10px] font-mono font-bold text-slate-400">
+                            {ach.date_str || "Verified"}
+                          </span>
+                        </div>
+
+                        <div>
+                          <span className="text-[9px] font-black uppercase tracking-wider text-indigo-600 block">
+                            {ach.category || "Student Honor"}
+                          </span>
+                          <h4 className="text-xs font-black text-slate-900 mt-0.5">
+                            {ach.title}
+                          </h4>
+                          {ach.topic && (
+                            <p className="text-[11px] font-bold text-indigo-900 mt-0.5 flex items-center gap-1">
+                              <span className="text-[9px] uppercase font-black text-slate-400">Topic:</span>
+                              <span>{ach.topic}</span>
+                            </p>
+                          )}
+                        </div>
+
+                        {ach.event_name && (
+                          <div className="p-2 rounded-xl bg-slate-50 border border-slate-100 text-[11px] font-semibold text-slate-700 flex items-center gap-1.5">
+                            <Sparkles className="h-3.5 w-3.5 text-[#D528A2] shrink-0" />
+                            <span className="truncate">Event: <strong className="text-slate-900">{ach.event_name}</strong></span>
+                          </div>
+                        )}
+
+                        {ach.reward_prize && (
+                          <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-200/80 text-[11px] font-black text-emerald-900 flex items-center gap-1.5">
+                            <Award className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                            <span>Prize / Award: {ach.reward_prize}</span>
+                          </div>
+                        )}
+
+                        {ach.description && (
+                          <p className="text-[11px] text-slate-600 font-normal leading-relaxed">
+                            {ach.description}
+                          </p>
+                        )}
+
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap text-xs">
+                          {ach.proof_link ? (
+                            <a
+                              href={ach.proof_link.startsWith("http") ? ach.proof_link : `https://${ach.proof_link}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              <span>Official Verification Link</span>
+                            </a>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-semibold">Campus Manager Verified</span>
+                          )}
+
+                          {achPhotosList.length > 0 && (
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                              📸 {achPhotosList.length} photo(s) attached
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 6. Coding & Platform Performance Tab */}
+          {activeTab === "coding" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200 flex-wrap gap-2">
+                <div>
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <span>💻 Algorithmic &amp; Contest Performance</span>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Live Supabase Sync
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                    Real-time statistics synchronized from LeetCode practice logs and HackerRank college contest leaderboards.
+                  </p>
+                </div>
+                {codingStats?.collegeMatched && (
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200">
+                    🏛️ {codingStats.collegeMatched}
+                  </span>
+                )}
+              </div>
+
+              {loadingCodingStats ? (
+                <div className="p-8 text-center text-xs font-bold text-slate-400 animate-pulse flex items-center justify-center gap-2">
+                  <div className="h-4 w-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                  <span>Fetching live HackerRank &amp; LeetCode student records...</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* LeetCode Card */}
+                  <div className="p-4 rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50/30 via-white to-orange-50/20 shadow-xs space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-8 w-8 rounded-lg bg-[#FFA116] text-slate-950 flex items-center justify-center font-black text-xs shadow-xs">
+                          LC
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">LeetCode Analytics</h4>
+                          <p className="text-[11px] text-slate-500 font-medium">
+                            {codingStats?.leetcode?.username ? `@${codingStats.leetcode.username}` : "Linked Student Record"}
+                          </p>
+                        </div>
+                      </div>
+                      {codingStats?.leetcode?.ranking ? (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                          Rank #{codingStats.leetcode.ranking.toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-slate-100 text-slate-600 border border-slate-200">
+                          {codingStats?.leetcode?.found ? "Active Solver" : "Not Synced"}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-black text-slate-900">
+                        {codingStats?.leetcode?.solvedTotal || 0}
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        Problems Solved
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 text-center">
+                      <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200/70">
+                        <span className="text-[9px] font-black uppercase text-emerald-700 block">Easy</span>
+                        <span className="text-xs font-black text-emerald-900">{codingStats?.leetcode?.solvedEasy || 0}</span>
+                      </div>
+                      <div className="p-2 rounded-lg bg-amber-50 border border-amber-200/70">
+                        <span className="text-[9px] font-black uppercase text-amber-700 block">Med</span>
+                        <span className="text-xs font-black text-amber-900">{codingStats?.leetcode?.solvedMedium || 0}</span>
+                      </div>
+                      <div className="p-2 rounded-lg bg-rose-50 border border-rose-200/70">
+                        <span className="text-[9px] font-black uppercase text-rose-700 block">Hard</span>
+                        <span className="text-xs font-black text-rose-900">{codingStats?.leetcode?.solvedHard || 0}</span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-amber-100 flex items-center justify-between text-[10px]">
+                      <span className="text-slate-400">
+                        {codingStats?.leetcode?.lastSyncedAt
+                          ? `Synced: ${new Date(codingStats.leetcode.lastSyncedAt).toLocaleDateString()}`
+                          : "College LeetCode DB"}
+                      </span>
+                      {codingStats?.leetcode?.profileUrl && (
+                        <a
+                          href={codingStats.leetcode.profileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-amber-800 font-extrabold hover:underline flex items-center gap-1"
+                        >
+                          <span>Open Profile</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* HackerRank Card */}
+                  <div className="p-4 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/30 via-white to-teal-50/20 shadow-xs space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-8 w-8 rounded-lg bg-[#00EA64] text-slate-950 flex items-center justify-center font-black text-xs shadow-xs">
+                          HR
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">HackerRank Contest</h4>
+                          <p className="text-[11px] text-slate-500 font-medium truncate max-w-[160px]">
+                            {codingStats?.hackerrank?.contestName || "Campus Algorithm Challenge"}
+                          </p>
+                        </div>
+                      </div>
+                      {codingStats?.hackerrank?.rank ? (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300">
+                          🏆 Rank #{codingStats.hackerrank.rank}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-slate-100 text-slate-600 border border-slate-200">
+                          {codingStats?.hackerrank?.found ? "Contest Active" : "Not Synced"}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100">
+                        <span className="text-[9px] font-black uppercase text-slate-400 block">Score</span>
+                        <span className="text-xl font-black text-slate-900">
+                          {codingStats?.hackerrank?.computedScore || 0}
+                        </span>
+                      </div>
+                      <div className="bg-white/80 p-2.5 rounded-lg border border-emerald-100">
+                        <span className="text-[9px] font-black uppercase text-slate-400 block">Solved</span>
+                        <span className="text-xl font-black text-emerald-700">
+                          {codingStats?.hackerrank?.solved || 0}
+                          <span className="text-xs font-bold text-slate-400 ml-1">
+                            / {codingStats?.hackerrank?.totalQuestions || "—"}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10.5px] font-bold text-slate-600 bg-emerald-50/60 p-2 rounded-lg border border-emerald-100">
+                      <span>Attempted: <strong>{codingStats?.hackerrank?.attempted || 0}</strong></span>
+                      <span>Username: <strong>{codingStats?.hackerrank?.username || "—"}</strong></span>
+                    </div>
+
+                    <div className="pt-2 border-t border-emerald-100 flex items-center justify-between text-[10px]">
+                      <span className="text-slate-400">
+                        {codingStats?.hackerrank?.lastScrapedAt
+                          ? `Scraped: ${new Date(codingStats.hackerrank.lastScrapedAt).toLocaleDateString()}`
+                          : "Contest Leaderboard"}
+                      </span>
+                      {codingStats?.hackerrank?.profileUrl && (
+                        <a
+                          href={codingStats.hackerrank.profileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-800 font-extrabold hover:underline flex items-center gap-1"
+                        >
+                          <span>Open Contest</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -226,6 +226,20 @@ export async function POST(request: Request) {
 
       const newStatus = action === "approve" ? "approved" : "rejected";
 
+      // ── Gate: leave approval must not create an unhandled demo conflict ──
+      if (action === "approve") {
+        const pendingReallocs: any[] = await db.all(
+          "SELECT id, subject, original_date_str, original_time_slot, proposed_date_str, proposed_time_slot FROM demo_reallocation_requests WHERE leave_request_id = ? AND status = 'pending'",
+          [requestId]
+        ).catch(() => []);
+        if (pendingReallocs.length > 0) {
+          return NextResponse.json({
+            success: false,
+            message: `Cannot approve yet: ${pendingReallocs.length} demo reallocation(s) for this leave are still awaiting Allocator decision (${pendingReallocs.map((r: any) => `${r.subject}: ${r.original_date_str} → ${r.proposed_date_str}`).join("; ")}).`
+          }, { status: 409 });
+        }
+      }
+
       await db.run(
         `UPDATE faculty_leave_requests
          SET status = ?, approved_by = ?, rejection_reason = ?, updated_at = NOW()
@@ -416,16 +430,25 @@ export async function POST(request: Request) {
       endTime,
       reason,
       // Array of { slotId, dateStr, coverMentorId } — one per affected class
-      coverSelections
+      coverSelections,
+      // Leave-driven demo reallocation request ids proposed by the mentor
+      // (each was already reserved and queued for Allocator approval in the UI)
+      demoReallocationIds
     } = body;
 
-    const validTypes = ["Leave", "Casual Leave", "Emergency Leave", "Permission", "OD"];
+    const validTypes = ["Casual Leave", "Emergency", "Emergency Leave", "On Duty", "OD", "Permission", "Leave"];
     if (!mentorId || !requestType || !startDate || !reason || !reason.trim()) {
       return NextResponse.json({ success: false, message: "Missing required fields: Request Type, Dates, and Mandatory Reason are required." }, { status: 400 });
     }
     if (!validTypes.includes(requestType)) {
       return NextResponse.json({ success: false, message: `Invalid request type: ${requestType}` }, { status: 400 });
     }
+
+    const normalizedRequestType = 
+      requestType === "Emergency Leave" || requestType === "Emergency" ? "Emergency" :
+      requestType === "OD" || requestType === "On Duty" ? "On Duty" :
+      requestType === "Permission" ? "Permission" :
+      "Casual Leave";
 
     const effectiveEndDate = endDate || startDate;
     const reqId = `f_leave_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
@@ -436,7 +459,7 @@ export async function POST(request: Request) {
       effectiveCollegeId = mentor?.college_id || "general";
     }
 
-    const finalReason = requestType === "Permission" && startTime && endTime
+    const finalReason = normalizedRequestType === "Permission" && startTime && endTime
       ? `[Time: ${startTime} - ${endTime}] ${reason.trim()}`
       : reason.trim();
 
@@ -447,13 +470,23 @@ export async function POST(request: Request) {
         reqId,
         mentorId,
         effectiveCollegeId,
-        requestType,
-        requestType,
+        normalizedRequestType,
+        normalizedRequestType,
         startDate,
         effectiveEndDate,
         finalReason
       ]
     );
+
+    // Link the mentor's proposed demo reallocations to this leave application
+    if (Array.isArray(demoReallocationIds) && demoReallocationIds.length > 0) {
+      for (const drrId of demoReallocationIds) {
+        await db.run(
+          "UPDATE demo_reallocation_requests SET leave_request_id = ? WHERE id = ? AND status = 'pending'",
+          [reqId, drrId]
+        ).catch(() => {});
+      }
+    }
 
     // Process cover selections: create handover_requests for each slot the mentor nominated a cover for
     const createdHandovers: any[] = [];

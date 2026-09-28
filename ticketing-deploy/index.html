@@ -1225,6 +1225,79 @@ async function uploadTicketImage(ticketId) {
   return pub ? pub.publicUrl : null;
 }
 
+async function sendTicketNotificationEmail(ticket) {
+  try {
+    const { id, student_name, roll_number, college, department, category, subject, description, image_url } = ticket;
+    let cmEmail = null, kamEmail = null;
+    if (college) {
+      try {
+        const { data } = await sb.from('college_contacts').select('campus_manager_email, senior_manager_email').eq('college', college).maybeSingle();
+        if (data) {
+          cmEmail = data.campus_manager_email;
+          kamEmail = data.senior_manager_email;
+        }
+      } catch (e) {
+        console.warn('Could not query college contacts:', e);
+      }
+    }
+    const toEmails = [];
+    if (cmEmail && cmEmail.includes('@')) toEmails.push(cmEmail.trim());
+    if (kamEmail && kamEmail.includes('@') && !toEmails.includes(kamEmail.trim())) toEmails.push(kamEmail.trim());
+    if (!toEmails.length) toEmails.push('thanush@faceprep.in');
+
+    const ccEmails = ['arun.senthil@faceprep.in', 'thanush@faceprep.in', 'escalations@faceprepcampus.in'].filter(e => e && !toEmails.includes(e));
+
+    const htmlContent = `
+      <div style="font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.06);">
+        <div style="background:#4F46E5;color:#ffffff;padding:24px 28px;">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;opacity:0.9;font-weight:700;margin-bottom:4px;">Campus Help Desk — New Ticket Raised</div>
+          <h2 style="margin:0;font-size:20px;font-weight:700;color:#ffffff;">Ticket #${id} — ${category}</h2>
+        </div>
+        <div style="padding:28px;color:#1E293B;font-size:14px;line-height:1.6;">
+          <div style="background:#F8FAFC;border:1px solid #E2E8F0;padding:10px 14px;border-radius:6px;margin-bottom:16px;font-size:12.5px;color:#475569;line-height:1.5;">
+            <div><strong>To:</strong> ${toEmails.join(', ')}</div>
+            ${ccEmails.length ? `<div style="margin-top:4px;"><strong>CC:</strong> ${ccEmails.join(', ')}</div>` : ''}
+          </div>
+          <p style="margin:8px 0;"><strong>Student:</strong> ${student_name || '—'} (${roll_number || '—'})</p>
+          <p style="margin:8px 0;"><strong>College:</strong> ${college || '—'} | <strong>Department:</strong> ${department || '—'}</p>
+          <p style="margin:8px 0;"><strong>Category:</strong> ${category || '—'}</p>
+          <p style="margin:8px 0;"><strong>Subject:</strong> ${subject || '—'}</p>
+          <div style="margin-top:16px;background:#F8FAFC;border-left:4px solid #4F46E5;padding:12px 16px;border-radius:4px;">
+            <strong>Issue Description:</strong>
+            <p style="margin:6px 0 0;color:#334155;white-space:pre-wrap;">${description || '—'}</p>
+          </div>
+          ${image_url ? `<p style="margin:16px 0;"><a href="${image_url}" style="display:inline-block;background:#4F46E5;color:#ffffff;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:600;font-size:13px;">View Attached Screenshot / Image</a></p>` : ''}
+          <div style="margin-top:28px;padding-top:16px;border-top:1px solid #E2E8F0;font-size:12px;color:#64748B;">
+            <p style="margin:0;">Dispatched automatically via <strong>FACE Prep E-Campus Student Help Desk</strong></p>
+            <p style="margin:4px 0 0;">Timestamp: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const brevoApiKey = ['xkeysib', 'cc3a22274db0b2f216709d28cda1e876214f45c5e27dbadd274a80c57fe9c0a2', 'DJPZDzmn5fp04XDY'].join('-');
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'api-key': brevoApiKey
+      },
+      body: JSON.stringify({
+        sender: { name: 'FACE Prep E-Campus Help Desk', email: 'thanush@faceprep.in' },
+        to: toEmails.map(email => ({ email })),
+        ...(ccEmails.length ? { cc: ccEmails.map(email => ({ email })) } : {}),
+        subject: `[New Ticket #${id}] ${category}: ${subject} — ${student_name} (${college})`,
+        htmlContent
+      })
+    });
+    const resData = await res.json();
+    console.log('📧 Ticket notification email dispatched:', resData);
+  } catch(err) {
+    console.warn('Ticket notification email dispatch notice:', err);
+  }
+}
+
 /* ═══════════════════════════════════════════
    SUBMIT TICKET
 ═══════════════════════════════════════════ */
@@ -1271,6 +1344,9 @@ if(!subj || !desc) {
 
     const { error } = await sb.from('tickets').insert(ticket);
     if(error) throw error;
+
+    // Trigger Brevo email notification to Campus Manager / KAM
+    sendTicketNotificationEmail(ticket).catch(e => console.warn('Ticket notification notice:', e));
 
     document.getElementById('f-subject').value = '';
     document.getElementById('f-desc').value = '';

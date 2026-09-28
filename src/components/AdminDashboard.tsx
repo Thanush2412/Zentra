@@ -3183,7 +3183,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800">Academic Courses</span>
-                  <span className="text-[10px] text-slate-400 font-medium">Manage degree programs</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Degree programs &amp; batches</span>
                 </div>
               </button>
 
@@ -3197,7 +3197,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800">Subject Database</span>
-                  <span className="text-[10px] text-slate-400 font-medium">Syllabus hour targets</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Course subjects &amp; hours</span>
                 </div>
               </button>
 
@@ -3211,7 +3211,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800">Key Account Managers</span>
-                  <span className="text-[10px] text-slate-400 font-medium">Regional university coordinators</span>
+                  <span className="text-[10px] text-slate-400 font-medium">KAM assignments &amp; portfolio</span>
                 </div>
               </button>
 
@@ -3225,7 +3225,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800">Campus Managers</span>
-                  <span className="text-[10px] text-slate-400 font-medium">Campus operational leads</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Campus operations team</span>
                 </div>
               </button>
 
@@ -3239,7 +3239,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800">Evaluator SMEs</span>
-                  <span className="text-[10px] text-slate-400 font-medium">Subject Matter Experts hub</span>
+                  <span className="text-[10px] text-slate-400 font-medium">SME evaluations &amp; allocation</span>
                 </div>
               </button>
 
@@ -3253,7 +3253,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800">User Credentials</span>
-                  <span className="text-[10px] text-slate-400 font-medium">Manage access logs & logins</span>
+                  <span className="text-[10px] text-slate-400 font-medium">User accounts &amp; credentials</span>
                 </div>
               </button>
 
@@ -3267,7 +3267,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800">Holidays Calendar</span>
-                  <span className="text-[10px] text-slate-400 font-medium">University holidays configuration</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Campus holiday calendar</span>
                 </div>
               </button>
 
@@ -3281,7 +3281,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800">Announcements</span>
-                  <span className="text-[10px] text-slate-400 font-medium">Broadcast system alerts</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Campus announcements</span>
                 </div>
               </button>
 
@@ -3295,7 +3295,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800">System Audit Logs</span>
-                  <span className="text-[10px] text-slate-400 font-medium">Security & change history logs</span>
+                  <span className="text-[10px] text-slate-400 font-medium">System activity &amp; audit logs</span>
                 </div>
               </button>
             </div>
@@ -3308,7 +3308,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="mt-6 md:mt-[32px] mb-5 md:mb-[28px] flex flex-wrap items-start justify-between gap-3 border-b border-gray-150 pb-5 admin-page-header">
               <div>
                 <h1 className="text-xl md:text-[36px] font-bold tracking-tight text-gray-900 leading-tight">Admin Control Console</h1>
-                <p className="text-sm md:text-[15px] font-normal text-gray-500 mt-1">Manage all university campuses</p>
+                <p className="text-sm md:text-[15px] font-normal text-gray-500 mt-1">Overview of all partner campuses and operations.</p>
               </div>
               <div className="text-right">
                 <span className="text-base md:text-[20px] font-bold text-gray-900 block leading-tight">

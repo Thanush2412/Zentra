@@ -42,12 +42,14 @@ import {
 } from "./CampusAuditManager";
 import { WeeklyPlanViewer } from "./WeeklyPlanStudio";
 import { CAMPlacementPanel } from "./CAMPlacementPanel";
+import { SkillTrackerPanel } from "./SkillTrackerPanel";
+import { SkillReportPanel } from "./SkillReportPanel";
 
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
   AlertTriangle, BookOpen, Clock, CheckCircle2, XCircle, Search,
   PlusCircle, Check, ArrowRight, Settings, MessageSquare, ShieldAlert, ShieldCheck,
-  Award, TrendingUp, FileText, FileSpreadsheet, RefreshCw, Plus, Trash2, Edit2, Edit, Grid, Download, Upload, ChevronDown, Loader2, Save,
+  Award, Trophy, Medal, TrendingUp, FileText, FileSpreadsheet, RefreshCw, Plus, Trash2, Edit2, Edit,  Grid, Download, Upload, ChevronDown, Loader2, Save,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle, User, SlidersHorizontal, CalendarCheck2, IndianRupee, BadgePercent, X, Mail, Lock, Menu, Briefcase, Layers, Info, Ticket, CalendarRange, UserCheck, Printer, Star,
   Camera, Image as ImageIcon, Paperclip, Maximize2, ExternalLink, Eye, EyeOff, ArrowUpDown, RotateCcw,
   ThumbsUp, ThumbsDown, Handshake
@@ -184,6 +186,18 @@ const CheckmarkSelect: React.FC<CheckmarkSelectProps> = ({
           e.stopPropagation();
           setOpen(prev => !prev);
           setQuery("");
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(prev => !prev);
+          setQuery("");
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen(prev => !prev);
+            setQuery("");
+          }
         }}
         className="w-full flex items-center justify-between p-2 bg-slate-50 hover:bg-slate-100/90 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none transition-all cursor-pointer text-left focus:ring-1 focus:ring-[#D528A2]"
       >
@@ -632,7 +646,7 @@ const CAMCampusInsightPanel: React.FC<{
 }) => {
     const { toast } = useToast();
     const [selectedSubTab, setSelectedSubTab] = useState<
-      "all" | "attendance" | "observations" | "mentor_nps" | "client_nps" | "tickets" | "demos" | "workload" | "syllabus" | "placement"
+      "attendance" | "placement" | "observations" | "mentor_nps" | "client_nps" | "tickets" | "demos" | "workload" | "syllabus" | "achievements" | "skill_report"
     >("attendance");
 
     // ─── Live Classroom Observations ───
@@ -735,6 +749,36 @@ const CAMCampusInsightPanel: React.FC<{
       }
     };
 
+    // ─── Live Student Achievements & Honors ───
+    const [campusAchievements, setCampusAchievements] = useState<any[]>([]);
+    const [achievementsLoading, setAchievementsLoading] = useState<boolean>(false);
+    const [achievementsError, setAchievementsError] = useState<string>("");
+    const [achCategoryFilter, setAchCategoryFilter] = useState<string>("all");
+    const [achBadgeFilter, setAchBadgeFilter] = useState<string>("all");
+    const [achLevelFilter, setAchLevelFilter] = useState<string>("all");
+    const [achMonthFilter, setAchMonthFilter] = useState<string>("all");
+    const [selectedAchDetail, setSelectedAchDetail] = useState<any | null>(null);
+    const [selectedPhotoPreview, setSelectedPhotoPreview] = useState<string | null>(null);
+
+    const fetchCampusAchievements = async () => {
+      setAchievementsLoading(true);
+      setAchievementsError("");
+      try {
+        const collegeParam = activeCollegeId || "";
+        const res = await fetch(`/api/achievements?collegeId=${encodeURIComponent(collegeParam)}`);
+        const data = await res.json();
+        if (data.success) {
+          setCampusAchievements(data.records || []);
+        } else {
+          setAchievementsError(data.error || "Failed to load achievements");
+        }
+      } catch (e: any) {
+        setAchievementsError("Network error while loading achievements");
+      } finally {
+        setAchievementsLoading(false);
+      }
+    };
+
     // Lazy-load datasets when their sub-tab is opened
     useEffect(() => {
       if (selectedSubTab === "observations" && observations.length === 0 && !observationsLoading) {
@@ -749,7 +793,10 @@ const CAMCampusInsightPanel: React.FC<{
       if (selectedSubTab === "placement" && !placementData && !placementLoading) {
         fetchPlacementData();
       }
-    }, [selectedSubTab, activeCollegeName]);
+      if (selectedSubTab === "achievements" && campusAchievements.length === 0 && !achievementsLoading) {
+        fetchCampusAchievements();
+      }
+    }, [selectedSubTab, activeCollegeName, activeCollegeId]);
 
     const npsColor = (idx: number | null) =>
       idx === null ? "text-slate-400" : idx >= 50 ? "text-emerald-600" : idx >= 0 ? "text-amber-500" : "text-rose-600";
@@ -2905,6 +2952,45 @@ const CAMCampusInsightPanel: React.FC<{
     }, [earlyWarningData]);
 
     // ─────────────────────────────────────────────────────────────────────────────
+    // REPORT: Student Achievements & Honors Hall of Fame
+    // ─────────────────────────────────────────────────────────────────────────────
+    const filteredAchievements = useMemo(() => {
+      const q = (deferredSearchQuery || "").toLowerCase().trim();
+      return campusAchievements.filter((ach: any) => {
+        if (achCategoryFilter !== "all" && ach.category !== achCategoryFilter) return false;
+        if (achBadgeFilter !== "all" && ach.badge !== achBadgeFilter) return false;
+        if (achLevelFilter !== "all" && ach.achievement_level !== achLevelFilter) return false;
+        if (achMonthFilter !== "all" && ach.date_str) {
+          if (!ach.date_str.startsWith(achMonthFilter)) return false;
+        }
+        if (q) {
+          const titleMatch = (ach.title || "").toLowerCase().includes(q);
+          const topicMatch = (ach.topic || "").toLowerCase().includes(q);
+          const eventMatch = (ach.event_name || "").toLowerCase().includes(q);
+          const catMatch = (ach.category || "").toLowerCase().includes(q);
+          const badgeMatch = (ach.badge || "").toLowerCase().includes(q);
+          const teamMatch = (ach.team_name || "").toLowerCase().includes(q);
+          const studentNamesStr = Array.isArray(ach.student_names) ? ach.student_names.join(" ") : String(ach.student_names || "");
+          const namesMatch = studentNamesStr.toLowerCase().includes(q);
+          const organizerMatch = (ach.organizer || "").toLowerCase().includes(q);
+          return titleMatch || topicMatch || eventMatch || catMatch || badgeMatch || teamMatch || namesMatch || organizerMatch;
+        }
+        return true;
+      });
+    }, [campusAchievements, achCategoryFilter, achBadgeFilter, achLevelFilter, achMonthFilter, deferredSearchQuery]);
+
+    const achievementMetrics = useMemo(() => {
+      const total = campusAchievements.length;
+      const winnersCount = campusAchievements.filter(a => a.badge === "Winner" || a.badge?.includes("1st") || a.badge?.toLowerCase().includes("winner")).length;
+      const hackathonsCount = campusAchievements.filter(a => a.category?.toLowerCase().includes("hackathon") || a.category?.toLowerCase().includes("competition") || a.category?.toLowerCase().includes("contest")).length;
+      const nationalCount = campusAchievements.filter(a => a.achievement_level?.toLowerCase().includes("national") || a.achievement_level?.toLowerCase().includes("international")).length;
+      const certsCount = campusAchievements.filter(a => a.category?.toLowerCase().includes("certif") || a.category?.toLowerCase().includes("badge")).length;
+      const researchCount = campusAchievements.filter(a => a.category?.toLowerCase().includes("research") || a.category?.toLowerCase().includes("paper")).length;
+
+      return { total, winnersCount, hackathonsCount, nationalCount, certsCount, researchCount };
+    }, [campusAchievements]);
+
+    // ─────────────────────────────────────────────────────────────────────────────
     // CHART ANALYTICS AGGREGATIONS
     // ─────────────────────────────────────────────────────────────────────────────
 
@@ -3795,6 +3881,120 @@ const CAMCampusInsightPanel: React.FC<{
       }
     };
 
+    // 10. Export Student Achievements & Honors Hall of Fame
+    const exportAchievements = (format: "excel" | "csv" | "pdf") => {
+      const headers = [
+        "S.No",
+        "Achievement Title",
+        "Event / Contest",
+        "Category",
+        "Badge / Standing",
+        "Level",
+        "Date",
+        "Participation",
+        "Team / Student Name(s)",
+        "Prize / Cash Reward",
+        "Organizer / Host",
+        "Proof Link"
+      ];
+      const rows = filteredAchievements.map((a, idx) => {
+        let studentNames = "—";
+        if (Array.isArray(a.student_names)) {
+          studentNames = a.student_names.join(", ");
+        } else if (typeof a.student_names === "string") {
+          try {
+            const parsed = JSON.parse(a.student_names);
+            studentNames = Array.isArray(parsed) ? parsed.join(", ") : a.student_names;
+          } catch {
+            studentNames = a.student_names;
+          }
+        }
+        const teamOrStudents = a.participation_type === "team" && a.team_name 
+          ? `${a.team_name} (${studentNames})`
+          : studentNames;
+
+        return [
+          idx + 1,
+          a.title || "—",
+          a.event_name || a.topic || "—",
+          a.category || "—",
+          a.badge || "—",
+          a.achievement_level || "—",
+          a.date_str || "—",
+          a.participation_type === "team" ? "Team" : "Individual",
+          teamOrStudents,
+          a.reward_prize || "—",
+          a.organizer || "—",
+          a.proof_link || "—"
+        ];
+      });
+
+      const summarySheet = {
+        name: "Achievements_Summary",
+        headers: ["Achievement Dimension", "Metric / Count", "Campus Scope"],
+        rows: [
+          ["Total Logged Achievements", achievementMetrics.total, activeCollegeName],
+          ["Winners & 1st Places", achievementMetrics.winnersCount, activeCollegeName],
+          ["Hackathons & Competitions", achievementMetrics.hackathonsCount, activeCollegeName],
+          ["National / International Level", achievementMetrics.nationalCount, activeCollegeName],
+          ["Certifications & Global Badges", achievementMetrics.certsCount, activeCollegeName],
+          ["Research & Paper Publications", achievementMetrics.researchCount, activeCollegeName]
+        ]
+      };
+
+      const filePrefix = `${(activeCollegeName || "Campus").replace(/[^a-zA-Z0-9]/g, '_')}_Student_Achievements_Ledger`;
+
+      if (format === "excel") {
+        exportToExcel(filePrefix, "Achievements", headers, rows, summarySheet);
+      } else if (format === "csv") {
+        exportToCSV(filePrefix, headers, rows);
+      } else {
+        const kpis = [
+          { label: "Total Achievements", value: achievementMetrics.total, color: "slate" as const, note: "Verified campus records" },
+          { label: "Winners & 1st Places", value: achievementMetrics.winnersCount, color: "emerald" as const, note: "Top podium honors" },
+          { label: "National / Global", value: achievementMetrics.nationalCount, color: "purple" as const, note: "High impact level" },
+          { label: "Hackathons & Coding", value: achievementMetrics.hackathonsCount, color: "blue" as const, note: "Tech competitions" }
+        ];
+
+        const catCounts: Record<string, number> = {};
+        filteredAchievements.forEach(a => {
+          const cat = a.category || "Other Honors";
+          catCounts[cat] = (catCounts[cat] || 0) + 1;
+        });
+        const catDist = Object.entries(catCounts).map(([name, value], i) => ({
+          name,
+          value,
+          color: ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4", "#f97316", "#64748b"][i % 8]
+        }));
+
+        const badgeCounts: Record<string, number> = {};
+        filteredAchievements.forEach(a => {
+          const b = a.badge || "Participation";
+          badgeCounts[b] = (badgeCounts[b] || 0) + 1;
+        });
+        const badgeDist = Object.entries(badgeCounts).map(([name, value], i) => ({
+          name,
+          value,
+          color: ["#10b981", "#6366f1", "#f59e0b", "#8b5cf6", "#ec4899", "#3b82f6"][i % 6]
+        }));
+
+        const chartsHtml = `
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title"><span>Achievements by Category</span><span>Domain Breakdown</span></div>
+            ${generateDistributionBarHtml("Domain Distribution", catDist, " achievements")}
+          </div>
+          <div class="chart-card">
+            <div class="chart-title"><span>Standing & Honors Breakdown</span><span>Podium Tiers</span></div>
+            ${generateDistributionBarHtml("Badges & Standings", badgeDist, " honors")}
+          </div>
+        </div>
+      `;
+
+        exportToPrintablePDF(`${activeCollegeName} — Student Achievements & Honors Register`, `Official audited register of student awards, hackathon podiums, research papers, certifications, and competitive honors for ${activeCollegeName}.`, headers, rows, { kpis, chartsHtml });
+      }
+    };
+
     return (
       <div className="space-y-6 font-sans">
         {/* Top Banner & Sub-Navigation */}
@@ -3806,14 +4006,14 @@ const CAMCampusInsightPanel: React.FC<{
                   <FileSpreadsheet className="h-5 w-5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-black text-slate-900 leading-tight">Campus Insight &amp; Institutional Data Ledgers</h2>
+                  <h2 className="text-base font-black text-slate-900 leading-tight">Campus Reports &amp; Analytics</h2>
                   <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100/60 inline-block mt-0.5">
                     {activeCollegeName || "Current Campus"}
                   </span>
                 </div>
               </div>
               <p className="text-xs text-slate-500 font-medium mt-1">
-                Real-time database records for low attendance students, campus tickets, faculty workload, syllabus pace, and mentor demos.
+                Attendance tracking, classroom audits, helpdesk tickets, and monthly reports.
               </p>
             </div>
 
@@ -3830,8 +4030,8 @@ const CAMCampusInsightPanel: React.FC<{
                 />
               </div>
 
-              {/* Cohort Selector (Attendance & All) */}
-              {(selectedSubTab === "all" || selectedSubTab === "attendance") && (
+              {/* Cohort Selector (Attendance) */}
+              {selectedSubTab === "attendance" && (
                 <select
                   value={selectedCohort}
                   onChange={e => setSelectedCohort(e.target.value)}
@@ -3962,7 +4162,67 @@ const CAMCampusInsightPanel: React.FC<{
                 </select>
               )}
 
+              {/* Achievements Selectors */}
+              {selectedSubTab === "achievements" && (
+                <>
+                  <select
+                    value={achCategoryFilter}
+                    onChange={e => setAchCategoryFilter(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                  >
+                    <option value="all">All Categories</option>
+                    <option value="Hackathon & Competitions">Hackathon & Competitions</option>
+                    <option value="Research & Paper Publication">Research & Publications</option>
+                    <option value="Certifications & Badges">Certifications & Badges</option>
+                    <option value="Coding Contest & LeetCode">Coding Contests</option>
+                    <option value="Innovation & Project Expo">Innovation & Expo</option>
+                    <option value="Sports & Culturals">Sports & Culturals</option>
+                    <option value="Academic & CGPA Honors">Academic Honors</option>
+                    <option value="Other Honors">Other Honors</option>
+                  </select>
 
+                  <select
+                    value={achBadgeFilter}
+                    onChange={e => setAchBadgeFilter(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                  >
+                    <option value="all">All Standings</option>
+                    <option value="Winner">Winner / 1st Place</option>
+                    <option value="1st Runner Up">1st Runner Up</option>
+                    <option value="2nd Runner Up">2nd Runner Up</option>
+                    <option value="Top Performer">Top Performer</option>
+                    <option value="Finalist">Finalist</option>
+                    <option value="Published">Published Author</option>
+                    <option value="Certified">Certified</option>
+                    <option value="Special Mention">Special Mention</option>
+                    <option value="Participation">Participation</option>
+                  </select>
+
+                  <select
+                    value={achLevelFilter}
+                    onChange={e => setAchLevelFilter(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                  >
+                    <option value="all">All Levels</option>
+                    <option value="International">International</option>
+                    <option value="National Level">National Level</option>
+                    <option value="State Level">State Level</option>
+                    <option value="Inter-College">Inter-College</option>
+                    <option value="Intra-College">Intra-College</option>
+                    <option value="Department">Department</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => fetchCampusAchievements()}
+                    disabled={achievementsLoading}
+                    title="Refresh Student Achievements"
+                    className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${achievementsLoading ? "animate-spin text-indigo-600" : ""}`} />
+                  </button>
+                </>
+              )}
 
               {/* Mentor NPS Month Filter */}
               {selectedSubTab === "mentor_nps" && (
@@ -4068,7 +4328,8 @@ const CAMCampusInsightPanel: React.FC<{
               { id: "workload", label: "Faculty Workload Distribution", count: facultyWorkloadData.length, icon: Users },
               { id: "demos", label: "Mentor Demo Evaluations", count: demoEvaluationData.length, icon: Sparkles },
               { id: "syllabus", label: "Syllabus Completion Pace", count: syllabusPaceData.length, icon: BookOpen },
-              { id: "all", label: "All Reports Overview", count: 10, icon: FileSpreadsheet }
+              { id: "achievements", label: "Student Achievements", count: campusAchievements.length, icon: Award },
+              { id: "skill_report", label: "Monthly Skill Report (PPTX)", count: 0, icon: FileSpreadsheet }
             ].map(tab => {
               const Icon = tab.icon;
               return (
@@ -6164,536 +6425,413 @@ const CAMCampusInsightPanel: React.FC<{
           </div>
         )}
 
+        {/* ──────────────────────── DEDICATED VIEW: STUDENT ACHIEVEMENTS & HONORS ──────────────────────── */}
+        {selectedSubTab === "skill_report" && (
+          <SkillReportPanel collegeId={activeCollegeId || ""} collegeName={activeCollegeName || ""} />
+        )}
 
-
-
-
-
-
-
-
-
-
-        {/* ──────────────────────── EXECUTIVE OVERVIEW: CAMPUS HEALTH & ALL REPORT CARDS ──────────────────────── */}
-        {selectedSubTab === "all" && (
-          <div className="space-y-6">
-            {/* Executive Academic Health Index Scorecard */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-black text-xl">
-                    {campusAcademicHealthIndex.compositeScore}
+        {selectedSubTab === "achievements" && (
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200/70 shrink-0 shadow-xs">
+                    <Award className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-black text-slate-900 leading-tight">Campus Academic Health Index (AHI)</h3>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${campusAcademicHealthIndex.standing.color}`}>
-                        {campusAcademicHealthIndex.standing.badge}
-                      </span>
-                    </div>
+                    <h3 className="text-base font-black text-slate-900 leading-tight">Student Achievements &amp; Honors Hall of Fame</h3>
                     <p className="text-xs text-slate-500 font-medium mt-0.5">
-                      {campusAcademicHealthIndex.standing.desc}
+                      Live verified institutional register of student awards, hackathons, certifications, research papers, and competitive podiums for {activeCollegeName}.
                     </p>
                   </div>
                 </div>
-
-                {/* Master Dossier Export Button */}
-                <button
-                  type="button"
-                  onClick={exportCompleteCampusDossier}
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-2"
-                >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  <span>Download Master Academic Dossier (.xlsx)</span>
-                </button>
               </div>
 
-              {/* 4 Health Components Progress Meters */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {campusAcademicHealthIndex.components.map(comp => (
-                  <div key={comp.name} className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-slate-700">{comp.name}</span>
-                      <span className="text-[10px] font-black text-slate-400">{comp.weight}</span>
-                    </div>
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-xl font-black text-slate-900">{comp.score}%</span>
-                      <span className={`text-[10px] font-black ${comp.score >= 75 ? "text-emerald-600" : "text-amber-600"}`}>
-                        {comp.score >= 75 ? "Optimal" : "Review"}
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(100, comp.score)}%`, backgroundColor: comp.color }}
-                      />
-                    </div>
-                  </div>
-                ))}
+              {/* Export Buttons */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => exportAchievements("csv")}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportAchievements("excel")}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Download Excel (.xlsx)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportAchievements("pdf")}
+                  className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Print / PDF Ledger</span>
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* KPI Summary Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+                <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Achievements</span>
+                <p className="text-xl font-black text-slate-900 mt-1">{achievementMetrics.total}</p>
+                <span className="text-[10px] font-bold text-slate-500">Verified Campus Records</span>
+              </div>
+              <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100">
+                <span className="text-[10px] font-extrabold uppercase text-emerald-600 tracking-wider">Winners &amp; 1st Place</span>
+                <p className="text-xl font-black text-emerald-700 mt-1">{achievementMetrics.winnersCount}</p>
+                <span className="text-[10px] font-bold text-emerald-600">Podium Finishes</span>
+              </div>
+              <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-100">
+                <span className="text-[10px] font-extrabold uppercase text-purple-600 tracking-wider">National / Global</span>
+                <p className="text-xl font-black text-purple-700 mt-1">{achievementMetrics.nationalCount}</p>
+                <span className="text-[10px] font-bold text-purple-600">High Impact Tier</span>
+              </div>
+              <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-100">
+                <span className="text-[10px] font-extrabold uppercase text-indigo-600 tracking-wider">Hackathons &amp; Contests</span>
+                <p className="text-xl font-black text-indigo-700 mt-1">{achievementMetrics.hackathonsCount}</p>
+                <span className="text-[10px] font-bold text-indigo-600">Competitive Coding / Expos</span>
+              </div>
+            </div>
 
-              {/* CARD 1: Student Attendance Shortage Warning Report (<75%) */}
-              <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100 shrink-0">
-                        <AlertTriangle className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-black text-slate-900 leading-tight">Student Attendance Shortage Report (&lt;75%)</h3>
-                        <p className="text-[11px] text-slate-500 font-medium mt-0.5">Students below the mandatory 75% attendance threshold.</p>
-                      </div>
-                    </div>
-                  </div>
+            {/* Data Table */}
+            <div className="overflow-x-auto border border-slate-200/90 rounded-xl shadow-xs">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50/90 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                  <tr>
+                    <th className="p-3 w-12 text-center">#</th>
+                    <th className="p-3">Achievement Title &amp; Event</th>
+                    <th className="p-3">Category</th>
+                    <th className="p-3">Standing / Badge</th>
+                    <th className="p-3">Level</th>
+                    <th className="p-3">Date</th>
+                    <th className="p-3">Student(s) / Team</th>
+                    <th className="p-3">Prize / Reward</th>
+                    <th className="p-3 text-center">Proof / Media</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {achievementsLoading ? (
+                    <tr>
+                      <td colSpan={10} className="p-12 text-center text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <RefreshCw className="w-6 h-6 animate-spin text-amber-600" />
+                          <span className="text-xs font-bold text-slate-600">Loading Student Achievements &amp; Honors...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredAchievements.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="p-12 text-center text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Award className="w-8 h-8 text-slate-300" />
+                          <span className="text-sm font-bold text-slate-700">No Student Achievements Found</span>
+                          <span className="text-xs text-slate-400">Try clearing filters or search criteria.</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAchievements.map((ach: any, idx: number) => {
+                      let studentNamesList: string[] = [];
+                      if (Array.isArray(ach.student_names)) {
+                        studentNamesList = ach.student_names;
+                      } else if (typeof ach.student_names === "string") {
+                        try {
+                          const parsed = JSON.parse(ach.student_names);
+                          studentNamesList = Array.isArray(parsed) ? parsed : [ach.student_names];
+                        } catch {
+                          studentNamesList = [ach.student_names];
+                        }
+                      }
 
-                  {/* KPI Summary */}
-                  <div className="grid grid-cols-3 gap-2 bg-rose-50/40 p-3 rounded-xl border border-rose-150">
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Shortage Total</p>
-                      <p className="text-base font-black text-rose-600 mt-0.5">{attendanceShortageData.length}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Critical (&lt;65%)</p>
-                      <p className="text-base font-black text-rose-700 mt-0.5">{attendanceShortageData.filter(s => s.percentage < 65).length}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Cohort Filter</p>
-                      <p className="text-xs font-bold text-slate-700 truncate mt-1">{selectedCohort === "all" ? "All Cohorts" : selectedCohort}</p>
-                    </div>
-                  </div>
+                      let photosList: string[] = [];
+                      if (Array.isArray(ach.photos)) {
+                        photosList = ach.photos;
+                      } else if (typeof ach.photos === "string" && ach.photos.trim().startsWith("[")) {
+                        try {
+                          photosList = JSON.parse(ach.photos);
+                        } catch {
+                          photosList = [];
+                        }
+                      }
 
-                  {/* Top 3 Preview Rows */}
-                  <div className="overflow-hidden border border-slate-200/80 rounded-xl">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
-                        <tr>
-                          <th className="p-2.5">Student</th>
-                          <th className="p-2.5">Cohort</th>
-                          <th className="p-2.5 text-right">Attendance</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {attendanceShortageData.slice(0, 3).map((s, idx) => (
-                          <tr key={`${s.id}_${idx}`} className="hover:bg-slate-50/50">
-                            <td className="p-2.5 font-bold text-slate-800">{s.name}</td>
-                            <td className="p-2.5 text-slate-500 text-[11px]">{s.classGroup}</td>
-                            <td className="p-2.5 text-right">
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-100 text-rose-800">
-                                {s.percentage}%
+                      const isWinner = ach.badge === "Winner" || ach.badge?.includes("1st") || ach.badge?.toLowerCase().includes("winner");
+                      const isRunnerUp = ach.badge?.includes("Runner") || ach.badge?.includes("2nd") || ach.badge?.includes("3rd");
+                      const isTopPerformer = ach.badge?.includes("Top") || ach.badge?.includes("Finalist");
+
+                      const badgeBadgeClass = isWinner
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : isRunnerUp
+                        ? "bg-blue-50 text-blue-700 border-blue-200"
+                        : isTopPerformer
+                        ? "bg-purple-50 text-purple-700 border-purple-200"
+                        : ach.badge === "Certified" || ach.badge === "Published"
+                        ? "bg-amber-50 text-amber-700 border-amber-200"
+                        : "bg-slate-100 text-slate-700 border-slate-200";
+
+                      const levelClass = ach.achievement_level?.includes("International")
+                        ? "bg-purple-100 text-purple-800"
+                        : ach.achievement_level?.includes("National")
+                        ? "bg-indigo-100 text-indigo-800"
+                        : ach.achievement_level?.includes("State")
+                        ? "bg-sky-100 text-sky-800"
+                        : "bg-slate-100 text-slate-700";
+
+                      return (
+                        <tr key={ach.id || idx} className="hover:bg-amber-50/20 transition-colors">
+                          <td className="p-3 text-center font-mono text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="p-3">
+                            <div className="font-bold text-slate-900 leading-snug">{ach.title || "Untitled Achievement"}</div>
+                            <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                              {ach.event_name || ach.topic || (ach.organizer ? `Organized by ${ach.organizer}` : "Campus Event")}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              {ach.category || "General Honor"}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${badgeBadgeClass}`}>
+                              {ach.badge || "Participation"}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold ${levelClass}`}>
+                              {ach.achievement_level || "Campus"}
+                            </span>
+                          </td>
+                          <td className="p-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">
+                            {ach.date_str || "—"}
+                          </td>
+                          <td className="p-3 max-w-[200px]">
+                            {ach.participation_type === "team" && ach.team_name ? (
+                              <div>
+                                <span className="font-bold text-indigo-700 text-[11px] block">{ach.team_name}</span>
+                                <span className="text-[10px] text-slate-500 line-clamp-1">
+                                  {studentNamesList.join(", ") || "Team Members"}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-medium text-slate-800 text-xs">
+                                {studentNamesList.length > 0 ? studentNamesList.join(", ") : "—"}
                               </span>
-                            </td>
-                          </tr>
-                        ))}
-                        {attendanceShortageData.length === 0 && (
-                          <tr>
-                            <td colSpan={3} className="p-4 text-center text-xs text-emerald-600 font-bold bg-emerald-50/40">
-                              Zero students below 75% attendance in this selection!
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Export Buttons */}
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => exportAttendanceShortage("csv")}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5 text-slate-500" />
-                    <span>CSV</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => exportAttendanceShortage("excel")}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Download Excel (.xlsx)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => exportAttendanceShortage("pdf")}
-                    className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Dean Notice PDF</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* CARD 2: Campus Help Desk Tickets (Live Supabase) */}
-              <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shrink-0">
-                        <Ticket className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-black text-slate-900 leading-tight">Campus Help Desk Tickets Ledger</h3>
-                        <p className="text-[11px] text-slate-500 font-medium mt-0.5">Live student tickets from Supabase for {activeCollegeName}.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* KPI Summary */}
-                  <div className="grid grid-cols-3 gap-2 bg-amber-50/40 p-3 rounded-xl border border-amber-150">
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Tickets</p>
-                      <p className="text-base font-black text-slate-900 mt-0.5">{campusTickets.length}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Unresolved</p>
-                      <p className="text-base font-black text-amber-700 mt-0.5">{campusTickets.filter(t => !isResolvedTicket(t.status)).length}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Resolved</p>
-                      <p className="text-base font-black text-emerald-700 mt-0.5">{campusTickets.filter(t => isResolvedTicket(t.status)).length}</p>
-                    </div>
-                  </div>
-
-                  {/* Top 3 Preview Rows */}
-                  <div className="overflow-hidden border border-slate-200/80 rounded-xl">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
-                        <tr>
-                          <th className="p-2.5">Student</th>
-                          <th className="p-2.5">Category</th>
-                          <th className="p-2.5 text-right">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {filteredTickets.slice(0, 3).map((t, idx) => (
-                          <tr key={`${t.id || 'tkt'}_${idx}`} className="hover:bg-slate-50/50">
-                            <td className="p-2.5 font-bold text-slate-800">{t.student_name || "Unknown"}</td>
-                            <td className="p-2.5 text-slate-500 text-[11px]">{t.category || "General"}</td>
-                            <td className="p-2.5 text-right">
-                              <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${isResolvedTicket(t.status) ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-                                }`}>
-                                {isResolvedTicket(t.status) ? "Resolved" : "Open"}
+                            )}
+                          </td>
+                          <td className="p-3">
+                            {ach.reward_prize ? (
+                              <span className="font-bold text-emerald-700 text-xs bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                                {ach.reward_prize}
                               </span>
-                            </td>
-                          </tr>
-                        ))}
-                        {filteredTickets.length === 0 && (
-                          <tr>
-                            <td colSpan={3} className="p-4 text-center text-xs text-slate-400 italic">
-                              No tickets recorded for this campus.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Export Buttons */}
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => exportCampusTickets("csv")}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5 text-slate-500" />
-                    <span>CSV</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => exportCampusTickets("excel")}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Download Excel (.xlsx)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => exportCampusTickets("pdf")}
-                    className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Print / PDF</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* CARD 3: Faculty Workload Ledger */}
-              <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
-                        <Users className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-black text-slate-900 leading-tight">Faculty Workload Distribution</h3>
-                        <p className="text-[11px] text-slate-500 font-medium mt-0.5">Faculty weekly teaching hours vs 20 hours/week institutional threshold.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* KPI Summary */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-50/70 p-3 rounded-xl border border-slate-150">
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Faculty Count</p>
-                      <p className="text-base font-black text-slate-800 mt-0.5">{facultyWorkloadData.length}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Overload (&gt;20h)</p>
-                      <p className="text-base font-black text-amber-600 mt-0.5">{facultyWorkloadData.filter(f => f.assignedHours > 20).length}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Avg Workload</p>
-                      <p className="text-base font-black text-indigo-600 mt-0.5">
-                        {facultyWorkloadData.length > 0 ? (facultyWorkloadData.reduce((s, f) => s + f.assignedHours, 0) / facultyWorkloadData.length).toFixed(1) : 0} hrs/wk
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Top 3 Preview Rows */}
-                  <div className="overflow-hidden border border-slate-200/80 rounded-xl">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
-                        <tr>
-                          <th className="p-2.5">Faculty</th>
-                          <th className="p-2.5">Hours</th>
-                          <th className="p-2.5 text-right">Status</th>
+                            ) : (
+                              <span className="text-slate-400 text-xs">—</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {ach.proof_link && (
+                                <a
+                                  href={ach.proof_link}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="Open Proof / Certificate Link"
+                                  className="p-1 rounded-md bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                              {photosList.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedPhotoPreview(photosList[0])}
+                                  title={`View ${photosList.length} photo(s)`}
+                                  className="p-1 rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors flex items-center gap-0.5 text-[10px] font-bold cursor-pointer"
+                                >
+                                  <ImageIcon className="w-3.5 h-3.5" />
+                                  <span>{photosList.length}</span>
+                                </button>
+                              )}
+                              {!ach.proof_link && photosList.length === 0 && (
+                                <span className="text-slate-300 text-xs">—</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAchDetail(ach)}
+                              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>View</span>
+                            </button>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {facultyWorkloadData.slice(0, 3).map((f, idx) => (
-                          <tr key={`${f.id}_${idx}`} className="hover:bg-slate-50/50">
-                            <td className="p-2.5 font-bold text-slate-800">{f.name}</td>
-                            <td className="p-2.5 font-mono text-slate-600 font-semibold">{f.assignedHours} / 20 hrs</td>
-                            <td className="p-2.5 text-right">
-                              <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${f.status === "Overload" ? "bg-amber-100 text-amber-800" : f.status === "Optimal" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"
-                                }`}>
-                                {f.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ──────────────────────── MODAL: STUDENT ACHIEVEMENT DETAIL ──────────────────────── */}
+        {selectedAchDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold border border-amber-200">
+                    <Award className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900">{selectedAchDetail.title}</h4>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {selectedAchDetail.event_name || selectedAchDetail.topic || "Institutional Honor"}
+                    </p>
                   </div>
                 </div>
-
-                {/* Export Buttons */}
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => exportFacultyWorkload("csv")}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5 text-slate-500" />
-                    <span>CSV</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => exportFacultyWorkload("excel")}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Download Excel (.xlsx)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => exportFacultyWorkload("pdf")}
-                    className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Print / PDF</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAchDetail(null)}
+                  className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
 
-              {/* CARD 4: Subject Completion & Syllabus Pace Report */}
-              <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-100 shrink-0">
-                        <BookOpen className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-black text-slate-900 leading-tight">Subject Completion &amp; Syllabus Pace Report</h3>
-                        <p className="text-[11px] text-slate-500 font-medium mt-0.5">Delivery tracker comparing actual periods conducted vs target scheduled hours.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* KPI Summary */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-50/70 p-3 rounded-xl border border-slate-150">
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Subjects</p>
-                      <p className="text-base font-black text-slate-800 mt-0.5">{syllabusPaceData.length}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">On Track (≥80%)</p>
-                      <p className="text-base font-black text-emerald-600 mt-0.5">{syllabusPaceData.filter(s => s.completionPct >= 80).length}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Lagging (&lt;50%)</p>
-                      <p className="text-base font-black text-rose-600 mt-0.5">{syllabusPaceData.filter(s => s.completionPct < 50).length}</p>
-                    </div>
-                  </div>
-
-                  {/* Top 3 Preview Rows */}
-                  <div className="overflow-hidden border border-slate-200/80 rounded-xl">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
-                        <tr>
-                          <th className="p-2.5">Subject</th>
-                          <th className="p-2.5">Pace</th>
-                          <th className="p-2.5 text-right">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {syllabusPaceData.slice(0, 3).map(sub => (
-                          <tr key={sub.id} className="hover:bg-slate-50/50">
-                            <td className="p-2.5 font-bold text-slate-800">{sub.name}</td>
-                            <td className="p-2.5 font-mono text-slate-600 font-semibold">{sub.completionPct}%</td>
-                            <td className="p-2.5 text-right">
-                              <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${sub.status === "On Track" ? "bg-emerald-100 text-emerald-800" : sub.status === "In Progress" ? "bg-blue-100 text-blue-800" : "bg-rose-100 text-rose-800"
-                                }`}>
-                                {sub.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Export Buttons */}
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => exportSyllabusPace("csv")}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5 text-slate-500" />
-                    <span>CSV</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => exportSyllabusPace("excel")}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Download Excel (.xlsx)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => exportSyllabusPace("pdf")}
-                    className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Print / PDF</span>
-                  </button>
-                </div>
+              {/* Badges & Meta Row */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  {selectedAchDetail.badge || "Achievement"}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {selectedAchDetail.category || "General"}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                  {selectedAchDetail.achievement_level || "Campus Level"}
+                </span>
+                {selectedAchDetail.date_str && (
+                  <span className="text-xs text-slate-500 font-mono">
+                    📅 {selectedAchDetail.date_str}
+                  </span>
+                )}
               </div>
 
-              {/* CARD 5: Mentor Demo & Evaluation Report */}
-              <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-pink-50 text-pink-600 flex items-center justify-center border border-pink-100 shrink-0">
-                        <Sparkles className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-black text-slate-900 leading-tight">Mentor Demo &amp; Evaluation Ledger</h3>
-                        <p className="text-[11px] text-slate-500 font-medium mt-0.5">Comprehensive audit of mentor evaluations conducted by Subject Matter Experts (SMEs).</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* KPI Summary */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-50/70 p-3 rounded-xl border border-slate-150">
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Demos</p>
-                      <p className="text-base font-black text-slate-800 mt-0.5">{demoEvaluationData.length}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Completed</p>
-                      <p className="text-base font-black text-emerald-600 mt-0.5">{demoEvaluationData.filter(d => d.status === "Completed").length}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Reallocation Req</p>
-                      <p className="text-base font-black text-amber-600 mt-0.5">{demoEvaluationData.filter(d => d.status.includes("Reallocation")).length}</p>
-                    </div>
-                  </div>
-
-                  {/* Top 3 Preview Rows */}
-                  <div className="overflow-hidden border border-slate-200/80 rounded-xl">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase">
-                        <tr>
-                          <th className="p-2.5">Mentor</th>
-                          <th className="p-2.5">Subject</th>
-                          <th className="p-2.5 text-right">Score</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {demoEvaluationData.slice(0, 3).map((d, idx) => (
-                          <tr key={`${d.id}_${idx}`} className="hover:bg-slate-50/50">
-                            <td className="p-2.5 font-bold text-slate-800">{d.mentorName}</td>
-                            <td className="p-2.5 text-slate-500 text-[11px]">{d.subject}</td>
-                            <td className="p-2.5 text-right font-mono font-bold text-indigo-700">{d.marks}</td>
-                          </tr>
-                        ))}
-                        {demoEvaluationData.length === 0 && (
-                          <tr>
-                            <td colSpan={3} className="p-4 text-center text-xs text-slate-400 italic">
-                              No demo evaluations logged yet.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+              {/* Description */}
+              {selectedAchDetail.description && (
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs text-slate-700 leading-relaxed">
+                  <span className="font-bold text-slate-900 block mb-1">Description / Summary:</span>
+                  {selectedAchDetail.description}
                 </div>
+              )}
 
-                {/* Export Buttons */}
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => exportDemoEvaluations("csv")}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5 text-slate-500" />
-                    <span>CSV</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => exportDemoEvaluations("excel")}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Download Excel (.xlsx)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => exportDemoEvaluations("pdf")}
-                    className="px-3.5 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Print / PDF</span>
-                  </button>
+              {/* Participants / Team */}
+              <div className="space-y-2 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80">
+                <span className="text-xs font-bold text-slate-900 block">
+                  {selectedAchDetail.participation_type === "team" ? `Team: ${selectedAchDetail.team_name || "Squad"}` : "Individual Participant"}
+                </span>
+                <div className="text-xs text-slate-700">
+                  {Array.isArray(selectedAchDetail.student_names)
+                    ? selectedAchDetail.student_names.join(", ")
+                    : String(selectedAchDetail.student_names || "—")}
                 </div>
+                {selectedAchDetail.organizer && (
+                  <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
+                    <span className="font-semibold">Organizer / Host:</span> {selectedAchDetail.organizer}
+                  </div>
+                )}
+                {selectedAchDetail.reward_prize && (
+                  <div className="text-[11px] text-emerald-700 font-bold pt-1">
+                    🏆 Cash Reward / Prize: {selectedAchDetail.reward_prize}
+                  </div>
+                )}
               </div>
 
+              {/* Proof / Links */}
+              {selectedAchDetail.proof_link && (
+                <div className="pt-2">
+                  <a
+                    href={selectedAchDetail.proof_link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>View Official Certificate / Proof URL</span>
+                  </a>
+                </div>
+              )}
 
+              {/* Photos Grid */}
+              {(() => {
+                let photos: string[] = [];
+                if (Array.isArray(selectedAchDetail.photos)) photos = selectedAchDetail.photos;
+                else if (typeof selectedAchDetail.photos === "string" && selectedAchDetail.photos.trim().startsWith("[")) {
+                  try { photos = JSON.parse(selectedAchDetail.photos); } catch { photos = []; }
+                }
+                if (photos.length === 0) return null;
+                return (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-900 block">Attached Photos ({photos.length}):</span>
+                    <div className="grid grid-cols-3 gap-2">
+                      {photos.map((p, pIdx) => (
+                        <div
+                          key={pIdx}
+                          onClick={() => setSelectedPhotoPreview(p)}
+                          className="relative aspect-video rounded-lg overflow-hidden border border-slate-200 cursor-pointer group hover:opacity-90 transition-opacity bg-slate-100"
+                        >
+                          <img src={p} alt={`Proof ${pIdx + 1}`} className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                            <Maximize2 className="w-4 h-4" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
+              <div className="flex justify-end pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAchDetail(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ──────────────────────── MODAL: PHOTO LIGHTBOX PREVIEW ──────────────────────── */}
+        {selectedPhotoPreview && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200 cursor-pointer"
+            onClick={() => setSelectedPhotoPreview(null)}
+          >
+            <div className="relative max-w-4xl max-h-[90vh] bg-black rounded-2xl overflow-hidden shadow-2xl p-2" onClick={e => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => setSelectedPhotoPreview(null)}
+                className="absolute top-4 right-4 p-2 rounded-full bg-black/60 text-white hover:bg-black/90 transition-colors z-10 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <img
+                src={selectedPhotoPreview}
+                alt="Achievement Photo Preview"
+                className="max-h-[85vh] max-w-full object-contain rounded-xl mx-auto"
+              />
             </div>
           </div>
         )}
@@ -7948,7 +8086,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
             <div>
               <h2 className="text-base font-extrabold text-slate-800 leading-tight">Faculty &amp; Mentor Attendance Punching</h2>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Record daily presence, OD (On Duty) logs, or track cumulative team attendance across date ranges.
+                Daily attendance, OD logs, and roster tracking.
               </p>
             </div>
           </div>
@@ -8627,6 +8765,7 @@ export type CAMTabId =
   | "interviews"
   | "events"
   | "faculty_weekly_plan"
+  | "mentor_skill_tracker"
   | "demo_schedule"
   | "profile_edits";
 
@@ -8782,6 +8921,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     "daily-configs": "config",
     "leave-approvals": "handovers",
     "leaves": "handovers",
+    "requests": "handovers",
+    "approvals": "handovers",
+    "late-attendance": "handovers",
     "exams": "exams_and_marks",
     "marks": "exams_and_marks",
     "attendance": "monitoring",
@@ -8790,12 +8932,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     "e-audit": "audit",
     "weekly_plan": "faculty_weekly_plan",
     "weekly-plan": "faculty_weekly_plan",
+    "skill_tracker": "mentor_skill_tracker",
+    "skill-tracker": "mentor_skill_tracker",
     "demo": "demo_schedule",
     "demos": "demo_schedule"
   };
 
   const resolvedPropTab = propActiveTab ? (tabAliases[propActiveTab] || propActiveTab) : undefined;
   const [localActiveTab, setLocalActiveTab] = useState<CAMTabId>("overview");
+  const [approvalsCategoryFilter, setApprovalsCategoryFilter] = useState<"all" | "late_attendance" | "handovers" | "exam_marks" | "late_punches">("all");
   const activeTab = resolvedPropTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
@@ -8813,6 +8958,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             "daily-configs": "config",
             "leave-approvals": "handovers",
             "leaves": "handovers",
+            "requests": "handovers",
+            "approvals": "handovers",
+            "late-attendance": "handovers",
             "exams": "exams_and_marks",
             "marks": "exams_and_marks",
             "attendance": "monitoring",
@@ -9134,12 +9282,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [eventViewMode, setEventViewMode] = useState<"cards" | "timeline" | "table">("cards");
   const [showEventModal, setShowEventModal] = useState(false);
   const [editingEventObj, setEditingEventObj] = useState<any | null>(null);
+  const [eventSubTab, setEventSubTab] = useState<"events" | "achievements">("events");
+  const [isSubmittingEvent, setIsSubmittingEvent] = useState(false);
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
 
   // Event Form Fields
   const [evFormName, setEvFormName] = useState("");
   const [evFormDate, setEvFormDate] = useState("");
   const [evFormEndDate, setEvFormEndDate] = useState("");
   const [evFormCategory, setEvFormCategory] = useState("Coding Fest & Hackathon");
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [evFormCustomCategory, setEvFormCustomCategory] = useState("");
   const [evFormDept, setEvFormDept] = useState("All Departments");
   const [evFormAudience, setEvFormAudience] = useState("All Campus");
   const [evFormStatus, setEvFormStatus] = useState("Upcoming");
@@ -9150,6 +9303,37 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [evFormRegistrationLink, setEvFormRegistrationLink] = useState("");
   const [evFormPhotos, setEvFormPhotos] = useState<string[]>([]);
   const [selectedPhotoLightbox, setSelectedPhotoLightbox] = useState<{ src: string; title: string } | null>(null);
+
+  // Student Achievements Module States
+  const [achievementsList, setAchievementsList] = useState<any[]>([]);
+  const [loadingAchievements, setLoadingAchievements] = useState(false);
+  const [isSubmittingAchievement, setIsSubmittingAchievement] = useState(false);
+  const [showAchievementModal, setShowAchievementModal] = useState(false);
+  const [editingAchievement, setEditingAchievement] = useState<any | null>(null);
+  const [achSearchQuery, setAchSearchQuery] = useState("");
+  const [achCategoryFilter, setAchCategoryFilter] = useState("All");
+
+  // Student Achievement Form Fields
+  const [achFormTitle, setAchFormTitle] = useState("");
+  const [achFormTopic, setAchFormTopic] = useState("");
+  const [achFormCategory, setAchFormCategory] = useState("Hackathon & Competitions");
+  const [isCustomAchCategory, setIsCustomAchCategory] = useState(false);
+  const [achFormCustomCategory, setAchFormCustomCategory] = useState("");
+  const [achFormDescription, setAchFormDescription] = useState("");
+  const [achFormDateStr, setAchFormDateStr] = useState(() => new Date().toISOString().split("T")[0]);
+  const [achFormBadge, setAchFormBadge] = useState("Winner");
+  const [achFormRewardPrize, setAchFormRewardPrize] = useState("");
+  const [achFormEventName, setAchFormEventName] = useState("");
+  const [achFormProofLink, setAchFormProofLink] = useState("");
+  const [achFormPhotos, setAchFormPhotos] = useState<string[]>([]);
+  const [achFormSelectedStudentIds, setAchFormSelectedStudentIds] = useState<string[]>([]);
+  const [achStudentPickerSearch, setAchStudentPickerSearch] = useState("");
+  const [achStudentDeptFilter, setAchStudentDeptFilter] = useState("All");
+  const [achFormParticipationType, setAchFormParticipationType] = useState<"individual" | "team">("individual");
+  const [achFormTeamName, setAchFormTeamName] = useState("");
+  const [achFormLevel, setAchFormLevel] = useState("National Level");
+  const [achFormOrganizer, setAchFormOrganizer] = useState("");
+  const [viewingAchievement, setViewingAchievement] = useState<any | null>(null);
 
   // Centralized loading state tracker for all async operations
   const [loadingActions, setLoadingActions] = useState<Record<string, boolean>>({});
@@ -11735,12 +11919,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     });
   }, [dbAcademicEvents, eventSearchQuery, eventCategoryFilter, eventDeptFilter, eventStatusFilter, isGlobalAllCampuses, activeCollegeId]);
 
+  const standardEventCategories = [
+    "Coding Fest & Hackathon",
+    "Technical Symposium & Project Expo",
+    "Workshop & Hands-on BootCamp",
+    "Guest Lecture & Industry Talk",
+    "Cultural Fest & Celebration",
+    "Sports Meet & Tournament",
+    "Campus Placement Drive",
+    "Academic Milestone & CIA Exam"
+  ];
+
   const handleOpenCreateEventModal = () => {
     setEditingEventObj(null);
     setEvFormName("");
     setEvFormDate(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
     setEvFormEndDate("");
     setEvFormCategory("Coding Fest & Hackathon");
+    setIsCustomCategory(false);
+    setEvFormCustomCategory("");
     setEvFormDept("All Departments");
     setEvFormAudience("All Campus");
     setEvFormStatus("Upcoming");
@@ -11758,7 +11955,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setEvFormName(ev.name || "");
     setEvFormDate(ev.date || "");
     setEvFormEndDate(ev.end_date || "");
-    setEvFormCategory(ev.category || "Coding Fest & Hackathon");
+
+    const cat = ev.category || "Coding Fest & Hackathon";
+    if (standardEventCategories.includes(cat)) {
+      setEvFormCategory(cat);
+      setIsCustomCategory(false);
+      setEvFormCustomCategory("");
+    } else {
+      setEvFormCategory("custom");
+      setIsCustomCategory(true);
+      setEvFormCustomCategory(cat);
+    }
+
     setEvFormDept(ev.department || "All Departments");
     setEvFormAudience(ev.audience || "All Campus");
     setEvFormStatus(ev.status || "Upcoming");
@@ -11803,6 +12011,29 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setEvFormPhotos(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleAddAchPhotoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      toast("Photo size should be less than 4MB", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (uploadEv) => {
+      const base64 = uploadEv.target?.result as string;
+      if (base64) {
+        setAchFormPhotos(prev => [...prev, base64]);
+        toast("Photo added to achievement", "success");
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleRemoveAchPhoto = (index: number) => {
+    setAchFormPhotos(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleQuickUploadPhotoToEvent = async (ev: any, file: File) => {
     if (!file) return;
     const reader = new FileReader();
@@ -11832,12 +12063,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       return;
     }
 
+    const finalCategory = (isCustomCategory || evFormCategory === "custom")
+      ? (evFormCustomCategory.trim() || "Campus Fest")
+      : evFormCategory;
+
     const payload = {
       id: editingEventObj ? editingEventObj.id : undefined,
-      name: evFormName,
+      name: evFormName.trim(),
       date: evFormDate,
       end_date: evFormEndDate || null,
-      category: evFormCategory,
+      category: finalCategory,
       department: evFormDept,
       audience: evFormAudience,
       status: evFormStatus,
@@ -11850,25 +12085,284 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       college_id: activeCollegeId
     };
 
-    const res = await saveAcademicEvent(payload);
-    if (res.success) {
-      toast(editingEventObj ? "Campus event updated successfully." : "Campus event created successfully.", "success");
-      setShowEventModal(false);
-    } else {
-      toast(res.message || "Failed to save event", "error");
+    setIsSubmittingEvent(true);
+    try {
+      const res = await saveAcademicEvent(payload);
+      if (res.success) {
+        toast(editingEventObj ? "Campus event updated successfully." : "Campus event created successfully.", "success");
+        setShowEventModal(false);
+      } else {
+        toast(res.message || "Failed to save event", "error");
+      }
+    } catch (err: any) {
+      toast("Error saving event: " + (err?.message || "Unknown error"), "error");
+    } finally {
+      setIsSubmittingEvent(false);
+    }
+  };
+
+  const handleUpdateEventStatus = async (ev: any, nextStatus: string) => {
+    if (ev.status === nextStatus) return;
+    setStatusUpdatingId(ev.id);
+    try {
+      const res = await saveAcademicEvent({ ...ev, status: nextStatus });
+      if (res.success) {
+        toast(`Event status updated to "${nextStatus}"`, "success");
+      } else {
+        toast(res.message || "Failed to update status", "error");
+      }
+    } catch (err: any) {
+      toast("Error updating status: " + (err?.message || "Unknown error"), "error");
+    } finally {
+      setStatusUpdatingId(null);
     }
   };
 
   const handleQuickStatusChange = async (ev: any) => {
-    const statuses = ["Upcoming", "Ongoing", "Completed", "Postponed"];
+    const statuses = ["Upcoming", "Ongoing", "Completed", "Postponed", "Cancelled"];
     const currIdx = statuses.indexOf(ev.status || "Upcoming");
     const nextStatus = statuses[(currIdx + 1) % statuses.length];
+    await handleUpdateEventStatus(ev, nextStatus);
+  };
 
-    const res = await saveAcademicEvent({ ...ev, status: nextStatus });
-    if (res.success) {
-      toast(`Status updated to ${nextStatus}`, "success");
+  // --- STUDENT ACHIEVEMENTS HELPERS & CRUD ---
+  const standardAchCategories = [
+    "Hackathon & Competitions",
+    "Technical Symposium & Paper Presentation",
+    "Sports Meet & Athletics",
+    "Cultural Fest & Performing Arts",
+    "Professional Certifications & MOOC",
+    "Academic Merit & University Rank",
+    "Open Source & Research Publication",
+    "Entrepreneurship & Startup Pitch"
+  ];
+
+  const allAchCategories = useMemo(() => {
+    const set = new Set(standardAchCategories);
+    achievementsList.forEach(a => {
+      if (a.category && a.category.trim()) set.add(a.category.trim());
+    });
+    return Array.from(set);
+  }, [achievementsList]);
+
+  const fetchAchievements = useCallback(async () => {
+    setLoadingAchievements(true);
+    try {
+      const res = await fetch(`/api/achievements?collegeId=${encodeURIComponent(activeCollegeId || "")}`);
+      const data = await res.json();
+      if (data.success) {
+        setAchievementsList(data.records || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch achievements:", err);
+    } finally {
+      setLoadingAchievements(false);
+    }
+  }, [activeCollegeId]);
+
+  useEffect(() => {
+    fetchAchievements();
+  }, [fetchAchievements]);
+
+  const campusStudents = useMemo(() => {
+    return (students || []).filter(s => isGlobalAllCampuses || !s.college_id || s.college_id === activeCollegeId);
+  }, [students, isGlobalAllCampuses, activeCollegeId]);
+
+  const availableAchDepartments = useMemo(() => {
+    const set = new Set<string>();
+    const allCourses = collegeCourses.length > 0 ? collegeCourses : coursesList;
+    allCourses.forEach(c => {
+      if (c.name && c.name.trim()) set.add(c.name.trim());
+    });
+    campusStudents.forEach(st => {
+      if (st.department && st.department.trim()) set.add(st.department.trim());
+    });
+    return Array.from(set).sort();
+  }, [collegeCourses, coursesList, campusStudents]);
+
+  const filteredAchievements = useMemo(() => {
+    return (achievementsList || []).filter((ach) => {
+      const q = achSearchQuery.toLowerCase();
+      const titleMatch = (ach.title || "").toLowerCase().includes(q);
+      const topicMatch = (ach.topic || "").toLowerCase().includes(q);
+      const descMatch = (ach.description || "").toLowerCase().includes(q);
+      const eventMatch = (ach.event_name || "").toLowerCase().includes(q);
+      const prizeMatch = (ach.reward_prize || "").toLowerCase().includes(q);
+      const badgeMatch = (ach.badge || "").toLowerCase().includes(q);
+      let studentMatch = false;
+      if (ach.student_names) {
+        try {
+          const names = typeof ach.student_names === "string" ? JSON.parse(ach.student_names) : ach.student_names;
+          studentMatch = Array.isArray(names) && names.some((n: string) => n.toLowerCase().includes(q));
+        } catch (_) {
+          studentMatch = (ach.student_names || "").toLowerCase().includes(q);
+        }
+      }
+      const matchesSearch = !q || titleMatch || topicMatch || descMatch || eventMatch || prizeMatch || badgeMatch || studentMatch;
+      const matchesCat = achCategoryFilter === "All" || (ach.category || "Hackathon & Competitions") === achCategoryFilter;
+
+      return matchesSearch && matchesCat;
+    });
+  }, [achievementsList, achSearchQuery, achCategoryFilter]);
+
+  const handleOpenCreateAchievementModal = (initialEventName?: string | any, initialDate?: string, initialDept?: string) => {
+    const eventNameStr = typeof initialEventName === "string" ? initialEventName : "";
+    const dateStr = typeof initialDate === "string" ? initialDate : new Date().toISOString().split("T")[0];
+    const deptStr = typeof initialDept === "string" && initialDept !== "All Departments" && initialDept !== "All Depts" ? initialDept : "All";
+    setEditingAchievement(null);
+    setAchFormParticipationType("individual");
+    setAchFormTeamName("");
+    setAchFormLevel("National Level");
+    setAchFormOrganizer("");
+    setAchFormTitle(eventNameStr ? `Winner - ${eventNameStr}` : "");
+    setAchFormTopic("");
+    setAchFormCategory("Hackathon & Competitions");
+    setIsCustomAchCategory(false);
+    setAchFormCustomCategory("");
+    setAchFormDescription(eventNameStr ? `Achievement details in campus event: ${eventNameStr}` : "");
+    setAchFormDateStr(dateStr);
+    setAchFormBadge("1st Place / Winner");
+    setAchFormRewardPrize("");
+    setAchFormEventName(eventNameStr);
+    setAchFormProofLink("");
+    setAchFormPhotos([]);
+    setAchFormSelectedStudentIds([]);
+    setAchStudentPickerSearch("");
+    setAchStudentDeptFilter(deptStr);
+    setShowAchievementModal(true);
+  };
+
+  const handleOpenEditAchievementModal = (ach: any) => {
+    setEditingAchievement(ach);
+    setAchFormTitle(ach.title || "");
+    setAchFormTopic(ach.topic || "");
+    const cat = ach.category || "Hackathon & Competitions";
+    if (standardAchCategories.includes(cat)) {
+      setAchFormCategory(cat);
+      setIsCustomAchCategory(false);
+      setAchFormCustomCategory("");
     } else {
-      toast("Failed to update status", "error");
+      setAchFormCategory("custom");
+      setIsCustomAchCategory(true);
+      setAchFormCustomCategory(cat);
+    }
+    setAchFormDescription(ach.description || "");
+    setAchFormDateStr(ach.date_str || new Date().toISOString().split("T")[0]);
+    setAchFormBadge(ach.badge || "1st Place / Winner");
+    setAchFormRewardPrize(ach.reward_prize || "");
+    setAchFormEventName(ach.event_name || "");
+    setAchFormProofLink(ach.proof_link || "");
+    setAchFormParticipationType(ach.participation_type || "individual");
+    setAchFormTeamName(ach.team_name || "");
+    setAchFormLevel(ach.achievement_level || "National Level");
+    setAchFormOrganizer(ach.organizer || "");
+    setAchStudentDeptFilter("All");
+
+    let existingPhotos: string[] = [];
+    if (ach.photos) {
+      try {
+        existingPhotos = typeof ach.photos === "string" ? JSON.parse(ach.photos) : (Array.isArray(ach.photos) ? ach.photos : []);
+      } catch (_) {
+        existingPhotos = [ach.photos];
+      }
+    }
+    setAchFormPhotos(existingPhotos);
+
+    let existingIds: string[] = [];
+    if (ach.student_ids) {
+      try {
+        existingIds = typeof ach.student_ids === "string" ? JSON.parse(ach.student_ids) : (Array.isArray(ach.student_ids) ? ach.student_ids : []);
+      } catch (_) {
+        existingIds = [ach.student_ids];
+      }
+    }
+    setAchFormSelectedStudentIds(existingIds);
+    setAchStudentPickerSearch("");
+    setShowAchievementModal(true);
+  };
+
+  const handleSaveAchievementSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!achFormTitle.trim()) {
+      toast("Achievement Title is required.", "error");
+      return;
+    }
+    if (achFormSelectedStudentIds.length === 0) {
+      toast("Please select at least one student associated with this achievement.", "error");
+      return;
+    }
+
+    const finalCategory = (isCustomAchCategory || achFormCategory === "custom")
+      ? (achFormCustomCategory.trim() || "Student Achievement")
+      : achFormCategory;
+
+    const selectedStudentObjects = (students || []).filter(s => achFormSelectedStudentIds.includes(s.id));
+    const studentNames = selectedStudentObjects.map(s => s.name);
+
+    const payload = {
+      id: editingAchievement ? editingAchievement.id : undefined,
+      collegeId: activeCollegeId,
+      title: achFormTitle.trim(),
+      topic: achFormTopic.trim(),
+      category: finalCategory,
+      description: achFormDescription.trim(),
+      dateStr: achFormDateStr,
+      badge: achFormBadge,
+      rewardPrize: achFormRewardPrize.trim(),
+      eventName: achFormEventName.trim(),
+      proofLink: achFormProofLink.trim(),
+      photos: achFormPhotos.length > 0 ? JSON.stringify(achFormPhotos) : null,
+      studentIds: achFormSelectedStudentIds,
+      studentNames: studentNames,
+      participationType: achFormParticipationType,
+      teamName: achFormParticipationType === "team" ? (achFormTeamName.trim() || "Team " + (studentNames[0] || "Winners")) : "",
+      achievementLevel: achFormLevel,
+      organizer: achFormOrganizer.trim(),
+      addedBy: currentCAM?.name || "Campus Manager"
+    };
+
+    setIsSubmittingAchievement(true);
+    try {
+      const res = await fetch("/api/achievements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(editingAchievement ? "Achievement updated successfully!" : "Achievement recorded successfully!", "success");
+        setShowAchievementModal(false);
+        await fetchAchievements();
+      } else {
+        toast(data.message || "Failed to record achievement", "error");
+      }
+    } catch (err: any) {
+      toast("Error saving achievement: " + err.message, "error");
+    } finally {
+      setIsSubmittingAchievement(false);
+    }
+  };
+
+  const handleDeleteAchievement = async (id: string) => {
+    const ok = await showConfirm({
+      title: "Delete Student Achievement",
+      message: "Are you sure you want to delete this recorded achievement? This will remove it from student profiles and campus audit records.",
+      confirmLabel: "Delete Achievement",
+      danger: true
+    });
+    if (!ok) return;
+
+    try {
+      const res = await fetch(`/api/achievements?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        toast("Achievement removed successfully.", "success");
+        await fetchAchievements();
+      } else {
+        toast(data.message || "Failed to delete achievement", "error");
+      }
+    } catch (err: any) {
+      toast("Error deleting achievement: " + err.message, "error");
     }
   };
 
@@ -13959,10 +14453,27 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       {(() => {
         const getNotificationCount = (tabId: string) => {
           if (tabId === "handovers") {
-            return requests.filter(r => r.status === "pending_cam").length;
+            const isAllColleges = !activeCollegeId || activeCollegeId === "all";
+            const mentorCollegeMap = new Map<string, string>();
+            mentors.forEach(m => {
+              const cid = m.college_id || (m as any).collegeId;
+              if (m.id && cid) mentorCollegeMap.set(m.id, cid);
+            });
+            return requests.filter(r => {
+              const isPending = r.status === "pending" || r.status === "pending_cam" || r.status === "needs_cam_allocation";
+              if (!isPending) return false;
+              if (isAllColleges) return true;
+              const mCollege = mentorCollegeMap.get(r.requestorId);
+              if (mCollege === activeCollegeId) return true;
+              const reqSlot = slots.find(s => s.id === r.slotId);
+              const slotCollege = (reqSlot as any)?.college_id || (reqSlot as any)?.collegeId;
+              if (slotCollege && slotCollege === activeCollegeId) return true;
+              if (!mCollege && currentCAM?.college_id === activeCollegeId) return true;
+              return false;
+            }).length;
           }
           if (tabId === "interviews") {
-            return interviews.filter((i: any) => (i.status === "Pending" || i.status === "pending_cam") && (i.college_id === activeCollegeId || !i.college_id)).length;
+            return interviews.filter((i: any) => (i.status === "Pending" || i.status === "pending_cam") && (activeCollegeId === "all" || i.college_id === activeCollegeId || !i.college_id)).length;
           }
           return 0;
         };
@@ -13998,8 +14509,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     icon: Users,
                     items: [
                       { id: "faculty", label: "Mentor Subject Allocation", icon: Users },
-                      { id: "handovers", label: "Class Handovers", icon: CalendarCheck2 },
+                      { id: "handovers", label: "Requests & Approvals", icon: CalendarCheck2 },
                       { id: "faculty_weekly_plan", label: "Weekly Plan", icon: CalendarRange },
+                      { id: "mentor_skill_tracker", label: "Mentor Skill Dev Tracker", icon: GraduationCap },
                       { id: "demo_schedule", label: "Demo Schedule", icon: Award }
                     ]
                   },
@@ -14227,12 +14739,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             { id: "overview", label: "Dashboard", icon: Building2 },
             { id: "timetable", label: "Timetable", icon: Calendar },
             { id: "faculty", label: "Faculty", icon: Users },
-            { id: "handovers", label: "Handovers", icon: CalendarCheck2 },
+            { id: "handovers", label: "Approvals", icon: CalendarCheck2 },
             { id: "more_menu", label: "More", icon: Menu },
           ].map(t => {
             const Icon = t.icon;
             const isActive = activeTab === t.id || (t.id === "more_menu" && ["config", "curriculum", "monitoring", "tracker", "fees", "reports", "profile", "audit"].includes(activeTab));
-            const count = t.id === "handovers" ? requests.filter(r => r.status === "pending_cam").length : 0;
+            const count = t.id === "handovers" ? requests.filter(r => r.status === "pending_cam" || r.status === "pending" || r.status === "needs_cam_allocation").length : 0;
             return (
               <button
                 key={t.id}
@@ -15429,7 +15941,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           )}
 
           {/* Faculty: Weekly Plan */}
-          {/* Faculty: Weekly Plan */}
           {activeTab === "faculty_weekly_plan" && (
             <WeeklyPlanViewer
               collegeId={activeCollegeId}
@@ -15438,6 +15949,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               reviewerName={isKAMView ? (currentKAM?.name || "Key Account Manager") : (currentCAM?.name || "Campus Manager")}
               allowedCollegeIds={allowedCollegeIds}
               allColleges={colleges.map(c => ({ id: c.id, name: c.name }))}
+            />
+          )}
+
+          {/* Faculty: Mentor Skill Development Tracker (CM view-only) */}
+          {activeTab === "mentor_skill_tracker" && (
+            <SkillTrackerPanel
+              role="cm"
+              collegeId={activeCollegeId}
+              collegeName={activeCollegeName}
             />
           )}
 
@@ -17262,9 +17782,49 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 setAttendanceEndDate("2026-08-31");
               }
             };
+            const mentorCollegeMap = new Map<string, string>();
+            mentors.forEach(m => {
+              const cid = m.college_id || (m as any).collegeId;
+              if (m.id && cid) mentorCollegeMap.set(m.id, cid);
+            });
+            const pendingLateAttRequestsForCampus = requests.filter(r => {
+              const isLate = r.request_type === "late_attendance" || r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval (Late Attendance") || r.targetStaffId === "cam_approval";
+              const isPending = r.status === "pending_cam" || r.status === "pending";
+              if (!isLate || !isPending) return false;
+              if (!activeCollegeId || activeCollegeId === "all") return true;
+              const mCollege = mentorCollegeMap.get(r.requestorId);
+              return mCollege === activeCollegeId || (!mCollege && currentCAM?.college_id === activeCollegeId);
+            });
 
             return (
               <div className="space-y-4 font-sans">
+                {pendingLateAttRequestsForCampus.length > 0 && (
+                  <div className="p-4 bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-200 rounded-2xl flex items-center justify-between gap-3 text-rose-900 shadow-sm animate-in fade-in duration-200">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="p-2.5 bg-rose-100/90 border border-rose-200 rounded-xl text-rose-700 text-base font-bold shrink-0">⏰</span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-rose-900 truncate">
+                          {pendingLateAttRequestsForCampus.length} Period Attendance Unlock Request{pendingLateAttRequestsForCampus.length > 1 ? "s" : ""} Pending Approval
+                        </p>
+                        <p className="text-[11px] text-rose-700 font-medium mt-0.5 truncate">
+                          Faculty members have requested permission to mark period attendance for expired class timeframes.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setApprovalsCategoryFilter("late_attendance");
+                        setActiveTab("handovers" as any);
+                      }}
+                      className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5"
+                    >
+                      <span>Review &amp; Approve Unlock</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                   {/* Header & Controls Bar */}
                   <div className="border-b border-slate-150 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
@@ -18549,249 +19109,451 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             </div>
           )}
 
-          {/* Tab 8.5: Class Handovers */}
+          {/* Tab 8.5: Requests & Approvals (Handovers, Late Attendance, Exam Marks) */}
           {activeTab === "handovers" && (() => {
             const mentorCollegeMap = new Map<string, string>();
-            mentors.forEach(m => { if (m.id && m.college_id) mentorCollegeMap.set(m.id, m.college_id); });
-            const campusRequests = requests.filter(r => mentorCollegeMap.get(r.requestorId) === activeCollegeId);
-            const campusApproved = approvedHandovers.filter(h => mentorCollegeMap.get(h.originalMentorId) === activeCollegeId);
+            mentors.forEach(m => {
+              const cid = m.college_id || (m as any).collegeId;
+              if (m.id && cid) mentorCollegeMap.set(m.id, cid);
+            });
+            const isAllColleges = !activeCollegeId || activeCollegeId === "all";
+
+            const campusRequests = requests.filter(r => {
+              if (isAllColleges) return true;
+              const mCollege = mentorCollegeMap.get(r.requestorId);
+              if (mCollege === activeCollegeId) return true;
+              const reqSlot = slots.find(s => s.id === r.slotId);
+              const slotCollege = (reqSlot as any)?.college_id || (reqSlot as any)?.collegeId;
+              if (slotCollege && slotCollege === activeCollegeId) return true;
+              if (!mCollege && currentCAM?.college_id === activeCollegeId) return true;
+              return false;
+            });
+
+            const campusApproved = approvedHandovers.filter(h => {
+              if (isAllColleges) return true;
+              const mCollege = mentorCollegeMap.get(h.originalMentorId);
+              return mCollege === activeCollegeId || (!mCollege && currentCAM?.college_id === activeCollegeId);
+            });
+
             const camMentor = mentors.find(m =>
               m.email?.toLowerCase() === currentCAM?.email?.toLowerCase() ||
               m.name?.toLowerCase() === currentCAM?.name?.toLowerCase()
             );
 
+            // Categorization helpers
+            const isLateAttReq = (r: any) =>
+              r.request_type === "late_attendance" ||
+              r.reason?.includes("Late Attendance") ||
+              r.targetStaffName?.includes("CAM Approval (Late Attendance") ||
+              (r.targetStaffId === "cam_approval" && !r.slotId?.startsWith("mentor_daily_punch_") && !r.slotId?.startsWith("acad_log_edit_"));
+
+            const isExamMarkReq = (r: any) => r.request_type === "exam_marks_edit";
+            const isLatePunchReq = (r: any) => r.request_type === "late_punch" || r.reason?.includes("Late Mentor Attendance Punch") || r.slotId?.startsWith("mentor_daily_punch_");
+            const isHandoverReq = (r: any) => !isLateAttReq(r) && !isExamMarkReq(r) && !isLatePunchReq(r);
+
+            const pendingOnly = campusRequests.filter(r => r.status === "pending" || r.status === "pending_cam" || r.status === "needs_cam_allocation" || r.status === "rejected");
+            const lateAttCount = pendingOnly.filter(isLateAttReq).length;
+            const handoverCount = pendingOnly.filter(isHandoverReq).length;
+            const examMarkCount = pendingOnly.filter(isExamMarkReq).length;
+            const latePunchCount = pendingOnly.filter(isLatePunchReq).length;
+
+            const filteredByCat = pendingOnly.filter(r => {
+              if (approvalsCategoryFilter === "late_attendance") return isLateAttReq(r);
+              if (approvalsCategoryFilter === "handovers") return isHandoverReq(r);
+              if (approvalsCategoryFilter === "exam_marks") return isExamMarkReq(r);
+              if (approvalsCategoryFilter === "late_punches") return isLatePunchReq(r);
+              return true;
+            });
+
             return (
               <div className="space-y-6">
-                <div className="bg-white p-6 rounded-xl border border-slate-205 shadow-sm space-y-6">
+                {/* Top KPI Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div
+                    onClick={() => setApprovalsCategoryFilter("all")}
+                    className={`p-4 rounded-xl border transition-all cursor-pointer shadow-xs ${
+                      approvalsCategoryFilter === "all"
+                        ? "bg-slate-900 text-white border-slate-900 shadow-md scale-101"
+                        : "bg-white text-slate-800 border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <p className={`text-[10px] font-bold uppercase tracking-wider ${approvalsCategoryFilter === "all" ? "text-slate-300" : "text-slate-400"}`}>
+                      All Pending Requests
+                    </p>
+                    <p className="text-2xl font-black mt-1">{pendingOnly.length}</p>
+                  </div>
+
+                  <div
+                    onClick={() => setApprovalsCategoryFilter("late_attendance")}
+                    className={`p-4 rounded-xl border transition-all cursor-pointer shadow-xs ${
+                      approvalsCategoryFilter === "late_attendance"
+                        ? "bg-rose-600 text-white border-rose-600 shadow-md scale-101"
+                        : "bg-white text-slate-800 border-rose-100 hover:border-rose-300"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className={`text-[10px] font-bold uppercase tracking-wider ${approvalsCategoryFilter === "late_attendance" ? "text-rose-100" : "text-rose-600"}`}>
+                        ⏰ Late Attendance
+                      </p>
+                      {lateAttCount > 0 && <span className="h-2 w-2 rounded-full bg-rose-400 animate-ping" />}
+                    </div>
+                    <p className={`text-2xl font-black mt-1 ${approvalsCategoryFilter === "late_attendance" ? "text-white" : "text-rose-600"}`}>
+                      {lateAttCount}
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setApprovalsCategoryFilter("handovers")}
+                    className={`p-4 rounded-xl border transition-all cursor-pointer shadow-xs ${
+                      approvalsCategoryFilter === "handovers"
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-md scale-101"
+                        : "bg-white text-slate-800 border-indigo-100 hover:border-indigo-300"
+                    }`}
+                  >
+                    <p className={`text-[10px] font-bold uppercase tracking-wider ${approvalsCategoryFilter === "handovers" ? "text-indigo-100" : "text-indigo-600"}`}>
+                      👥 Class Substitutions
+                    </p>
+                    <p className={`text-2xl font-black mt-1 ${approvalsCategoryFilter === "handovers" ? "text-white" : "text-indigo-600"}`}>
+                      {handoverCount}
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setApprovalsCategoryFilter("exam_marks")}
+                    className={`p-4 rounded-xl border transition-all cursor-pointer shadow-xs ${
+                      approvalsCategoryFilter === "exam_marks"
+                        ? "bg-purple-600 text-white border-purple-600 shadow-md scale-101"
+                        : "bg-white text-slate-800 border-purple-100 hover:border-purple-300"
+                    }`}
+                  >
+                    <p className={`text-[10px] font-bold uppercase tracking-wider ${approvalsCategoryFilter === "exam_marks" ? "text-purple-100" : "text-purple-600"}`}>
+                      📝 Exam Mark Edits
+                    </p>
+                    <p className={`text-2xl font-black mt-1 ${approvalsCategoryFilter === "exam_marks" ? "text-white" : "text-purple-600"}`}>
+                      {examMarkCount}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Main Table Card */}
+                <div className="bg-white p-6 rounded-xl border border-slate-205 shadow-sm space-y-5">
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div>
-                      <h2 className="text-base font-black text-slate-905">Pending Handover Requests</h2>
-                      <p className="text-xs text-slate-400 font-semibold mt-0.5">Substitution requests awaiting receiver approval.</p>
+                      <h2 className="text-base font-black text-slate-905">Requests &amp; Approvals Hub</h2>
+                      <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                        Manage late attendance marking unlock permissions, emergency substitutions, and mark modifications.
+                      </p>
                     </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const XLSX = await import("xlsx");
+                            const headers = ["S.No", "Date", "Time", "Class", "Request Type", "Requestor", "Cover / Target", "Reason", "Status", "Submitted At"];
+                            const rows = campusRequests.map((r, idx) => [
+                              idx + 1,
+                              r.dateStr || "—",
+                              r.time || "—",
+                              r.course || "—",
+                              isLateAttReq(r) ? "Late Attendance" : isExamMarkReq(r) ? "Exam Mark Edit" : "Class Handover",
+                              r.requestorName || "—",
+                              r.targetStaffName || "—",
+                              r.reason || "—",
+                              r.status || "—",
+                              r.timestamp ? new Date(r.timestamp).toLocaleDateString() : "—"
+                            ]);
+                            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                            ws["!cols"] = [{ wch: 5 }, { wch: 12 }, { wch: 10 }, { wch: 20 }, { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 35 }, { wch: 14 }, { wch: 14 }];
+                            const wb = XLSX.utils.book_new();
+                            XLSX.utils.book_append_sheet(wb, ws, "Requests");
+                            XLSX.writeFile(wb, `Requests_Approvals_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                            toast("Requests exported successfully!", "success");
+                          } catch (err: any) {
+                            toast("Export failed: " + err.message, "error");
+                          }
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                      >
+                        <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                        Export Excel
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter Pills */}
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-100">
                     <button
                       type="button"
-                      onClick={async () => {
-                        try {
-                          const XLSX = await import("xlsx");
-                          const headers = ["S.No", "Date", "Time", "Class", "Requestor", "Cover Staff", "Reason", "Status", "Submitted At"];
-                          const rows = campusRequests.map((r, idx) => [
-                            idx + 1,
-                            r.dateStr || "—",
-                            r.time || "—",
-                            r.course || "—",
-                            r.requestorName || "—",
-                            r.targetStaffName || "—",
-                            r.reason || "—",
-                            r.status || "—",
-                            r.timestamp ? new Date(r.timestamp).toLocaleDateString() : "—"
-                          ]);
-                          const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-                          ws["!cols"] = [{ wch: 5 }, { wch: 12 }, { wch: 10 }, { wch: 20 }, { wch: 22 }, { wch: 22 }, { wch: 35 }, { wch: 14 }, { wch: 14 }];
-                          const wb = XLSX.utils.book_new();
-                          XLSX.utils.book_append_sheet(wb, ws, "Handovers");
-                          XLSX.writeFile(wb, `Handover_Requests_${new Date().toISOString().slice(0, 10)}.xlsx`);
-                          toast("Handover requests exported!", "success");
-                        } catch (err: any) {
-                          toast("Export failed: " + err.message, "error");
-                        }
-                      }}
-                      className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                      onClick={() => setApprovalsCategoryFilter("all")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        approvalsCategoryFilter === "all"
+                          ? "bg-slate-900 text-white shadow-xs"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
                     >
-                      <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
-                      Export Excel
+                      All ({pendingOnly.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setApprovalsCategoryFilter("late_attendance")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        approvalsCategoryFilter === "late_attendance"
+                          ? "bg-rose-600 text-white shadow-xs"
+                          : "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200"
+                      }`}
+                    >
+                      <span>⏰ Late Attendance</span>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${approvalsCategoryFilter === "late_attendance" ? "bg-white text-rose-600" : "bg-rose-200 text-rose-800"}`}>
+                        {lateAttCount}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setApprovalsCategoryFilter("handovers")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        approvalsCategoryFilter === "handovers"
+                          ? "bg-indigo-600 text-white shadow-xs"
+                          : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
+                      }`}
+                    >
+                      <span>👥 Substitutions</span>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${approvalsCategoryFilter === "handovers" ? "bg-white text-indigo-600" : "bg-indigo-200 text-indigo-800"}`}>
+                        {handoverCount}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setApprovalsCategoryFilter("exam_marks")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        approvalsCategoryFilter === "exam_marks"
+                          ? "bg-purple-600 text-white shadow-xs"
+                          : "bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200"
+                      }`}
+                    >
+                      <span>📝 Exam Marks</span>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${approvalsCategoryFilter === "exam_marks" ? "bg-white text-purple-600" : "bg-purple-200 text-purple-800"}`}>
+                        {examMarkCount}
+                      </span>
                     </button>
                   </div>
 
+                  {/* Table */}
                   <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
                     <table className="w-full border-collapse text-left text-xs font-semibold min-w-[640px]">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
-                          <th className="p-3 border-r border-slate-100">Handover Date</th>
-                          <th className="p-3 border-r border-slate-100">Time / Class</th>
-                          <th className="p-3 border-r border-slate-100">Requestor (Original)</th>
-                          <th className="p-3 border-r border-slate-100">Receiver (Cover)</th>
-                          <th className="p-3 border-r border-slate-100">Reason</th>
+                          <th className="p-3 border-r border-slate-100">Date &amp; Time</th>
+                          <th className="p-3 border-r border-slate-100">Class / Subject</th>
+                          <th className="p-3 border-r border-slate-100">Faculty Requestor</th>
+                          <th className="p-3 border-r border-slate-100">Type / Target</th>
+                          <th className="p-3 border-r border-slate-100">Reason &amp; Remarks</th>
                           <th className="p-3 border-r border-slate-100">Status</th>
                           <th className="p-3 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                        {campusRequests.filter(r => r.status === "pending" || r.status === "pending_cam" || r.status === "needs_cam_allocation" || r.status === "rejected").map(req => (
-                          <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="p-3 font-bold text-slate-805 border-r border-slate-100">{req.dateStr}</td>
-                            <td className="p-3 border-r border-slate-100">
-                              <div className="font-bold text-slate-805">{req.course}</div>
-                              <div className="text-[10px] text-slate-400">{req.time}</div>
-                            </td>
-                            <td className="p-3 font-bold border-r border-slate-100">{req.requestorName}</td>
-                            <td className="p-3 font-bold text-indigo-700 border-r border-slate-100">
-                              {req.status === "needs_cam_allocation" ? (
-                                <span className="text-amber-700 italic font-semibold">CAM Help Requested</span>
-                              ) : req.targetStaffName}
-                            </td>
-                            <td className="p-3 italic text-slate-500 border-r border-slate-100 text-[11px] max-w-xs truncate" title={req.reason}>
-                              {req.reason}
-                            </td>
-                            <td className="p-3 border-r border-slate-100">
-                              {req.request_type === "exam_marks_edit" ? (
-                                <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-purple-50 border-purple-200 text-purple-700 flex items-center gap-1 w-fit">
-                                  <span>📝 Exam Mark Edit</span>
-                                </span>
-                              ) : req.status === "needs_cam_allocation" ? (
-                                <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-indigo-50 border-indigo-200 text-indigo-700 flex items-center gap-1 w-fit">
-                                  <span>🛡️ Needs CAM Allocation</span>
-                                </span>
-                              ) : req.status === "rejected" ? (
-                                <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 flex items-center gap-1 w-fit">
-                                  <span>❌ Cover Declined (Reassign)</span>
-                                </span>
-                              ) : req.reason?.includes("Late Mentor Attendance Punch") ? (
-                                <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 animate-pulse flex items-center gap-1 w-fit">
-                                  <span>⏰ Late Mentor Punch</span>
-                                </span>
-                              ) : req.reason?.includes("Late Attendance") ? (
-                                <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 animate-pulse flex items-center gap-1 w-fit">
-                                  <span>⏰ Late Attendance</span>
-                                </span>
-                              ) : req.status === "pending_cam" ? (
-                                <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-indigo-50 border-indigo-150 text-indigo-700 animate-pulse">
-                                  Emergency (CM)
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-amber-50 border-amber-100 text-amber-700">
-                                  Pending Colleague
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-3 text-right">
-                              {readOnly ? (
-                                <span className="text-[10px] text-slate-400 font-semibold italic">
-                                  View only
-                                </span>
-                              ) : req.request_type === "exam_marks_edit" ? (
-                                <div className="flex gap-2 justify-end">
+                        {filteredByCat.map(req => {
+                          const isLate = isLateAttReq(req);
+                          const isExam = isExamMarkReq(req);
+                          return (
+                            <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="p-3 border-r border-slate-100">
+                                <div className="font-bold text-slate-850">{req.dateStr}</div>
+                                <div className="text-[10px] text-slate-400 font-mono mt-0.5">{req.time || "—"}</div>
+                              </td>
+                              <td className="p-3 border-r border-slate-100">
+                                <div className="font-bold text-slate-850">{req.course}</div>
+                                {req.classGroup && <div className="text-[10px] text-slate-400 font-semibold">{req.classGroup}</div>}
+                              </td>
+                              <td className="p-3 font-bold border-r border-slate-100 text-slate-800">
+                                {req.requestorName}
+                              </td>
+                              <td className="p-3 border-r border-slate-100">
+                                {isLate ? (
+                                  <span className="px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-black inline-flex items-center gap-1">
+                                    ⏰ Period Attendance Unlock
+                                  </span>
+                                ) : isExam ? (
+                                  <span className="px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200 text-purple-700 text-[10px] font-black inline-flex items-center gap-1">
+                                    📝 Exam Mark Edit
+                                  </span>
+                                ) : req.status === "needs_cam_allocation" ? (
+                                  <span className="text-amber-700 italic font-semibold text-[11px]">
+                                    ⚡ Needs Faculty Mapping
+                                  </span>
+                                ) : (
+                                  <span className="font-bold text-indigo-700">{req.targetStaffName || "Cover Staff"}</span>
+                                )}
+                              </td>
+                              <td className="p-3 italic text-slate-600 border-r border-slate-100 text-[11px] max-w-xs truncate" title={req.reason}>
+                                {req.reason}
+                              </td>
+                              <td className="p-3 border-r border-slate-100">
+                                {isExam ? (
+                                  <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-purple-50 border-purple-200 text-purple-700 flex items-center gap-1 w-fit">
+                                    <span>📝 Exam Mark Edit</span>
+                                  </span>
+                                ) : isLate ? (
+                                  <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 animate-pulse flex items-center gap-1 w-fit">
+                                    <span>⏰ Late Attendance</span>
+                                  </span>
+                                ) : req.status === "needs_cam_allocation" ? (
+                                  <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-indigo-50 border-indigo-200 text-indigo-700 flex items-center gap-1 w-fit">
+                                    <span>🛡️ Needs CAM Allocation</span>
+                                  </span>
+                                ) : req.status === "rejected" ? (
+                                  <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-rose-50 border-rose-200 text-rose-700 flex items-center gap-1 w-fit">
+                                    <span>❌ Cover Declined</span>
+                                  </span>
+                                ) : req.status === "pending_cam" ? (
+                                  <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-indigo-50 border-indigo-150 text-indigo-700 animate-pulse">
+                                    Pending CM Review
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded border text-[9.5px] font-bold uppercase bg-amber-50 border-amber-100 text-amber-700">
+                                    Pending Colleague
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3 text-right">
+                                {readOnly ? (
+                                  <span className="text-[10px] text-slate-400 font-semibold italic">View only</span>
+                                ) : isExam ? (
+                                  <div className="flex gap-2 justify-end">
+                                    <button
+                                      type="button"
+                                      disabled={loadingActions[`approve_req_${req.id}`]}
+                                      onClick={async () => {
+                                        if (await showConfirm({ message: `Approve this Exam Mark Modification Request? New mark will be saved into the official exam record.`, confirmLabel: "Approve Mark", title: "Approve Mark Edit" })) {
+                                          setActionLoading(`approve_req_${req.id}`, true);
+                                          try {
+                                            await handleRequest(req.id, "approved", "Approved by CAM", "Campus Manager");
+                                            toast("Exam mark modification approved successfully!", "success");
+                                          } finally {
+                                            setActionLoading(`approve_req_${req.id}`, false);
+                                          }
+                                        }
+                                      }}
+                                      className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      {loadingActions[`approve_req_${req.id}`] ? (
+                                        <>
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                          Approving...
+                                        </>
+                                      ) : "Approve Mark"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={loadingActions[`reject_req_${req.id}`]}
+                                      onClick={async () => {
+                                        if (await showConfirm({ message: "Are you sure you want to reject this mark modification request?", danger: true, confirmLabel: "Reject" })) {
+                                          setActionLoading(`reject_req_${req.id}`, true);
+                                          try {
+                                            await handleRequest(req.id, "rejected", "Rejected by CAM", "Campus Manager");
+                                            toast("Exam mark modification request rejected.", "info");
+                                          } finally {
+                                            setActionLoading(`reject_req_${req.id}`, false);
+                                          }
+                                        }
+                                      }}
+                                      className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      {loadingActions[`reject_req_${req.id}`] ? (
+                                        <>
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                          Rejecting...
+                                        </>
+                                      ) : "Reject"}
+                                    </button>
+                                  </div>
+                                ) : (req.status === "needs_cam_allocation" || req.status === "rejected") ? (
                                   <button
                                     type="button"
-                                    disabled={loadingActions[`approve_req_${req.id}`]}
-                                    onClick={async () => {
-                                      if (await showConfirm({ message: `Approve this Exam Mark Modification Request? New mark will be saved into the official exam record.`, confirmLabel: "Approve Mark", title: "Approve Mark Edit" })) {
-                                        setActionLoading(`approve_req_${req.id}`, true);
-                                        try {
-                                          await handleRequest(req.id, "approved", "Approved by CAM", "Campus Manager");
-                                          toast("Exam mark modification approved successfully!", "success");
-                                        } finally {
-                                          setActionLoading(`approve_req_${req.id}`, false);
-                                        }
-                                      }
-                                    }}
-                                    className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                                    onClick={() => openCamAssignModal(req)}
+                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black shadow-xs transition-colors flex items-center gap-1.5 ml-auto cursor-pointer"
                                   >
-                                    {loadingActions[`approve_req_${req.id}`] ? (
-                                      <>
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                        Approving...
-                                      </>
-                                    ) : "Approve Mark"}
+                                    ⚡ Map Free Faculty
                                   </button>
-                                  <button
-                                    type="button"
-                                    disabled={loadingActions[`reject_req_${req.id}`]}
-                                    onClick={async () => {
-                                      if (await showConfirm({ message: "Are you sure you want to reject this mark modification request?", danger: true, confirmLabel: "Reject" })) {
-                                        setActionLoading(`reject_req_${req.id}`, true);
-                                        try {
-                                          await handleRequest(req.id, "rejected", "Rejected by CAM", "Campus Manager");
-                                          toast("Exam mark modification request rejected.", "info");
-                                          // handleRequest already surgically updates requests state
-                                        } finally {
-                                          setActionLoading(`reject_req_${req.id}`, false);
+                                ) : req.status === "pending_cam" ? (
+                                  <div className="flex gap-2 justify-end">
+                                    <button
+                                      type="button"
+                                      disabled={loadingActions[`approve_req_${req.id}`]}
+                                      onClick={async () => {
+                                        const confirmMessage = isLate
+                                          ? `Approve Late Attendance Edit Permission for ${req.requestorName}? They will be allowed to mark attendance for ${req.course || "this period"}.`
+                                          : "Approve this Emergency Handover Request? It will be forwarded to the cover staff.";
+                                        const title = isLate ? "Approve Attendance Unlock" : "Approve Emergency Handover";
+                                        if (await showConfirm({ message: confirmMessage, confirmLabel: "Approve", title })) {
+                                          setActionLoading(`approve_req_${req.id}`, true);
+                                          try {
+                                            await handleRequest(req.id, "approved", "", "Campus Manager");
+                                            toast(isLate ? "Attendance unlock permission approved! Faculty can now mark attendance." : "Emergency request approved and forwarded to the cover staff.", "success");
+                                          } finally {
+                                            setActionLoading(`approve_req_${req.id}`, false);
+                                          }
                                         }
-                                      }
-                                    }}
-                                    className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
-                                  >
-                                    {loadingActions[`reject_req_${req.id}`] ? (
-                                      <>
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                        Rejecting...
-                                      </>
-                                    ) : "Reject"}
-                                  </button>
-                                </div>
-                              ) : (req.status === "needs_cam_allocation" || req.status === "rejected") ? (
-                                <button
-                                  type="button"
-                                  onClick={() => openCamAssignModal(req)}
-                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black shadow-xs transition-colors flex items-center gap-1.5 ml-auto cursor-pointer"
-                                >
-                                  ⚡ Map Free Faculty
-                                </button>
-                              ) : req.status === "pending_cam" ? (
-                                <div className="flex gap-2 justify-end">
-                                  <button
-                                    type="button"
-                                    disabled={loadingActions[`approve_req_${req.id}`]}
-                                    onClick={async () => {
-                                      const isLateAttendance = req.reason?.includes("Late Attendance") || req.targetStaffName?.includes("CAM Approval");
-                                      const confirmMessage = isLateAttendance
-                                        ? "Approve Late Attendance Edit Permission for this faculty member? They will be allowed to mark attendance for this session."
-                                        : "Approve this Emergency Handover Request? It will be forwarded to the cover staff.";
-                                      const title = isLateAttendance ? "Approve Late Attendance Edit" : "Approve Emergency Handover";
-                                      if (await showConfirm({ message: confirmMessage, confirmLabel: "Approve", title })) {
-                                        setActionLoading(`approve_req_${req.id}`, true);
-                                        try {
-                                          await handleRequest(req.id, "approved", "", "Campus Manager");
-                                          toast(isLateAttendance ? "Late attendance edit permission approved!" : "Emergency request approved and forwarded to the cover staff.", "success");
-                                        } finally {
-                                          setActionLoading(`approve_req_${req.id}`, false);
+                                      }}
+                                      className={`px-2.5 py-1.5 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer text-white ${
+                                        isLate ? "bg-rose-600 hover:bg-rose-700" : "bg-indigo-600 hover:bg-indigo-700"
+                                      }`}
+                                    >
+                                      {loadingActions[`approve_req_${req.id}`] ? (
+                                        <>
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                          Approving...
+                                        </>
+                                      ) : isLate ? "Approve Unlock" : "Approve Emergency"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={loadingActions[`reject_req_${req.id}`]}
+                                      onClick={async () => {
+                                        const confirmMessage = isLate
+                                          ? "Are you sure you want to reject this late attendance edit request?"
+                                          : "Are you sure you want to reject this emergency handover request?";
+                                        if (await showConfirm({ message: confirmMessage, danger: true, confirmLabel: "Reject" })) {
+                                          setActionLoading(`reject_req_${req.id}`, true);
+                                          try {
+                                            await handleRequest(req.id, "rejected", "", "Campus Manager");
+                                            toast(isLate ? "Late attendance edit request rejected." : "Emergency request rejected.", "info");
+                                          } finally {
+                                            setActionLoading(`reject_req_${req.id}`, false);
+                                          }
                                         }
-                                      }
-                                    }}
-                                    className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
-                                  >
-                                    {loadingActions[`approve_req_${req.id}`] ? (
-                                      <>
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                        Approving...
-                                      </>
-                                    ) : (req.reason?.includes("Late Attendance") || req.targetStaffName?.includes("CAM Approval")) ? "Approve Permission" : "Approve Emergency"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={loadingActions[`reject_req_${req.id}`]}
-                                    onClick={async () => {
-                                      if (await showConfirm({ message: "Are you sure you want to reject this emergency handover request?", danger: true, confirmLabel: "Reject" })) {
-                                        setActionLoading(`reject_req_${req.id}`, true);
-                                        try {
-                                          await handleRequest(req.id, "rejected", "", "Campus Manager");
-                                          toast("Emergency request rejected.", "info");
-                                        } finally {
-                                          setActionLoading(`reject_req_${req.id}`, false);
-                                        }
-                                      }
-                                    }}
-                                    className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
-                                  >
-                                    {loadingActions[`reject_req_${req.id}`] ? (
-                                      <>
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                        Rejecting...
-                                      </>
-                                    ) : "Reject"}
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-[10px] text-slate-400 font-semibold italic">
-                                  Awaiting cover staff ({req.targetStaffName})
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                        {campusRequests.filter(r => r.status === "pending" || r.status === "pending_cam" || r.status === "needs_cam_allocation" || r.status === "rejected").length === 0 && (
+                                      }}
+                                      className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      {loadingActions[`reject_req_${req.id}`] ? (
+                                        <>
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                          Rejecting...
+                                        </>
+                                      ) : "Reject"}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 font-semibold italic">
+                                    Awaiting cover staff ({req.targetStaffName})
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {filteredByCat.length === 0 && (
                           <tr>
-                            <td colSpan={7} className="p-8 text-center text-slate-400 italic">
-                              No pending handover requests for this campus.
+                            <td colSpan={7} className="p-12 text-center text-slate-400">
+                              <div className="flex flex-col items-center justify-center gap-2">
+                                <CheckCircle className="h-8 w-8 text-emerald-400/80" />
+                                <p className="text-xs font-bold text-slate-600">No pending requests in this category.</p>
+                                <p className="text-[11px] text-slate-400">
+                                  {isAllColleges ? "All campus requests have been reviewed." : `All requests for ${colleges.find(c => c.id === activeCollegeId)?.name || "this campus"} have been reviewed.`}
+                                </p>
+                              </div>
                             </td>
                           </tr>
                         )}
@@ -21848,60 +22610,103 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Toolbar & Filters */}
-              <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-[#D528A2]" />
-                      Campus Fests, Functions &amp; Event Console
-                    </h3>
-                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-pink-50 text-[#D528A2] border border-pink-100">
-                      {filteredEvents.length} Events on this Campus
+              {/* Event Sub-Tab Navigation Bar */}
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2 flex-wrap justify-between">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEventSubTab("events")}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                      eventSubTab === "events"
+                        ? "bg-[#D528A2] text-white shadow-md shadow-[#D528A2]/20"
+                        : "bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <Calendar className="h-4 w-4" />
+                    <span>Campus Events &amp; Hackathons</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                      eventSubTab === "events" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                    }`}>
+                      {filteredEvents.length}
                     </span>
-                  </div>
+                  </button>
 
-                  {/* Header Action Buttons */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={handleDownloadEventTemplate}
-                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                      title="Download Excel Import Template"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      <span>Template</span>
-                    </button>
-
-                    {!readOnly && (
-                      <label className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5">
-                        <Upload className="h-3.5 w-3.5" />
-                        <span>Import Excel</span>
-                        <input type="file" accept=".xlsx, .xls" onChange={handleImportEventsExcel} className="hidden" />
-                      </label>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={handleExportEventsExcel}
-                      className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                    >
-                      <FileSpreadsheet className="h-3.5 w-3.5" />
-                      <span>Export Report</span>
-                    </button>
-
-                    {!readOnly && (
-                      <button
-                        type="button"
-                        onClick={handleOpenCreateEventModal}
-                        className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#D528A2] to-pink-600 text-white font-extrabold text-xs shadow-md shadow-[#D528A2]/20 hover:opacity-95 transition-all cursor-pointer flex items-center gap-1.5"
-                      >
-                        <Plus className="h-4 w-4" />
-                        <span>+ Host Event / Fest</span>
-                      </button>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEventSubTab("achievements")}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                      eventSubTab === "achievements"
+                        ? "bg-[#D528A2] text-white shadow-md shadow-[#D528A2]/20"
+                        : "bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <Award className="h-4 w-4" />
+                    <span>Achievements</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                      eventSubTab === "achievements" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                    }`}>
+                      {achievementsList.length}
+                    </span>
+                  </button>
                 </div>
+              </div>
+
+              {eventSubTab === "events" ? (
+                <>
+                  {/* Toolbar & Filters */}
+                  <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-3">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-[#D528A2]" />
+                          Campus Fests, Functions &amp; Event Console
+                        </h3>
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-pink-50 text-[#D528A2] border border-pink-100">
+                          {filteredEvents.length} Events on this Campus
+                        </span>
+                      </div>
+
+                      {/* Header Action Buttons */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={handleDownloadEventTemplate}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                          title="Download Excel Import Template"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          <span>Template</span>
+                        </button>
+
+                        {!readOnly && (
+                          <label className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5">
+                            <Upload className="h-3.5 w-3.5" />
+                            <span>Import Excel</span>
+                            <input type="file" accept=".xlsx, .xls" onChange={handleImportEventsExcel} className="hidden" />
+                          </label>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={handleExportEventsExcel}
+                          className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                        >
+                          <FileSpreadsheet className="h-3.5 w-3.5" />
+                          <span>Export Report</span>
+                        </button>
+
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            onClick={handleOpenCreateEventModal}
+                            className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#D528A2] to-pink-600 text-white font-extrabold text-xs shadow-md shadow-[#D528A2]/20 hover:opacity-95 transition-all cursor-pointer flex items-center gap-1.5"
+                          >
+                            <Plus className="h-4 w-4" />
+                            <span>+ Create Event</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
                 {/* Filter Row & View Switcher */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-2 border-t border-slate-100">
@@ -21995,7 +22800,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         className={`px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold transition-all inline-flex items-center gap-1.5 shadow-sm ${readOnly ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
                       >
                         <Plus className="h-4 w-4" />
-                        Host New Event
+                        + Create Event
                       </button>
                     </div>
                   ) : (
@@ -22152,27 +22957,94 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 </label>
                                 <span className="text-[10px] font-semibold text-slate-400">{ev.department || "All Depts"}</span>
                               </div>
+
+                              {/* Associated Student Achievements Section */}
+                              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCreateAchievementModal(ev.name, ev.date, ev.department)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-pink-50 hover:bg-pink-100 text-[#D528A2] border border-pink-200 text-[11px] font-extrabold transition-all cursor-pointer shadow-2xs hover:shadow-xs"
+                                  title={`Record student winners, accolades and awards for ${ev.name}`}
+                                >
+                                  <Award className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                  <span>+ Add Student Achievements</span>
+                                </button>
+
+                                {(() => {
+                                  const linkedAccolades = achievementsList.filter(
+                                    a => a.event_name && a.event_name.trim().toLowerCase() === ev.name.trim().toLowerCase()
+                                  );
+                                  if (linkedAccolades.length > 0) {
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEventSubTab("achievements");
+                                          setAchSearchQuery(ev.name);
+                                        }}
+                                        className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded-lg border border-indigo-200 cursor-pointer transition-colors"
+                                        title="View recorded student accolades for this event"
+                                      >
+                                        <Sparkles className="h-3 w-3 text-indigo-600" />
+                                        <span>{linkedAccolades.length} {linkedAccolades.length === 1 ? "Accolade" : "Accolades"}</span>
+                                      </button>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
                             </div>
                           </div>
 
                           {/* Card Bottom Actions */}
-                          <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-1.5">
                               {!readOnly ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleQuickStatusChange(ev)}
-                                  className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold cursor-pointer transition-all ${ev.status === "Ongoing"
-                                      ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                      : ev.status === "Completed"
-                                        ? "bg-slate-200 text-slate-700"
-                                        : ev.status === "Postponed"
-                                          ? "bg-rose-100 text-rose-800"
-                                          : "bg-indigo-100 text-indigo-800 border border-indigo-200"
-                                    }`}
-                                >
-                                  {ev.status || "Upcoming"}
-                                </button>
+                                <div className="flex items-center gap-1.5">
+                                  {statusUpdatingId === ev.id ? (
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10.5px] font-extrabold bg-slate-100 text-slate-600 border border-slate-200">
+                                      <Loader2 className="h-3 w-3 animate-spin text-indigo-600 shrink-0" />
+                                      <span>Updating...</span>
+                                    </div>
+                                  ) : (
+                                    <select
+                                      disabled={statusUpdatingId === ev.id}
+                                      value={ev.status || "Upcoming"}
+                                      onChange={(e) => handleUpdateEventStatus(ev, e.target.value)}
+                                      className={`text-[10.5px] font-black rounded-lg px-2 py-1 cursor-pointer border transition-all ${
+                                        ev.status === "Ongoing"
+                                          ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
+                                          : ev.status === "Completed"
+                                            ? "bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200"
+                                            : ev.status === "Postponed"
+                                              ? "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
+                                              : ev.status === "Cancelled"
+                                                ? "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100"
+                                                : "bg-indigo-50 text-indigo-800 border-indigo-300 hover:bg-indigo-100"
+                                      }`}
+                                      title="Change event status"
+                                    >
+                                      <option value="Upcoming">Upcoming</option>
+                                      <option value="Ongoing">Ongoing</option>
+                                      <option value="Completed">Completed</option>
+                                      <option value="Postponed">Postponed</option>
+                                      <option value="Cancelled">Cancelled</option>
+                                    </select>
+                                  )}
+
+                                  {ev.status !== "Completed" && (
+                                    <button
+                                      type="button"
+                                      disabled={statusUpdatingId === ev.id}
+                                      onClick={() => handleUpdateEventStatus(ev, "Completed")}
+                                      className="px-2 py-1 rounded-lg text-[10.5px] font-bold bg-white hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                                      title="Mark event as completed"
+                                    >
+                                      <Check className="h-3 w-3 text-emerald-600" />
+                                      <span>Done</span>
+                                    </button>
+                                  )}
+                                </div>
                               ) : (
                                 <span
                                   className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold ${ev.status === "Ongoing"
@@ -22180,8 +23052,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       : ev.status === "Completed"
                                         ? "bg-slate-200 text-slate-700"
                                         : ev.status === "Postponed"
-                                          ? "bg-rose-100 text-rose-800"
-                                          : "bg-indigo-100 text-indigo-800 border border-indigo-200"
+                                          ? "bg-amber-100 text-amber-800"
+                                          : ev.status === "Cancelled"
+                                            ? "bg-rose-100 text-rose-800"
+                                            : "bg-indigo-100 text-indigo-800 border border-indigo-200"
                                     }`}
                                 >
                                   {ev.status || "Upcoming"}
@@ -22267,16 +23141,45 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <td className="p-3 text-slate-600">{ev.department || "All Departments"}</td>
                           <td className="p-3 text-slate-700 font-semibold">{ev.coordinator || "—"}</td>
                           <td className="p-3">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700">{ev.status || "Upcoming"}</span>
+                            {!readOnly ? (
+                              <div className="flex items-center gap-1.5">
+                                {statusUpdatingId === ev.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />
+                                ) : (
+                                  <select
+                                    disabled={statusUpdatingId === ev.id}
+                                    value={ev.status || "Upcoming"}
+                                    onChange={(e) => handleUpdateEventStatus(ev, e.target.value)}
+                                    className="text-[10.5px] font-bold rounded-lg px-2 py-0.5 border border-slate-200 bg-slate-50 cursor-pointer"
+                                  >
+                                    <option value="Upcoming">Upcoming</option>
+                                    <option value="Ongoing">Ongoing</option>
+                                    <option value="Completed">Completed</option>
+                                    <option value="Postponed">Postponed</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                  </select>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700">{ev.status || "Upcoming"}</span>
+                            )}
                           </td>
                           <td className="p-3 text-slate-600">{ev.venue || "—"}</td>
                           {!readOnly && (
                             <td className="p-3 text-center">
                               <div className="flex items-center justify-center gap-1.5">
-                                <button type="button" onClick={() => handleOpenEditEventModal(ev)} className="p-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCreateAchievementModal(ev.name, ev.date, ev.department)}
+                                  className="p-1 rounded bg-pink-50 text-[#D528A2] hover:bg-pink-100 cursor-pointer"
+                                  title="Record Student Achievements"
+                                >
+                                  <Award className="h-3.5 w-3.5 text-amber-500" />
+                                </button>
+                                <button type="button" onClick={() => handleOpenEditEventModal(ev)} className="p-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer" title="Edit Event">
                                   <Edit2 className="h-3.5 w-3.5" />
                                 </button>
-                                <button type="button" onClick={() => handleDeleteEvent(ev.id)} className="p-1 rounded bg-rose-50 text-rose-600 hover:bg-rose-100 cursor-pointer">
+                                <button type="button" onClick={() => handleDeleteEvent(ev.id)} className="p-1 rounded bg-rose-50 text-rose-600 hover:bg-rose-100 cursor-pointer" title="Delete Event">
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               </div>
@@ -22288,6 +23191,251 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </table>
                 </div>
               )}
+            </>
+          ) : (
+            /* VIEW: Achievements Ledger */
+            <div className="space-y-4">
+              {/* Achievements Toolbar */}
+              <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <Award className="h-4 w-4 text-[#D528A2]" />
+                      Achievements
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Record student recognitions, hackathons, group/team wins, research papers &amp; honors.
+                    </p>
+                  </div>
+
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCreateAchievementModal()}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#D528A2] to-pink-600 text-white font-extrabold text-xs shadow-md shadow-[#D528A2]/20 hover:opacity-95 transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>Record Achievement</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                  <div className="relative md:col-span-2">
+                    <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search achievements by topic, student name, team, or event..."
+                      value={achSearchQuery}
+                      onChange={(e) => setAchSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
+                    />
+                  </div>
+
+                  <select
+                    value={achCategoryFilter}
+                    onChange={(e) => setAchCategoryFilter(e.target.value)}
+                    className="p-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl font-bold text-slate-700 outline-none"
+                  >
+                    <option value="All">All Categories</option>
+                    {allAchCategories.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Achievements Grid */}
+              {filteredAchievements.length === 0 ? (
+                <div className="py-16 text-center border border-dashed border-slate-200 bg-white rounded-xl space-y-3">
+                  <Award className="h-10 w-10 text-slate-300 mx-auto" />
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-700">No Achievements Recorded</h4>
+                    <p className="text-xs text-slate-400 mt-1">Record winning students from campus hackathons, technical symposiums, or athletic events.</p>
+                  </div>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCreateAchievementModal()}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#D528A2] to-pink-600 text-white text-xs font-extrabold transition-all inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>Record Achievement</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredAchievements.map((ach) => {
+                    let studentsArr: string[] = [];
+                    if (ach.student_names) {
+                      try {
+                        studentsArr = typeof ach.student_names === "string" ? JSON.parse(ach.student_names) : ach.student_names;
+                      } catch {
+                        studentsArr = [ach.student_names];
+                      }
+                    }
+
+                    let photosArr: string[] = [];
+                    if (ach.photos) {
+                      try {
+                        photosArr = typeof ach.photos === "string" ? JSON.parse(ach.photos) : (Array.isArray(ach.photos) ? ach.photos : []);
+                      } catch {
+                        photosArr = [ach.photos];
+                      }
+                    }
+
+                    const isTeam = ach.participation_type === "team" || ach.team_name || studentsArr.length > 1;
+
+                    return (
+                      <div key={ach.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col justify-between p-4 space-y-3">
+                        <div className="space-y-2">
+                          {/* Top Badges Row */}
+                          <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {ach.badge || "Winner"}
+                              </span>
+                              {isTeam ? (
+                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                                  <Users className="h-3 w-3" />
+                                  <span>{ach.team_name ? `Team: ${ach.team_name}` : "Team Entry"}</span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                                  <User className="h-3 w-3" />
+                                  <span>Individual</span>
+                                </span>
+                              )}
+                              {ach.achievement_level && (
+                                <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-100">
+                                  {ach.achievement_level}
+                                </span>
+                              )}
+                            </div>
+
+                            {ach.reward_prize && (
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
+                                {ach.reward_prize}
+                              </span>
+                            )}
+                          </div>
+
+                          <div>
+                            {ach.topic && (
+                              <div className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-0.5">
+                                Topic: {ach.topic}
+                              </div>
+                            )}
+                            <h4 className="text-sm font-black text-slate-900 leading-snug">
+                              {ach.title}
+                            </h4>
+                            {(ach.event_name || ach.organizer) && (
+                              <div className="text-xs font-semibold text-slate-500 mt-1 flex items-center gap-1 flex-wrap">
+                                <Calendar className="h-3 w-3 text-pink-500 shrink-0" />
+                                <span>{ach.event_name || "Campus Event"}</span>
+                                {ach.organizer && <span className="text-slate-400 font-medium">• Org: {ach.organizer}</span>}
+                                {ach.date_str && <span className="text-slate-400 font-mono text-[11px]">({ach.date_str})</span>}
+                              </div>
+                            )}
+                          </div>
+
+                          {ach.description && (
+                            <p className="text-xs text-slate-600 line-clamp-3">
+                              {ach.description}
+                            </p>
+                          )}
+
+                          {/* Student Recipients Chips */}
+                          {studentsArr.length > 0 && (
+                            <div className="space-y-1 pt-1">
+                              <span className="text-[9.5px] font-extrabold text-slate-400 uppercase tracking-wider">
+                                {isTeam ? `Team Members (${studentsArr.length})` : "Recipient"}
+                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                {studentsArr.map((name, idx) => (
+                                  <span key={idx} className="text-[10px] font-bold bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md border border-slate-200">
+                                    {name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Proof Link & Category */}
+                          <div className="flex items-center justify-between text-[11px] pt-1 text-slate-500">
+                            <span className="font-semibold text-slate-400">{ach.category}</span>
+                            {ach.proof_link && (
+                              <a
+                                href={ach.proof_link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                <span>Proof</span>
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Photos */}
+                          {photosArr.length > 0 && (
+                            <div className="flex items-center gap-1.5 pt-1 overflow-x-auto">
+                              {photosArr.map((p, pIdx) => (
+                                <div
+                                  key={pIdx}
+                                  onClick={() => setSelectedPhotoLightbox({ src: p, title: `${ach.title} - Photo` })}
+                                  className="h-10 w-10 shrink-0 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-80"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={p} alt="Achievement" className="h-full w-full object-cover" />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Card Footer Actions */}
+                        <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => setViewingAchievement(ach)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
+                            title="Read Full Achievement Details"
+                          >
+                            <Eye className="h-3.5 w-3.5 text-slate-500" />
+                            <span>Read Details</span>
+                          </button>
+
+                          {!readOnly && (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditAchievementModal(ach)}
+                                className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-colors cursor-pointer"
+                                title="Edit Achievement"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAchievement(ach.id)}
+                                className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors cursor-pointer"
+                                title="Delete Achievement"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
               {/* Photo Zoom Lightbox Modal */}
               {selectedPhotoLightbox && (
@@ -22314,7 +23462,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                       <div>
                         <h3 className="text-base font-black text-slate-900">
-                          {editingEventObj ? "Edit Campus Event / Fest" : "Host New Campus Event or Hackathon"}
+                          {editingEventObj ? "Edit Campus Event / Fest" : "Create Campus Event"}
                         </h3>
                         <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Configure event schedule, chief guests, and upload post-event photo moments.</p>
                       </div>
@@ -22386,9 +23534,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
                           >
                             <option value="Upcoming">Upcoming</option>
-                            <option value="Ongoing">Live / Ongoing Now</option>
+                            <option value="Ongoing">Ongoing</option>
                             <option value="Completed">Completed</option>
                             <option value="Postponed">Postponed</option>
+                            <option value="Cancelled">Cancelled</option>
                           </select>
                         </div>
                       </div>
@@ -22530,11 +23679,643 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                       <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
                         <Button type="button" variant="secondary" onClick={() => setShowEventModal(false)}>Cancel</Button>
-                        <Button type="submit" variant="primary">
+                        <LoadingButton
+                          type="submit"
+                          variant="primary"
+                          isLoading={isSubmittingEvent}
+                          loadingText={editingEventObj ? "Saving Changes..." : "Creating Event..."}
+                        >
                           {editingEventObj ? "Save Event Changes" : "Create Campus Event"}
-                        </Button>
+                        </LoadingButton>
                       </div>
                     </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Record / Edit Student Achievement Modal */}
+              {showAchievementModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto">
+                  <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                      <div>
+                        <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                          <Award className="h-5 w-5 text-[#D528A2]" />
+                          {editingAchievement ? "Edit Achievement" : "Record Achievement"}
+                        </h3>
+                        <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                          Record student accomplishments, prizes, hackathons, group/team awards &amp; honors.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAchievementModal(false)}
+                        className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleSaveAchievementSubmit} className="space-y-4 text-xs">
+                      {/* Participation Type: Individual vs Group/Team */}
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+                        <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                          Participation Type <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAchFormParticipationType("individual")}
+                            className={`p-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+                              achFormParticipationType === "individual"
+                                ? "bg-[#D528A2] text-white border-[#D528A2] shadow-sm"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            <User className="h-4 w-4" />
+                            <span>Individual Student</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAchFormParticipationType("team")}
+                            className={`p-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+                              achFormParticipationType === "team"
+                                ? "bg-[#D528A2] text-white border-[#D528A2] shadow-sm"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            <Users className="h-4 w-4" />
+                            <span>Group / Team Entry</span>
+                          </button>
+                        </div>
+
+                        {achFormParticipationType === "team" && (
+                          <div className="pt-2 animate-fadeIn space-y-1">
+                            <label className="text-[10px] font-bold text-slate-600 uppercase">
+                              Team / Group Name <span className="text-rose-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Team ByteCrafters, RoboKnights, AgriTech Innovators"
+                              value={achFormTeamName}
+                              onChange={e => setAchFormTeamName(e.target.value)}
+                              className="w-full p-2.5 border border-indigo-200 rounded-xl bg-white font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Award Title & Project Topic */}
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">
+                            Award / Honors Title <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. 1st Place Winner - AI Track, Gold Medalist, Best Paper Award"
+                            value={achFormTitle}
+                            onChange={e => setAchFormTitle(e.target.value)}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">
+                            Project / Research Paper / Topic Title
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Autonomous Crop Health Drone with Edge AI, Quantum Encryption Protocol"
+                            value={achFormTopic}
+                            onChange={e => setAchFormTopic(e.target.value)}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Event Name & Organized By */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">
+                            Event / Competition Name
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Smart India Hackathon 2026, State Athletics Meet"
+                            value={achFormEventName}
+                            onChange={e => setAchFormEventName(e.target.value)}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">
+                            Organized By / Host Organization
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Ministry of Education & AICTE, IIT Bombay, IEEE"
+                            value={achFormOrganizer}
+                            onChange={e => setAchFormOrganizer(e.target.value)}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Achievement Standing & Level */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Standing / Position</label>
+                          <select
+                            value={achFormBadge}
+                            onChange={e => setAchFormBadge(e.target.value)}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                          >
+                            <option value="1st Place / Winner">1st Place / Winner</option>
+                            <option value="1st Runner Up">1st Runner Up (2nd Place)</option>
+                            <option value="2nd Runner Up">2nd Runner Up (3rd Place)</option>
+                            <option value="Gold Medal">Gold Medalist</option>
+                            <option value="Silver Medal">Silver Medalist</option>
+                            <option value="Bronze Medal">Bronze Medalist</option>
+                            <option value="Best Innovation">Best Innovation Award</option>
+                            <option value="Special Jury Mention">Special Jury Mention</option>
+                            <option value="Finalist">Grand Finalist</option>
+                            <option value="Paper Published">Research Paper Published</option>
+                            <option value="Patent Granted">Patent Granted / Filed</option>
+                            <option value="Certified">Professional Certified</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Achievement Level</label>
+                          <select
+                            value={achFormLevel}
+                            onChange={e => setAchFormLevel(e.target.value)}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                          >
+                            <option value="College / Intra-Campus">College / Intra-Campus Level</option>
+                            <option value="Zonal / University">Zonal / University Level</option>
+                            <option value="State Level">State Level</option>
+                            <option value="National Level">National Level</option>
+                            <option value="International Level">International Level</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Category & Date */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Category</label>
+                          <select
+                            value={isCustomAchCategory ? "custom" : achFormCategory}
+                            onChange={e => {
+                              if (e.target.value === "custom") {
+                                setIsCustomAchCategory(true);
+                                setAchFormCategory("custom");
+                              } else {
+                                setIsCustomAchCategory(false);
+                                setAchFormCategory(e.target.value);
+                              }
+                            }}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                          >
+                            {standardAchCategories.map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                            <option value="custom">+ Other / Custom Category...</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Date Achieved</label>
+                          <input
+                            type="date"
+                            value={achFormDateStr}
+                            onChange={e => setAchFormDateStr(e.target.value)}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Custom Category Input if selected */}
+                      {isCustomAchCategory && (
+                        <div className="space-y-1 animate-fadeIn">
+                          <label className="text-[10px] font-bold text-indigo-600 uppercase">
+                            Enter Custom Achievement Category
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Patent Filing, Inter-College Debate Championship"
+                            value={achFormCustomCategory}
+                            onChange={e => setAchFormCustomCategory(e.target.value)}
+                            className="w-full p-2.5 border border-indigo-200 rounded-xl bg-indigo-50/40 font-semibold text-slate-800 outline-none"
+                          />
+                        </div>
+                      )}
+
+                      {/* Reward / Cash Prize & Proof Link */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">
+                            Reward / Cash Prize / Trophy
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. ₹50,000 Cash Prize + Shield + Job Offer"
+                            value={achFormRewardPrize}
+                            onChange={e => setAchFormRewardPrize(e.target.value)}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">
+                            Proof / Certificate / News Link
+                          </label>
+                          <input
+                            type="url"
+                            placeholder="https://drive.google.com/... or verification link"
+                            value={achFormProofLink}
+                            onChange={e => setAchFormProofLink(e.target.value)}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Multi-Student Picker Section */}
+                      <div className="space-y-2 pt-2 border-t border-slate-100">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase flex items-center gap-1.5">
+                            <Users className="h-3.5 w-3.5 text-indigo-600" />
+                            <span>{achFormParticipationType === "team" ? "Select Team Members" : "Select Student Recipient"}</span>
+                            <span className="text-rose-500">*</span>
+                          </label>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                            {achFormSelectedStudentIds.length} Selected
+                          </span>
+                        </div>
+
+                        {/* Selected Student Chips */}
+                        {achFormSelectedStudentIds.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 p-2 bg-indigo-50/50 border border-indigo-100 rounded-xl max-h-24 overflow-y-auto">
+                            {achFormSelectedStudentIds.map(sId => {
+                              const st = (students || []).find(s => s.id === sId);
+                              const displayName = st ? st.name : sId;
+                              const reg = st ? (st.register_number || (st as any).roll_number || "") : "";
+                              return (
+                                <span
+                                  key={sId}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-indigo-200 text-xs font-bold text-indigo-900 shadow-xs"
+                                >
+                                  <span>{displayName}</span>
+                                  {reg && <span className="text-[10px] text-indigo-400 font-mono">({reg})</span>}
+                                  <button
+                                    type="button"
+                                    onClick={() => setAchFormSelectedStudentIds(prev => prev.filter(id => id !== sId))}
+                                    className="text-indigo-400 hover:text-rose-600 font-bold ml-1 cursor-pointer"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Search & Dept Filters for Student List */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="relative">
+                            <Search className="absolute left-2.5 top-2.5 h-3 w-3 text-slate-400" />
+                            <input
+                              type="text"
+                              placeholder="Search student by name or roll..."
+                              value={achStudentPickerSearch}
+                              onChange={e => setAchStudentPickerSearch(e.target.value)}
+                              className="w-full pl-7 pr-2.5 py-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl outline-none"
+                            />
+                          </div>
+
+                          <select
+                            value={achStudentDeptFilter}
+                            onChange={e => setAchStudentDeptFilter(e.target.value)}
+                            className="p-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl font-semibold text-slate-700 outline-none"
+                          >
+                            <option value="All">All Departments</option>
+                            {availableAchDepartments.map(d => (
+                              <option key={d} value={d}>{d}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Scrollable Student Selection Box */}
+                        <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-1 bg-slate-50/30 divide-y divide-slate-100">
+                          {campusStudents
+                            .filter(st => {
+                              const q = achStudentPickerSearch.toLowerCase();
+                              const matchesName = (st.name || "").toLowerCase().includes(q);
+                              const matchesReg = (st.register_number || (st as any).roll_number || st.id || "").toLowerCase().includes(q);
+                              const matchesDept = achStudentDeptFilter === "All" || st.department === achStudentDeptFilter;
+                              return (!q || matchesName || matchesReg) && matchesDept;
+                            })
+                            .slice(0, 50)
+                            .map(st => {
+                              const isChecked = achFormSelectedStudentIds.includes(st.id);
+                              return (
+                                <label
+                                  key={st.id}
+                                  className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${
+                                    isChecked ? "bg-indigo-50/80 font-bold" : "hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        if (isChecked) {
+                                          setAchFormSelectedStudentIds(prev => prev.filter(id => id !== st.id));
+                                        } else {
+                                          setAchFormSelectedStudentIds(prev => [...prev, st.id]);
+                                        }
+                                      }}
+                                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <span className="text-xs text-slate-800">{st.name}</span>
+                                    {(st.register_number || (st as any).roll_number) && (
+                                      <span className="text-[10px] text-slate-400 font-mono">
+                                        ({st.register_number || (st as any).roll_number})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-slate-400 font-semibold">
+                                    {st.department || "General"}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                        </div>
+                      </div>
+
+                      {/* Description */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">
+                          Achievement Summary / Abstract
+                        </label>
+                        <textarea
+                          rows={2}
+                          placeholder="Brief description of how they achieved it, project problem solved, rounds cleared..."
+                          value={achFormDescription}
+                          onChange={e => setAchFormDescription(e.target.value)}
+                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      {/* Certificate & Ceremony Photos */}
+                      <div className="space-y-2 pt-2 border-t border-slate-100">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                            <Camera className="h-3.5 w-3.5 text-indigo-600" />
+                            <span>Award Certificates &amp; Felicitation Photos</span>
+                          </label>
+                          <label className="px-3 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs cursor-pointer flex items-center gap-1">
+                            <Plus className="h-3 w-3" />
+                            <span>+ Add Photo</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleAddAchPhotoFile}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+
+                        {achFormPhotos.length > 0 ? (
+                          <div className="flex items-center gap-2 overflow-x-auto p-1">
+                            {achFormPhotos.map((photo, pIdx) => (
+                              <div key={pIdx} className="relative h-16 w-16 shrink-0 rounded-xl overflow-hidden border border-slate-200 group">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={photo} alt="Photo" className="h-full w-full object-cover" />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveAchPhoto(pIdx)}
+                                  className="absolute top-1 right-1 bg-rose-600 text-white rounded-full h-4 w-4 flex items-center justify-center text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-center text-slate-400 text-[11px]">
+                            Upload certificate scans, award ceremony stage photos, or winning banners.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Modal Footer */}
+                      <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
+                        <Button type="button" variant="secondary" onClick={() => setShowAchievementModal(false)}>
+                          Cancel
+                        </Button>
+                        <LoadingButton
+                          type="submit"
+                          variant="primary"
+                          isLoading={isSubmittingAchievement}
+                          loadingText={editingAchievement ? "Saving Changes..." : "Recording..."}
+                        >
+                          {editingAchievement ? "Save Achievement Changes" : "Record Achievement"}
+                        </LoadingButton>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* READ / VIEW ACHIEVEMENT DETAILS MODAL */}
+              {viewingAchievement && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto">
+                  <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+                    <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] font-black px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            {viewingAchievement.badge || "Winner"}
+                          </span>
+                          {(viewingAchievement.participation_type === "team" || viewingAchievement.team_name) ? (
+                            <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                              <Users className="h-3.5 w-3.5" />
+                              <span>{viewingAchievement.team_name ? `Team: ${viewingAchievement.team_name}` : "Team Entry"}</span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                              <User className="h-3.5 w-3.5" />
+                              <span>Individual Student</span>
+                            </span>
+                          )}
+                          {viewingAchievement.achievement_level && (
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200">
+                              {viewingAchievement.achievement_level}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-lg font-black text-slate-900 leading-snug pt-1">
+                          {viewingAchievement.title}
+                        </h3>
+                        {viewingAchievement.topic && (
+                          <div className="text-xs font-bold text-indigo-600">
+                            Topic: {viewingAchievement.topic}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setViewingAchievement(null)}
+                        className="text-slate-400 hover:text-slate-600 font-bold text-2xl cursor-pointer ml-2"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    {/* Key Info Cards Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Event</span>
+                        <span className="text-xs font-bold text-slate-800 block truncate mt-0.5">
+                          {viewingAchievement.event_name || "—"}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Organizer</span>
+                        <span className="text-xs font-bold text-slate-800 block truncate mt-0.5">
+                          {viewingAchievement.organizer || "—"}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Date</span>
+                        <span className="text-xs font-bold text-slate-800 font-mono block mt-0.5">
+                          {viewingAchievement.date_str || "—"}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/60">
+                        <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Reward / Prize</span>
+                        <span className="text-xs font-black text-amber-900 block truncate mt-0.5">
+                          {viewingAchievement.reward_prize || "—"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Summary / Description */}
+                    {viewingAchievement.description && (
+                      <div className="space-y-1 p-3 bg-slate-50/70 rounded-xl border border-slate-200/60">
+                        <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
+                          Summary / Abstract
+                        </span>
+                        <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                          {viewingAchievement.description}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Student Recipients */}
+                    <div className="space-y-2 p-3 bg-slate-50/70 rounded-xl border border-slate-200/60">
+                      <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                        <Users className="h-3.5 w-3.5 text-indigo-600" />
+                        <span>
+                          {(viewingAchievement.participation_type === "team" || viewingAchievement.team_name) ? "Team Members" : "Recipient Student"}
+                        </span>
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(() => {
+                          let namesArr: string[] = [];
+                          if (viewingAchievement.student_names) {
+                            try {
+                              namesArr = typeof viewingAchievement.student_names === "string" ? JSON.parse(viewingAchievement.student_names) : viewingAchievement.student_names;
+                            } catch {
+                              namesArr = [viewingAchievement.student_names];
+                            }
+                          }
+                          return namesArr.map((n, idx) => (
+                            <span key={idx} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-800 shadow-2xs">
+                              {n}
+                            </span>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Proof Link */}
+                    {viewingAchievement.proof_link && (
+                      <div className="flex items-center justify-between p-3 bg-indigo-50/60 rounded-xl border border-indigo-100">
+                        <div className="flex items-center gap-2">
+                          <ExternalLink className="h-4 w-4 text-indigo-600" />
+                          <span className="text-xs font-bold text-indigo-900">Certificate / Project Proof Link</span>
+                        </div>
+                        <a
+                          href={viewingAchievement.proof_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors inline-flex items-center gap-1"
+                        >
+                          <span>Open Link</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Certificates & Photos Gallery */}
+                    {(() => {
+                      let photosList: string[] = [];
+                      if (viewingAchievement.photos) {
+                        try {
+                          photosList = typeof viewingAchievement.photos === "string" ? JSON.parse(viewingAchievement.photos) : (Array.isArray(viewingAchievement.photos) ? viewingAchievement.photos : []);
+                        } catch {
+                          photosList = [viewingAchievement.photos];
+                        }
+                      }
+                      if (photosList.length === 0) return null;
+                      return (
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
+                            Ceremony Photos &amp; Certificates ({photosList.length})
+                          </span>
+                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                            {photosList.map((p, pIdx) => (
+                              <div
+                                key={pIdx}
+                                onClick={() => setSelectedPhotoLightbox({ src: p, title: `${viewingAchievement.title} - Photo ${pIdx + 1}` })}
+                                className="h-20 rounded-xl overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 group relative"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={p} alt="Photo" className="h-full w-full object-cover group-hover:scale-105 transition-transform" />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Footer Actions */}
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                      <Button type="button" variant="secondary" onClick={() => setViewingAchievement(null)}>
+                        Close
+                      </Button>
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const achToEdit = viewingAchievement;
+                            setViewingAchievement(null);
+                            handleOpenEditAchievementModal(achToEdit);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors shadow-sm"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                          <span>Edit Achievement</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -25301,10 +27082,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                    Daily Day Order & Schedule Configurator
+                    Daily Day Order &amp; Schedule Configurator
                   </h3>
                   <p className="text-xs text-slate-500 font-medium">
-                    Set up day types, day orders, online/offline session modes, and automated continuous cycles.
+                    Manage campus schedule, day orders, and working days.
                   </p>
                 </div>
               </div>

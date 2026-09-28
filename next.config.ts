@@ -33,6 +33,9 @@ function getDynamicDevOrigins(): string[] {
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: getDynamicDevOrigins(),
+  // Native binaries must stay outside the webpack bundle — resvg's .node file
+  // is loaded by Node directly (skill report chart rendering).
+  serverExternalPackages: ["@resvg/resvg-js"],
   // Raise API route body size limit to 50MB for bulk attendance imports
   experimental: {
     serverActions: {

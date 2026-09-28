@@ -58,6 +58,7 @@ local_backup.sql
 test-*.js
 test-*.mjs
 test-*.ts
+deploy-portals.*
 benchmark-*.js
 benchmark-*.ts
 compare-*.js
@@ -156,3 +157,6 @@ docs/Mentor_Dashboard_Module_Guide.md
 local_backup.sql
 .env.updated
 Kamaraj__ III BCA__Sem V__Tracker Sheet - Attendance.tsv
+ticketing-deploy-separate/1-student-portal
+ticketing-deploy-separate/2-admin-dashboard
+ticketing-deploy-separate/3-campus-eaudit

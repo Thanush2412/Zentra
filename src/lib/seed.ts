@@ -1004,6 +1004,41 @@ export async function seedDatabase() {
       status TEXT NOT NULL DEFAULT 'pending',
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS cm_attendance (
+      id TEXT PRIMARY KEY,
+      cam_id TEXT NOT NULL,
+      college_id TEXT NOT NULL,
+      date_str TEXT NOT NULL,
+      status TEXT NOT NULL,
+      punch_in_time TEXT,
+      punch_out_time TEXT,
+      reason TEXT,
+      approved_by TEXT,
+      approval_status TEXT DEFAULT 'pending',
+      approval_notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (cam_id, date_str)
+    );
+
+    CREATE TABLE IF NOT EXISTS cm_leave_requests (
+      id TEXT PRIMARY KEY,
+      cam_id TEXT NOT NULL,
+      college_id TEXT NOT NULL,
+      kam_id TEXT,
+      request_type TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      start_time TEXT,
+      end_time TEXT,
+      reason TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      approved_by TEXT,
+      rejection_reason TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // ── SCHEMA MIGRATIONS ───────────────────────────────────────────────────

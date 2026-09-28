@@ -132,7 +132,7 @@ export async function POST(request: Request) {
           reason,
           new Date().toISOString(),
           metaClassGroup,
-          requestType || "late_punch"
+          requestType || ((typeof reason === "string" && reason.toLowerCase().includes("late attendance")) ? "late_attendance" : "late_punch")
         );
       } catch (insertErr: any) {
         if (insertErr?.code === "23503" || insertErr?.message?.includes("foreign key")) {

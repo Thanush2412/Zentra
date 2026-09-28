@@ -425,8 +425,8 @@ export async function PATCH(request: Request) {
 
         if (classGroup) {
           const studentsInClass = await db.all(
-            "SELECT email, name FROM students WHERE class_group = ? AND email IS NOT NULL AND email != ''",
-            [classGroup]
+            "SELECT email, name FROM students WHERE (classgroup = ? OR classGroup = ?) AND email IS NOT NULL AND email != ''",
+            [classGroup, classGroup]
           );
           studentEmails = studentsInClass.map((s: any) => s.email).filter(Boolean);
         }

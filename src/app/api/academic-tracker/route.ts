@@ -4,6 +4,7 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { ensureMigration } from "@/lib/migrations";
 
 export async function GET(request: Request) {
   try {
@@ -130,6 +131,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const db = await getDb();
+    // Idempotent, runs once per process — adds weekly plan linkage columns before writes.
+    await ensureMigration("academic_tracker_weekly_plan_link");
     const body = await request.json();
 
     // ─────────────────────────────────────────────────────────────
@@ -385,7 +388,9 @@ export async function POST(request: Request) {
       status,
       mentorId,
       mentorName,
-      collegeId
+      collegeId,
+      weeklyPlanId,
+      weeklyPlanWeek
     } = body;
 
     if (!date || !periodSlot || !classGroup || !subject || !unit || !topic || !mentorId) {
@@ -449,8 +454,8 @@ export async function POST(request: Request) {
 
     await db.run(
       `INSERT INTO academic_tracker (
-        id, date, period_slot, class_group, subject, unit, topic, comments, status, mentor_id, mentor_name, college_id, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, date, period_slot, class_group, subject, unit, topic, comments, status, mentor_id, mentor_name, college_id, weekly_plan_id, weekly_plan_week, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(mentor_id, date, period_slot, subject, class_group) DO UPDATE SET
         unit = excluded.unit,
         topic = excluded.topic,
@@ -458,6 +463,8 @@ export async function POST(request: Request) {
         status = excluded.status,
         mentor_name = excluded.mentor_name,
         college_id = excluded.college_id,
+        weekly_plan_id = excluded.weekly_plan_id,
+        weekly_plan_week = excluded.weekly_plan_week,
         updated_at = excluded.updated_at`,
       [
         id,
@@ -472,6 +479,8 @@ export async function POST(request: Request) {
         mentorId.trim(),
         resolvedMentorName || "",
         resolvedCollegeId || "",
+        weeklyPlanId ? String(weeklyPlanId) : null,
+        weeklyPlanWeek !== undefined && weeklyPlanWeek !== null && weeklyPlanWeek !== "" ? parseInt(String(weeklyPlanWeek), 10) || null : null,
         now
       ]
     );

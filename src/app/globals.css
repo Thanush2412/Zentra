@@ -466,18 +466,18 @@ a:hover .hover-tilt-icon {
 
 /* GPU-accelerated ultra-smooth loader spinner that never stutters during JS hydration */
 @keyframes spinSmooth {
-  0% {
+  from {
     transform: rotate(0deg);
   }
-  100% {
+  to {
     transform: rotate(360deg);
   }
 }
 
 .animate-spin-smooth {
-  animation: spinSmooth 0.75s linear infinite !important;
-  will-change: transform !important;
-  transform: translateZ(0) !important;
-  backface-visibility: hidden !important;
+  animation: spinSmooth 0.75s linear infinite;
+  display: inline-block;
+  transform-origin: center;
 }
+
 

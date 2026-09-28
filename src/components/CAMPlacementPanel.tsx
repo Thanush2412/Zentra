@@ -57,6 +57,9 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
   // Student details modal matching Attendance pattern (selectedStudentForModal)
   const [selectedStudentForModal, setSelectedStudentForModal] = useState<any | null>(null);
 
+  // Live Batch Coding Statistics (LeetCode & HackerRank)
+  const [batchCodingStats, setBatchCodingStats] = useState<any | null>(null);
+
   const fetchPlacementData = async (
     college = activeCollegeName,
     year = selectedPassingYear,
@@ -84,6 +87,30 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
   useEffect(() => {
     fetchPlacementData();
   }, [activeCollegeName]);
+
+  useEffect(() => {
+    if (!activeCollegeName) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/coding-stats?collegeName=${encodeURIComponent(activeCollegeName)}&batch=true`);
+        const data = await res.json();
+        if (!cancelled && data.success) {
+          setBatchCodingStats(data);
+        }
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [activeCollegeName]);
+
+  const getStudentCoding = (st: any) => {
+    if (!batchCodingStats || !st) return { lc: null, hr: null };
+    const reg = (st.roll_number || st.id || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    const em = (st.email || "").trim().toLowerCase();
+    const lc = (reg && batchCodingStats.leetcodeByReg?.[reg]) || (em && batchCodingStats.leetcodeByEmail?.[em]) || null;
+    const hr = (reg && batchCodingStats.hackerrankByReg?.[reg]) || (em && batchCodingStats.hackerrankByEmail?.[em]) || null;
+    return { lc, hr };
+  };
 
   const summary = placementData?.summary || {
     totalStudents: 0,
@@ -207,7 +234,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
 
   // Copy candidate alert notice (matching copyParentAlert in Attendance tab)
   const copyCandidateNotice = (s: any) => {
-    const text = `*CAMPUS PLACEMENT & RECRUITMENT NOTICE - ${activeCollegeName}*\n\nCandidate: *${s.full_name}* (Reg No: *${s.roll_number || "N/A"}*)\nDepartment: *${s.degrees?.name || ""} ${s.branches?.name || ""}*\nAcademic CGPA: *${s.overall_cgpa ?? "N/A"}* | Standing Arrears: *${s.current_arrears ?? 0}*\nPlacement Status: *${(s.offers && s.offers.length > 0) ? `Placed (${s.offers.length} Offers)` : "In Active Drive Pipeline"}*\nOffers: ${(s.offers || []).map((o: any) => `${o.company_name} (${o.ctc_lpa || 0} LPA)`).join(", ") || "Awaiting Drive Selection"}`;
+    const text = `*CAMPUS PLACEMENT AND INTERNSHIP NOTICE - ${activeCollegeName}*\n\nCandidate: *${s.full_name}* (Reg No: *${s.roll_number || "N/A"}*)\nDepartment: *${s.degrees?.name || ""} ${s.branches?.name || ""}*\nAcademic CGPA: *${s.overall_cgpa ?? "N/A"}* | Standing Arrears: *${s.current_arrears ?? 0}*\nPlacement Status: *${(s.offers && s.offers.length > 0) ? `Placed (${s.offers.length} Offers)` : "In Active Drive Pipeline"}*\nOffers: ${(s.offers || []).map((o: any) => `${o.company_name} (${o.ctc_lpa || 0} LPA)`).join(", ") || "Awaiting Drive Selection"}`;
     navigator.clipboard.writeText(text);
     toast("Candidate placement summary copied to clipboard!", "success");
   };
@@ -239,10 +266,10 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900 leading-tight">
-                Campus Placements &amp; Recruitment Roster
+                Campus Placement and Internship Roster
               </h3>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Official tracking of student placement readiness, company offers, and recruitment eligibility.
+                Official tracking of student placement readiness, internship offers, and recruitment eligibility.
               </p>
             </div>
           </div>
@@ -482,6 +509,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
               <th className="p-3">Department</th>
               <th className="p-3 text-center">Batch</th>
               <th className="p-3 text-center">CGPA</th>
+              <th className="p-3 text-center">Coding (LC/HR)</th>
               <th className="p-3 text-center">Arrears</th>
               <th className="p-3 text-center">Offers</th>
               <th className="p-3 text-right">Placement Status</th>
@@ -491,13 +519,13 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
           <tbody className="divide-y divide-slate-100 font-medium">
             {placementLoading && filteredRoster.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-8 text-center text-slate-400 animate-pulse">
+                <td colSpan={11} className="p-8 text-center text-slate-400 animate-pulse">
                   Loading placement data...
                 </td>
               </tr>
             ) : filteredRoster.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-8 text-center text-emerald-700 font-bold bg-emerald-50/30">
+                <td colSpan={11} className="p-8 text-center text-emerald-700 font-bold bg-emerald-50/30">
                   <CheckCircle2 className="w-6 h-6 mx-auto mb-1.5 text-emerald-600" />
                   No students found matching the selected placement criteria.
                 </td>
@@ -524,6 +552,26 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
                     <td className="p-3 text-center font-bold text-slate-700">{s.passing_year || "—"}</td>
                     <td className="p-3 text-center font-bold text-slate-800">
                       {s.overall_cgpa != null ? s.overall_cgpa : "—"}
+                    </td>
+                    <td className="p-3 text-center">
+                      {(() => {
+                        const { lc, hr } = getStudentCoding(s);
+                        if (!lc && !hr) return <span className="text-[10px] text-slate-400 italic">Not Synced</span>;
+                        return (
+                          <div className="flex flex-col items-center gap-1">
+                            {lc && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[9px] font-black whitespace-nowrap">
+                                LC: {lc.solvedTotal} Solved
+                              </span>
+                            )}
+                            {hr && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-900 border border-emerald-200 text-[9px] font-black whitespace-nowrap">
+                                HR: {hr.rank ? `#${hr.rank}` : `${hr.solved} Solved`}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="p-3 text-center">
                       <span
@@ -660,6 +708,68 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
                 </div>
               </div>
             )}
+
+            {/* Live Coding & Competitive Programming Standing */}
+            {(() => {
+              const { lc, hr } = getStudentCoding(selectedStudentForModal);
+              return (
+                <div className="space-y-2 p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>💻 Algorithmic &amp; Contest Standing</span>
+                      <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[8.5px] font-black">Live DB</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium">LeetCode &amp; HackerRank</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5 pt-1">
+                    {/* LeetCode Mini Box */}
+                    <div className="p-2.5 rounded-xl bg-white border border-amber-200/80 shadow-2xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9.5px] font-black uppercase text-amber-700">LeetCode</span>
+                        {lc?.ranking && (
+                          <span className="text-[8.5px] font-bold text-slate-500">
+                            Rank #{lc.ranking.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-lg font-black text-slate-900">{lc?.solvedTotal || 0}</span>
+                        <span className="text-[10px] text-slate-400 font-bold">Solved</span>
+                      </div>
+                      {lc && (
+                        <div className="flex items-center gap-1 text-[8.5px] font-bold">
+                          <span className="text-emerald-700">E: {lc.solvedEasy}</span>
+                          <span className="text-slate-300">•</span>
+                          <span className="text-amber-700">M: {lc.solvedMedium}</span>
+                          <span className="text-slate-300">•</span>
+                          <span className="text-rose-700">H: {lc.solvedHard}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* HackerRank Mini Box */}
+                    <div className="p-2.5 rounded-xl bg-white border border-emerald-200/80 shadow-2xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9.5px] font-black uppercase text-emerald-700">HackerRank</span>
+                        {hr?.rank && (
+                          <span className="text-[8.5px] font-black text-emerald-800 bg-emerald-50 px-1 rounded">
+                            🏆 #{hr.rank}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-lg font-black text-slate-900">{hr?.computedScore || 0}</span>
+                        <span className="text-[10px] text-slate-400 font-bold">Score</span>
+                      </div>
+                      <div className="text-[9px] font-bold text-slate-500">
+                        {hr?.solved != null ? `${hr.solved} Solved (${hr.attempted || 0} Att)` : "Participant"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Semester-Wise Academic Breakdown (from student_semesters) */}
             {selectedStudentForModal.semesters && selectedStudentForModal.semesters.length > 0 && (

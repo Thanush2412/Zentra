@@ -355,6 +355,48 @@ export function renderAnnouncementEmail(data: {
   });
 }
 
+/**
+ * Demo Compliance Gap Email (Demo Workflow Redesign Phase C).
+ * Fired from /api/demo-sessions action=evaluate when any department evaluation
+ * criterion is unmet (checkbox unticked or final mark below threshold).
+ * Recipients: KAM + CM (To) with the evaluating SME (CC) — resolved server-side.
+ */
+export function renderDemoComplianceEmail(data: {
+  recipientName: string;
+  mentorName: string;
+  department: string;
+  subject: string;
+  dateStr: string;
+  timeSlot: string;
+  smeName: string;
+  finalMark: string;
+  unmetItems: string[];
+}) {
+  const itemsHtml = data.unmetItems
+    .map(
+      (item) =>
+        `<li style="margin:6px 0;padding:8px 12px;background:#fff1f2;border:1px solid #ffe4e6;border-radius:8px;color:#be123c;font-weight:600;font-size:13px;">\u2717 ${item}</li>`
+    )
+    .join("");
+
+  return renderEmailShell({
+    title: "Demo Compliance Gap — Action Required",
+    badgeText: "Compliance Escalation",
+    badgeColor: "rose",
+    description: `Dear <strong>${data.recipientName}</strong>, during the demo evaluation of <strong>${data.mentorName}</strong>, the following compliance criteria were <strong>not met</strong>:
+      <ul style="list-style:none;padding:0;margin:12px 0;">${itemsHtml}</ul>`,
+    details: [
+      { label: "Mentor / Department", value: `${data.mentorName} (${data.department || "General"})` },
+      { label: "Demo Subject", value: data.subject },
+      { label: "Original Slot", value: `${data.dateStr} • ${data.timeSlot}` },
+      { label: "Final Evaluation Mark", value: data.finalMark, highlight: true },
+      { label: "Evaluating SME", value: data.smeName },
+    ],
+    ctaText: "Review Demo Evaluation →",
+    footerText: "This escalation was triggered automatically because one or more department evaluation criteria were unmet.",
+  });
+}
+
 /* ==========================================================================
    CENTRALIZED BREVO DISPATCH UTILITY
    ========================================================================== */

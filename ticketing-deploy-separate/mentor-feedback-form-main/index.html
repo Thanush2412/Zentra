@@ -1,0 +1,2302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FACE Prep Campus — Faculty Feedback</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface2: #f1f5f9;
+  --border: #e2e8f0;
+  --accent: #3b82f6;
+  --accent2: #8b5cf6;
+  --text: #1e293b;
+  --muted: #64748b;
+  --error: #ef4444;
+  --success: #10b981;
+  --radius: 14px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 0%, rgba(59,130,246,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 100%, rgba(139,92,246,0.06) 0%, transparent 60%);
+  pointer-events: none; z-index: 0;
+}
+.wrap {
+  position: relative; z-index: 1;
+  max-width: 780px; margin: 0 auto;
+  padding: 60px 20px 100px;
+}
+@media (max-width: 640px) { .wrap { padding: 36px 16px 80px; } }
+
+.header { text-align: center; margin-bottom: 52px; animation: fadeUp .7s ease both; }
+.logo-area { display: flex; align-items: center; justify-content: center; margin-bottom: 28px; }
+.logo-img-wrap {
+  display: inline-flex; align-items: center; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 10px 24px 10px 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
+.logo-img { height: 60px; width: auto; object-fit: contain; display: block; }
+.logo-text-block { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.logo-title { font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: .01em; }
+.logo-badge-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: .04em; }
+.logo-badge-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 8px rgba(16,185,129,0.4); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.4;} }
+
+h1 {
+  font-family: 'Manrope', sans-serif;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-weight: 600; line-height: 1.05; letter-spacing: -2px;
+  background: linear-gradient(135deg, #1e293b 30%, #3b82f6 70%, #8b5cf6);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-align: center;
+  margin-bottom: 12px;
+}
+.subtitle { color: var(--muted); font-size: 14px; max-width: 500px; margin: 0 auto; font-weight: 300; line-height: 1.7; }
+
+.progress-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 8px; animation: fadeUp .7s .1s ease both; }
+.progress-bar-outer { background: var(--surface2); border-radius: 100px; height: 4px; margin-bottom: 44px; overflow: hidden; animation: fadeUp .7s .1s ease both; }
+.progress-bar-inner { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 100px; transition: width .4s ease; width: 0%; }
+
+.section {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 32px; margin-bottom: 20px;
+  opacity: 0; animation: fadeUp .5s ease both;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+@media (max-width: 640px) { .section { padding: 22px 18px; } }
+@keyframes fadeUp { from{opacity:0;transform:translateY(20px);} to{opacity:1;transform:translateY(0);} }
+.section:nth-child(1){animation-delay:.1s;} .section:nth-child(2){animation-delay:.15s;}
+.section:nth-child(3){animation-delay:.2s;} .section:nth-child(4){animation-delay:.25s;}
+.section:nth-child(5){animation-delay:.3s;} .section:nth-child(6){animation-delay:.35s;}
+.section:nth-child(7){animation-delay:.4s;} .section:nth-child(8){animation-delay:.45s;}
+.section:nth-child(9){animation-delay:.5s;} .section:nth-child(10){animation-delay:.55s;}
+.section:nth-child(11){animation-delay:.6s;} .section:nth-child(12){animation-delay:.65s;}
+
+.section-title {
+  font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
+  color: var(--text); margin-bottom: 22px;
+  display: flex; align-items: center; gap: 10px;
+}
+.section-title .icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; flex-shrink: 0;
+}
+.icon-blue   { background: rgba(59,130,246,.1);  color: var(--accent); }
+.icon-purple { background: rgba(139,92,246,.1);  color: var(--accent2); }
+.icon-green  { background: rgba(16,185,129,.1);  color: var(--success); }
+.icon-orange { background: rgba(249,115,22,.1);  color: #f97316; }
+
+.field { margin-bottom: 18px; }
+.field:last-child { margin-bottom: 0; }
+label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 7px; letter-spacing: .04em; text-transform: uppercase; }
+label .req { color: var(--accent); margin-left: 2px; }
+
+input[type="text"], input[type="email"], select, textarea {
+  width: 100%; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; color: var(--text);
+  font-family: 'DM Sans', sans-serif; font-size: 15px;
+  padding: 11px 15px; outline: none;
+  transition: border-color .2s, box-shadow .2s;
+  appearance: none; -webkit-appearance: none;
+}
+textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
+@media (max-width: 640px) { input[type="text"], input[type="email"], select, textarea { font-size: 16px; } }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
+input::placeholder, textarea::placeholder { color: #94a3b8; }
+
+.field.error input, .field.error select, .field.error textarea { border-color: var(--error); box-shadow: 0 0 0 3px rgba(239,68,68,.1); }
+.field.error > label { color: var(--error); }
+.err-msg { display: none; font-size: 11px; color: var(--error); margin-top: 5px; font-weight: 500; }
+.field.error .err-msg { display: block; }
+
+.select-wrapper { position: relative; }
+.select-wrapper::after { content:''; position:absolute; right:14px; top:50%; transform:translateY(-50%); width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid var(--muted); pointer-events:none; }
+.select-wrapper select { padding-right: 38px; cursor: pointer; }
+
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 540px) { .field-row { grid-template-columns: 1fr; gap: 10px; } }
+
+.faculty-header {
+  display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px;
+  padding-bottom: 18px; border-bottom: 1px solid var(--border);
+}
+.faculty-avatar {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: linear-gradient(135deg, rgba(59,130,246,.15), rgba(139,92,246,.15));
+  border: 1px solid rgba(139,92,246,.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 700; flex-shrink: 0;
+  font-family: 'Syne', sans-serif; color: var(--accent);
+}
+.faculty-meta { flex: 1; min-width: 0; }
+.faculty-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+.faculty-subject { font-size: 12px; color: var(--muted); font-weight: 400; }
+
+.yn-list { display: flex; flex-direction: column; gap: 14px; }
+.yn-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 16px; border-radius: 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+}
+.yn-row.error-row { border-color: var(--error); background: rgba(239,68,68,.04); }
+.yn-qnum {
+  font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
+  color: var(--accent); background: rgba(59,130,246,.1);
+  border-radius: 6px; padding: 2px 7px; flex-shrink: 0;
+}
+.yn-text { flex: 1; font-size: 13px; color: var(--text); line-height: 1.4; }
+.yn-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.yn-btns input[type="radio"] { display: none; }
+.yn-btns label {
+  text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600;
+  padding: 5px 14px; border-radius: 7px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--muted); transition: all .15s; margin: 0;
+}
+.yn-btns input[type="radio"]:checked + label.yes-lbl { background: rgba(16,185,129,.12); border-color: var(--success); color: var(--success); }
+.yn-btns input[type="radio"]:checked + label.no-lbl  { background: rgba(239,68,68,.12); border-color: var(--error); color: var(--error); }
+.yn-btns label:hover { border-color: var(--accent); color: var(--text); }
+
+.rating-block {
+  background: rgba(59,130,246,.04);
+  border: 1px solid rgba(59,130,246,.15);
+  border-radius: 10px; padding: 14px 18px 18px; margin-bottom: 16px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.rating-block-title { font-size: 12px; font-weight: 700; color: var(--text); letter-spacing: .01em; text-transform: uppercase; }
+.scale-btns { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; padding-bottom: 4px; }
+.scale-btns input[type="radio"] { display: none; }
+.scale-circle-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.scale-btns label {
+  width: 44px; height: 44px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  border-radius: 50%; border: 2.5px solid transparent;
+  cursor: pointer; transition: all 0.22s cubic-bezier(.34,1.56,.64,1); margin: 0;
+  text-transform: none; letter-spacing: 0; position: relative;
+}
+.scale-btns label .s-num { font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800; line-height: 1; color: #fff; transition: font-size 0.2s; }
+.scale-btns label .s-word { font-family: 'DM Sans', sans-serif; font-size: 0px; font-weight: 600; color: #fff; line-height: 1; white-space: nowrap; overflow: hidden; transition: font-size 0.18s ease; }
+.scale-btns label[data-v="1"] { background: #e53935; }
+.scale-btns label[data-v="2"] { background: #f57c00; }
+.scale-btns label[data-v="3"] { background: #fdd835; }
+.scale-btns label[data-v="3"] .s-num  { color: #555; }
+.scale-btns label[data-v="3"] .s-word { color: #555; }
+.scale-btns label[data-v="4"] { background: #43a047; }
+.scale-btns label[data-v="5"] { background: #2e7d32; }
+.s-circle-label { font-size: 10px; font-weight: 500; color: var(--muted); text-align: center; line-height: 1.2; transition: opacity 0.2s, font-weight 0.2s, color 0.2s; white-space: nowrap; }
+.scale-btns:not(.has-selection) label:hover { opacity: 0.78; transform: scale(0.92) translateY(-3px); }
+.scale-btns.has-selection label { width: 30px; height: 30px; opacity: 0.32; }
+.scale-btns.has-selection label .s-num { font-size: 12px; }
+.scale-btns.has-selection .s-circle-label { opacity: 0.28; }
+.scale-btns.has-selection input[type="radio"]:checked + label { width: 70px; height: 70px; opacity: 1; border-color: rgba(255,255,255,0.88); box-shadow: 0 8px 28px rgba(0,0,0,0.22); transform: translateY(-10px); }
+.scale-btns.has-selection input[type="radio"]:checked + label .s-num { font-size: 24px; }
+.scale-btns.has-selection input[type="radio"]:checked + label .s-word { font-size: 10px; }
+.scale-btns.has-selection input[type="radio"]:checked ~ .s-circle-label { opacity: 1 !important; font-weight: 600; color: var(--text); }
+.rating-block.error-rating { border-color: var(--error); background: rgba(239,68,68,.04); }
+@media (max-width: 640px) {
+  .rating-block { padding: 10px 14px 14px; gap: 10px; }
+  .scale-btns { gap: 10px; }
+  .scale-btns label { width: 36px; height: 36px; }
+  .scale-btns label .s-num { font-size: 14px; }
+  .s-circle-label { font-size: 9px; }
+  .scale-btns.has-selection input[type="radio"]:checked + label { width: 58px; height: 58px; }
+  .scale-btns.has-selection input[type="radio"]:checked + label .s-num { font-size: 20px; }
+  .scale-btns.has-selection input[type="radio"]:checked + label .s-word { font-size: 9px; }
+}
+
+.nps-block {
+  background: rgba(139,92,246,.04);
+  border: 1px solid rgba(139,92,246,.15);
+  border-radius: 10px; padding: 18px 20px; margin-bottom: 16px;
+}
+.nps-block-title { font-size: 12px; font-weight: 700; color: var(--text); letter-spacing: .01em; text-transform: uppercase; margin-bottom: 18px; }
+.nps-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.nps-btns input[type="radio"] { display: none; }
+.nps-btns label {
+  width: 44px; height: 44px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700;
+  cursor: pointer; transition: all .18s; margin: 0; text-transform: none; letter-spacing: 0;
+  border: 2px solid var(--border); background: var(--surface2); color: var(--muted);
+}
+.nps-btns input[type="radio"]:checked + label { border-color: var(--accent2); background: var(--accent2); color: #fff; box-shadow: 0 4px 14px rgba(139,92,246,.3); transform: translateY(-3px); }
+.nps-btns label:hover { border-color: var(--accent2); color: var(--accent2); }
+.nps-labels { display: flex; justify-content: space-between; margin-top: 10px; font-size: 11px; color: var(--muted); font-weight: 500; }
+.nps-block.error-nps { border-color: var(--error); background: rgba(239,68,68,.04); }
+
+.check-list { display: flex; flex-direction: column; gap: 10px; }
+.check-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.check-item:hover { border-color: var(--accent); background: rgba(59,130,246,.04); }
+.check-item input[type="checkbox"] { display: none; }
+.check-box {
+  width: 20px; height: 20px; border-radius: 6px;
+  border: 2px solid var(--border); background: var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all .15s;
+}
+.check-item.checked .check-box { background: var(--accent); border-color: var(--accent); }
+.check-tick { display: none; color: #fff; font-size: 12px; font-weight: 700; }
+.check-item.checked .check-box .check-tick { display: block; }
+.check-label { font-size: 13px; color: var(--text); font-weight: 500; }
+
+.conditional-field { display: none; margin-top: 12px; }
+.conditional-field.visible { display: block; }
+
+.elective-mentor-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(139,92,246,.1); border: 1px solid rgba(139,92,246,.25);
+  border-radius: 8px; padding: 7px 14px; margin-bottom: 18px;
+  font-size: 13px; font-weight: 500; color: var(--accent2);
+}
+
+.form-section-label {
+  font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+  margin: 32px 0 12px; display: flex; align-items: center; gap: 10px;
+}
+.form-section-label::before, .form-section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+.submit-area { text-align: center; margin-top: 36px; animation: fadeUp .5s .6s ease both; opacity: 0; }
+.btn-submit {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+  color: #fff; font-family: 'Syne', sans-serif; font-size: 16px;
+  font-weight: 700; letter-spacing: .04em; border: none;
+  border-radius: 12px; padding: 15px 44px; cursor: pointer;
+  transition: all .2s; box-shadow: 0 4px 14px rgba(59,130,246,.25);
+}
+@media (max-width: 640px) { .btn-submit { width: 100%; justify-content: center; } }
+.btn-submit:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(59,130,246,.3); }
+.btn-submit:active { transform: translateY(0); }
+.btn-submit:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.note { color: var(--muted); font-size: 12px; margin-top: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+#alreadyScreen {
+  display: none; text-align: center; padding: 80px 20px;
+  animation: fadeUp .6s ease both;
+}
+#alreadyScreen .already-icon { font-size: 72px; margin-bottom: 24px; display: block; }
+#alreadyScreen h2 {
+  font-family: 'Syne', sans-serif; font-size: 2rem; font-weight: 800;
+  background: linear-gradient(135deg, #f97316, #ef4444);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text; margin-bottom: 14px;
+}
+#alreadyScreen p { color: var(--muted); font-size: 15px; max-width: 440px; margin: 0 auto 10px; line-height: 1.7; }
+#alreadyScreen .reg-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2);
+  border-radius: 10px; padding: 10px 20px; margin: 20px auto 0;
+  font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--error);
+}
+
+#successScreen {
+  display: none; text-align: center; padding: 60px 20px;
+  animation: fadeUp .6s ease both;
+}
+#successScreen .success-icon { font-size: 64px; margin-bottom: 20px; display: block; }
+#successScreen h2 {
+  font-family: 'Syne', sans-serif; font-size: 2rem; font-weight: 800;
+  background: linear-gradient(135deg, var(--success), #059669);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text; margin-bottom: 12px;
+}
+#successScreen p { color: var(--muted); font-size: 15px; max-width: 400px; margin: 0 auto 28px; }
+#successScreen .btn-new {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Syne', sans-serif; font-size: 14px;
+  font-weight: 600; border-radius: 10px; padding: 12px 28px;
+  cursor: pointer; transition: all .2s; text-decoration: none;
+}
+#successScreen .btn-new:hover { border-color: var(--accent); color: var(--accent); }
+
+#toast {
+  position: fixed; bottom: 28px; left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 13px 22px; font-size: 14px; color: var(--text);
+  box-shadow: 0 10px 40px rgba(0,0,0,.15); opacity: 0; transition: all .3s;
+  z-index: 9999; display: flex; align-items: center; gap: 10px;
+  white-space: nowrap; max-width: calc(100vw - 32px);
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.success { border-color: rgba(16,185,129,.3); background: rgba(16,185,129,.05); }
+#toast.error   { border-color: rgba(239,68,68,.3);  background: rgba(239,68,68,.05); }
+
+#loadingOverlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(248,250,252,0.85); backdrop-filter: blur(4px);
+  z-index: 9000; align-items: center; justify-content: center;
+  flex-direction: column; gap: 16px;
+}
+#loadingOverlay.show { display: flex; }
+.spinner {
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent); animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#loadingOverlay p { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 600; color: var(--muted); }
+
+@keyframes shake { 0%,100%{transform:translateX(0);} 10%,30%,50%,70%,90%{transform:translateX(-4px);} 20%,40%,60%,80%{transform:translateX(4px);} }
+.shake { animation: shake 0.5s; }
+
+/* ── Auto-filled & Non-Changeable (Locked) Fields ── */
+.locked-field {
+  background: var(--surface2) !important;
+  color: var(--text) !important;
+  cursor: not-allowed !important;
+  border-color: var(--border) !important;
+  user-select: none !important;
+}
+.locked-field:focus {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: var(--border) !important;
+}
+.locked-select-wrapper {
+  pointer-events: none !important;
+  opacity: 0.95 !important;
+}
+.locked-select-wrapper select {
+  background: var(--surface2) !important;
+  color: var(--text) !important;
+  cursor: not-allowed !important;
+  border-color: var(--border) !important;
+}
+</style>
+</head>
+<body>
+
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <p id="loadingMsg">Checking submission status…</p>
+</div>
+
+<div class="wrap">
+
+  <div class="header">
+    <div class="logo-area">
+      <div class="logo-img-wrap">
+        <img src="FPC Logo black.png" alt="FACE Prep Campus Logo" class="logo-img" onerror="this.style.display='none'">
+        <div class="logo-text-block">
+          <div class="logo-title">FACE Prep Campus</div>
+          <div class="logo-badge-pill"><span class="dot"></span>Faculty Feedback</div>
+        </div>
+      </div>
+    </div>
+    <h1>Mentor Feedback Form</h1>
+    <p class="subtitle">Rate each mentor based on your learning experience. Your responses are confidential.</p>
+  </div>
+
+  <div class="progress-label"><span>Progress</span><span id="pct">0%</span></div>
+  <div class="progress-bar-outer"><div class="progress-bar-inner" id="progressBar"></div></div>
+
+  <div id="alreadyScreen">
+    <span class="already-icon">🚫</span>
+    <h2>Already Submitted!</h2>
+    <p>Our records show that you have already submitted the feedback form.</p>
+    <p>Each student is allowed only <strong>one submission</strong>. If you believe this is a mistake, please contact your respective Campus Manager.</p>
+    <div class="reg-badge"> Register Number: <span id="alreadyRegNo">—</span></div>
+  </div>
+
+  <div id="successScreen">
+    <span class="success-icon">🎉</span>
+    <h2 id="successTitle">Thank you!</h2>
+    <p>Your feedback has been recorded successfully. We appreciate your time.</p>
+    <a href="javascript:void(0)" class="btn-new" onclick="resetForm()">Submit Another Response</a>
+  </div>
+
+  <form id="feedbackForm" novalidate>
+
+    <input type="hidden" name="payload" id="payloadField">
+
+    <div class="form-section-label">Personal Information</div>
+    <div class="section">
+      <div class="section-title"><div class="icon icon-blue">👤</div>Personal Information</div>
+      <div class="field-row">
+        <div class="field">
+          <label for="studentName">Student Name <span class="req">*</span></label>
+          <input type="text" id="studentName" name="studentName" placeholder="Auto-filled from Register Number" readonly class="locked-field" required>
+          <div class="err-msg">Please enter a valid register number</div>
+        </div>
+        <div class="field">
+          <label for="regNumber">Register Number <span class="req">*</span></label>
+          <input type="text" id="regNumber" name="regNumber" placeholder="e.g. 22CS001" required autocomplete="off" style="text-transform: uppercase;">
+          <div class="err-msg">Please enter your register number</div>
+        </div>
+      </div>
+      <div class="field">
+        <label for="studentEmail">Email ID <span class="req">*</span></label>
+        <input type="email" id="studentEmail" name="studentEmail" placeholder="Auto-filled from Register Number" readonly class="locked-field" required>
+        <div class="err-msg">Please enter a valid register number to populate email</div>
+      </div>
+      <div class="field">
+        <label for="collegeName">College <span class="req">*</span></label>
+        <div class="select-wrapper locked-select-wrapper">
+          <select id="collegeName" name="collegeName" required class="locked-field">
+            <option value="" disabled selected>Auto-selected from Register Number</option>
+          </select>
+        </div>
+        <div class="err-msg">Please enter a valid register number</div>
+      </div>
+      <div class="field">
+        <label for="department">Department <span class="req">*</span></label>
+        <div class="select-wrapper locked-select-wrapper">
+          <select id="department" name="department" required class="locked-field">
+            <option value="" disabled selected>Auto-selected from Register Number</option>
+          </select>
+        </div>
+        <div class="err-msg">Please enter a valid register number</div>
+      </div>
+    </div>
+
+    <div id="dynamicContent" style="display:none;">
+
+      <div class="form-section-label">Academic &amp; Program Effectiveness</div>
+      <div class="section">
+        <div class="section-title">Academic &amp; Program Effectiveness</div>
+        <div class="yn-list" style="margin-bottom:18px;">
+          <div class="yn-row" id="ape_q1_row">
+            <span class="yn-qnum">Q1</span>
+            <span class="yn-text">Did you have regular assessments and assignments as part of your academic curriculum?</span>
+            <div class="yn-btns">
+              <input type="radio" id="ape_q1_y" name="ape_q1" value="Yes" required>
+              <label for="ape_q1_y" class="yes-lbl">Yes</label>
+              <input type="radio" id="ape_q1_n" name="ape_q1" value="No">
+              <label for="ape_q1_n" class="no-lbl">No</label>
+            </div>
+          </div>
+          <div class="yn-row" id="ape_q2_row">
+            <span class="yn-qnum">Q2</span>
+            <span class="yn-text">Did you receive study materials for all the course papers?</span>
+            <div class="yn-btns">
+              <input type="radio" id="ape_q2_y" name="ape_q2" value="Yes" required>
+              <label for="ape_q2_y" class="yes-lbl">Yes</label>
+              <input type="radio" id="ape_q2_n" name="ape_q2" value="No">
+              <label for="ape_q2_n" class="no-lbl">No</label>
+            </div>
+          </div>
+        </div>
+        <div class="conditional-field" id="ape_q2_detail_wrap">
+          <div class="field">
+            <label for="ape_q2_detail">Please mention the course papers you didn't receive study materials for <span class="req">*</span></label>
+            <textarea id="ape_q2_detail" name="ape_q2_detail" placeholder="List the course papers here…" rows="3"></textarea>
+            <div class="err-msg">Please mention the course papers</div>
+          </div>
+        </div>
+        <div class="rating-block" id="ape_q3_block">
+          <div class="rating-block-title">Q3 — How effective and industry-relevant are the program's hands-on learning and curriculum?</div>
+          <div class="scale-btns" id="apeScaleBtns3">
+            <div class="scale-circle-wrap"><input type="radio" id="ape3v1" name="ape_q3_rating" value="1" required><label for="ape3v1" data-v="1"><span class="s-num">1</span><span class="s-word">Poor</span></label><div class="s-circle-label">Poor</div></div>
+            <div class="scale-circle-wrap"><input type="radio" id="ape3v2" name="ape_q3_rating" value="2"><label for="ape3v2" data-v="2"><span class="s-num">2</span><span class="s-word">Below Avg</span></label><div class="s-circle-label">Below Avg</div></div>
+            <div class="scale-circle-wrap"><input type="radio" id="ape3v3" name="ape_q3_rating" value="3"><label for="ape3v3" data-v="3"><span class="s-num">3</span><span class="s-word">Average</span></label><div class="s-circle-label">Average</div></div>
+            <div class="scale-circle-wrap"><input type="radio" id="ape3v4" name="ape_q3_rating" value="4"><label for="ape3v4" data-v="4"><span class="s-num">4</span><span class="s-word">Good</span></label><div class="s-circle-label">Good</div></div>
+            <div class="scale-circle-wrap"><input type="radio" id="ape3v5" name="ape_q3_rating" value="5"><label for="ape3v5" data-v="5"><span class="s-num">5</span><span class="s-word">Excellent</span></label><div class="s-circle-label">Excellent</div></div>
+          </div>
+          <div class="err-msg" style="margin-top:4px;">Please select a rating</div>
+        </div>
+        <div class="rating-block" id="ape_q4_block">
+          <div class="rating-block-title">Q4 — How effectively has the program improved your confidence and prepared you for industry expectations and future job roles?</div>
+          <div class="scale-btns" id="apeScaleBtns4">
+            <div class="scale-circle-wrap"><input type="radio" id="ape4v1" name="ape_q4_rating" value="1" required><label for="ape4v1" data-v="1"><span class="s-num">1</span><span class="s-word">Poor</span></label><div class="s-circle-label">Poor</div></div>
+            <div class="scale-circle-wrap"><input type="radio" id="ape4v2" name="ape_q4_rating" value="2"><label for="ape4v2" data-v="2"><span class="s-num">2</span><span class="s-word">Below Avg</span></label><div class="s-circle-label">Below Avg</div></div>
+            <div class="scale-circle-wrap"><input type="radio" id="ape4v3" name="ape_q4_rating" value="3"><label for="ape4v3" data-v="3"><span class="s-num">3</span><span class="s-word">Average</span></label><div class="s-circle-label">Average</div></div>
+            <div class="scale-circle-wrap"><input type="radio" id="ape4v4" name="ape_q4_rating" value="4"><label for="ape4v4" data-v="4"><span class="s-num">4</span><span class="s-word">Good</span></label><div class="s-circle-label">Good</div></div>
+            <div class="scale-circle-wrap"><input type="radio" id="ape4v5" name="ape_q4_rating" value="5"><label for="ape4v5" data-v="5"><span class="s-num">5</span><span class="s-word">Excellent</span></label><div class="s-circle-label">Excellent</div></div>
+          </div>
+          <div class="err-msg" style="margin-top:4px;">Please select a rating</div>
+        </div>
+      </div>
+
+      <div class="form-section-label">Mentor Performance Rating</div>
+      <div id="facultySections"></div>
+
+      <div class="form-section-label">Challenges Faced</div>
+      <div class="section">
+        <div class="section-title"><div class="icon icon-orange">⚠️</div>Challenges Faced </div>
+        <div class="field" style="margin-bottom:20px;">
+          <label>Q1. What challenges are you currently facing? <span class="req">*</span> <span style="text-transform:none;letter-spacing:0;font-weight:400;font-size:11px;">(Select all that apply)</span></label>
+          <div class="check-list" id="challengeList">
+            <label class="check-item" onclick="toggleCheck(this,'challenge_infra')"><input type="checkbox" id="challenge_infra" value="Infrastructure & Facilities"><span class="check-box"><span class="check-tick">✓</span></span><span class="check-label">Infrastructure &amp; Facilities</span></label>
+            <label class="check-item" onclick="toggleCheck(this,'challenge_teaching')"><input type="checkbox" id="challenge_teaching" value="Teaching Quality & Delivery"><span class="check-box"><span class="check-tick">✓</span></span><span class="check-label">Teaching Quality &amp; Delivery</span></label>
+            <label class="check-item" onclick="toggleCheck(this,'challenge_comm')"><input type="checkbox" id="challenge_comm" value="Communication & Language Issues"><span class="check-box"><span class="check-tick">✓</span></span><span class="check-label">Communication &amp; Language Issues</span></label>
+            <label class="check-item" onclick="toggleCheck(this,'challenge_curriculum')"><input type="checkbox" id="challenge_curriculum" value="Curriculum & Academic Concerns"><span class="check-box"><span class="check-tick">✓</span></span><span class="check-label">Curriculum &amp; Academic Concerns</span></label>
+            <label class="check-item" onclick="toggleCheck(this,'challenge_materials')"><input type="checkbox" id="challenge_materials" value="Study Materials & Resources"><span class="check-box"><span class="check-tick">✓</span></span><span class="check-label">Study Materials &amp; Resources</span></label>
+            <label class="check-item" onclick="toggleCheck(this,'challenge_none','exclusive')"><input type="checkbox" id="challenge_none" value="No Challenges"><span class="check-box"><span class="check-tick">✓</span></span><span class="check-label">No Challenges</span></label>
+            <label class="check-item" onclick="toggleCheck(this,'challenge_others')"><input type="checkbox" id="challenge_others" value="Others"><span class="check-box"><span class="check-tick">✓</span></span><span class="check-label">Others</span></label>
+          </div>
+          <div class="err-msg" id="challengeErr" style="display:none;margin-top:6px;">Please select at least one option</div>
+        </div>
+        <div class="field">
+          <label for="challengeDetail">Q2. Please describe the challenges you are facing in detail <span class="req">*</span></label>
+          <textarea id="challengeDetail" name="challengeDetail" placeholder="Describe your challenges…" required></textarea>
+          <div class="err-msg">Please describe your challenges</div>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label for="challengeSuggestions">Q3. Please share your suggestions where we can improve <span class="req">*</span></label>
+          <textarea id="challengeSuggestions" name="challengeSuggestions" placeholder="Your suggestions…" required></textarea>
+          <div class="err-msg">Please share your suggestions</div>
+        </div>
+      </div>
+      
+    <div class="submit-area">
+      <button type="submit" class="btn-submit" id="submitBtn">
+        <span>Submit Feedback</span><span>→</span>
+      </button>
+      <p class="note">🔒 All responses will be kept confidential and will be used only to enhance the quality of our training, support, and overall campus experience.</p>
+    </div>
+
+  </form>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ─── GOOGLE SHEET CONFIG ─────────────────────────────────────────────────────
+const SHEET_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyrjhDVlhtf2JgONtEB6y_BKoP0uOXtptM7H6DsU4xcpaMsiH43kaOBhTx_7tfghtN0mQ/exec";
+
+const QUESTIONS = [
+  "Were the sessions delivered by the Faculty clear and well-structured?",
+  "Are you convinced with the professional behavior of the Faculty during sessions?",
+  "Was the trainer effective in solving problems and explaining solutions with examples?",
+  "Did the trainer support doubt clearing and student queries?",
+  "Were the sessions useful in improving your understanding and skills?"
+];
+
+const SCALE_WORDS = {1:'Poor', 2:'Below Avg', 3:'Average', 4:'Good', 5:'Excellent'};
+const CHALLENGE_IDS = ['challenge_infra','challenge_teaching','challenge_comm','challenge_curriculum','challenge_materials','challenge_none','challenge_others'];
+
+// ─── COLLEGE DATA ─────────────────────────────────────────────────────────────
+const COLLEGE_DATA = {
+  "Noorul Islam Centre for Higher Education (NICHE)": {
+    "B.Sc AI & ML": [
+      {subject:"Data Structures using Java",mentor:"Aasik"},
+      {subject:"Effective Communication",mentor:"Ramnath"},
+      {subject:"Database Management Systems",mentor:"Aasik"},
+      {subject:"Fundamentals Of Statistics",mentor:"Harishkumar"},
+      {subject:"Machine Learning Fundamentals",mentor:"Sayan Dey"},
+      {subject:"Operating Systems and Linux Basics",mentor:"Sayan Dey"},
+      {subject:"Aptitude",mentor:"Harishkumar"},
+      {subject:"Digital Workplace Safety and Health",mentor:"Ramnath"},
+      {subject:"Environmental Science",mentor:"Ramnath"}
+    ]
+  },
+  "TJS College of Arts and Science": {
+    "III B.Sc CS with AI": [
+      {subject:"Technical - FPC",mentor:"Subhashini K M"},
+      {subject:"Computer Vision ",mentor:"Subhashini K M"},
+      {subject:"Natural Language Processing",mentor:"Aarthi R"},
+      {subject:"Communicative English",mentor:"Aarthi R"},
+      {subject:"Software Engineering ",mentor:"Aarthi R"},
+      {subject:"Cloud Computing",mentor:"Subhashini K M"}
+    ]
+  },
+  "Hindusthan College of Arts and Science": {
+    "I B.Sc CT with AIML": [
+      {subject:"Python Programming",mentor:"Afrin A Hakim"},
+      {subject:"Design for Developers - UI/UX",mentor:"Subbu Lakshmi"},
+      {subject:"English I",mentor:"Legha Shree"},
+      {subject:"Environmental Studies",mentor:"Suba Shree"},
+      {subject:"Aptitude",mentor:"Guru Priya"}
+    ],
+    "I B.Com FinTech with AI": [
+      {subject:"Financial Accounting",mentor:"Aswini Karthiga"},
+      {subject:"Introduction to FinTech",mentor:"Suba Shree"},
+      {subject:"Managerial Economics",mentor:"Suba Shree"},
+      {subject:"English I",mentor:"Legha Shree"},
+      {subject:"Environmental Studies",mentor:"Subbu Lakshmi"},
+      {subject:"Aptitude",mentor:"Guru Priya"}
+    ]
+  },
+  "SDNB Vaishnav College for Women": {
+    "III B.Sc. CS with AI": [
+      {subject:"Generative AI",mentor:"Devipriya"},
+      {subject:"Natural Language Processing",mentor:"Geetha"},
+      {subject:"Reinforcement Learning",mentor:"Srisivasankari"},
+      {subject:"Natural Language Processing - Lab",mentor:"Geetha"},
+      {subject:"Fundamentals of Recruitment and Talent Acquisition",mentor:"Abirami"},
+      {subject:"Social Media Analytics",mentor:"Geetha"},
+      {subject:"Full Stack Development",mentor:"Geetha"},
+      {subject:"Essentials of Effective Communication Skill",mentor:"Bavyashree"},
+      {subject:"Aptitude",mentor:"Lydia"}
+    ],
+    "II B.Sc. CS with AI (Shift 1)": [
+      {subject:"Language - IV",mentor:"Stella Mary"},
+      {subject:"General English - IV",mentor:"Jaisha"},
+      {subject:"LLM",mentor:"Arockiyamary"},
+      {subject:"Database Management Systems",mentor:"Dharani"},
+      {subject:"Data Ethics And Privacy",mentor:"Devipriya"},
+      {subject:"Database Management Systems - Lab",mentor:"Dharani"},
+      {subject:" Descriptive Statistics",mentor:"Saradha"},
+      {subject:"Effective Communication",mentor:"Jaisha"}
+    ],
+    "II B.Sc. CS with AI (Shift 2)": [
+      {subject:"Language - IV",mentor:"Mekala"},
+      {subject:"General English - IV",mentor:"Vijitha"},
+      {subject:"Foundations of LLMs & Prompt Engineering",mentor:"Subashini"},
+      {subject:"Database Management Systems",mentor:"Subashini"},
+      {subject:"Data Ethics And Privacy",mentor:"Srisivasankari"},
+      {subject:"Database Management Systems - Lab",mentor:"Subashini"},
+      {subject:"Descriptive Statistics",mentor:"Anusha"},
+      {subject:"Effective Communication",mentor:"Vijitha"},
+      {subject:"Aptitude",mentor:"Lydia"}
+    ],
+    "II B.Sc. DS & AI": [
+      {subject:"Language - IV",mentor:"Stella Mary"},
+      {subject:"General English - IV",mentor:"Sandra"},
+      {subject:"Data Structures and Algorithms",mentor:"Dharani"},
+      {subject:"Data Structures and Algorithms Lab",mentor:"Dharani"},
+      {subject:"Statistics - I",mentor:"Anitta Arulraj"},
+      {subject:"Analytical Reasoning and Problem Solving - III",mentor:"Saradha"},
+      {subject:"Effective Communication",mentor:"Sandra"}
+    ],
+    "II B.Com FinTech with AI": [
+      {subject:"Corporate Accounting",mentor:"Malarvizhi"},
+      {subject:"Company Law",mentor:"Athira"},
+      {subject:"Business Data Visualization with Power BI",mentor:"Athira"},
+      {subject:"Stock Market Trading and Investment Analysis",mentor:"Astha"},
+      {subject:"Governance and Ethics of Financial Services / Securities Market Research",mentor:"Astha"},
+      {subject:"Entrepreneurship and Startup Fundamentals",mentor:"Malarvizhi"},
+      {subject:"Effective Communication",mentor:"Jaisha"},
+      {subject:"Analytical Reasoning and Problem Solving - III",mentor:"Saradha"}
+    ],
+    "II BBA DM & BA": [
+      {subject:"Consumer Behaviour & Digital Customer Journey",mentor:"Priyanka"},
+      {subject:"Business Intelligence Fundamentals",mentor:"Aishwarya"},
+      {subject:"Business Strategy and Competitive Advantage",mentor:"Abirami"},
+      {subject:"Effective Communication",mentor:"Sandra"},
+      {subject:"Financial Accounting",mentor:"Athira"},
+      {subject:"Supply Chain Management",mentor:"Priyanka"},
+      {subject:" Global E-Commerce",mentor:"Vishnupriya"},
+      {subject:" Effective Communication for Professionals",mentor:"Sandra"},
+      {subject:"Problem Solving through Aptitude II",mentor:"Anitta Arulraj"}
+    ],
+    "I B.Sc. CS with AI (Shift 1)": [
+      {subject:"Tamil - I",mentor:"Stella Mary"},
+      {subject:"English - I",mentor:"Jaisha"},
+      {subject:"Python Programming",mentor:"Arockiyamary"},
+      {subject:"AI foundations and Machine Learning",mentor:"Sakshi Pandey"},
+      {subject:"Mathematical Foundations for AI",mentor:"Anitta Arulraj"},
+      {subject:"Python Programming - Lab",mentor:"Arockiyamary"},
+      {subject:"Communication",mentor:"Jaisha"},
+      {subject:"Problem Solving through Aptitude - I",mentor:" Anitta Arulraj"}
+    ],
+    "I B.Sc. CS with AI (Shift 2)": [
+      {subject:"Tamil - I",mentor:"Mekala"},
+      {subject:"English - I",mentor:"Vijitha"},
+      {subject:"Python Programming",mentor:"Umamaheshwari"},
+      {subject:"AI foundations and Machine Learning",mentor:"Umamaheshwari"},
+      {subject:"Mathematical Foundations for AI",mentor:"Lydia"},
+      {subject:"Python Programming - Lab",mentor:"Umamaheshwari"},
+      {subject:"Communication",mentor:"Vijitha"},
+      {subject:"Problem Solving through Aptitude - I",mentor:"Lydia"}
+    ],
+    "I B.Sc. DS & AI": [
+      {subject:"Language",mentor:"Stella Mary"},
+      {subject:"English",mentor:"Sandra"},
+      {subject:"Python Programming for Data Science",mentor:"Sakshi Pandey"},
+      {subject:"Python Programming for Data Science Lab",mentor:"Sakshi Pandey"},
+      {subject:"Mathematics - I",mentor:"Saradha"},
+      {subject:"Analytical Reasoning and Problem Solving - I",mentor:"Saradha"},
+      {subject:"Effective Communication",mentor:"Sandra"}
+    ],
+    "I B.Com FinTech with AI": [
+      {subject:"Language",mentor:"Stella Mary"},
+      {subject:"General English",mentor:"Bavyashree"},
+      {subject:"Financial Accounting",mentor:"Malarvizhi"},
+      {subject:"Principles of Management",mentor:"Aishwarya"},
+      {subject:"Introduction to FinTech",mentor:"Astha"},
+      {subject:"Analytical Reasoning and Problem Solving - I",mentor:"Saradha"},
+      {subject:"Effective Communication for Professionals",mentor:"Bavyashree"}
+    ],
+    "I BBA DM & BA": [
+      {subject:"Language",mentor:"Stella Mary"},
+      {subject:"General English",mentor:"Bavyashree"},
+      {subject:"Introduction to Digital Marketing",mentor:"Vishnupriya"},
+      {subject:"Principles of Management",mentor:"Aishwarya"},
+      {subject:"Entrepreneurship Management",mentor:"Aishwarya"},
+      {subject:"Visual Branding",mentor:"Vishnupriya"},
+      {subject:"Problem Solving through Aptitude - I",mentor:" Anitta Arulraj"},
+      {subject:"Website Designing",mentor:"Aishwarya"},
+      {subject:"Communication",mentor:"Bavyashree"}
+    ],
+    "I B.Sc. CC with CC (Shift 2)": [
+      {subject:"Language - I",mentor:"Mekala"},
+      {subject:"General English - I",mentor:"Mohana Priya"},
+      {subject:"Python Programming",mentor:"Vanisree"},
+      {subject:"Python Programming - Lab",mentor:"Vanisree"},
+      {subject:"Mathematics - I",mentor:"Anusha"},
+      {subject:"Analytical Reasoning and Problem Solving - I",mentor:"Lydia"},
+      {subject:"Effective Communication for Professionals - I",mentor:"Mohana Priya"}
+    ],
+    "I BBA FM (Shift 2)": [
+      {subject:"Language - I",mentor:"Mekala"},
+      {subject:"General English - I",mentor:"Mohana Priya"},
+      {subject:"Principles of Management",mentor:"Abirami"},
+      {subject:"Introduction to Fashion Industry & Terminology",mentor:"Suchitra"},
+      {subject:"Fashion History and Cultural Studies",mentor:"Suchitra"},
+      {subject:"Problem Solving through Aptitude",mentor:"Anusha "},
+      {subject:"Soft Skills and Communication Practice",mentor:"Mohana Priya"}
+    ],
+    "I B.Com Banking and Fintech": [
+      {subject:"Language - I",mentor:"Mekala"},
+      {subject:"General English - I",mentor:"Mohana Priya"},
+      {subject:"Financial Accounting",mentor:"Pavitra"},
+      {subject:"Principles and Practice of Banking",mentor:"Deepika Soankamble"},
+      {subject:" International Banking and Trade Finance",mentor:"Deepika Soankamble"},
+      {subject:"Computer Applications in Business (Tally Prime)",mentor:"Pavitra"},
+      {subject:"Soft Skills and Communication Practice",mentor:"Mohana Priya"},
+      {subject:"Aptitude",mentor:"Lydia"}
+    ],
+    "I BBA AAM (Shift 2)": [
+      {subject:"Language - I",mentor:"Mekala"},
+      {subject:"General English - I",mentor:"Vijitha"},
+      {subject:"Principles of Management",mentor:"Abirami"},
+      {subject:"Introduction to Air Transport System",mentor:"Shabana Rahman"},
+      {subject:"Aviation Business Fundamentals",mentor:"Shabana Rahman"},
+      {subject:"Problem Solving through Aptitude",mentor:"Anusha"},
+      {subject:"Soft Skills and Communication Practice",mentor:"Vijitha"}
+    ]
+  },
+  "Sri Ramakrishna College of Arts and Science for Women": {
+    "I BBA DM": [
+      {subject:"Visual Branding and Digital Marketing",mentor:"Athira"},
+      {subject:"Website Designing",mentor:"Aparna"},
+      {subject:"English for Management",mentor:"Christina"},
+      {subject:"Principles of Management",mentor:"Athira"},
+      {subject:"Aptitude",mentor:"Kanishka"}
+    ],
+    "I BCA": [
+      {subject:"Python",mentor:"Packiamary"},
+      {subject:"UI & UX",mentor:"Packiamary"},
+      {subject:"English for Computer Science",mentor:"Christina"},
+      {subject:"Aptitude",mentor:"Kanishka"}
+    ]
+  },
+  "Kamaraj College": {
+    "I BCA - A": [
+      {subject:"Tamil - I",mentor:"Gowrishankar"},
+      {subject:"English - I",mentor:" Devadharshini"},
+      {subject:"Effective Communication",mentor:" Devadharshini"},
+      {subject:"Python Programming",mentor:"Mangaleshwaran"},
+      {subject:"Mathematics for AI",mentor:"Nandhana"},
+      {subject:"Fundamental Computer Architechure",mentor:"Saral"},
+      {subject:"UI/UX",mentor:"Saral"},
+      {subject:"UI/UX Lab",mentor:"Saral"},
+      {subject:"Aptitude",mentor:"Nandhana"}
+    ],
+    "I BCA - B": [
+      {subject:"Tamil - I",mentor:"Gowrishankar"},
+      {subject:"English - I",mentor:"Serina"},
+      {subject:"Effective Communication",mentor:"Serina"},
+      {subject:"Python Programming",mentor:"Mangaleshwaran"},
+      {subject:"Mathematics for AI",mentor:"Nandhana"},
+      {subject:"Fundamental Computer Architechure",mentor:"Saral"},
+      {subject:"UI/UX",mentor:"Saral"},
+      {subject:"UI/UX Lab",mentor:"Saral"},
+      {subject:"Aptitude",mentor:"Nandhana"}
+    ],
+    "II BCA - A": [
+      {subject:"Tamil - III",mentor:"Gowrishankar"},
+      {subject:"English - III",mentor:"Venkatesh"},
+      {subject:"Effective Communication",mentor:"Venkatesh"},
+      {subject:"Data Structure Algorithms",mentor:"Sharumathi"},
+      {subject:"Big Data Analytics",mentor:"Periya Nayagi"},
+      {subject:"Data Vizualiztion  ",mentor:"Aparna"},
+      {subject:"DBMS Lab",mentor:"Aparna"},
+      {subject:"Aptitude",mentor:"Santhiya"}
+    ],
+    "II BCA - B": [
+      {subject:"Tamil - III",mentor:"Gowrishankar"},
+      {subject:"English - III",mentor:"Devadharshini"},
+      {subject:"Effective Communication",mentor:"Devadharshini"},
+      {subject:"Data Structure Algorithms",mentor:"Sharumathi"},
+      {subject:"Big Data Analytics",mentor:"Periya Nayagi"},
+      {subject:"Data Visualization",mentor:"Aparna"},
+      {subject:"DBMS Lab",mentor:"Aparna"},
+      {subject:"Aptitude",mentor:"Santhiya"}
+    ],
+    "III BCA - A": [
+      {subject:"Data Analytics R",mentor:"Aparna"},
+      {subject:"Operating System",mentor:"Saral"},
+      {subject:"AI and its Application",mentor:"Periya Nayagi"},
+      {subject:"ASP.NET",mentor:"Dharani"},
+      {subject:"Software Project Management",mentor:"Anto Jegan"},
+      {subject:"ASP.NET Lab",mentor:"Dharani"},
+      {subject:"DSA JAVA",mentor:"Dharani"},
+      {subject:"FOP Python",mentor:"Anto Jegan"},
+      {subject:"Machine Language",mentor:"Periya Nayagi"},
+      {subject:"Aptitude",mentor:"Infanta Jasmine Rushmitha"},
+      {subject:"Communication",mentor:"Sahul Hameed"}
+    ],
+    "I BBA": [
+      {subject:"Visual Branding",mentor:"Sreemathi"},
+      {subject:"Website Designing",mentor:"Sreemathi"},
+      {subject:"Aptitude",mentor:"Nandhana"},
+      {subject:"Principles Of Management",mentor:"Jane Rhinu"},
+      {subject:"Managerial Communication",mentor:"Harishma G"},
+      {subject:"Entrepreneurship Management",mentor:"Harishma G"},
+      {subject:"Accounting For Managers",mentor:"Harishma Devi C"},
+      {subject:"Tamil",mentor:"Gowrishankar"},
+      {subject:"General English-I",mentor:"Serina"},
+      {subject:"Effective Communication",mentor:"Serina"}
+    ],
+    "II BBA": [
+      {subject:"Aptitude",mentor:"Nandhana"},
+      {subject:"Communication",mentor:"Shahul Hameed"},
+      {subject:"E-commerce Operations and Marketplace Management",mentor:"Sherly Anish Arone"},
+      {subject:"Business Analytics and Dashboarding",mentor:"Sherly Anish Arone"},
+      {subject:"Entrepreneurship and Startup Execution Lab",mentor:"Sherly Anish Arone"},
+      {subject:"SEO and It's Fundamentals",mentor:"Sherly Anish Arone"},
+      {subject:"Database Management System",mentor:"Sreemathi"},
+      {subject:"Financial Literacy and Investment Strategies",mentor:"Sreemathi"},
+      {subject:"International Marketing",mentor:"Harishma G"},
+      {subject:"Human Resource Management",mentor:"Harishma G"},
+      {subject:"Production and Materials Management",mentor:"Jane Rhinu"},
+      {subject:"Tamil",mentor:"Gowrishankar"},
+      {subject:"General English - III",mentor:"Shahul Hameed"}
+    ],
+    "I B.Com": [
+      {subject:"Tamil",mentor:"Gowrishankar"},
+      {subject:"General English - I",mentor:"Serina"},
+      {subject:"Financial Accounting I",mentor:"Shobhana"},
+      {subject:"Principles of Management",mentor:"Sherly Anish Arone"},
+      {subject:"Introduction to FinTech",mentor:"Harishmadevi C"},
+      {subject:"Fundamentals of Business Studies",mentor:"Vishalakchi"},
+      {subject:"Communication",mentor:"Serina"},
+      {subject:"Aptitude",mentor:"Santhiya"},
+      {subject:"Financial Statement & Financial Data Analysis",mentor:"Shobhana"},
+      {subject:"Personal Financial Management",mentor:"Shobhana"},
+      {subject:"Fintech Revolution - Case Study",mentor:"Harishmadevi C"},
+      {subject:"Managerial & Strategic Analysis - Case Study",mentor:"Harishmadevi C"}
+    ],
+    "II B.Com": [
+      {subject:"Tamil",mentor:"Gowrishankar"},
+      {subject:"General English - III",mentor:"Venkatesh"},
+      {subject:"Company Law",mentor:"Harishmadevi C"},
+      {subject:"Banking Technoloy and Digital Payment",mentor:"Harishmadevi C"},
+      {subject:"Security Market Research",mentor:"Harishmadevi C"},
+      {subject:"Management Accounting",mentor:"Harishmadevi C"},
+      {subject:"Corporate Accounting",mentor:"Shobhana"},
+      {subject:"Communication",mentor:"Venkatesh"},
+      {subject:"Aptitude",mentor:"Infanta Jasmine Rushmitha"},
+      {subject:"Practical Stock Market Analysis and Mock Trading using TradingView",mentor:"Vishalakchi"},
+      {subject:"Legal Case Analysis and Corporate Policy Review",mentor:"Vishalakchi"},
+      {subject:"Financial Data Analysis using Power BI",mentor:"Vishalakchi"},
+      {subject:"Aptitude",mentor:"Infanta Jasmine Rushmitha"}
+    ],
+    "I MBA": [
+      {subject:"Aptitude",mentor:"Infanta Jasmine Rushmitha"},
+      {subject:"Communication",mentor:"Shahul Hameed"},
+      {subject:"Visual Branding",mentor:"Jane Rhinu"},
+      {subject:"Website Designing",mentor:"Jane Rhinu"},
+      {subject:"Business Analytics and Dashboarding",mentor:"Jane Rhinu"},
+      {subject:"Managerial Principles",mentor:"Sherly Anish Arone"},
+      {subject:"Research Methods in Business",mentor:"Harishma G"},
+      {subject:"Quantitative Techniques",mentor:"Infanta Jasmine Rushmitha"},
+      {subject:"Organizational Behavior",mentor:"Harishma G"},
+      {subject:"Accounting For Managers",mentor:"Vishalakchi"},
+      {subject:"Managerial Economics",mentor:"Sreemathi"},
+      {subject:"Legal Systems in Business",mentor:"Jane Rhinu"},
+      {subject:"Entrepreneurship Development",mentor:"Harishma G"}
+    ],
+    "I MCA": [
+      {subject:"Discrete Mathematics",mentor:"Infanta Jasmine Rushmitha"},
+      {subject:"Advanced Python Programming",mentor:"Anto Jegan"},
+      {subject:"Linux and Shell Programming",mentor:"Dharani"},
+      {subject:"Advanced Python Programming Lab ",mentor:"Anto Jegan"},
+      {subject:"Linux and Shell Programming Lab ",mentor:"Dharani"},
+      {subject:"Data Engineering and Management ",mentor:"Periyanayagi"},
+      {subject:"Cryptography and Network Security",mentor:"Dharani"},
+      {subject:"FOP Python",mentor:"Anto Jegan"},
+      {subject:"Aptitude",mentor:"Infanta Jasmine Rushmitha"},
+      {subject:"Communication",mentor:"Venkatesh"}
+    ]
+  },
+    "Kamaraj Women's College": {
+    "B.Sc. CS with AI": [
+      {subject:"Tamil",mentor:"Gowrishankar"},
+      {subject:"English",mentor:"Devadharshini"},
+      {subject:"Programming with Python",mentor:"Abhinaya"},
+      {subject:"Python Programming Lab",mentor:"Abhinaya"},
+      {subject:"Optimization Techniques",mentor:"Santhiya"},
+      {subject:"Power BI Laboratory",mentor:"Abhinaya"},
+      {subject:"EVS",mentor:"Infanta Jasmine Rushmitha"},
+      {subject:"Communication",mentor:"Devadharshini"},
+      {subject:"Aptitude",mentor:"Santhiya"}
+    ]
+  },
+  "Sree Saraswathi Thyagaraja College": {
+    "II BBA": [
+      {subject:"Product Sourcing and Inventory Management",mentor:"Rohith Venugopal"},
+      {subject:"Financial Accounting",mentor:"Rohith Venugopal"},
+      {subject:"SEO",mentor:"Kavipriya"},
+      {subject:"Business Analytics and Dashboarding",mentor:"Rohith Venugopal"},
+      {subject:"Entrepreneurship and Startup Execution Lab",mentor:"Kavipriya"},
+      {subject:"Strategic Management",mentor:"Kavipriya"},
+      {subject:"English",mentor:"Kowsalya"},
+      {subject:"Effective Communication",mentor:"Kowsalya"},
+      {subject:"Aptitude",mentor:"Indhumathi"}
+    ],
+    "II MCA": [
+      {subject:"Data Visualization",mentor:"Sneha"},
+      {subject:"AI in Health Care",mentor:"Sneha"},
+      {subject:"Deep Learning",mentor:"Shree Varsha"},
+      {subject:"IOT(Elective)",mentor:"Shree Varsha"},
+      {subject:"Software Engineering",mentor:"Dhatchinamoorthy"},
+      {subject:"Cyber Security(Elective)",mentor:"Dhatchinamoorthy"},
+      {subject:"Effective Communication",mentor:"Prashaanth"},
+      {subject:"Aptitide",mentor:"Indhumathi"}
+    ],
+    "I BBA": [
+      {subject:"Visual Branding",mentor:"Sashtiga"},
+      {subject:"Website Designing",mentor:"Sashtiga"},
+      {subject:"Principles of Management",mentor:"Kavipriya"},
+      {subject:"English",mentor:"Kowsalya"},
+      {subject:"Effective Communication",mentor:"Kowsalya"},
+      {subject:"Aptitude",mentor:"Indhumathi"},
+      {subject:"Introduction to Digital Marketing",mentor:"Rohith Venugopal"}
+    ],
+    "I B.Com": [
+      {subject:"Fundamentals of Financial Accounting",mentor:"Sandra Mariya"},
+      {subject:"Introduction to Fintech",mentor:"Sandra Mariya"},
+      {subject:"Financial Data Analysis using Excel",mentor:"Sandra Mariya"},
+      {subject:"English",mentor:"Kowsalya"},
+      {subject:"Effective Communication",mentor:"Prashaanth"},
+      {subject:"Aptitide",mentor:"Indhumathi"}
+    ]
+  },
+  "TERF's College of Arts and Science": {
+    "III B.Sc IT": [
+      {subject:"Effective Communication",mentor:"Kapila"},
+      {subject:"Aptitude",mentor:"Kapila"},
+      {subject:"FSD",mentor:"Ajeetha"},
+      {subject:"RDBMS",mentor:"Ajeetha"},
+      {subject:"Visual Basic",mentor:"Ajeetha"},
+      {subject:"Animation Technique",mentor:"Ajeetha"},
+      {subject:"Dot net",mentor:"Ajeetha"}
+    ]
+  },
+  "Bharathidasan College of Arts & Science": {
+    "II B.Sc CT": [
+      {subject:"Tamil III",mentor:"Sridhar"},
+      {subject:"English III",mentor:"Priyadharshini"},
+      {subject:"Data Structures and Computer Algorithm",mentor:"Senthilnathan"},
+      {subject:"Technical - DBMS",mentor:"Dharmaprakash"},
+      {subject:"Technical (DSA)",mentor:"Senthilnathan"},
+      {subject:"Internet of Things",mentor:"Senthilnathan"},
+      {subject:"Effective Communication ",mentor:"Priyadharshini"},
+      {subject:"Database Management System",mentor:"Dharmaprakash"},
+      {subject:"Web Application Development",mentor:"Dharmaprakash"},
+      {subject:"Aptitude",mentor:"Anuranjana"}
+    ],
+    "II BBA CA": [
+      {subject:"Tamil III",mentor:"Sridhar"},
+      {subject:"English III",mentor:"Priyadharshini"},
+      {subject:"Accounting for Managers",mentor:"Bhargavi"},
+      {subject:"Production and Materials Management",mentor:"Bhargavi"},
+      {subject:"Aptitude",mentor:"Anuranjana"},
+      {subject:"Cyber Law",mentor:"Bhargavi"},
+      {subject:"Effective Communication",mentor:"Priyadharshini"},
+      {subject:"Technical (FPC - Business Analytics & Dashboarding, Entrepreneurship and Startup Execution Lab, E-Commerce Operations and Market Place Management)",mentor:"Bhargavi"}
+    ],
+    "III B.Sc CT": [
+      {subject:"Effective Communication",mentor:"Priyadharshini"},
+      {subject:"Aptitude",mentor:"Anuranjana"},
+      {subject:"RDBMS & Oracle",mentor:"Dharmaprakash"},
+      {subject:"Python Programming",mentor:"Dharmaprakash"},
+      {subject:"Visual Basic",mentor:"Senthilnathan"},
+      {subject:"Network Security and Management",mentor:"Senthilnathan"},
+      {subject:"Technical - FOP - Python, RDBMS, Hacker Rank - Algorithm",mentor:"Dharmaprakash"}
+    ]
+  },
+  "Nagarathinam Angalammal Arts and Science College": {
+    "III B.Sc AI": [
+      {subject:"Relational Database Management System",mentor:"Mohanasree"},
+      {subject:"RDBMS Lab using Oracle",mentor:"Mohanasree"},
+      {subject:"Machine Learning",mentor:"Yuva Dharshini"},
+      {subject:"Software Engineering",mentor:"Srisaradha"},
+      {subject:"Communication",mentor:"Subashini"},
+      {subject:"Aptitude",mentor:"Abirami "}
+    ],
+    "II B.Sc AI": [
+      {subject:"Tamil Paper III",mentor:"Shanmuga Sundaram"},
+      {subject:"English Paper III",mentor:"Mathibarathi"},
+      {subject:"Data Structures and Computer Algorithms",mentor:"Mohanasree"},
+      {subject:"Lab: Data Structures and Computer Algorithms",mentor:"Mohanasree"},
+      {subject:"Mathematical Statistics – I",mentor:"Abirami "},
+      {subject:"E-Commerce",mentor:"Yuva Dharshini"},
+      {subject:"Bio Metrics",mentor:"Swetha"},
+      {subject:"Communication",mentor:"Mathibarathi"},
+      {subject:"Aptitude",mentor:"Abirami "}
+    ],
+    "II B.Sc CC": [
+      {subject:"Tamil",mentor:"Shanmuga Sundaram"},
+      {subject:"English",mentor:"Mathibarathi"},
+      {subject:"DSA",mentor:"Srisaradha"},
+      {subject:"DSA Lab",mentor:"Srisaradha"},
+      {subject:"Probablility and Statistics",mentor:"Abirami "},
+      {subject:"Digital Computer Fundamentals",mentor:"Swetha"},
+      {subject:"Lab - Python",mentor:"Yuva Dharshini"},
+      {subject:"Communication",mentor:"Mathibarathi"},
+      {subject:"Aptitude",mentor:"Abirami "}
+    ],
+    "II BBA DM": [
+      {subject:"Tamil - III",mentor:"Shanmuga Sundaram"},
+      {subject:"General English III",mentor:"Mathibarathi"},
+      {subject:"Marketing Management",mentor:"Danya"},
+      {subject:"Search Advertising",mentor:"Danya"},
+      {subject:"Business Statistics",mentor:"Krishna Devi"},
+      {subject:"Computer Applications in Business",mentor:"Swetha"},
+      {subject:"Entrepreneurial Skill New Venture Management",mentor:"Danya"},
+      {subject:"Communication",mentor:"Mathibarathi"},
+      {subject:"Aptitude",mentor:"Abirami "}
+    ],
+    "II B.Com BC & FT": [
+      {subject:"Tamil - III",mentor:"Shanmuga Sundaram"},
+      {subject:"General English III",mentor:"Mathibarathi "},
+      {subject:"Corporate Accounting - I ",mentor:"Krishna Devi"},
+      {subject:"Company Law",mentor:"Danya"},
+      {subject:"Financial Modelling Technology ",mentor:"Krishna Devi"},
+      {subject:"Fundamental And Technical Analysis of Share Market ",mentor:"Krishna Devi"},
+      {subject:"Financial Technology Services",mentor:"Krishna Devi"},
+      {subject:"Communication",mentor:"Mathibarathi"},
+      {subject:"Aptitude",mentor:"Abirami "}
+    ],
+    "I B.Sc AI": [
+      {subject:"Tamil Paper I",mentor:"Shanmuga Sundaram"},
+      {subject:"English Paper I",mentor:"Subashini"},
+      {subject:"Programming in C",mentor:"Swetha"},
+      {subject:"Lab: Programming in C",mentor:"Swetha"},
+      {subject:"Discrete Mathematical Structures",mentor:"Abirami "},
+      {subject:"Problem Solving Techniques",mentor:"Srisaradha"},
+      {subject:"Fundamentals of Computers",mentor:"Swetha"},
+      {subject:"Communication",mentor:"Subashini"},
+      {subject:"Aptitude",mentor:"Abirami "}
+    ],
+    "I B.Sc CC": [
+      {subject:"Tamil Paper I",mentor:"Shanmuga Sundaram"},
+      {subject:"English Paper I",mentor:"Subashini"},
+      {subject:"Programming in C",mentor:"Mohanasree"},
+      {subject:"Lab: Programming in C",mentor:"Mohanasree"},
+      {subject:"Discrete Mathematical Structures",mentor:"Abirami "},
+      {subject:"Problem Solving Techniques",mentor:"Yuva Dharshini"},
+      {subject:"Office Automation",mentor:"Mohanasree"},
+      {subject:"Communication",mentor:"Subashini"},
+      {subject:"Aptitude",mentor:"Abirami "}
+    ]
+  },
+  "VLB Janakiammal College Of Arts & Science": {
+    "I B.Sc CS (AI & DS)": [
+      {subject:"Skill FOP in C++",mentor:"Durga"},
+      {subject:"Digital Fundamentals & Programming in C++",mentor:"Durga"},
+      {subject:"Lab - Programming in C++ ",mentor:"Durga"},
+      {subject:"Skill Python for Data Analytics",mentor:"Jeevika"},
+      {subject:"Professional English I",mentor:"Ramachandran"},
+      {subject:"Effective Communication",mentor:"Ramachandran"},
+      {subject:"EVS",mentor:"Jeevika"}
+    ],
+    "I B.Com SCM (Blockchain & AI)": [
+      {subject:"Principles of Accountancy",mentor:"Pavithra"},
+      {subject:"Business Organization and Management",mentor:"Pavithra"},
+      {subject:"Economics for Business",mentor:"Pavithra"},
+      {subject:"Financial Statement & Data Analysis",mentor:"Pavithra"},
+      {subject:"Personal FInancial management",mentor:"Pavithra"},
+      {subject:"Fintech Revolution - Case Study",mentor:"Pavithra"},
+      {subject:"Managerial & Stratergic Analysis - Case Study",mentor:"Pavithra"},
+      {subject:"Professional English I",mentor:"Ramachandran"},
+      {subject:"Effective Communication",mentor:"Ramachandran"},
+      {subject:"EVS",mentor:"Jeevika"}
+    ]
+  },
+  "Kongunadu College of Arts and Science": {
+    "I B.Sc AI & ML": [
+      {subject:"English",mentor:"Amritha Anbu"},
+      {subject:"Python",mentor:"Lakshmi Krishna"},
+      {subject:"Aptitude",mentor:"Gurupriya"}
+    ]
+  },
+  "Vinayaga Mission’s Research Foundation School of Arts and Science": {
+    "II B.Com FinTech with AI": [
+      {subject:"Tamil - III",mentor:"Kayalvizhi"},
+      {subject:"English III",mentor:"Sowmya Rani"},
+      {subject:"Financial Management",mentor:"Edward Linil"},
+      {subject:"Management Accounting",mentor:"Edward Linil"},
+      {subject:"Securities Market Regulations and Practices",mentor:"Latchiya Bharathi"},
+      {subject:"Accounting Standards for the BFSI Industry",mentor:"Edward Linil"},
+      {subject:"Aptitude",mentor:"Rajeshwari"}
+    ],
+    "II B.Sc AI & ML": [
+      {subject:"Tamil - III",mentor:"Kayalvizhi"},
+      {subject:"English III",mentor:"Sowmya Rani"},
+      {subject:"Data Structures and Algorithms",mentor:"Bavatharani"},
+      {subject:"Database Management Systems",mentor:"Preethi"},
+      {subject:"Business Analytics",mentor:"Preethi"},
+      {subject:"Operating Systems",mentor:"Bavatharani"},
+      {subject:"Aptitude",mentor:"Rajeshwari"}
+    ],
+    "I B.Sc AI & ML": [
+      {subject:"Tamil-I",mentor:"Kayalvizhi"},
+      {subject:"English I",mentor:"Sowmya Rani"},
+      {subject:"Python Programming Implementation in AI",mentor:"Preethi"},
+      {subject:"Mathematics for AI",mentor:"Rajeshwari"},
+      {subject:"EVS",mentor:"Kayalvizhi"},
+      {subject:"Problem-solving through Aptitude - I",mentor:"Rajeshwari"}
+    ],
+    "I B.Com FinTech with AI": [
+      {subject:"Tamil-I",mentor:"Kayalvizhi"},
+      {subject:"English I",mentor:"Sowmya Rani"},
+      {subject:" Principles of Financial Accounting",mentor:"Latchiya Bharathi"},
+      {subject:" Introduction to FinTech",mentor:"Edward Linil"},
+      {subject:"Business Economics",mentor:"Latchiya Bharathi"},
+      {subject:"Problem Solving through Aptitude",mentor:"Rajeshwari"},
+      {subject:"EVS",mentor:"Kayalvizhi"}
+    ]
+  },
+  "Sri Amaraavathi College of Arts & Science": {
+    "II BCA": [
+      {subject:"Tamil",mentor:"Kalaiselvi"},
+      {subject:"General English",mentor:"Abitha Shree"},
+      {subject:"Effective Communication",mentor:"Abitha Shree"},
+      {subject:"Professional English -II",mentor:"Abitha Shree"},
+      {subject:"Presentation Skills",mentor:"Ezhilarasi"},
+      {subject:"Aptitude",mentor:"Ezhilarasi"},
+      {subject:"DSA",mentor:"Graclin Mahima"},
+      {subject:"Principles of Accountacy",mentor:"Melbi Susan Joseph"}
+    ],
+    "III BCA": [
+      {subject:"Fundamentals of Algorithms",mentor:"Nivetha"},
+      {subject:"Web technology & Lab",mentor:"Nivetha"},
+      {subject:"Soft Skill Development",mentor:"Melbi Susan Joseph"},
+      {subject:"Skill-FOP/DSA",mentor:"Nivetha"},
+      {subject:"Aptitude",mentor:"Ezhilarasi"},
+      {subject:"Skill develoment-Communication",mentor:"Abitha Shree"}
+    ],
+    "II B.Sc AI & ML": [
+      {subject:"Tamil",mentor:"Kalaiselvi"},
+      {subject:"General English",mentor:"Abitha Shree"},
+      {subject:"Effective Communication",mentor:"Abitha Shree"},
+      {subject:"Professional English -II",mentor:"Abitha Shree"},
+      {subject:"Presentation Skills",mentor:"Ezhilarasi"},
+      {subject:"Aptitude",mentor:"Ezhilarasi"},
+      {subject:"DSA & DBMS",mentor:"Graclin Mahima"},
+      {subject:"Applied Physics",mentor:"Ezhilarasi"}
+    ],
+    "B.Com FinTech": [
+      {subject:"Tamil",mentor:"Kalaiselvi"},
+      {subject:"General English II",mentor:"Abitha Shree"},
+      {subject:"Effective Communication",mentor:"Abitha Shree"},
+      {subject:"Business Communication",mentor:"Abitha Shree"},
+      {subject:"Professional English -II",mentor:"Abitha Shree"},
+      {subject:" Aptitude",mentor:"Ezhilarasi"},
+      {subject:"Business Law",mentor:"Melbi Susan Joseph"},
+      {subject:"Partnership accounting ",mentor:"Melbi Susan Joseph"},
+      {subject:"Fundamentals of IT",mentor:"Graclin Mahima"},
+      {subject:"Skill-Trading , Power BI, Case Analysis",mentor:"Melbi Susan Joseph"}
+    ]
+  },
+  "Takshashila University": {
+    "III B.Sc CS AI & ML": [
+      {subject:"Deep Learning",mentor:"Gobikha"},
+      {subject:"Generative AI",mentor:"Gobikha"},
+      {subject:"Reinforcement Learning",mentor:"Gobikha"},
+      {subject:"Business Analytics",mentor:"Gobikha"},
+      {subject:"Aptitude",mentor:"Akshaya"},
+      {subject:"Effective Communication",mentor:"Vaishnavi"},
+      {subject:"Recruitment Essentails and Career Competency Enhancement",mentor:"Preethi"}
+    ],
+    "II B.Sc CS AI & ML": [
+      {subject:"Tamil III",mentor:"Anbarasu"},
+      {subject:"English for Career Development",mentor:"Preethi"},
+      {subject:"DSA",mentor:"Priyanshi"},
+      {subject:"DBMS",mentor:"Ruchi Yadav"},
+      {subject:"Robotics Process Automation",mentor:"Priyanshi"},
+      {subject:"Business Analytics",mentor:"Ruchi Yadav"},
+      {subject:"Personal Developement and Soft Skills",mentor:"Akshaya"}
+    ],
+    "II B.Com FinTech with AI": [
+      {subject:"Tamil III",mentor:"Anbarasu"},
+      {subject:"English for Career Development",mentor:"Vaishnavi"},
+      {subject:"Corporate Accounting",mentor:"Nangeswari"},
+      {subject:"Managerial Economics",mentor:"Anish"},
+      {subject:"Ethics of AI in Financial Decision Making",mentor:"Nangeswari"},
+      {subject:"Financial Management",mentor:"Anish"},
+      {subject:"Problem Solving through Aptitude- III",mentor:"Akshaya"}
+    ],
+    "I B.Sc CS AI & ML": [
+      {subject:"Tamil I",mentor:"Anbarasu"},
+      {subject:"English for Communication",mentor:"Vaishnavi"},
+      {subject:"Introduction to Python Programming",mentor:"Ruchi Yadav"},
+      {subject:"Design for Developer (UI $ UX)",mentor:"Priyanshi"},
+      {subject:"FCA",mentor:"Priyanshi"},
+      {subject:"Maths",mentor:"Akshaya"},
+      {subject:"Aptitude",mentor:"Akshaya"}
+    ],
+    "I B.Com FinTech with AI": [
+      {subject:"Tamil I",mentor:"Anbarasu"},
+      {subject:"English for Communication",mentor:"Preethi"},
+      {subject:"Principles of Financial Accounting",mentor:"Anish"},
+      {subject:"Principles of Management",mentor:"Anish"},
+      {subject:"Introduction to FinTech",mentor:"Nangeswari"},
+      {subject:"Business Mathematics and Statistics",mentor:"Nangeswari"},
+      {subject:"Aptitude",mentor:"Akshaya"}
+    ]
+  },
+  "Study World Group of Institution": {
+    "I BCA": [
+      {subject:"English I",mentor:"Santhiya"},
+      {subject:"Programming Concept with C and C++",mentor:"Anupriya"},
+      {subject:"Programming C and C++ - Core Lab 1",mentor:"Anupriya"},
+      {subject:"Digital Fundamentals and and Computer Architecture",mentor:"Dhamayandhi"},
+      {subject:"Environmental Studies",mentor:"Santhiya"}
+    ],
+    "II BCA": [
+      {subject:"General English III",mentor:"Santhiya"},
+      {subject:"Data Structure",mentor:"Dhamayandhi"},
+      {subject:"RDBMS Programming",mentor:"Dhamayandhi"},
+      {subject:"RDBMS Programming Lab - Core Lab  4",mentor:"Dhamayandhi"},
+      {subject:"Web Application Development",mentor:"Anupriya"}
+    ]
+  },
+  "Kristu Jayanti (DEEMED TO BE UNIVERSITY)": {
+    "II BBA - AI & DS": [
+      {subject:"System and Solution Thinking for Management",mentor:"Lakshaya"},
+      {subject:"Data Visualization using Artificial Intelligence Tools",mentor:"Deepali Gupta"},
+      {subject:"Power BI",mentor:"Deepali Gupta"}
+    ],
+    "II BBA FinTech": [
+      {subject:"Blockchain and cryptocurrencies in Financial Services",mentor:"Nithin "},
+      {subject:"SQL",mentor:"Amitha"}
+    ],
+    "I BBA AI & DS": [
+      {subject:"Applied AI in Business",mentor:"Deepali Gupta"},
+      {subject:"Principles of Data Science",mentor:"Lakshaya"},
+      {subject:"Python Programming",mentor:"Lakshaya"}
+    ],
+    "I BBA FinTech": [
+      {subject:"Spreadsheet for Managers ( Excel)",mentor:"Amitha "}
+    ]
+  },
+  "Rathinam Global Deemed to be University": {
+    "II BCA (AI)": [
+      {subject:"Machine Learning",mentor:"Buvaneshwari"},
+      {subject:"Machine Learning - Lab",mentor:"Buvaneshwari"},
+      {subject:"Full Stack Web Development ",mentor:"Gokilavaani"},
+      {subject:"Discrete Mathematics",mentor:"Kirthika"},
+      {subject:"Personal Development and Soft Skills",mentor:"Akhila"},
+      {subject:"General English",mentor:"Akhila"}
+    ],
+    "II B.Sc CT (GenAI)": [
+      {subject:"Machine Learning",mentor:"Buvaneshwari"},
+      {subject:"Generative AI - Lab",mentor:"Goutham"},
+      {subject:"Personal Development And Soft Skill",mentor:"Megavarshini"},
+      {subject:"Discrete Mathematics",mentor:"Kirthika"},
+      {subject:"General English",mentor:"Megavarshini"},
+      {subject:"Problem Solving through Aptittude - I",mentor:"Kirthika"}
+    ],
+    "I BCA (AI)": [
+      {subject:"Python and Concurrent Programming",mentor:"Karthika"},
+      {subject:"Computer Architecture and GPU Computing",mentor:"Gokilavaani"},
+      {subject:"Web Technologies",mentor:"Gokilavaani"},
+      {subject:"Linear Algebra and Vector Spaces for AI",mentor:"Anushruthi"},
+      {subject:"Python and REST API Lab",mentor:"Karthika"},
+      {subject:"AI Developer Tools and Prompt Engineering",mentor:"Goutham"},
+      {subject:"Problem Solving through Aptitude - I",mentor:"Anushruthi"}
+    ],
+    "I B.Sc CT (GenAI)": [
+      {subject:"Python and Concurrent Programming",mentor:"Karthika"},
+      {subject:"Computer Architecture and GPU Computing",mentor:"Gokilavaani"},
+      {subject:"Data Engineering and Pipeline Architectures",mentor:"Buvaneshwari"},
+      {subject:"Linear Algebra and Vector Spaces for AI",mentor:"Anushruthi"},
+      {subject:"Python and REST API Lab",mentor:"Karthika"},
+      {subject:"AI Developer Tools and Prompt Engineering",mentor:"Goutham"},
+      {subject:"Problem Solving through Aptitude - I",mentor:"Anushruthi"}
+    ]
+  },
+  "AMET University": {
+    "III B.Sc AI & ML": [
+      {subject:"Generative AI",mentor:"Aakaash"},
+      {subject:"Natural Language Processing",mentor:"Tamilarasan"},
+      {subject:"Capstone Project",mentor:"Tamilarasan"},
+      {subject:"Placement Training Skill Development",mentor:"Catherin Sweety"},
+      {subject:"Data Warehousing and Mining",mentor:"Nishanta Kakati"},
+      {subject:"Deep Learning",mentor:"Aakaash"},
+      {subject:"Reinforcement Learning Laboratory",mentor:"Parthajit Konwar"},
+      {subject:"Aptitude",mentor:"Surya"}
+    ],
+    "II B.Sc AI & ML": [
+      {subject:"Data Structures and Algorithms",mentor:"Nishanta Kakati"},
+      {subject:"Effective Communication Skill Development",mentor:"Catherin Sweety"},
+      {subject:"Business Analytics Laboratory",mentor:"Aakaash"},
+      {subject:"Database Management Systems Laboratory",mentor:"Tamilarasan"},
+      {subject:"Operating Systems",mentor:"Vishal Kumar"},
+      {subject:"Principles of Management",mentor:"Ansila"},
+      {subject:"Aptitude",mentor:"Surya"},
+      {subject:"Environmental Studies",mentor:"Sabitha Shanmugam"}
+    ],
+    "II B.Sc AI & DS": [
+      {subject:"Data Structures and Algorithms",mentor:"Vishal Kumar"},
+      {subject:"Effective Communication Skill Development",mentor:"Catherin Sweety"},
+      {subject:"Business Analytics Laboratory",mentor:"Aakaash"},
+      {subject:"Database Management Systems Laboratory",mentor:"Nishanta Kakati"},
+      {subject:"Operating Systems",mentor:"Nishanta Kakati"},
+      {subject:"Principles of Management",mentor:"Ansila"},
+      {subject:"Aptitude",mentor:"Surya"},
+      {subject:"Environmental Studies",mentor:"Afridkhan"}
+    ],
+    "II B.Com Fintech with AI": [
+      {subject:"Cost Accounting",mentor:"Santhosh Kumar"},
+      {subject:"Effective Communication Skills",mentor:"Sabitha Shanmugam"},
+      {subject:"Financial Management",mentor:"Santhosh Kumar"},
+      {subject:"Governance and Ethics of Financial Services",mentor:"Santhosh Kumar"},
+      {subject:"Accounting Standards for BFSI Industry",mentor:"Santhosh Kumar"},
+      {subject:"Banking Technology and Digital Payments",mentor:"Ansila"},
+      {subject:"Elective Digital Marketing and E-Commerce Consumer Behaviour",mentor:"Sruthi"},
+      {subject:"Entrepreneurship and Startup Fundamentals",mentor:"Santhosh Kumar"},
+      {subject:"Aptitude",mentor:"Jayashree R"}
+    ],
+    "II BBA E-Commerce & Digital Marketing": [
+      {subject:"Business Statistics and Data Research",mentor:"Sruthi"},
+      {subject:"Effective Communication Skills",mentor:"Sabitha Shanmugam"},
+      {subject:"Logistics and E-Commerce trends",mentor:"Sruthi"},
+      {subject:"Aptitude",mentor:"Surya"},
+      {subject:"Capstone Projects – II",mentor:"Sruthi"},
+      {subject:"Financial Accounting",mentor:"Ansila"},
+      {subject:"Product Sourcing and Inventory Management",mentor:"Ansila"},
+      {subject:"Omnichannel Marketing and Customer Journey",mentor:"Sruthi"},
+      {subject:"Strategic Management",mentor:"Ansila"}
+    ],
+    "I B.Sc AI & DS": [
+      {subject:"Python Programming",mentor:"Praveen Yadavalli"},
+      {subject:"Design for Developers (UI and UX)",mentor:"Praveen Yadavalli"},
+      {subject:"Effective Communication for Professionals",mentor:"Afridkhan"},
+      {subject:"Mathematics for AI",mentor:"Surya"},
+      {subject:"Problem solving through Aptitude – I Laboratory",mentor:"Surya"},
+      {subject:"Fundamentals and Computer Architecture",mentor:"Vishal Kumar"}
+    ],
+    "I B.Com Fintech with AI": [
+      {subject:"Effective Communication Skills",mentor:"Sabitha Shanmugam"},
+      {subject:"Introduction to FinTech",mentor:"Jayashree B"},
+      {subject:"Principles of Financial Accounting",mentor:"Jayashree B"},
+      {subject:"Problem solving through Aptitude - I",mentor:"Jayashree R"},
+      {subject:"Business Economics",mentor:"Jayashree B"},
+      {subject:"Business Mathematics and Statistics",mentor:"Jayashree R"},
+      {subject:"Principles of Management",mentor:"Jayashree B"}
+    ],
+    "I B.Tech. AI & DS": [
+      {subject:"Logic Building using Java",mentor:"Parthajit Konwar"},
+      {subject:"Workplace English for Engineers",mentor:"Afridkhan"},
+      {subject:"AI-Centric Design Thinking",mentor:"Parthajit Konwar"},
+      {subject:"Statistics for Data Science",mentor:"Jayashree R"},
+      {subject:"Web Interfaces for AI Applications",mentor:"Parthajit Konwar"},
+      {subject:"Low Code and No Code App Development",mentor:"Praveen Yadavalli"},
+      {subject:"Aptitude",mentor:"Jayashree R"}
+    ]
+  },
+  "Sasurie College of Arts & Science": {
+    "II B.Sc CS": [
+      {subject:"Data Strucutures",mentor:"Arunraj"},
+      {subject:"Python Programming - FOP",mentor:"Jagadeesan"},
+      {subject:"Python Programming Lab",mentor:"Jagadeesan"},
+      {subject:"Machine Learning",mentor:"Jagadeesan"},
+      {subject:"Software Engineering and Software Project Management",mentor:"Abirami"}
+    ],
+    "II B.Sc IT": [
+      {subject:"Data Strucutures",mentor:"Arunraj"},
+      {subject:"RDBMS Programming ",mentor:"Abirami"},
+      {subject:"Programming Lab- RDBMS",mentor:"Abirami"},
+      {subject:"Microprocessor and its Applications",mentor:"Abirami"},
+      {subject:"Web Application Development",mentor:"Jagadeesan"}
+    ],
+    "II B.Sc CS AI & DS": [
+      {subject:"Java Programming",mentor:"Abirami"},
+      {subject:"Java Programming Lab",mentor:"Abirami"},
+      {subject:"Foundation of Artificial Intelligence",mentor:"Jagadeesan"},
+      {subject:"Operating System Design",mentor:"Arunraj"},
+      {subject:"Data Analytics",mentor:"Arunraj"}
+    ],
+    "II B.Com PA": [
+      {subject:"Higher Financial Accounting",mentor:"Sarumathi"},
+      {subject:"Company Law",mentor:"Sarumathi"},
+      {subject:"Computer Applications Practical",mentor:"Sarumathi"},
+      {subject:"Stock Market Operations",mentor:"Sarumathi"}
+    ],
+    "II BBA CA": [
+      {subject:"Financial Accounting",mentor:"Sarumathi"},
+      {subject:"Production and Materials Management",mentor:"Kowsalya"},
+      {subject:"Business Law",mentor:"Kowsalya"},
+      {subject:"PC-Software MS-Office (Practical)",mentor:"Kowsalya"}
+    ]
+  },
+  "St. Agnes College (Autonomous)": {
+    "II B.Com AIML": [
+      {subject:"Python For Financial Intelligence",mentor:"Akarsh"},
+      {subject:"SQL For Financial management",mentor:"Akarsh"},
+      {subject:"Exploratory Data Analysis",mentor:"Akarsh"}
+    ]
+  },
+  "Alliance University": {
+  "II MCA (Data Science)": [
+    {subject:"Data Analytics for Business",mentor:"Aman"},
+    {subject:"Data Mining and Big Data Analytics",mentor:"Nagasri"},
+    {subject:"Deep Learning Models and Applications",mentor:"Sanjivini"},
+    {subject:"Engineering Principles of Software",mentor:"Gomathy"},
+    {subject:"NLP Algorithms and Applications",mentor:"Nagasri"},
+    {subject:"Professional Skill Development",mentor:"Dharshinee"}
+  ],
+  "II MCA (Generative AI)": [
+    {subject:"Generative Models and Applications",mentor:"Sanjivini"},
+    {subject:"Deep Learning Models and Applications",mentor:"Sanjivini"},
+    {subject:"Engineering Principles of Software",mentor:"Gomathy"},
+    {subject:"NLP Algorithms and Applications",mentor:"Nagasri"},
+    {subject:"Professional Skill Development",mentor:"Dharshinee"}
+  ],
+  "II MCA (General)": [
+    {subject:"Web Technologies",mentor:"Veera Raghav"},
+    {subject:"Quality Assurance in Software Development",mentor:"Veera Raghav"},
+    {subject:"Artificial Intelligence: Concepts and Applications",mentor:"Gomathy"},
+    {subject:"Engineering Principles of Software",mentor:"Gomathy"},
+    {subject:"Data Mining and Warehousing",mentor:"Nagasri"},
+    {subject:"Professional Skill Development",mentor:"Dharshinee"}
+  ],
+  "I MCA": [
+    {subject:"Discrete Structures",mentor:"Pramisha"},
+    {subject:"Communication and Life Skills - I",mentor:"Dharshinee"},
+    {subject:"Problem solving through Aptitude - I",mentor:"Ajiith Pandian"},
+    {subject:"Mastering Python: From Basics to Advanced",mentor:"Kushal I Huddar"},
+    {subject:"Advanced Data Science Techniques",mentor:"Durga Bravish"},
+    {subject:"Advanced UI and UX Design for Developers",mentor:"Abhishek A"},
+    {subject:"Front-End Frameworks and Technologies",mentor:"Veera Raghav"}
+  ],
+  "III BCA (Data Science)": [
+    {subject:"Deep Learning",mentor:"Nagasri"},
+    {subject:"Business Analytics",mentor:"Aman"},
+    {subject:"Introduction to Internet of Things (IoT)",mentor:"Durga Bravish"},
+    {subject:"Recruitment Essentials",mentor:"Ajiith Pandian"},
+    {subject:"Career Competency Enhancement",mentor:"Dharshinee"}
+  ],
+  "III BCA (AIML)": [
+    {subject:"Deep Learning",mentor:"Nagasri"},
+    {subject:"Generative AI",mentor:"Sanjivini"},
+    {subject:"Business Analytics",mentor:"Aman"},
+    {subject:"Introduction to Internet of Things (IoT)",mentor:"Durga Bravish"},
+    {subject:"Recruitment Essentials",mentor:"Ajiith Pandian"},
+    {subject:"Career Competency Enhancement",mentor:"Dharshinee"}
+  ],
+  "III BCA (Game Development)": [
+    {subject:"Mobile Game Development",mentor:"Abhishek A"},
+    {subject:"Software Testing & Quality Assurance",mentor:"Kushal I Huddar"},
+    {subject:"Introduction to Virtual Reality (VR) and Augmented Reality (AR)",mentor:"Abhishek A"},
+    {subject:"Project Management",mentor:"Ajiith Pandian"},
+    {subject:"Recruitment Essentials",mentor:"Ajiith Pandian"},
+    {subject:"Career Competency Enhancement",mentor:"Dharshinee"}
+  ],
+  "II BCA (Data Science)": [
+    {subject:"Machine Learning Fundamentals",mentor:"Gomathy"},
+    {subject:"Data Visualization",mentor:"Durga Bravish"},
+    {subject:"Database Management Systems",mentor:"Renita Joy"},
+    {subject:"Probability and Statistical Inference",mentor:"Pramisha"},
+    {subject:"Interpersonal and Essential Skills - III",mentor:"Dharshinee"}
+  ],
+  "II BCA (AIML)": [
+    {subject:"Machine Learning Fundamentals",mentor:"Gomathy"},
+    {subject:"Data Visualization",mentor:"Durga Bravish"},
+    {subject:"Database Management Systems",mentor:"Renita Joy"},
+    {subject:"Probability and Statistical Inference",mentor:"Pramisha"},
+    {subject:"Interpersonal and Essential Skills - III",mentor:"Dharshinee"}
+  ],
+  "II BCA (Game Development)": [
+    {subject:"Database Management Systems",mentor:"Renita Joy"},
+    {subject:"Interpersonal and Essential Skills - III",mentor:"Dharshinee"},
+    {subject:"Mobile Application Development",mentor:"Abhishek A"},
+    {subject:"Computer Graphics",mentor:"Abhishek A"},
+    {subject:"Front-End Web Development",mentor:"Veera Raghav"}
+  ],
+  "I BCA": [
+    {subject:"Mathematics for Computing",mentor:"Pramisha"},
+    {subject:"Python Programming",mentor:"Renita Joy"},
+    {subject:"Python Programming-Lab",mentor:"Renita Joy"},
+    {subject:"Fundamentals of Computer",mentor:"Shremya"},
+    {subject:"Operating Systems",mentor:"Shremya"},
+    {subject:"Interpersonal and Essential Skills - I",mentor:"Dharshinee"},
+    {subject:"Analytical Reasoning and Problem Solving - I",mentor:"Ajiith Pandian"}
+  ]
+}
+};
+
+// ─── POPULATE COLLEGE DROPDOWN FROM DATA ──────────────────────────────────────
+(function populateColleges() {
+  const sel = document.getElementById('collegeName');
+  Object.keys(COLLEGE_DATA).forEach(name => {
+    const o = document.createElement('option');
+    o.value = name; o.textContent = name;
+    sel.appendChild(o);
+  });
+})();
+
+// ─── COLLEGE → DEPARTMENT ─────────────────────────────────────────────────────
+document.getElementById('collegeName').addEventListener('change', function () {
+  const college = this.value;
+  const deptSel = document.getElementById('department');
+  deptSel.innerHTML = '<option value="" disabled selected>Select your department</option>';
+  document.getElementById('facultySections').innerHTML = '';
+  document.getElementById('dynamicContent').style.display = 'none';
+  if (COLLEGE_DATA[college]) {
+    deptSel.disabled = false;
+    Object.keys(COLLEGE_DATA[college]).forEach(d => {
+      const o = document.createElement('option');
+      o.value = d; o.textContent = d;
+      deptSel.appendChild(o);
+    });
+  } else {
+    deptSel.disabled = true;
+    deptSel.innerHTML = '<option value="" disabled selected>No departments available</option>';
+  }
+  updateProgress();
+});
+
+document.getElementById('department').addEventListener('change', function () {
+  const college = document.getElementById('collegeName').value;
+  const dept = this.value;
+  const container = document.getElementById('facultySections');
+  container.innerHTML = '';
+  if (!COLLEGE_DATA[college] || !COLLEGE_DATA[college][dept]) return;
+  COLLEGE_DATA[college][dept].forEach((sub, idx) => {
+    const sec = document.createElement('div');
+    sec.className = 'section';
+    sec.style.animationDelay = `${0.15 + idx * 0.05}s`;
+    sec.innerHTML = sub.isElective ? buildElective(sub, idx) : buildCard(sub, idx);
+    container.appendChild(sec);
+  });
+  document.getElementById('dynamicContent').style.display = 'block';
+  updateProgress();
+});
+
+// ─── SUPABASE STUDENT AUTO-FILL & LOCKING ───────────────────────────────────
+const SUPABASE_URL = "https://scuvqabxqqtvibjutoyj.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_wptvdh6rVvEy2uSppa4Ckw_ozPuC6L4";
+const sb = (window.supabase && typeof window.supabase.createClient === 'function')
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+let lookupTimeout = null;
+let lastLookedUpReg = null;
+
+function normalizeText(s) {
+  return String(s || '').toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/computer science/g, 'cs')
+    .replace(/artificial intelligence/g, 'ai')
+    .replace(/machine learning/g, 'ml')
+    .replace(/data science/g, 'ds')
+    .replace(/cloud computing/g, 'cc')
+    .replace(/digital marketing/g, 'dm')
+    .replace(/business analytics/g, 'ba')
+    .replace(/computer technology/g, 'ct')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findBestMatchingCollege(target) {
+  if (!target) return null;
+  const colleges = Object.keys(COLLEGE_DATA);
+  const nTarget = normalizeText(target);
+  
+  // 1. Exact match
+  for (const c of colleges) {
+    if (normalizeText(c) === nTarget) return c;
+  }
+  // 2. Substring match
+  for (const c of colleges) {
+    const nc = normalizeText(c);
+    if (nc.includes(nTarget) || nTarget.includes(nc)) return c;
+  }
+  // 3. Distinctive keyword match
+  const stopWords = new Set(['college', 'arts', 'science', 'women', 'womens', 'university', 'deemed', 'the', 'for', 'of', 'and', 'institution', 'school', 'centre', 'group', 'to', 'be']);
+  const targetWords = nTarget.split(' ').filter(w => !stopWords.has(w) && w.length > 2);
+  
+  let best = null;
+  let maxMatch = 0;
+  for (const c of colleges) {
+    const ncWords = new Set(normalizeText(c).split(' ').filter(w => !stopWords.has(w) && w.length > 2));
+    let matchCount = 0;
+    targetWords.forEach(w => {
+      if (ncWords.has(w)) matchCount++;
+    });
+    if (matchCount > maxMatch) {
+      maxMatch = matchCount;
+      best = c;
+    }
+  }
+  return best;
+}
+
+function findBestMatchingDepartment(collegeKey, targetDept) {
+  if (!collegeKey || !COLLEGE_DATA[collegeKey] || !targetDept) return null;
+  const depts = Object.keys(COLLEGE_DATA[collegeKey]);
+  const nTarget = normalizeText(targetDept);
+  
+  let bestDept = depts[0];
+  let maxScore = -1;
+
+  const isShift2 = nTarget.includes('shift 2') || nTarget.includes('shift2');
+  const isShift1 = nTarget.includes('shift 1') || nTarget.includes('shift1');
+  const isYear3 = /\b(iii|3rd|3|third)\b/.test(nTarget);
+  const isYear2 = /\b(ii|2nd|2|second)\b/.test(nTarget) && !isYear3;
+  const isYear1 = (/\b(i|1st|1|first)\b/.test(nTarget) || !nTarget.includes('ii')) && !isYear2 && !isYear3;
+
+  const targetWords = nTarget.split(' ').filter(w => w.length > 1);
+
+  for (const d of depts) {
+    const nd = normalizeText(d);
+    let score = 0;
+
+    const dYear3 = /\b(iii|3rd|3|third)\b/.test(nd);
+    const dYear2 = /\b(ii|2nd|2|second)\b/.test(nd) && !dYear3;
+    const dYear1 = (/\b(i|1st|1|first)\b/.test(nd) || !nd.includes('ii')) && !dYear2 && !dYear3;
+
+    if (isYear3 && dYear3) score += 6;
+    else if (isYear2 && dYear2) score += 6;
+    else if (isYear1 && dYear1) score += 6;
+    else if ((isYear3 && (dYear1 || dYear2)) || (isYear2 && (dYear1 || dYear3)) || (isYear1 && (dYear2 || dYear3))) score -= 4;
+
+    const dShift2 = nd.includes('shift 2') || nd.includes('shift2');
+    const dShift1 = nd.includes('shift 1') || nd.includes('shift1');
+    if (isShift2 && dShift2) score += 6;
+    else if (isShift1 && dShift1) score += 6;
+    else if (isShift2 && dShift1) score -= 6;
+    else if (isShift1 && dShift2) score -= 6;
+
+    targetWords.forEach(w => {
+      if (nd.includes(w)) score += 2;
+    });
+
+    if (score > maxScore) {
+      maxScore = score;
+      bestDept = d;
+    }
+  }
+
+  return bestDept;
+}
+
+function setFieldLocked(el, locked) {
+  if (!el) return;
+  if (locked || el.id === 'studentName' || el.id === 'studentEmail') {
+    el.classList.add('locked-field');
+    el.setAttribute('readonly', 'true');
+  } else {
+    el.classList.remove('locked-field');
+    el.removeAttribute('readonly');
+  }
+}
+
+function setSelectLocked(selectEl, locked) {
+  if (!selectEl) return;
+  const wrap = selectEl.closest('.select-wrapper');
+  if (locked || selectEl.id === 'collegeName' || selectEl.id === 'department') {
+    selectEl.classList.add('locked-field');
+    if (wrap) wrap.classList.add('locked-select-wrapper');
+  } else {
+    selectEl.classList.remove('locked-field');
+    if (wrap) wrap.classList.remove('locked-select-wrapper');
+  }
+}
+
+function unlockAllAutoFields() {
+  const nameEl = document.getElementById('studentName');
+  const emailEl = document.getElementById('studentEmail');
+  const collegeEl = document.getElementById('collegeName');
+  const deptEl = document.getElementById('department');
+
+  if (nameEl) {
+    nameEl.value = '';
+    setFieldLocked(nameEl, true);
+  }
+  if (emailEl) {
+    emailEl.value = '';
+    setFieldLocked(emailEl, true);
+  }
+  if (collegeEl) {
+    collegeEl.value = '';
+    setSelectLocked(collegeEl, true);
+  }
+  if (deptEl) {
+    deptEl.innerHTML = '<option value="" disabled selected>Auto-selected from Register Number</option>';
+    deptEl.value = '';
+    setSelectLocked(deptEl, true);
+  }
+}
+
+async function lookupStudentByRegNo(regNo) {
+  const cleanReg = (regNo || '').trim().toUpperCase();
+  const nameEl = document.getElementById('studentName');
+  const emailEl = document.getElementById('studentEmail');
+  const collegeEl = document.getElementById('collegeName');
+  const deptEl = document.getElementById('department');
+
+  // Auto-generate email based on register number
+  if (emailEl) {
+    if (cleanReg) {
+      emailEl.value = cleanReg.includes('@') ? cleanReg.toLowerCase() : `${cleanReg.toLowerCase()}@university.edu`;
+      emailEl.closest('.field')?.classList.remove('error');
+    } else {
+      emailEl.value = '';
+    }
+    setFieldLocked(emailEl, true);
+  }
+
+  if (!cleanReg || cleanReg.length < 3) {
+    unlockAllAutoFields();
+    lastLookedUpReg = null;
+    return;
+  }
+
+  if (cleanReg === lastLookedUpReg) return;
+  lastLookedUpReg = cleanReg;
+
+  try {
+    let student = null;
+    if (sb) {
+      const { data: recs, error } = await sb
+        .from('helpdesk_students')
+        .select('*')
+        .ilike('roll_number', cleanReg)
+        .limit(1);
+      if (!error && recs && recs.length > 0) {
+        student = recs[0];
+      }
+    }
+
+    if (student) {
+      // 1. Auto-fill and Lock Name
+      if (nameEl) {
+        nameEl.value = student.name || '';
+        nameEl.closest('.field')?.classList.remove('error');
+        setFieldLocked(nameEl, true);
+      }
+
+      // 2. Auto-fill and Lock Email
+      if (emailEl) {
+        if (student.email) {
+          emailEl.value = student.email;
+        } else {
+          emailEl.value = cleanReg.includes('@') ? cleanReg.toLowerCase() : `${cleanReg.toLowerCase()}@university.edu`;
+        }
+        setFieldLocked(emailEl, true);
+        emailEl.closest('.field')?.classList.remove('error');
+      }
+
+      // 3. Match & Auto-Select College
+      const matchedCollege = findBestMatchingCollege(student.college);
+      if (matchedCollege && collegeEl) {
+        collegeEl.value = matchedCollege;
+        collegeEl.closest('.field')?.classList.remove('error');
+        
+        // Trigger college change to populate departments
+        collegeEl.dispatchEvent(new Event('change'));
+
+        // 4. Match & Auto-Select Department
+        const matchedDept = findBestMatchingDepartment(matchedCollege, student.department);
+        if (matchedDept && deptEl) {
+          deptEl.value = matchedDept;
+          deptEl.disabled = false;
+          deptEl.closest('.field')?.classList.remove('error');
+          deptEl.dispatchEvent(new Event('change'));
+          setSelectLocked(deptEl, true);
+        }
+        setSelectLocked(collegeEl, true);
+      }
+      updateProgress();
+    } else {
+      unlockAllAutoFields();
+    }
+  } catch (err) {
+    console.error("Student lookup error:", err);
+    unlockAllAutoFields();
+  }
+}
+
+// Register Number event listeners
+const regInp = document.getElementById('regNumber');
+if (regInp) {
+  regInp.addEventListener('input', function() {
+    const val = this.value.trim();
+    const emailEl = document.getElementById('studentEmail');
+    if (emailEl) {
+      emailEl.value = val ? (val.includes('@') ? val.toLowerCase() : `${val.toLowerCase()}@university.edu`) : '';
+      if (emailEl.value) {
+        emailEl.closest('.field')?.classList.remove('error');
+      }
+    }
+    clearTimeout(lookupTimeout);
+    lookupTimeout = setTimeout(() => {
+      lookupStudentByRegNo(val);
+    }, 350);
+  });
+  regInp.addEventListener('blur', function() {
+    lookupStudentByRegNo(this.value);
+  });
+  regInp.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      lookupStudentByRegNo(this.value);
+    }
+  });
+}
+
+function buildScaleHtml(n) {
+  let btns = '';
+  for (let v = 1; v <= 5; v++) {
+    btns += `<div class="scale-circle-wrap">
+      <input type="radio" id="sr${n}v${v}" name="s${n}_rating" value="${v}" ${v===1?'required':''}>
+      <label for="sr${n}v${v}" data-v="${v}"><span class="s-num">${v}</span><span class="s-word">${SCALE_WORDS[v]}</span></label>
+      <div class="s-circle-label">${SCALE_WORDS[v]}</div>
+    </div>`;
+  }
+  return `<div class="rating-block" id="ratingBlock${n}">
+    <div class="rating-block-title">Overall Rating — Rate your faculty based on your learning experience</div>
+    <div class="scale-btns" id="scaleBtns${n}">${btns}</div>
+    <div class="err-msg" style="margin-top:4px;">Please select a rating</div>
+  </div>`;
+}
+
+function buildCard(sub, idx) {
+  const n = idx + 1;
+  let qs = '';
+  QUESTIONS.forEach((q, qi) => {
+    const yId = `s${n}q${qi}y`, nId = `s${n}q${qi}n`;
+    qs += `<div class="yn-row" id="yn_${n}_${qi}">
+      <span class="yn-qnum">Q${qi+1}</span>
+      <span class="yn-text">${q}</span>
+      <div class="yn-btns">
+        <input type="radio" id="${yId}" name="s${n}_q${qi}" value="Yes" required>
+        <label for="${yId}" class="yes-lbl">Yes</label>
+        <input type="radio" id="${nId}" name="s${n}_q${qi}" value="No">
+        <label for="${nId}" class="no-lbl">No</label>
+      </div>
+    </div>`;
+  });
+  return `
+    <input type="hidden" name="subject${n}_Name" value="${sub.subject}">
+    <input type="hidden" name="subject${n}_Mentor" value="${sub.mentor}">
+    <div class="faculty-header">
+      <div class="faculty-avatar">${n}</div>
+      <div class="faculty-meta">
+        <div class="faculty-name">${sub.mentor}</div>
+        <div class="faculty-subject">${sub.subject}</div>
+      </div>
+    </div>
+    ${buildScaleHtml(n)}
+    <div class="yn-list">${qs}</div>
+    <div class="err-msg" id="err_${n}" style="margin-top:8px;">Please answer all questions for this faculty</div>`;
+}
+
+function buildElective(sub, idx) {
+  const n = idx + 1;
+  const opts = sub.electiveOptions.map((o,oi) =>
+    `<option value="${oi}" data-mentor="${o.mentor}">${o.label}</option>`
+  ).join('');
+  let qs = '';
+  QUESTIONS.forEach((q, qi) => {
+    const yId = `s${n}q${qi}y`, nId = `s${n}q${qi}n`;
+    qs += `<div class="yn-row" id="yn_${n}_${qi}">
+      <span class="yn-qnum">Q${qi+1}</span><span class="yn-text">${q}</span>
+      <div class="yn-btns">
+        <input type="radio" id="${yId}" name="s${n}_q${qi}" value="Yes" class="elective-r-${n}">
+        <label for="${yId}" class="yes-lbl">Yes</label>
+        <input type="radio" id="${nId}" name="s${n}_q${qi}" value="No" class="elective-r-${n}">
+        <label for="${nId}" class="no-lbl">No</label>
+      </div>
+    </div>`;
+  });
+  return `
+    <input type="hidden" name="subject${n}_Name" id="electSubj${n}">
+    <input type="hidden" name="subject${n}_Mentor" id="electMentor${n}">
+    <div class="section-title" style="margin-bottom:16px;">
+      <div class="icon icon-purple">${n}</div>
+      ${sub.subject}
+      <span style="font-size:11px;font-weight:400;color:var(--accent2);margin-left:4px;">(Choose your elective)</span>
+    </div>
+    <div class="field" style="margin-bottom:16px;">
+      <label>Select Your Elective <span class="req">*</span></label>
+      <div class="select-wrapper">
+        <select id="electSel${n}" required onchange="handleElective(this,${n})">
+          <option value="" disabled selected>— Choose elective subject —</option>
+          ${opts}
+        </select>
+      </div>
+      <div class="err-msg">Please select an elective</div>
+    </div>
+    <div id="electDetail${n}" style="display:none;">
+      <div class="elective-mentor-badge"><span id="electMentorDisplay${n}">—</span></div>
+      ${buildScaleHtml(n)}
+      <div class="yn-list">${qs}</div>
+      <div class="err-msg" id="err_${n}" style="margin-top:8px;">Please answer all questions for this faculty</div>
+    </div>`;
+}
+
+function handleElective(sel, n) {
+  const chosen = sel.options[sel.selectedIndex];
+  const mentor = chosen.getAttribute('data-mentor');
+  document.getElementById(`electMentorDisplay${n}`).textContent = mentor;
+  document.getElementById(`electMentor${n}`).value = mentor;
+  document.getElementById(`electSubj${n}`).value = chosen.textContent;
+  document.getElementById(`electDetail${n}`).style.display = 'block';
+  document.querySelectorAll(`.elective-r-${n}`).forEach(r => r.required = true);
+  document.querySelectorAll(`[name="s${n}_rating"]`).forEach(r => r.required = true);
+  updateProgress();
+}
+
+function toggleCheck(labelEl, id, mode) {
+  const cb = document.getElementById(id);
+  if (mode === 'exclusive') {
+    const wasChecked = cb.checked;
+    CHALLENGE_IDS.forEach(cid => {
+      const el = document.getElementById(cid);
+      if (el) { el.checked = false; el.closest('.check-item').classList.remove('checked'); }
+    });
+    if (!wasChecked) { cb.checked = true; labelEl.classList.add('checked'); }
+  } else {
+    const noneEl = document.getElementById('challenge_none');
+    if (noneEl) { noneEl.checked = false; noneEl.closest('.check-item').classList.remove('checked'); }
+    cb.checked = !cb.checked;
+    labelEl.classList.toggle('checked', cb.checked);
+  }
+  document.getElementById('challengeErr').style.display = 'none';
+  updateProgress();
+}
+
+function atLeastOneChallengeSelected() {
+  return CHALLENGE_IDS.some(id => { const el = document.getElementById(id); return el && el.checked; });
+}
+
+function updateProgress() {
+  let req = 0, done = 0;
+  const groups = new Set();
+  document.querySelectorAll('[required]').forEach(el => {
+    if (el.offsetParent === null) return;
+    if (el.type === 'radio') { groups.add(el.name); return; }
+    if (el.type === 'hidden') return;
+    req++;
+    if (el.tagName === 'SELECT') { if (el.value) done++; }
+    else { if (el.value.trim()) done++; }
+  });
+  groups.forEach(name => {
+    req++;
+    if (document.querySelector(`[name="${name}"]:checked`)) done++;
+  });
+  req++;
+  if (atLeastOneChallengeSelected()) done++;
+  const pct = Math.min(100, Math.round((done / Math.max(req, 1)) * 100));
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('pct').textContent = pct + '%';
+}
+
+document.addEventListener('change', e => {
+  if (e.target.name === 'ape_q2') {
+    const wrap = document.getElementById('ape_q2_detail_wrap');
+    const ta = document.getElementById('ape_q2_detail');
+    if (e.target.value === 'No') { wrap.classList.add('visible'); ta.required = true; }
+    else { wrap.classList.remove('visible'); ta.required = false; ta.value = ''; const f = ta.closest('.field'); if(f) f.classList.remove('error'); }
+  }
+  if (e.target.type === 'radio' && e.target.name && e.target.name.endsWith('_rating')) {
+    const sb = e.target.closest('.scale-btns'); if(sb) sb.classList.add('has-selection');
+    const rb = e.target.closest('.rating-block'); if(rb) rb.classList.remove('error-rating');
+  }
+  if (e.target.name === 'ape_q3_rating') { document.getElementById('apeScaleBtns3').classList.add('has-selection'); document.getElementById('ape_q3_block').classList.remove('error-rating'); }
+  if (e.target.name === 'ape_q4_rating') { document.getElementById('apeScaleBtns4').classList.add('has-selection'); document.getElementById('ape_q4_block').classList.remove('error-rating'); }
+  if (e.target.name === 'nps_score') { document.getElementById('npsBlock').classList.remove('error-nps'); }
+  if (e.target.type === 'radio') { const row = e.target.closest('.yn-row'); if(row) row.classList.remove('error-row'); }
+  const field = e.target.closest('.field');
+  if (field && field.classList.contains('error')) field.classList.remove('error');
+  updateProgress();
+});
+document.addEventListener('input', e => {
+  const field = e.target.closest('.field');
+  if (field && field.classList.contains('error')) field.classList.remove('error');
+  updateProgress();
+});
+
+function validateForm() {
+  let valid = true, first = null;
+  document.querySelectorAll('#feedbackForm .field').forEach(field => {
+    const inp = field.querySelector('input:not([type="radio"]):not([type="hidden"]):not([type="checkbox"]), select, textarea');
+    if (!inp || inp.offsetParent === null) return;
+    let ok = true;
+    if (inp.type === 'email') ok = inp.value.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inp.value);
+    else if (inp.tagName === 'SELECT') ok = !!inp.value;
+    else if (inp.required) ok = !!inp.value.trim();
+    if (!ok) { field.classList.add('error'); valid = false; if (!first) first = field; }
+    else field.classList.remove('error');
+  });
+  if (!atLeastOneChallengeSelected()) {
+    document.getElementById('challengeErr').style.display = 'block'; valid = false;
+    if (!first) first = document.getElementById('challengeList');
+  }
+  ['ape_q3_rating','ape_q4_rating'].forEach((name,i) => {
+    const blockId = `ape_q${i+3}_block`, block = document.getElementById(blockId);
+    if (!document.querySelector(`[name="${name}"]:checked`)) { block.classList.add('error-rating'); valid = false; if(!first) first=block; }
+    else block.classList.remove('error-rating');
+  });
+  ['ape_q1','ape_q2'].forEach((name,qi) => {
+    const row = document.getElementById(`ape_q${qi+1}_row`);
+    if (!document.querySelector(`[name="${name}"]:checked`)) { row.classList.add('error-row'); valid = false; if(!first) first=row; }
+    else row.classList.remove('error-row');
+  });
+  const npsBlock = document.getElementById('npsBlock');
+  if (npsBlock) {
+    if (!document.querySelector('[name="nps_score"]:checked')) {
+      npsBlock.classList.add('error-nps'); valid = false;
+      if (!first) first = npsBlock;
+    }
+    ['nps_fu1','nps_fu2','nps_fu3','nps_fu4'].forEach((name,qi) => {
+      const row = document.getElementById(`nps_fu${qi+1}_row`);
+      if (!row) return;
+      if (!document.querySelector(`[name="${name}"]:checked`)) { row.classList.add('error-row'); valid = false; if(!first) first=row; }
+      else row.classList.remove('error-row');
+    });
+  }
+  const college = document.getElementById('collegeName').value;
+  const dept = document.getElementById('department').value;
+  if (college && dept && COLLEGE_DATA[college] && COLLEGE_DATA[college][dept]) {
+    COLLEGE_DATA[college][dept].forEach((sub, idx) => {
+      const n = idx + 1;
+      const ratingBlock = document.getElementById(`ratingBlock${n}`);
+      if (ratingBlock && ratingBlock.offsetParent !== null) {
+        if (!document.querySelector(`[name="s${n}_rating"]:checked`)) { ratingBlock.classList.add('error-rating'); valid = false; if(!first) first=ratingBlock; }
+        else ratingBlock.classList.remove('error-rating');
+      }
+      QUESTIONS.forEach((_,qi) => {
+        const row = document.getElementById(`yn_${n}_${qi}`);
+        if (!document.querySelector(`[name="s${n}_q${qi}"]:checked`) && row && row.offsetParent !== null) {
+          row.classList.add('error-row'); valid = false; if(!first) first=row;
+        } else if (row) row.classList.remove('error-row');
+      });
+    });
+  }
+  if (!valid && first) { first.scrollIntoView({behavior:'smooth',block:'center'}); showToast('Please answer all required questions','error'); }
+  return valid;
+}
+
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = (type==='success'?'✅ ':'❌ ') + msg;
+  t.className = 'show ' + type;
+  setTimeout(() => t.className = '', 4000);
+}
+
+function resetForm() {
+  document.getElementById('feedbackForm').reset();
+  document.getElementById('successScreen').style.display = 'none';
+  document.getElementById('alreadyScreen').style.display = 'none';
+  document.getElementById('feedbackForm').style.display = 'block';
+  CHALLENGE_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.checked = false; el.closest('.check-item').classList.remove('checked'); }
+  });
+  document.getElementById('ape_q2_detail_wrap').classList.remove('visible');
+  document.getElementById('facultySections').innerHTML = '';
+  document.getElementById('dynamicContent').style.display = 'none';
+  document.querySelectorAll('.scale-btns').forEach(sb => sb.classList.remove('has-selection'));
+  unlockAllAutoFields();
+  const statusEl = document.getElementById('regStatus');
+  if (statusEl) { statusEl.style.display = 'none'; statusEl.innerHTML = ''; }
+  lastLookedUpReg = null;
+  updateProgress();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ─── SUBMIT — Google Sheet is the only backend (dedupe + storage) ─────────────
+document.getElementById('feedbackForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  if (!validateForm()) return;
+
+  const regNo = document.getElementById('regNumber').value.trim().toUpperCase();
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span>Checking…</span><span>⏳</span>';
+
+  const overlay = document.getElementById('loadingOverlay');
+  const loadingMsg = document.getElementById('loadingMsg');
+  loadingMsg.textContent = 'Submitting your feedback…';
+  overlay.classList.add('show');
+
+  const resetBtn = () => {
+    btn.disabled = false;
+    btn.innerHTML = '<span>Submit Feedback</span><span>→</span>';
+  };
+  const showAlready = () => {
+    overlay.classList.remove('show');
+    resetBtn();
+    document.getElementById('feedbackForm').style.display = 'none';
+    document.getElementById('alreadyRegNo').textContent = regNo;
+    document.getElementById('alreadyScreen').style.display = 'block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  try {
+    // ── Build the full submission object ──────────────────────────────────
+    const fd = new FormData(this);
+    const college = fd.get('collegeName');
+    const dept    = fd.get('department');
+
+    const selectedChallenges = CHALLENGE_IDS
+      .filter(id => document.getElementById(id)?.checked)
+      .map(id => document.getElementById(id).value)
+      .join(', ');
+
+    const data = {
+      timestamp:                  new Date().toISOString(),
+      studentName:                fd.get('studentName')          || '',
+      registerNumber:             regNo,
+      studentEmail:               fd.get('studentEmail')         || '',
+      collegeName:                college                        || '',
+      department:                 dept                           || '',
+      ape_q1_assessments:         fd.get('ape_q1')               || '',
+      ape_q2_studyMaterials:      fd.get('ape_q2')               || '',
+      ape_q2_missingPapers:       fd.get('ape_q2_detail')        || '',
+      ape_q3_handsOnRating:       fd.get('ape_q3_rating')        || '',
+      ape_q4_confidenceRating:    fd.get('ape_q4_rating')        || '',
+      challenges_selected:        selectedChallenges,
+      challenges_detail:          fd.get('challengeDetail')      || '',
+      challenges_suggestions:     fd.get('challengeSuggestions') || '',
+      nps_score:                  fd.get('nps_score')            || '',
+      nps_fu1_campusSatisfied:    fd.get('nps_fu1')              || '',
+      nps_fu2_classroomSatisfied: fd.get('nps_fu2')              || '',
+      nps_fu3_skillDev:           fd.get('nps_fu3')              || '',
+      nps_fu4_placement:          fd.get('nps_fu4')              || '',
+      nps_likes:                  fd.get('npsLike')              || '',
+      nps_improve:                fd.get('npsImprove')           || '',
+    };
+
+    if (COLLEGE_DATA[college] && COLLEGE_DATA[college][dept]) {
+      COLLEGE_DATA[college][dept].forEach((sub, idx) => {
+        const n = idx + 1;
+        data[`subject${n}_Name`]   = fd.get(`subject${n}_Name`)   || sub.subject;
+        data[`subject${n}_Mentor`] = fd.get(`subject${n}_Mentor`) || (sub.mentor || '');
+        data[`subject${n}_Rating`] = fd.get(`s${n}_rating`)       || '';
+        QUESTIONS.forEach((_, qi) => {
+          data[`subject${n}_Q${qi+1}`] = fd.get(`s${n}_q${qi}`) || '';
+        });
+      });
+    }
+
+    // ── Save to E-Campus Database (PostgreSQL / Supabase) ─────────────────
+    let dbSaved = false;
+    try {
+      const dbRes = await fetch('/api/student-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const dbResult = await dbRes.json().catch(() => null);
+      if (dbResult) {
+        if (dbResult.duplicate) { showAlready(); return; }
+        if (dbResult.success) dbSaved = true;
+      }
+    } catch (dbErr) {
+      console.warn('Direct API submission note:', dbErr);
+    }
+
+    // Direct Supabase table insert if client is available
+    if (sb) {
+      try {
+        await sb.from('student_mentor_feedback').insert([{
+          id: 'MFB-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substring(2,6).toUpperCase(),
+          register_number: regNo,
+          student_name: fd.get('studentName') || '',
+          email: fd.get('studentEmail') || '',
+          college_name: college || '',
+          department: dept || '',
+          ape_q1_assessments: fd.get('ape_q1') || '',
+          ape_q2_study_materials: fd.get('ape_q2') || '',
+          ape_q2_missing_papers: fd.get('ape_q2_detail') || '',
+          ape_q3_hands_on_rating: fd.get('ape_q3_rating') ? Number(fd.get('ape_q3_rating')) : null,
+          ape_q4_confidence_rating: fd.get('ape_q4_rating') ? Number(fd.get('ape_q4_rating')) : null,
+          challenges_selected: selectedChallenges,
+          challenges_detail: fd.get('challengeDetail') || '',
+          challenges_suggestions: fd.get('challengeSuggestions') || '',
+          nps_score: fd.get('nps_score') ? Number(fd.get('nps_score')) : null,
+          nps_fu1_campus_satisfied: fd.get('nps_fu1') || '',
+          nps_fu2_classroom_satisfied: fd.get('nps_fu2') || '',
+          nps_fu3_skill_dev: fd.get('nps_fu3') || '',
+          nps_fu4_placement: fd.get('nps_fu4') || '',
+          nps_likes: fd.get('npsLike') || '',
+          nps_improve: fd.get('npsImprove') || '',
+          full_payload: JSON.stringify(data),
+          submitted_at: new Date().toISOString()
+        }]);
+      } catch (sbErr) {
+        // Handled by API route
+      }
+    }
+
+    // ── Send to Google Sheet and read its status ──────────────────────────
+    const formPayload = new URLSearchParams();
+    formPayload.append('payload', JSON.stringify(data));
+
+    const res = await fetch(SHEET_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formPayload.toString()
+    });
+    const result = await res.json().catch(() => ({ status: 'error' }));
+
+    if (result.status === 'duplicate') { showAlready(); return; }
+
+    if (result.status !== 'success' && !dbSaved) {
+      overlay.classList.remove('show');
+      resetBtn();
+      showToast('Could not save your feedback. Please try again.', 'error');
+      return;
+    }
+
+    // ── Success ───────────────────────────────────────────────────────────
+    overlay.classList.remove('show');
+    resetBtn();
+    document.getElementById('feedbackForm').style.display = 'none';
+    const studentName = (fd.get('studentName') || '').trim();
+    const title = studentName ? `Thank you, ${studentName}! 🎉` : 'Feedback Submitted! 🎉';
+    document.getElementById('successTitle').textContent = title;
+    document.getElementById('successScreen').style.display = 'block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  } catch (err) {
+    console.error('Submission error:', err);
+    overlay.classList.remove('show');
+    resetBtn();
+    showToast('Network error. Please check your connection and try again.', 'error');
+  }
+});
+</script>
+</body>
+</html>

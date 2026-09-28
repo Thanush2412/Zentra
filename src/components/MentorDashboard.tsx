@@ -66,6 +66,7 @@ const InterviewModule = dynamic(() => import("./InterviewModule").then(m => m.In
 const MentorProfileModal = dynamic(() => import("./MentorProfileModal").then(m => m.MentorProfileModal), { ssr: false });
 const MentorExamMarksStudio = dynamic(() => import("./MentorExamMarksStudio").then(m => m.MentorExamMarksStudio), { ssr: false });
 import { MentorWeeklyPlanStudio } from "./WeeklyPlanStudio";
+import { SkillTrackerPanel } from "./SkillTrackerPanel";
 
 import { CourseInfoButton } from "./CourseInfoModal";
 import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, calculateWeekOffsetForDate, isSlotOverlappingExamWindow, parseTimeToMinutes } from "@/lib/utils";
@@ -499,7 +500,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
   };
 
   // Request form state
-  const [requestType, setRequestType] = useState<"Casual Leave" | "Emergency Leave" | "Leave" | "Permission" | "OD">("Casual Leave");
+  const [requestType, setRequestType] = useState<"Casual Leave" | "Emergency" | "On Duty" | "Permission">("Casual Leave");
   const [startDate, setStartDate] = useState(() => formatLocalDateYMD(new Date()));
   const [endDate, setEndDate] = useState(() => formatLocalDateYMD(new Date()));
   const [startTime, setStartTime] = useState("09:00");
@@ -658,6 +659,64 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
   // Step form state: 1 = Details, 2 = Cover Mapping
   const [formStep, setFormStep] = useState<1 | 2>(1);
 
+  // ── Leave-driven Demo Reallocation state ───────────────────────────
+  // One proposed alternative per impacted demo: { [demoSessionId]: { dateStr, timeSlot } }
+  const [demoReallocationPicks, setDemoReallocationPicks] = useState<Record<string, { dateStr: string; timeSlot: string }>>({});
+  const [reallocAlternatives, setReallocAlternatives] = useState<Record<string, { dateStr: string; label: string; weekday: string; periods: any[] }[]>>({});
+  const [reallocLoading, setReallocLoading] = useState<Record<string, boolean>>({});
+  const [reallocSubmittedIds, setReallocSubmittedIds] = useState<Set<string>>(new Set());
+
+  const unhandledImpactedDemos = impactedDemos.filter((d: any) => !reallocSubmittedIds.has(d.id));
+  const allDemosHandled = impactedDemos.length === 0 || unhandledImpactedDemos.length === 0;
+
+  // Fetch alternative periods (mentor-free × SME-free matrix) for an impacted demo
+  const fetchReallocAlternatives = async (demoSessionId: string) => {
+    setReallocLoading(prev => ({ ...prev, [demoSessionId]: true }));
+    try {
+      const res = await fetch(`/api/demo-reallocations?demoSessionId=${encodeURIComponent(demoSessionId)}`);
+      const json = await res.json();
+      if (json.success) {
+        setReallocAlternatives(prev => ({ ...prev, [demoSessionId]: json.alternatives || [] }));
+      }
+    } catch (_) {
+      setReallocAlternatives(prev => ({ ...prev, [demoSessionId]: [] }));
+    } finally {
+      setReallocLoading(prev => ({ ...prev, [demoSessionId]: false }));
+    }
+  };
+
+  // Propose the picked alternative → creates the pending reservation
+  const submitDemoReallocation = async (demo: any) => {
+    const pick = demoReallocationPicks[demo.id];
+    if (!pick) return;
+    setReallocLoading(prev => ({ ...prev, [demo.id]: true }));
+    try {
+      const res = await fetch("/api/demo-reallocations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "propose",
+          demoSessionId: demo.id,
+          proposedDateStr: pick.dateStr,
+          proposedTimeSlot: pick.timeSlot,
+          reason: `Mentor ${requestType} from ${startDate} to ${endDate || startDate}`,
+          proposedBy: mentor.name
+        })
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast(`Alternative period reserved for ${demo.subject}. Awaiting Allocator approval.`, "success");
+        setReallocSubmittedIds(prev => new Set(prev).add(demo.id));
+      } else {
+        toast(json.message || "Failed to propose reallocation", "error");
+      }
+    } catch (err: any) {
+      toast("Error proposing reallocation: " + err.message, "error");
+    } finally {
+      setReallocLoading(prev => ({ ...prev, [demo.id]: false }));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!startDate) {
@@ -666,6 +725,13 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
     }
     if (!reason.trim()) {
       toast("Please enter a mandatory reason for your application.", "error");
+      return;
+    }
+
+    // Leave cannot create an unhandled demo conflict: every impacted demo must
+    // have a proposed alternative period (reserved + queued for the Allocator).
+    if (unhandledImpactedDemos.length > 0) {
+      toast(`${unhandledImpactedDemos.length} demo session(s) during this leave still need an alternative period. Please complete the Demo Reallocation panel first.`, "warning");
       return;
     }
 
@@ -692,6 +758,17 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
         payload.endDate = endDate || startDate;
       }
 
+      if (formStep === 2 && affectedSlots.length > 0) {
+        const unassignedSlots = affectedSlots.filter(item => {
+          const val = coverSelections[`${item.slot.id}_${item.dateStr}`];
+          return !val || val === "cam_help";
+        });
+        if (unassignedSlots.length > 0) {
+          toast(`Please select a replacement faculty member for all ${unassignedSlots.length} period(s).`, "error");
+          return;
+        }
+      }
+
       // Build coverSelections array from state
       const coverSelectionsArr = affectedSlots
         .map(item => {
@@ -699,13 +776,18 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
           return {
             slotId: item.slot.id,
             dateStr: item.dateStr,
-            coverMentorId: (val === "cam_help" || !val) ? null : val
+            coverMentorId: (val && val !== "cam_help") ? val : null
           };
         })
         .filter(sel => sel.slotId && sel.dateStr);
 
       if (coverSelectionsArr.length > 0) {
         payload.coverSelections = coverSelectionsArr;
+      }
+
+      // Link the reallocation requests to this leave application
+      if (reallocSubmittedIds.size > 0) {
+        payload.demoReallocationIds = Array.from(reallocSubmittedIds);
       }
 
       const res = await fetch("/api/requests/faculty-leave", {
@@ -724,6 +806,9 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
         setReason("");
         setCoverSelections({});
         setCoverOptions(undefined);
+        setDemoReallocationPicks({});
+        setReallocAlternatives({});
+        setReallocSubmittedIds(new Set());
         await fetchRequests();
       } else {
         toast(json.message || "Failed to submit request", "error");
@@ -1156,11 +1241,10 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                     onChange={(e) => setRequestType(e.target.value as any)}
                     className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all cursor-pointer"
                   >
-                    <option value="Casual Leave">Casual Leave (Personal / Health)</option>
-                    <option value="Emergency Leave">Emergency Leave (Urgent / Unplanned)</option>
-                    <option value="OD">On Duty (OD) Event / Duty</option>
-                    <option value="Permission">Short Permission (Hourly)</option>
-                    <option value="Leave">Full / Multi-Day Leave</option>
+                    <option value="Casual Leave">Casual Leave</option>
+                    <option value="Emergency">Emergency</option>
+                    <option value="On Duty">On Duty</option>
+                    <option value="Permission">Permission</option>
                   </select>
                 </div>
 
@@ -1237,16 +1321,138 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                   </div>
                 )}
 
-                {/* Demo Conflict Warning */}
+                {/* ── Demo Reallocation Panel (leave conflicts with scheduled demos) ── */}
                 {impactedDemos.length > 0 && (
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs space-y-1">
-                    <div className="font-bold flex items-center gap-1.5 text-amber-900">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-                      <span>Demo Review Conflict ({impactedDemos.length} Scheduled Session{impactedDemos.length > 1 ? "s" : ""})</span>
+                  <div className="rounded-xl border border-amber-300 bg-amber-50/60 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-amber-200 bg-amber-100/60 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                        <div>
+                          <div className="text-xs font-black text-amber-900">
+                            Demo Reallocation Required ({impactedDemos.length} scheduled session{impactedDemos.length > 1 ? "s" : ""} impacted)
+                          </div>
+                          <p className="text-[10.5px] text-amber-700 font-medium">
+                            Your leave overlaps scheduled demo(s). Pick an alternative free period for each — the chosen period is reserved and sent to the Allocator for approval before your leave proceeds.
+                          </p>
+                        </div>
+                      </div>
+                      {allDemosHandled && (
+                        <span className="shrink-0 px-2 py-0.5 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-[9.5px] font-black uppercase">
+                          ✓ All Handled
+                        </span>
+                      )}
                     </div>
-                    <p className="text-[11px] text-amber-700 font-medium">
-                      You have {impactedDemos.length} demo session(s) scheduled during this leave window. Once approved, the system will place them on hold and enable you to self-reschedule to an available slot with your assigned SME evaluator.
-                    </p>
+
+                    <div className="divide-y divide-amber-200/70">
+                      {impactedDemos.map((demo: any) => {
+                        const isHandled = reallocSubmittedIds.has(demo.id);
+                        const pick = demoReallocationPicks[demo.id];
+                        const alts = reallocAlternatives[demo.id];
+                        const loading = reallocLoading[demo.id];
+
+                        return (
+                          <div key={demo.id} className="p-4 space-y-3">
+                            {/* Demo details */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-black text-slate-900">{demo.subject}</span>
+                                  <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 text-[9px] font-black uppercase">
+                                    Week {demo.week ?? "—"}
+                                  </span>
+                                  {isHandled && (
+                                    <span className="px-1.5 py-0.5 rounded bg-emerald-100 border border-emerald-300 text-emerald-800 text-[9px] font-black uppercase">
+                                      ✓ Reserved — Pending Allocator
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10.5px] text-slate-600 font-medium">
+                                  Current period: <span className="font-bold">{demo.dateStr}</span> • <span className="font-bold">{demo.timeSlot}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-500">
+                                  SME Evaluator: <span className="font-bold text-slate-700">{demo.smeName}</span> • Mentor: <span className="font-bold text-slate-700">{demo.mentorName || mentor.name}</span> • Cohort: {demo.stream || "General"}
+                                </div>
+                              </div>
+                              {!isHandled && !alts && (
+                                <button
+                                  type="button"
+                                  onClick={() => fetchReallocAlternatives(demo.id)}
+                                  className="shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10.5px] font-black transition-all cursor-pointer"
+                                >
+                                  {loading ? "Loading periods…" : "Find Alternative Periods"}
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Alternative period picker */}
+                            {!isHandled && alts && (
+                              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                                {alts.length === 0 && (
+                                  <p className="text-[11px] text-rose-600 font-medium">No suitable alternative dates found in the next 3 weeks. Contact your Allocator.</p>
+                                )}
+                                {alts.map(day => {
+                                  const freeCount = day.periods.filter((p: any) => p.mutuallyFree).length;
+                                  return (
+                                    <div key={day.dateStr} className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                                      <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                                        <span className="text-[10.5px] font-black text-slate-700">{day.label}</span>
+                                        <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${freeCount > 0 ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>
+                                          {freeCount} free period{freeCount === 1 ? "" : "s"}
+                                        </span>
+                                      </div>
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 p-2">
+                                        {day.periods.map((p: any) => {
+                                          const selected = pick?.dateStr === day.dateStr && pick?.timeSlot === p.period;
+                                          return (
+                                            <button
+                                              key={day.dateStr + p.period}
+                                              type="button"
+                                              disabled={!p.mutuallyFree}
+                                              onClick={() => setDemoReallocationPicks(prev => ({ ...prev, [demo.id]: { dateStr: day.dateStr, timeSlot: p.period } }))}
+                                              className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                                                selected
+                                                  ? "border-indigo-600 bg-indigo-50 ring-1 ring-indigo-400"
+                                                  : p.mutuallyFree
+                                                    ? "border-slate-200 hover:border-indigo-300 bg-white"
+                                                    : "border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed"
+                                              }`}
+                                            >
+                                              <div className={`text-[10px] font-black truncate ${selected ? "text-indigo-700" : p.mutuallyFree ? "text-slate-800" : "text-slate-400"}`}>
+                                                {p.period}
+                                              </div>
+                                              <div className={`text-[9px] font-bold ${p.mutuallyFree ? "text-emerald-600" : "text-rose-400"}`}>
+                                                {p.mutuallyFree ? "✓ Free (you & SME)" : !p.mentorFree ? (p.mentorReason || "You are busy") : (p.smeReason || "SME busy")}
+                                              </div>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Reserve action */}
+                            {!isHandled && pick && (
+                              <div className="flex items-center justify-between gap-2 pt-1">
+                                <span className="text-[10.5px] text-slate-600 font-medium">
+                                  Selected: <span className="font-black text-indigo-700">{pick.dateStr} • {pick.timeSlot}</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={loading}
+                                  onClick={() => submitDemoReallocation(demo)}
+                                  className="shrink-0 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10.5px] font-black transition-all cursor-pointer disabled:opacity-50"
+                                >
+                                  {loading ? "Reserving…" : "Reserve & Send to Allocator"}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
@@ -1261,7 +1467,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                     placeholder={
                       requestType === "Permission"
                         ? "Specify reason for short permission (e.g., Doctor appointment / Urgent personal errand)..."
-                        : requestType === "OD"
+                        : requestType === "On Duty" || (requestType as string) === "OD"
                           ? "Specify OD details (e.g., Placement drive invigilation at Main Auditorium)..."
                           : "Specify reason for leave application..."
                     }
@@ -1300,23 +1506,10 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                       2
                     </div>
                     <div>
-                      <div className="font-extrabold">Full-Day Class Cover Arrangement ({affectedSlots.length} Total)</div>
-                      <div className="text-[10.5px] text-indigo-700">Map a colleague for each period or request CAM help.</div>
+                      <div className="font-extrabold">Faculty Class Cover Arrangement ({affectedSlots.length} Total)</div>
+                      <div className="text-[10.5px] text-indigo-700">Map an available colleague for each period to ensure class continuity.</div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const allCAM: Record<string, string> = {};
-                      affectedSlots.forEach(item => {
-                        allCAM[`${item.slot.id}_${item.dateStr}`] = "cam_help";
-                      });
-                      setCoverSelections(allCAM);
-                    }}
-                    className="px-2.5 py-1 rounded-md text-[10px] font-black bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100/60 transition-all cursor-pointer shadow-2xs"
-                  >
-                    🛡️ Set All to CAM Help
-                  </button>
                 </div>
 
                 <div className="space-y-3">
@@ -1324,7 +1517,6 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                     const key = `${item.slot.id}_${item.dateStr}`;
                     const opts = coverOptions?.[key];
                     const selectedCover = coverSelections[key] || "";
-                    const isRequestingCAM = selectedCover === "" || selectedCover === "cam_help";
 
                     return (
                       <div key={idx} className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs space-y-2.5">
@@ -1338,67 +1530,45 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                           </span>
                         </div>
 
-                        {/* Swap Mapping vs Request CAM Choice */}
+                        {/* Direct Colleague Faculty Selector */}
                         <div className="space-y-1.5 pt-2 border-t border-slate-100">
                           <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
-                            Choose Cover Option:
+                            Select Replacement Faculty Member:
                           </label>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {/* Option 1: Map to Available Mentor */}
-                            <select
-                              value={selectedCover === "cam_help" ? "" : selectedCover}
-                              onChange={(e) => {
-                                setCoverSelections(prev => ({
-                                  ...prev,
-                                  [key]: e.target.value
-                                }));
-                              }}
-                              className={`text-[11px] font-bold p-2 rounded-lg border transition-all cursor-pointer ${
-                                !isRequestingCAM
-                                  ? "border-emerald-500 bg-emerald-50/50 text-emerald-950 ring-1 ring-emerald-400/50"
-                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                              }`}
-                            >
-                              <option value="">👤 Map to Available Faculty...</option>
-                              {opts?.loading && <option disabled>⏳ Checking availability...</option>}
-                              {opts && !opts.loading && opts.mentors.length === 0 && (
-                                <option disabled>No mentors free at this time</option>
-                              )}
-                              {opts?.mentors?.map((m: any) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.sameSubject ? "★ " : ""}{m.name}{m.department ? ` (${m.department})` : ""}
-                                </option>
-                              ))}
-                            </select>
-
-                            {/* Option 2: Explicitly Request CAM Help */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCoverSelections(prev => ({
-                                  ...prev,
-                                  [key]: "cam_help"
-                                }));
-                              }}
-                              className={`px-2.5 py-1.5 rounded-lg text-[10.5px] font-extrabold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                                isRequestingCAM
-                                  ? "bg-indigo-50 border-indigo-300 text-indigo-700 shadow-2xs"
-                                  : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
-                              }`}
-                            >
-                              🛡️ Request CAM Help
-                            </button>
-                          </div>
+                          <select
+                            value={selectedCover === "cam_help" ? "" : selectedCover}
+                            onChange={(e) => {
+                              setCoverSelections(prev => ({
+                                ...prev,
+                                [key]: e.target.value
+                              }));
+                            }}
+                            className={`w-full text-[11px] font-bold p-2.5 rounded-lg border transition-all cursor-pointer ${
+                              selectedCover && selectedCover !== "cam_help"
+                                ? "border-emerald-500 bg-emerald-50/50 text-emerald-950 ring-1 ring-emerald-400/50"
+                                : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+                            }`}
+                          >
+                            <option value="">👤 Select Available Faculty Member...</option>
+                            {opts?.loading && <option disabled>⏳ Checking faculty availability...</option>}
+                            {opts && !opts.loading && opts.mentors.length === 0 && (
+                              <option disabled>No faculty free in this time slot</option>
+                            )}
+                            {opts?.mentors?.map((m: any) => (
+                              <option key={m.id} value={m.id}>
+                                {m.sameSubject ? "★ " : ""}{m.name}{m.department ? ` (${m.department})` : ""}
+                              </option>
+                            ))}
+                          </select>
 
                           {/* Status Explanatory Note */}
-                          {!isRequestingCAM && (
+                          {selectedCover && selectedCover !== "cam_help" ? (
                             <p className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
-                              ✓ Direct cover request will be dispatched upon submission.
+                              ✓ Direct cover request will be dispatched to faculty upon submission.
                             </p>
-                          )}
-                          {isRequestingCAM && (
-                            <p className="text-[10px] text-indigo-600 font-medium">
-                              ℹ️ Flagged for CAM manual assignment.
+                          ) : (
+                            <p className="text-[10px] text-amber-700 font-medium">
+                              ⚠️ Please select an available faculty colleague for this class period.
                             </p>
                           )}
                         </div>
@@ -2250,8 +2420,8 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
 };
 
 export interface MentorDashboardProps {
-  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "materials" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan";
-  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "materials" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan") => void;
+  activeTab?: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "materials" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan" | "my_skill_tracker";
+  onTabChange?: (tab: "home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "materials" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan" | "my_skill_tracker") => void;
 }
 
 export const MentorDashboard: React.FC<MentorDashboardProps> = ({
@@ -2396,12 +2566,46 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
   }, [currentMentor?.college_id]);
 
+  // Live Batch Coding Statistics (LeetCode & HackerRank) for Mentor's Students
+  const [mentorBatchCodingStats, setMentorBatchCodingStats] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!currentMentor?.college_id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cid = currentMentor.college_id || "";
+        const res = await fetch(`/api/coding-stats?collegeId=${encodeURIComponent(cid)}&batch=true`);
+        const data = await res.json();
+        if (!cancelled && data.success) {
+          setMentorBatchCodingStats(data);
+        }
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [currentMentor?.college_id]);
+
+  const getStudentCodingStats = useCallback((st: any) => {
+    if (!mentorBatchCodingStats || !st) return { lc: null, hr: null };
+    const reg = (st.register_number || st.roll_number || st.id || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    const em = (st.email || "").trim().toLowerCase();
+    const lc = (reg && mentorBatchCodingStats.leetcodeByReg?.[reg]) || (em && mentorBatchCodingStats.leetcodeByEmail?.[em]) || null;
+    const hr = (reg && mentorBatchCodingStats.hackerrankByReg?.[reg]) || (em && mentorBatchCodingStats.hackerrankByEmail?.[em]) || null;
+    return { lc, hr };
+  }, [mentorBatchCodingStats]);
+
 
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAttendanceStudioOpen, setIsAttendanceStudioOpen] = useState(false);
   const [attendanceFilterStatus, setAttendanceFilterStatus] = useState<"all" | "present" | "absent" | "od">("all");
+
+  // ── Weekly Plan ↔ Attendance Verification ────────────────────────────
+  // Approved weekly plans are fetched once per session for this mentor; when the
+  // attendance studio opens for a period, the matching planned task (same date,
+  // period, class & subject) is offered for soft confirmation. Writes one
+  // academic_tracker provenance entry after attendance saves — never gates marking.
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedCell, setSelectedCell] = useState<{
     day: string;
@@ -2413,6 +2617,65 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     originalMentorId?: string;
     handover?: ApprovedHandover;
   } | null>(null);
+
+  const [weeklyPlansForVerification, setWeeklyPlansForVerification] = useState<any[]>([]);
+  const [weeklyPlansLoaded, setWeeklyPlansLoaded] = useState(false);
+  const [planVerificationChoice, setPlanVerificationChoice] = useState<"as_planned" | "with_changes" | "not_conducted">("as_planned");
+  const [planActualTopic, setPlanActualTopic] = useState("");
+  const matchedPlannedTask = useMemo(() => {
+    if (!selectedCell?.slot || !selectedCell?.dateStr) return null;
+    if (!weeklyPlansLoaded || weeklyPlansForVerification.length === 0) return null;
+    const slotCourse = selectedCell.slot.course || "";
+    const slotClass = selectedCell.slot.classGroup || "";
+    const slotTime = selectedCell.time;
+    const normTime = (t: string) => (t || "").toLowerCase().replace(/\s+/g, "");
+    for (const plan of weeklyPlansForVerification) {
+      if (plan.status !== "Verified") continue;
+      if (plan.subject && slotCourse &&
+          plan.subject.toLowerCase().trim() !== slotCourse.toLowerCase().trim() &&
+          !isSubjectNameMatch(slotCourse, plan.subject)) continue;
+      if (plan.class_group && slotClass &&
+          !isCohortMatching(plan.class_group, slotClass) && !isCohortMatching(slotClass, plan.class_group)) continue;
+      let tasks: any[] = [];
+      try {
+        tasks = typeof plan.session_plan === "string" ? JSON.parse(plan.session_plan) : (plan.session_plan || []);
+      } catch { tasks = []; }
+      for (const t of tasks) {
+        if (!t.topic || !String(t.topic).trim()) continue;
+        const taskDate = t.date ? String(t.date).slice(0, 10) : "";
+        const inRange = taskDate
+          ? taskDate === selectedCell.dateStr
+          : plan.start_date && plan.end_date
+            ? (selectedCell.dateStr >= plan.start_date && selectedCell.dateStr <= plan.end_date)
+            : false;
+        if (!inRange) continue;
+        const taskPeriod = String(t.periodSlot || "");
+        const periodMatches = taskPeriod && (normTime(taskPeriod) === normTime(slotTime) || taskPeriod === selectedCell.slot?.time);
+        if (!periodMatches) continue;
+        return { plan, task: t };
+      }
+    }
+    return null;
+  }, [selectedCell, weeklyPlansForVerification, weeklyPlansLoaded]);
+
+  // Fetch approved plans when the attendance studio opens (once per session, then cached)
+  useEffect(() => {
+    if (!isAttendanceStudioOpen || !currentMentor?.id) return;
+    if (weeklyPlansLoaded) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const q = `mentorId=${encodeURIComponent(currentMentor.id)}${currentMentor.college_id ? `&collegeId=${encodeURIComponent(currentMentor.college_id)}` : ""}&includeAudit=false`;
+        const res = await fetch(`/api/weekly-plan?${q}`);
+        const data = await res.json();
+        if (!cancelled && data.success && Array.isArray(data.plans)) {
+          setWeeklyPlansForVerification(data.plans);
+        }
+      } catch { /* verification is best-effort — never block marking */ }
+      finally { if (!cancelled) setWeeklyPlansLoaded(true); }
+    })();
+    return () => { cancelled = true; };
+  }, [isAttendanceStudioOpen, currentMentor?.id, currentMentor?.college_id, weeklyPlansLoaded]);
 
   // Handover & Attendance form state
   const [modalTab, setModalTab] = useState<"attendance" | "handover">("attendance");
@@ -2661,7 +2924,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<string | null>(null);
 
   // Active Dashboard Tab State
-  const [localActiveTab, setLocalActiveTab] = useState<"home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "materials" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan">("home");
+  const [localActiveTab, setLocalActiveTab] = useState<"home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "materials" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan" | "my_skill_tracker">("home");
   const activeTab = propActiveTab || localActiveTab;
 
   // useTransition: marks tab switches as non-urgent so the current UI stays
@@ -2703,7 +2966,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         }, 6000);
       } else if (tabParam) {
         const normalized = tabParam === "schedule" ? "timetable" : tabParam === "leaves" ? "handovers" : tabParam === "marks" ? "exams" : tabParam;
-        if (["home", "timetable", "handovers", "attendance", "exams", "profile", "tracker", "academic_tracker", "demo_evaluations", "more_menu", "leave_requests", "interviews", "weekly_plan"].includes(normalized)) {
+        if (["home", "timetable", "handovers", "attendance", "exams", "profile", "tracker", "academic_tracker", "demo_evaluations", "more_menu", "leave_requests", "interviews", "weekly_plan", "my_skill_tracker"].includes(normalized)) {
           setActiveTab(normalized as any);
         }
       }
@@ -4255,6 +4518,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     setRangeStartId("");
     setRangeEndId("");
 
+    // Reset weekly-plan verification state for the newly selected period
+    setPlanVerificationChoice("as_planned");
+    setPlanActualTopic("");
+
     // Initialize local attendance
     const classStudents = students.filter(
       (s) => isClassGroupMatch(s.classGroup, slot.classGroup)
@@ -4704,6 +4971,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   { id: "academic_tracker", label: "Academic Tracker", icon: BookOpen },
                   { id: "materials", label: "Study Materials Hub", icon: Book },
                   { id: "tracker", label: "Skill Development Tracker", icon: GraduationCap },
+                  { id: "my_skill_tracker", label: "My Skill Tracker", icon: Award },
                   { id: "weekly_plan", label: "Weekly Teaching Plan", icon: CalendarRange },
                   { id: "leave_requests", label: "Leave & Permissions", icon: CalendarCheck2 },
                   { id: "handovers", label: "Handovers", icon: Clock },
@@ -4907,7 +5175,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   <Calendar className="h-5 w-5" />
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Scheduled Base</span>
+                  <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Scheduled Hours</span>
                   <span className="text-lg font-black text-slate-800">{toHrs(targetMinutes)} hrs</span>
                 </div>
               </div>
@@ -4918,7 +5186,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   <PlusCircle className="h-5 w-5" />
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Coverages Recv. (+)</span>
+                  <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Handover Requests Received (+)</span>
                   <span className="text-lg font-black text-teal-600">
                     {coveredMinutes > 0 ? `+${toHrs(coveredMinutes)} hrs` : "0 hrs"}
                   </span>
@@ -5163,6 +5431,22 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     return (
                                       <button
                                         type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (item.slot) {
+                                            setSelectedCell({
+                                              day: agendaDay,
+                                              dateStr,
+                                              dateFormatted: dateFormatted || "",
+                                              time: item.slot.time,
+                                              slot: item.slot,
+                                              type: "own"
+                                            });
+                                            setIsCamEditRequestModalOpen(true);
+                                            setCamRequestReason("");
+                                            setFormError("");
+                                          }
+                                        }}
                                         className="w-full sm:w-auto text-center px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-black text-[9.5px] uppercase tracking-wider rounded-lg shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1"
                                       >
                                         <Clock className="h-3 w-3 shrink-0" /> Request CAM
@@ -5173,6 +5457,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   return (
                                     <button
                                       type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (item.slot) {
+                                          handleCellClick(agendaDay, dateStr, dateFormatted || "", item.slot.time);
+                                        }
+                                      }}
                                       className="w-full sm:w-auto text-center px-3 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 font-black text-[9.5px] uppercase tracking-wider rounded-lg shadow-xs transition-all cursor-pointer"
                                     >
                                       Mark Attendance
@@ -5386,7 +5676,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <div className="space-y-6">
                 {/* Upcoming Demo Reviews Widget */}
                 {(() => {
-                  const upcomingDemos = demoSessions.filter(ds => ds.mentorId === currentMentor.id && ds.status === "scheduled");
+                  const upcomingDemos = demoSessions.filter(ds => ds.mentorId === currentMentor.id && (ds.status === "scheduled" || ds.status === "confirmed"));
                   if (upcomingDemos.length === 0) return null;
                   return (
                     <div className="bg-gradient-to-br from-pink-50/50 via-white to-white border border-pink-100 rounded-xl p-5 shadow-xs space-y-4">
@@ -6892,7 +7182,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3.5">
                   <div>
                     <h3 className="text-base font-bold text-slate-900 leading-tight">Period Action</h3>
-                    <p className="text-xs text-slate-500 font-medium">Choose an action for this scheduled class</p>
+                    <p className="text-xs text-slate-500 font-medium">Select action for this period</p>
                   </div>
                   <button
                     onClick={() => setIsModalOpen(false)}
@@ -7242,6 +7532,51 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               if (res.success) {
                 setIsAttendanceStudioOpen(false);
                 toast("Attendance saved and verified successfully!", "success");
+
+                // ── Weekly Plan verification → Academic Tracker provenance entry ──
+                // Best-effort and strictly post-save: a tracker failure can never
+                // affect the already-committed attendance. Only for the mentor's own
+                // Regular sessions on today's date (tracker accepts today only).
+                if (matchedPlannedTask && selectedCell.type !== "covering" && attendanceType === "Regular" && selectedCell.dateStr === todayStr) {
+                  const effectiveTopic = planVerificationChoice === "with_changes"
+                    ? (planActualTopic.trim() || String(matchedPlannedTask.task.topic))
+                    : String(matchedPlannedTask.task.topic);
+                  const conductedStatus = planVerificationChoice === "not_conducted" ? "Not Conducted" : "Conducted";
+                  // Human-readable delivery remarks — plan linkage lives in the
+                  // dedicated weekly_plan_id / weekly_plan_week columns, so the
+                  // remarks stay clean prose without machine identifiers.
+                  const plannedTopic = String(matchedPlannedTask.task.topic);
+                  const planUnit = String(matchedPlannedTask.plan.unit || "").trim();
+                  const planRemark = planVerificationChoice === "as_planned"
+                    ? `Conducted exactly as planned in the Week ${matchedPlannedTask.plan.week_number} weekly plan${planUnit ? ` (${planUnit})` : ""}. Class delivered on the approved topic "${plannedTopic}".`
+                    : planVerificationChoice === "with_changes"
+                      ? `Delivered as per the Week ${matchedPlannedTask.plan.week_number} weekly plan, with a topic adjustment${planUnit ? ` in ${planUnit}` : ""} — planned: "${plannedTopic}", actually conducted: "${effectiveTopic}".`
+                      : `Scheduled in the Week ${matchedPlannedTask.plan.week_number} weekly plan${planUnit ? ` (${planUnit})` : ""} for topic "${plannedTopic}", but the class was not conducted during this period.`;
+                  try {
+                    await saveAcademicTrackerEntry({
+                      date: selectedCell.dateStr,
+                      periodSlot: selectedCell.slot?.time || selectedCell.time || "",
+                      classGroup: selectedCell.slot?.classGroup || "",
+                      subject: selectedCell.slot?.course || matchedPlannedTask.plan.subject || "",
+                      unit: matchedPlannedTask.plan.unit || "Unit 1",
+                      topic: effectiveTopic,
+                      comments: planRemark,
+                      status: conductedStatus,
+                      mentorId: currentMentor.id,
+                      mentorName: currentMentor.name,
+                      collegeId: currentMentor.college_id || "",
+                      ...({
+                        weeklyPlanId: matchedPlannedTask.plan.id,
+                        weeklyPlanWeek: matchedPlannedTask.plan.week_number
+                      } as any)
+                    });
+                    if (planVerificationChoice === "not_conducted") {
+                      toast("Period flagged as Not Conducted in Academic Tracker.", "info");
+                    }
+                  } catch { /* never block the attendance flow on tracker errors */ }
+                } else if (matchedPlannedTask && planVerificationChoice === "not_conducted" && (selectedCell.type === "covering" || attendanceType !== "Regular" || selectedCell.dateStr !== todayStr)) {
+                  toast("Weekly plan verification is only recorded for your own Regular periods marked today.", "info");
+                }
               } else {
                 setFormError(res.message || "Failed to mark attendance.");
               }
@@ -7387,6 +7722,77 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         </span>
                       ) : null}
                     </div>
+                  </div>
+                )}
+
+                {/* ── Weekly Plan Verification Panel (soft confirm — never blocks marking) ── */}
+                {matchedPlannedTask && selectedCell.type !== "covering" && (
+                  <div className="px-5 py-2.5 bg-emerald-50/60 border-b border-emerald-100 flex items-start gap-2.5 shrink-0">
+                    <CalendarRange className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-xs font-bold text-emerald-900">Weekly Plan Verification — Week {matchedPlannedTask.plan.week_number}</p>
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase tracking-wider">
+                          Verified Plan
+                        </span>
+                        {matchedPlannedTask.plan.unit ? (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100 uppercase tracking-wider">
+                            {matchedPlannedTask.plan.unit}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-[11px] text-emerald-800 font-semibold mt-0.5 leading-relaxed">
+                        Planned: {String(matchedPlannedTask.task.topic)}
+                        {matchedPlannedTask.task.objectives ? <span className="text-emerald-700/80 font-medium"> — {String(matchedPlannedTask.task.objectives)}</span> : null}
+                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                        {([
+                          ["as_planned", "Conducted as Planned"],
+                          ["with_changes", "Conducted with Changes"],
+                          ["not_conducted", "Not Conducted"]
+                        ] as const).map(([val, label]) => (
+                          <button
+                            key={val}
+                            type="button"
+                            disabled={isPastDay}
+                            onClick={() => setPlanVerificationChoice(val)}
+                            className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold transition-all cursor-pointer border disabled:opacity-50 disabled:cursor-not-allowed ${
+                              planVerificationChoice === val
+                                ? val === "not_conducted"
+                                  ? "bg-rose-600 border-rose-600 text-white shadow-xs"
+                                  : "bg-emerald-600 border-emerald-600 text-white shadow-xs"
+                                : "bg-white border-emerald-200 text-emerald-800 hover:bg-emerald-100"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {planVerificationChoice === "with_changes" && (
+                        <input
+                          type="text"
+                          value={planActualTopic}
+                          onChange={(e) => setPlanActualTopic(e.target.value)}
+                          placeholder="Actual topic conducted…"
+                          className="mt-1.5 w-full max-w-md px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-white text-[11px] font-semibold text-slate-800 focus:outline-none focus:border-emerald-500"
+                        />
+                      )}
+                      {planVerificationChoice !== "not_conducted" && matchedPlannedTask.task.materialUrl ? (
+                        <a
+                          href={String(matchedPlannedTask.task.materialUrl)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 mt-1 text-[10.5px] font-bold text-emerald-700 underline hover:text-emerald-900"
+                        >
+                          Planned Material <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+                {!matchedPlannedTask && weeklyPlansLoaded && selectedCell.type !== "covering" && !isPastDay && (
+                  <div className="px-5 py-1.5 bg-slate-50/60 border-b border-slate-100 flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">No approved Weekly Plan match for this period</span>
                   </div>
                 )}
 
@@ -7615,7 +8021,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 `Late Attendance Edit Request: ${camRequestReason.trim()}`,
                 selectedCell.slot?.course,
                 selectedCell.slot?.classGroup,
-                "CAM Approval (Late Attendance Edit)"
+                "CAM Approval (Late Attendance Edit)",
+                "late_attendance"
               );
 
               setIsCamEditRequestModalOpen(false);
@@ -8369,6 +8776,24 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   <td className="p-4 border-r border-slate-100/60">
                                     <div className="font-bold text-slate-805">{student.name}</div>
                                     <div className="text-[10px] text-slate-400 font-mono mt-0.5">{student.id}</div>
+                                    {(() => {
+                                      const { lc, hr } = getStudentCodingStats(student);
+                                      if (!lc && !hr) return null;
+                                      return (
+                                        <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                          {lc && (
+                                            <span className="px-1.5 py-0.2 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[8.5px] font-black" title={`LeetCode Solved: ${lc.solvedTotal} (Easy:${lc.solvedEasy}, Med:${lc.solvedMedium}, Hard:${lc.solvedHard})`}>
+                                              LC: {lc.solvedTotal}
+                                            </span>
+                                          )}
+                                          {hr && (
+                                            <span className="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-900 border border-emerald-200 text-[8.5px] font-black" title={`HackerRank: ${hr.rank ? `Rank #${hr.rank}` : `${hr.solved} Solved`}`}>
+                                              HR: {hr.rank ? `#${hr.rank}` : `${hr.solved}`}
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
                                   </td>
                                   <td className="p-3 border-r border-slate-100/60">
                                     {(() => {
@@ -8758,6 +9183,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         {activeTab === "interviews" && (
           <div className="space-y-6 font-sans">
             <InterviewModule currentUserRole="mentor" currentUserName={currentMentor?.name || "Mentor"} />
+          </div>
+        )}
+
+        {/* ── Tab: My Skill Tracker (Mentor Skill Development — SME verdicts) ── */}
+        {activeTab === "my_skill_tracker" && currentMentor && (
+          <div className="space-y-6">
+            <SkillTrackerPanel
+              role="mentor"
+              mentorId={currentMentor.id}
+              mentorName={currentMentor.name}
+              collegeId={currentMentor.college_id}
+              collegeName={colleges.find(c => c.id === currentMentor.college_id)?.name}
+            />
           </div>
         )}
 
@@ -9360,6 +9798,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
                                     {log.period_slot}
                                   </span>
+                                  {(log as any).weekly_plan_id ? (
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase border tracking-wider ${
+                                      (log.status || "").toLowerCase().includes("not")
+                                        ? "bg-rose-50 text-rose-700 border-rose-200"
+                                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    }`} title={`Conducted as verified against your approved Weekly Plan — Week ${(log as any).weekly_plan_week || "?"}`}>
+                                      Per Weekly Plan · W{(log as any).weekly_plan_week || "?"} {(log.status || "").toLowerCase().includes("not") ? "✗" : "✓"}
+                                    </span>
+                                  ) : null}
                                   <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase border ${
                                     isNotDelivered
                                       ? "bg-rose-100 text-rose-800 border-rose-200"
@@ -11016,8 +11463,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           <ShieldAlert className="w-5 h-5" />
                         </div>
                         <div>
-                          <h2 className="text-sm font-extrabold text-slate-900">Request Log Correction from CAM</h2>
-                          <p className="text-xs text-slate-500">Submit an edit/correction request to your Campus Manager</p>
+                          <h2 className="text-sm font-extrabold text-slate-900">Request Log Correction</h2>
+                          <p className="text-xs text-slate-500">Submit an attendance or log edit request to Campus Manager.</p>
                         </div>
                       </div>
                       <button
@@ -11192,7 +11639,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 className="w-full mt-2 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black rounded-lg shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                               >
                                 <Calendar className="h-3.5 w-3.5" />
-                                Reschedule Demo →
+Request Reschedule →
                               </button>
                             ) : (
                               <div className="flex gap-1.5 mt-2">
@@ -11323,6 +11770,23 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               <div className="text-[10px] text-slate-505 font-medium">
                                 Evaluator: <span className="font-bold text-slate-705">{demo.smeName}</span> • Cohort: <span className="font-bold text-slate-705">{demo.stream}</span>
                               </div>
+                              {(() => {
+                                // Phase C: show which department compliance criteria were flagged
+                                let flagged: string[] = [];
+                                try {
+                                  const list = typeof demo.checklist === "string" ? JSON.parse(demo.checklist) : demo.checklist;
+                                  if (Array.isArray(list)) flagged = list.filter((c: any) => c && c.met === false && c.label).map((c: any) => c.label);
+                                } catch (_) {}
+                                return flagged.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {flagged.map((label, i) => (
+                                      <span key={i} className="px-2 py-0.5 bg-rose-50 border border-rose-200 text-rose-700 text-[8.5px] font-black uppercase rounded-lg">
+                                        Not Met: {label}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null;
+                              })()}
                               {demo.comments && (
                                 <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl mt-2 text-xs text-slate-655 font-medium leading-relaxed italic">
                                   &ldquo;{demo.comments}&rdquo;
@@ -12079,7 +12543,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   {rescheduleSubmitting ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Rescheduling…</span>
+                      <span>Sending Request…</span>
                     </>
                   ) : (
                     <>

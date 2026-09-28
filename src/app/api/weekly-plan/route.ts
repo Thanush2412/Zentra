@@ -4,6 +4,7 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { deriveSubjectType } from "@/lib/skillTracker";
 
 async function ensureTable(db: any) {
   try {
@@ -122,6 +123,43 @@ export async function GET(request: Request) {
       demoRows = await db.all(demoQuery, ...demoParams).catch(() => []);
     }
 
+    // ── Skill tracker enrichment (Mentor Skill Development Tracker) ──
+    // Attach subject_type (Skill/Academic) and the latest SME skill verdict
+    // per plan so the WeeklyPlanViewer table and mentor plan studio can render
+    // them without extra requests.
+    let subjectTypeMap = new Map<string, string>();
+    let clearanceRows: any[] = [];
+    try {
+      const subjectRows: any[] = await db.all("SELECT name, type FROM subjects").catch(() => []);
+      subjectRows.forEach((s: any) => {
+        if (s?.name) subjectTypeMap.set(String(s.name).toLowerCase().trim(), s.type || "");
+      });
+      clearanceRows = await db.all("SELECT mentor_id, subject, week_number, scope, status, score, remarks, verified_by, verified_at FROM mentor_skill_clearances").catch(() => []);
+    } catch (_) { /* enrichment is best-effort */ }
+
+    const verdictForPlan = (plan: any) => {
+      const subjKey = String(plan.subject || "").toLowerCase().trim();
+      const wk = parseInt(String(plan.week_number ?? ""), 10);
+      const matches = clearanceRows.filter((c: any) =>
+        String(c.subject || "").toLowerCase().trim() === subjKey &&
+        parseInt(String(c.week_number ?? ""), 10) === wk &&
+        (!plan.mentor_id || !c.mentor_id || c.mentor_id === plan.mentor_id)
+      );
+      const weekRow = matches.find((m: any) => m.scope === "week" && m.status === "cleared")
+        || matches.find((m: any) => m.scope === "week" && m.status === "not_cleared")
+        || matches.find((m: any) => m.scope === "week" && m.status === "needs_revision")
+        || matches.find((m: any) => m.scope === "demo" && m.status === "cleared")
+        || matches.find((m: any) => m.scope === "demo" && m.status === "not_cleared");
+      if (!weekRow) return { verdict: "pending", score: null, remarks: null, verified_by: null, verified_at: null };
+      return {
+        verdict: weekRow.status,
+        score: weekRow.score ?? null,
+        remarks: weekRow.remarks || null,
+        verified_by: weekRow.verified_by || null,
+        verified_at: weekRow.verified_at || null
+      };
+    };
+
     // Build comparison metrics & audit summary
     const conductedTopicSet = new Set(
       conductedTrackerRows
@@ -164,9 +202,13 @@ export async function GET(request: Request) {
         };
       });
 
+      const explicitType = subjectTypeMap.get(String(plan.subject || "").toLowerCase().trim()) || "";
+      const subjectType = deriveSubjectType(plan.subject, explicitType);
       return {
         ...plan,
         sme_remarks: plan.sme_remarks || plan.cam_feedback || "",
+        subject_type: subjectType,
+        skill_verdict: verdictForPlan(plan),
         session_plan: tasksWithAudit
       };
     });

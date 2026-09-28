@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/context/ToastContext";
+import { useApp } from "@/context/AppContext";
+import { LoadingButton } from "./ui/LoadingButton";
 import {
   ShieldCheck,
   Building2,
@@ -48,83 +50,18 @@ import {
 } from "lucide-react";
 
 // ============================================================================
-// 1. KAM REGIONAL CLUSTERS & 26 COLLEGES (From Naveen's Standard Operating Procedure)
+// 1. DYNAMIC KAM CLUSTER INTERFACES (Loaded directly from Database)
 // ============================================================================
 export interface KAMClusterInfo {
-  region: string;
+  kamId: string;
   kamName: string;
-  campuses: string[];
+  campuses: { id: string; name: string }[];
 }
 
-export const KAM_CLUSTERS: Record<string, KAMClusterInfo> = {
-  "Shyam Kumar": {
-    region: "Chennai",
-    kamName: "Shyam Kumar",
-    campuses: [
-      "SDNB Vaishnav College for Women",
-      "AMET University",
-      "Vinayaga Mission's Research Foundation School of Arts & Science",
-      "Takshashila University",
-      "TJS College of Arts and Science",
-      "Patrician College of Arts & Science"
-    ]
-  },
-  "Praveen Rao": {
-    region: "KA and KL",
-    kamName: "Praveen Rao",
-    campuses: [
-      "Alliance University",
-      "Kristu Jayathi University",
-      "St. Agnes College (Autonomous)",
-      "Asian School of Business",
-      "S-VYASA University"
-    ]
-  },
-  "Guna Karthick": {
-    region: "Rest of TN",
-    kamName: "Guna Karthick",
-    campuses: [
-      "Kamaraj College",
-      "Kamaraj Women's College",
-      "Noorul Islam Centre for Higher Education (NICHE)",
-      "Sri Amaraavathi College of Arts & Science",
-      "Bharathidasan College of Arts & Science",
-      "Nagarathinam Angalammal Arts & Science College",
-      "TERF's College of Arts and Science",
-      "Sasurie College of Arts and Science"
-    ]
-  },
-  "New KAM": {
-    region: "Coimbatore",
-    kamName: "New KAM",
-    campuses: [
-      "Rathinam College of Arts & Science",
-      "Sree Saraswathi Thyagaraja College",
-      "VLB Janakiammal College of Arts and Science",
-      "Hindusthan College of Arts & Science",
-      "Kongunadu College of Arts and Science",
-      "Sri Ramakrishna College of Arts and Science for Women",
-      "Study World Group of Institution"
-    ]
-  }
-};
-
-export function resolveKAMForCampus(campusName?: string): { kam: string; region: string; matchedCampus: string; campuses: string[] } {
-  const norm = (campusName || "").trim().toLowerCase();
-  for (const [kam, info] of Object.entries(KAM_CLUSTERS)) {
-    for (const c of info.campuses) {
-      if (c.trim().toLowerCase() === norm || norm.includes(c.trim().toLowerCase()) || c.trim().toLowerCase().includes(norm)) {
-        return { kam, region: info.region, matchedCampus: c, campuses: info.campuses };
-      }
-    }
-  }
-  // Default fallback to Chennai cluster if unmapped
-  return {
-    kam: "Shyam Kumar",
-    region: "Chennai",
-    matchedCampus: campusName || "SDNB Vaishnav College for Women",
-    campuses: KAM_CLUSTERS["Shyam Kumar"]?.campuses || []
-  };
+export interface DynamicActiveKAMInfo {
+  kam: string;
+  kamId: string;
+  campuses: string[];
 }
 
 // ============================================================================
@@ -244,257 +181,53 @@ export interface CampusAuditManagerProps {
   userName?: string;
 }
 
-// Deterministic PRNG for Intra-KAM rotation engine
-function mulberry32(a: number) {
-  return function () {
-    let t = (a += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function strSeed(s: string): number {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
-  return h >>> 0;
-}
-
-// Storage keys for browser persistence
-const STORAGE_KEY_AUDIT_DATA = "fp_campus_audit_data_v2";
-const STORAGE_KEY_PEER_HISTORY = "fp_campus_audit_peer_history_v2";
-
 // ============================================================================
-// INITIAL REALISTIC SEED DATA (Naveen's Cluster Records)
+// 2b. DATABASE-BACKED CAMPUS AUDIT RECORD INTERFACE
 // ============================================================================
-export const INITIAL_SKILL_RECORDS: SkillAuditRecord[] = [
-  {
-    uid: "sk_001",
-    id: "LOG-SK-801",
-    mentor: "Dr. K. Sangeetha",
-    campus: "SDNB Vaishnav College for Women",
-    deptName: "B.Sc Computer Science",
-    department: "Computer Science",
-    subject: "Full-Stack Web Architecture (React & Node)",
-    criteria: { genuine: true, weeklyPlan: true, tracker: true, assignment: true, assessment: true },
-    proof: { assignment: { link: "https://github.com/sdnb-cs/fullstack-assignments" }, assessment: { link: "https://drive.google.com/open?id=sdnb-assess-wk4" } },
-    score: 100,
-    tasksAssigned: 12,
-    tasksCompleted: 11,
-    avgCompletionPct: 92,
-    remarks: "Excellent weekly cadence. Verified student repos against git commit timestamps.",
-    date: "2026-09-12",
-    status: "Completed"
-  },
-  {
-    uid: "sk_002",
-    id: "LOG-SK-802",
-    mentor: "Prof. R. Vignesh",
-    campus: "SDNB Vaishnav College for Women",
-    deptName: "BCA Computer Applications",
-    department: "Information Technology",
-    subject: "Algorithms & Competitive Problem Solving",
-    criteria: { genuine: true, weeklyPlan: true, tracker: true, assignment: true, assessment: false },
-    proof: { assignment: { link: "https://hackerrank.com/contests/sdnb-bca-round2" } },
-    score: 80,
-    tasksAssigned: 15,
-    tasksCompleted: 13,
-    avgCompletionPct: 86,
-    remarks: "Assessment scheduled for Friday afternoon. Assignment code reviews completed.",
-    date: "2026-09-14",
-    status: "In Progress"
-  },
-  {
-    uid: "sk_003",
-    id: "LOG-SK-803",
-    mentor: "Dr. Arvind Menon",
-    campus: "Alliance University",
-    deptName: "B.Tech CSE",
-    department: "Engineering",
-    subject: "Cloud Computing & Kubernetes Containerization",
-    criteria: { genuine: true, weeklyPlan: true, tracker: true, assignment: true, assessment: true },
-    proof: { assignment: { link: "https://github.com/alliance-cloud/k8s-lab-submissions" } },
-    score: 100,
-    tasksAssigned: 10,
-    tasksCompleted: 9,
-    avgCompletionPct: 90,
-    remarks: "Docker daemon logs cross-verified. Students deployed microservices on cluster.",
-    date: "2026-09-11",
-    status: "Completed"
-  },
-  {
-    uid: "sk_004",
-    id: "LOG-SK-804",
-    mentor: "Mrs. Priya Lakshmi",
-    campus: "Kamaraj College",
-    deptName: "B.Com Professional Accounting",
-    department: "Commerce",
-    subject: "Financial Modeling & Tally Prime ERP",
-    criteria: { genuine: true, weeklyPlan: true, tracker: false, assignment: true, assessment: false },
-    proof: { assignment: { link: "https://drive.google.com/file/d/tally-prime-sheet" } },
-    score: 60,
-    tasksAssigned: 8,
-    tasksCompleted: 5,
-    avgCompletionPct: 62,
-    remarks: "Daily tracker entry delayed by 2 days due to college sports day.",
-    date: "2026-09-10",
-    status: "In Progress"
-  }
-];
+export interface CampusAuditDbRecord {
+  id: string;
+  uid: string;
+  college_id?: string;
+  campus: string;
+  mentor_id?: string;
+  mentor_name: string;
+  department?: string;
+  dept_name?: string;
+  subject: string;
+  audit_date: string;
+  auditor_name?: string;
+  auditor_role?: string;
 
-export const INITIAL_ACADEMIC_RECORDS: AcademicAuditRecord[] = [
-  {
-    uid: "ac_001",
-    id: "TSK-AC-401",
-    mentor: "Dr. K. Sangeetha",
-    campus: "SDNB Vaishnav College for Women",
-    deptName: "B.Sc Computer Science",
-    department: "Computer Science",
-    subject: "Database Management Systems & SQL",
-    criteria: { assignmentGenuine: true, assessmentGenuine: true, beforeDeadline: true, studyMaterial: true },
-    score: 100,
-    remarks: "Unit 3 Normalization & BCNF fully conducted. Question bank shared on LMS.",
-    date: "2026-09-13",
-    status: "Completed"
-  },
-  {
-    uid: "ac_002",
-    id: "TSK-AC-402",
-    mentor: "Prof. R. Vignesh",
-    campus: "SDNB Vaishnav College for Women",
-    deptName: "BCA Computer Applications",
-    department: "Information Technology",
-    subject: "Object Oriented Programming in Java",
-    criteria: { assignmentGenuine: true, assessmentGenuine: true, beforeDeadline: false, studyMaterial: true },
-    score: 75,
-    remarks: "Lab experiment 5 submitted 1 day past deadline by cohort B.",
-    date: "2026-09-14",
-    status: "In Progress"
-  },
-  {
-    uid: "ac_003",
-    id: "TSK-AC-403",
-    mentor: "Dr. M. Soundararajan",
-    campus: "AMET University",
-    deptName: "Marine Engineering",
-    department: "Engineering",
-    subject: "Marine Instrumentation & Sensor Networks",
-    criteria: { assignmentGenuine: true, assessmentGenuine: true, beforeDeadline: true, studyMaterial: true },
-    score: 100,
-    remarks: "Sensors simulation recorded and verified with lab logbook.",
-    date: "2026-09-12",
-    status: "Completed"
-  }
-];
+  skill_criteria?: any;
+  skill_score: number;
+  tasks_assigned: number;
+  tasks_completed: number;
+  skill_proof_link?: string;
+  skill_remarks?: string;
 
-export const INITIAL_ATTENDANCE_RECORDS: AttendanceAuditRecord[] = [
-  {
-    uid: "at_001",
-    id: "ATT-VER-301",
-    mentor: "Dr. K. Sangeetha",
-    campus: "SDNB Vaishnav College for Women",
-    deptName: "B.Sc Computer Science",
-    department: "Computer Science",
-    below75: 3,
-    criteria: { markedDaily: true, crossVerified: true, noProxy: true, matchesTracker: true },
-    score: 100,
-    remarks: "Biometric and classroom log matched 100%. SMS alerts sent to parents of 3 absentees.",
-    date: "2026-09-13",
-    status: "Completed"
-  },
-  {
-    uid: "at_002",
-    id: "ATT-VER-302",
-    mentor: "Prof. R. Vignesh",
-    campus: "SDNB Vaishnav College for Women",
-    deptName: "BCA Computer Applications",
-    department: "Information Technology",
-    below75: 7,
-    criteria: { markedDaily: true, crossVerified: true, noProxy: true, matchesTracker: false },
-    score: 75,
-    remarks: "Discrepancy of 2 students between morning period log and biometric machine.",
-    date: "2026-09-14",
-    status: "In Progress"
-  }
-];
+  coursework_criteria?: any;
+  coursework_score: number;
+  coursework_remarks?: string;
 
-const INITIAL_PEER_AUDITS: PeerAuditRecord[] = [
-  {
-    uid: "aud_001",
-    id: "AUD-2026-081",
-    campus: "AMET University",
-    mentor: "Dr. M. Soundararajan",
-    deptName: "Marine Engineering",
-    department: "Engineering",
-    kam: "Shyam Kumar",
-    region: "Chennai",
-    reviewerCampus: "SDNB Vaishnav College for Women",
-    reviewerCM: "Campus Manager (SDNB Vaishnav)",
-    weeklyPlan: "Completed",
-    skillDev: "Completed",
-    academic: "Completed",
-    overall: "In Progress",
-    auditor: "Campus Manager (AMET University)",
-    date: "2026-09-14",
-    auditorNotes: "Assigned to SDNB Vaishnav for Intra-KAM peer verification. Awaiting reviewer sign-off.",
-    evidenceSnapshot: {
-      skillScore: 94,
-      academicScore: 100,
-      attendanceScore: 100,
-      proofLink: "https://github.com/amet-marine/sensor-lab-proofs",
-      remarks: "Conducted 18 hours of micro-controller practicals. Excellent student attendance."
-    }
-  },
-  {
-    uid: "aud_002",
-    id: "AUD-2026-080",
-    campus: "SDNB Vaishnav College for Women",
-    mentor: "Dr. K. Sangeetha",
-    deptName: "B.Sc Computer Science",
-    department: "Computer Science",
-    kam: "Shyam Kumar",
-    region: "Chennai",
-    reviewerCampus: "Takshashila University",
-    reviewerCM: "Campus Manager (Takshashila University)",
-    weeklyPlan: "Completed",
-    skillDev: "Completed",
-    academic: "Completed",
-    overall: "Completed",
-    auditor: "Campus Manager (SDNB Vaishnav)",
-    date: "2026-09-12",
-    auditorNotes: "Signed off by Takshashila University CM. All code repositories and student tests verified.",
-    evidenceSnapshot: {
-      skillScore: 100,
-      academicScore: 100,
-      attendanceScore: 100,
-      proofLink: "https://github.com/sdnb-cs/fullstack-assignments",
-      remarks: "Flawless documentation. All 12 weekly exercises verified against timetable."
-    }
-  }
-];
+  attendance_criteria?: any;
+  attendance_score: number;
+  below_75_count: number;
+  attendance_remarks?: string;
 
-// Initial Peer Review Cooldown History (Chennai cluster)
-const INITIAL_PEER_HISTORY: PeerReviewHistoryRecord[] = [
-  {
-    pairKey: "amet university<->sdnb vaishnav college for women",
-    submittedCampus: "AMET University",
-    submittedCM: "Campus Manager (AMET)",
-    reviewerCampus: "SDNB Vaishnav College for Women",
-    reviewerCM: "Campus Manager (SDNB Vaishnav)",
-    kam: "Shyam Kumar",
-    region: "Chennai",
-    monthKey: "2026-09",
-    createdAt: new Date().toISOString()
-  }
-];
+  kam_id?: string;
+  kam_name?: string;
+  reviewer_college_id?: string;
+  reviewer_campus: string;
+  reviewer_cm_name?: string;
+  peer_status: "Pending" | "Completed";
+  peer_signoff_notes?: string;
+  peer_signed_by?: string;
+  peer_signed_at?: string;
 
-// Initial Campus Ticketing Matrix (from Consolidated Ticketing report.html)
-const CAMPUS_TICKETS_SAMPLE = [
-  { id: "TCK-1092", category: "Academic Syllabus", title: "Unit 4 Data Structures lab server port blocked", priority: "High", status: "Resolved", time: "2h ago" },
-  { id: "TCK-1088", category: "LMS Portal", title: "Student quiz submission timeout in Section B", priority: "Medium", status: "Resolved", time: "1d ago" },
-  { id: "TCK-1085", category: "Attendance Discrepancy", title: "Biometric synch delay for Period 3 morning shift", priority: "Low", status: "In Progress", time: "2d ago" },
-  { id: "TCK-1079", category: "Infrastructure", title: "HDMI projector cable replacement in Seminar Hall 2", priority: "Medium", status: "Resolved", time: "4d ago" }
-];
+  overall_status: "In Progress" | "Completed";
+  created_at: string;
+  updated_at: string;
+}
 
 // ============================================================================
 // 2b. CLASSROOM OBSERVATION VIEW (form + gallery, college-scoped)
@@ -955,150 +688,108 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
 }) => {
   const { toast } = useToast();
 
-  // Resolved KAM cluster for active campus
-  const activeKamInfo = useMemo(() => resolveKAMForCampus(collegeName), [collegeName]);
+  const { mentors = [], subjectsList = [] } = useApp();
 
-  // Main navigation tabs inside the module - STRICTLY ASSIGNED AUDITS & RECORD AUDIT
-  const [activeSubTab, setActiveSubTab] = useState<"assigned" | "record">("assigned");
+  // Dynamic college-scoped mentors & departments from Database
+  const collegeMentors = useMemo(() => {
+    return (mentors || []).filter(
+      (m: any) =>
+        (collegeId && m.college_id === collegeId) ||
+        (collegeName && (m.college === collegeName || m.college_name === collegeName))
+    );
+  }, [mentors, collegeId, collegeName]);
+
+  const collegeDepartments = useMemo(() => {
+    const depts = new Set<string>();
+    collegeMentors.forEach((m: any) => {
+      if (m.department) depts.add(m.department);
+      if (m.classes) depts.add(m.classes);
+    });
+    return Array.from(depts);
+  }, [collegeMentors]);
+
+  // Main navigation tabs inside the module
+  const [activeSubTab, setActiveSubTab] = useState<"assigned" | "submitted" | "record">("assigned");
   const [assignedStatusFilter, setAssignedStatusFilter] = useState<"pending" | "completed">("pending");
   const [auditSubmittedSuccess, setAuditSubmittedSuccess] = useState(false);
 
-  // Data states
-  const [skillRecords, setSkillRecords] = useState<SkillAuditRecord[]>(INITIAL_SKILL_RECORDS);
-  const [academicRecords, setAcademicRecords] = useState<AcademicAuditRecord[]>(INITIAL_ACADEMIC_RECORDS);
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceAuditRecord[]>(INITIAL_ATTENDANCE_RECORDS);
-  const [peerAudits, setPeerAudits] = useState<PeerAuditRecord[]>(INITIAL_PEER_AUDITS);
-  const [peerHistory, setPeerHistory] = useState<PeerReviewHistoryRecord[]>(INITIAL_PEER_HISTORY);
+  // Database-driven Audits and KAM Cluster States
+  const [assignedAudits, setAssignedAudits] = useState<CampusAuditDbRecord[]>([]);
+  const [submittedAudits, setSubmittedAudits] = useState<CampusAuditDbRecord[]>([]);
+  const [loadingAudits, setLoadingAudits] = useState(false);
+  const [isSubmittingAudit, setIsSubmittingAudit] = useState(false);
+  const [isSigningOffAudit, setIsSigningOffAudit] = useState(false);
+  const [dynamicKAMInfo, setDynamicKAMInfo] = useState<DynamicActiveKAMInfo>({
+    kam: "General Cluster",
+    kamId: "",
+    campuses: []
+  });
 
-  // Load persisted records from localStorage on mount
-  useEffect(() => {
+  const fetchCampusAudits = async () => {
+    setLoadingAudits(true);
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_AUDIT_DATA);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.skill) setSkillRecords(parsed.skill);
-        if (parsed.academic) setAcademicRecords(parsed.academic);
-        if (parsed.attendance) setAttendanceRecords(parsed.attendance);
-        if (parsed.peerAudits) setPeerAudits(parsed.peerAudits);
-      }
-      const savedHist = localStorage.getItem(STORAGE_KEY_PEER_HISTORY);
-      if (savedHist) setPeerHistory(JSON.parse(savedHist));
-    } catch (e) {
-      console.warn("Could not load stored audit records", e);
-    }
-  }, []);
-
-  // Save to localStorage whenever records change
-  const persistAuditData = (
-    skills: SkillAuditRecord[],
-    academics: AcademicAuditRecord[],
-    attendances: AttendanceAuditRecord[],
-    peers: PeerAuditRecord[],
-    history: PeerReviewHistoryRecord[]
-  ) => {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY_AUDIT_DATA,
-        JSON.stringify({ skill: skills, academic: academics, attendance: attendances, peerAudits: peers })
+      const res = await fetch(
+        `/api/audit/campus-audits?collegeId=${encodeURIComponent(collegeId || "")}&collegeName=${encodeURIComponent(collegeName || "")}`
       );
-      localStorage.setItem(STORAGE_KEY_PEER_HISTORY, JSON.stringify(history));
-    } catch (e) {
-      console.warn("Could not persist audit data", e);
+      const data = await res.json();
+      if (data.success) {
+        setAssignedAudits(data.assignedAudits || []);
+        setSubmittedAudits(data.submittedAudits || []);
+        if (data.activeKAMInfo) {
+          setDynamicKAMInfo(data.activeKAMInfo);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch campus audits:", err);
+    } finally {
+      setLoadingAudits(false);
     }
   };
 
-  // --------------------------------------------------------------------------
-  // INTRA-KAM PEER REVIEW ROTATION ENGINE (With 6-Audit Cooldown & Load Balancing)
-  // --------------------------------------------------------------------------
-  const getIntraKAMPeerReviewer = (submittedCampus: string) => {
-    const kamInfo = resolveKAMForCampus(submittedCampus);
-    const cluster = KAM_CLUSTERS[kamInfo.kam];
-    const candidateCampuses = cluster.campuses.filter(
-      (c) => c.trim().toLowerCase() !== submittedCampus.trim().toLowerCase()
-    );
-
-    if (candidateCampuses.length === 0) {
-      return { reviewerCampus: submittedCampus, reviewerCM: "Campus Manager", kam: kamInfo.kam, region: kamInfo.region };
-    }
-
-    const subNorm = submittedCampus.trim().toLowerCase();
-    const relevantHistory = peerHistory.filter((h) => {
-      const a = (h.submittedCampus || "").trim().toLowerCase();
-      const b = (h.reviewerCampus || "").trim().toLowerCase();
-      return (a === subNorm || b === subNorm) && h.kam === kamInfo.kam;
-    });
-
-    const recentWindow = relevantHistory.slice(-6);
-    const cooldowned = new Set(
-      recentWindow.map((h) =>
-        (h.submittedCampus || "").trim().toLowerCase() === subNorm ? (h.reviewerCampus || "").trim().toLowerCase() : (h.submittedCampus || "").trim().toLowerCase()
-      )
-    );
-
-    let eligible = candidateCampuses.filter((c) => !cooldowned.has(c.trim().toLowerCase()));
-    if (eligible.length === 0) eligible = candidateCampuses;
-
-    // Load balancing: pick candidate with lowest assignments
-    const counts = new Map<string, number>();
-    candidateCampuses.forEach((c) => counts.set(c.trim().toLowerCase(), 0));
-    peerHistory.slice(-20).forEach((h) => {
-      const r = (h.reviewerCampus || "").trim().toLowerCase();
-      if (counts.has(r)) counts.set(r, (counts.get(r) || 0) + 1);
-    });
-
-    eligible.sort((a, b) => (counts.get(a.trim().toLowerCase()) || 0) - (counts.get(b.trim().toLowerCase()) || 0));
-
-    // Deterministic PRNG pick for stability
-    const seed = strSeed(submittedCampus + "|" + peerAudits.length);
-    const rng = mulberry32(seed);
-    const selectedCampus = eligible[Math.floor(rng() * eligible.length)] || eligible[0];
-
-    return {
-      reviewerCampus: selectedCampus,
-      reviewerCM: `Campus Manager (${selectedCampus})`,
-      kam: kamInfo.kam,
-      region: kamInfo.region
-    };
-  };
+  useEffect(() => {
+    fetchCampusAudits();
+  }, [collegeId, collegeName]);
 
   // --------------------------------------------------------------------------
-  // RECORD AUDIT WIZARD FORM STATE (4 Stages)
+  // RECORD AUDIT WIZARD FORM STATE (Clean, no hardcoded defaults)
   // --------------------------------------------------------------------------
   const [wizardStage, setWizardStage] = useState<1 | 2 | 3 | 4>(1);
 
   // Setup / Form fields
   const [wizCampus, setWizCampus] = useState(collegeName);
-  const [wizDeptName, setWizDeptName] = useState("B.Sc Computer Science");
-  const [wizDepartment, setWizDepartment] = useState("Computer Science");
-  const [wizMentor, setWizMentor] = useState("Dr. K. Sangeetha");
-  const [wizSubject, setWizSubject] = useState("Full-Stack Web Architecture (React & Node)");
+  const [wizMentorMode, setWizMentorMode] = useState<"select" | "custom">("select");
+  const [wizMentorId, setWizMentorId] = useState("");
+  const [wizMentor, setWizMentor] = useState("");
+  const [wizDeptName, setWizDeptName] = useState("");
+  const [wizDepartment, setWizDepartment] = useState("");
+  const [wizSubject, setWizSubject] = useState("");
   const [wizDate, setWizDate] = useState(new Date().toISOString().slice(0, 10));
 
-  // Stage 1: Skill criteria
+  // Stage 2: Skill criteria
   const [wizSkillGenuine, setWizSkillGenuine] = useState(true);
   const [wizSkillWeeklyPlan, setWizSkillWeeklyPlan] = useState(true);
   const [wizSkillTracker, setWizSkillTracker] = useState(true);
   const [wizSkillAssignment, setWizSkillAssignment] = useState(true);
   const [wizSkillAssessment, setWizSkillAssessment] = useState(true);
-  const [wizSkillProofLink, setWizSkillProofLink] = useState("https://github.com/campus-submissions/skill-tasks");
-  const [wizSkillAssigned, setWizSkillAssigned] = useState<number>(10);
-  const [wizSkillCompleted, setWizSkillCompleted] = useState<number>(9);
-  const [wizSkillRemarks, setWizSkillRemarks] = useState("Weekly code exercises and lab logs verified against git commits.");
+  const [wizSkillProofLink, setWizSkillProofLink] = useState("");
+  const [wizSkillAssigned, setWizSkillAssigned] = useState<number>(0);
+  const [wizSkillCompleted, setWizSkillCompleted] = useState<number>(0);
+  const [wizSkillRemarks, setWizSkillRemarks] = useState("");
 
-  // Stage 2: Coursework criteria
+  // Stage 3: Coursework criteria
   const [wizAcadAssignment, setWizAcadAssignment] = useState(true);
   const [wizAcadAssessment, setWizAcadAssessment] = useState(true);
   const [wizAcadBeforeDeadline, setWizAcadBeforeDeadline] = useState(true);
   const [wizAcadStudyMaterial, setWizAcadStudyMaterial] = useState(true);
-  const [wizAcadRemarks, setWizAcadRemarks] = useState("Unit 3 & Unit 4 lecture demonstrations completed with question banks.");
+  const [wizAcadRemarks, setWizAcadRemarks] = useState("");
 
-  // Stage 3: Attendance criteria
+  // Stage 4: Attendance criteria
   const [wizAttMarkedDaily, setWizAttMarkedDaily] = useState(true);
   const [wizAttCrossVerified, setWizAttCrossVerified] = useState(true);
   const [wizAttNoProxy, setWizAttNoProxy] = useState(true);
   const [wizAttMatchesTracker, setWizAttMatchesTracker] = useState(true);
-  const [wizAttBelow75, setWizAttBelow75] = useState<number>(2);
-  const [wizAttRemarks, setWizAttRemarks] = useState("Biometric logs cross-verified with mentor timetable slot attendance.");
+  const [wizAttBelow75, setWizAttBelow75] = useState<number>(0);
+  const [wizAttRemarks, setWizAttRemarks] = useState("");
 
   // Sync wizCampus when collegeName prop updates
   useEffect(() => {
@@ -1124,185 +815,115 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
     return Math.round((met / checks.length) * 100);
   }, [wizAttMarkedDaily, wizAttCrossVerified, wizAttNoProxy, wizAttMatchesTracker]);
 
-  // Submit complete 4-stage audit
-  const handleCompleteWizard = () => {
+  // Submit complete 4-stage audit to database
+  const handleCompleteWizard = async () => {
     if (!wizMentor.trim()) {
-      toast("Please enter the mentor's name before submitting.", "warning");
+      toast("Please select or enter the mentor's name before submitting.", "warning");
+      return;
+    }
+    if (!wizSubject.trim()) {
+      toast("Please enter the subject / course title.", "warning");
       return;
     }
 
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const nextNum = peerAudits.length + 1;
-    const auditId = `AUD-2026-${String(80 + nextNum).padStart(3, "0")}`;
+    setIsSubmittingAudit(true);
+    try {
+      const payload = {
+        college_id: collegeId,
+        campus: wizCampus,
+        mentor_id: wizMentorId || null,
+        mentor_name: wizMentor.trim(),
+        department: wizDepartment || wizDeptName,
+        dept_name: wizDeptName || wizDepartment,
+        subject: wizSubject.trim(),
+        audit_date: wizDate,
+        auditor_name: userName,
+        auditor_role: role,
 
-    // 1. Skill record
-    const newSkill: SkillAuditRecord = {
-      uid: `sk_${Date.now()}`,
-      id: `LOG-SK-${800 + nextNum}`,
-      mentor: wizMentor,
-      campus: wizCampus,
-      deptName: wizDeptName,
-      department: wizDepartment,
-      subject: wizSubject,
-      criteria: {
-        genuine: wizSkillGenuine,
-        weeklyPlan: wizSkillWeeklyPlan,
-        tracker: wizSkillTracker,
-        assignment: wizSkillAssignment,
-        assessment: wizSkillAssessment
-      },
-      proof: {
-        assignment: { link: wizSkillProofLink }
-      },
-      score: calculatedSkillScore,
-      tasksAssigned: wizSkillAssigned,
-      tasksCompleted: wizSkillCompleted,
-      avgCompletionPct: wizSkillAssigned > 0 ? Math.round((wizSkillCompleted / wizSkillAssigned) * 100) : 0,
-      remarks: wizSkillRemarks,
-      date: timestamp,
-      status: calculatedSkillScore >= 80 ? "Completed" : "In Progress"
-    };
+        skill_criteria: {
+          genuine: wizSkillGenuine,
+          weeklyPlan: wizSkillWeeklyPlan,
+          tracker: wizSkillTracker,
+          assignment: wizSkillAssignment,
+          assessment: wizSkillAssessment
+        },
+        skill_score: calculatedSkillScore,
+        tasks_assigned: wizSkillAssigned,
+        tasks_completed: wizSkillCompleted,
+        skill_proof_link: wizSkillProofLink,
+        skill_remarks: wizSkillRemarks,
 
-    // 2. Academic record
-    const newAcad: AcademicAuditRecord = {
-      uid: `ac_${Date.now()}`,
-      id: `TSK-AC-${400 + nextNum}`,
-      mentor: wizMentor,
-      campus: wizCampus,
-      deptName: wizDeptName,
-      department: wizDepartment,
-      subject: wizSubject,
-      criteria: {
-        assignmentGenuine: wizAcadAssignment,
-        assessmentGenuine: wizAcadAssessment,
-        beforeDeadline: wizAcadBeforeDeadline,
-        studyMaterial: wizAcadStudyMaterial
-      },
-      score: calculatedAcadScore,
-      remarks: wizAcadRemarks,
-      date: timestamp,
-      status: calculatedAcadScore >= 80 ? "Completed" : "In Progress"
-    };
+        coursework_criteria: {
+          assignmentGenuine: wizAcadAssignment,
+          assessmentGenuine: wizAcadAssessment,
+          beforeDeadline: wizAcadBeforeDeadline,
+          studyMaterial: wizAcadStudyMaterial
+        },
+        coursework_score: calculatedAcadScore,
+        coursework_remarks: wizAcadRemarks,
 
-    // 3. Attendance record
-    const newAtt: AttendanceAuditRecord = {
-      uid: `at_${Date.now()}`,
-      id: `ATT-VER-${300 + nextNum}`,
-      mentor: wizMentor,
-      campus: wizCampus,
-      deptName: wizDeptName,
-      department: wizDepartment,
-      below75: wizAttBelow75,
-      criteria: {
-        markedDaily: wizAttMarkedDaily,
-        crossVerified: wizAttCrossVerified,
-        noProxy: wizAttNoProxy,
-        matchesTracker: wizAttMatchesTracker
-      },
-      score: calculatedAttScore,
-      remarks: wizAttRemarks,
-      date: timestamp,
-      status: calculatedAttScore >= 80 ? "Completed" : "In Progress"
-    };
+        attendance_criteria: {
+          markedDaily: wizAttMarkedDaily,
+          crossVerified: wizAttCrossVerified,
+          noProxy: wizAttNoProxy,
+          matchesTracker: wizAttMatchesTracker
+        },
+        attendance_score: calculatedAttScore,
+        below_75_count: wizAttBelow75,
+        attendance_remarks: wizAttRemarks
+      };
 
-    // 4. Intra-KAM Peer assignment
-    const peerAssignment = getIntraKAMPeerReviewer(wizCampus);
-
-    const newPeerAudit: PeerAuditRecord = {
-      uid: `aud_${Date.now()}`,
-      id: auditId,
-      campus: wizCampus,
-      mentor: wizMentor,
-      deptName: wizDeptName,
-      department: wizDepartment,
-      kam: peerAssignment.kam,
-      region: peerAssignment.region,
-      reviewerCampus: peerAssignment.reviewerCampus,
-      reviewerCM: peerAssignment.reviewerCM,
-      weeklyPlan: "Completed",
-      skillDev: calculatedSkillScore >= 80 ? "Completed" : "In Progress",
-      academic: calculatedAcadScore >= 80 ? "Completed" : "In Progress",
-      overall: "In Progress",
-      auditor: `${userName} (${wizCampus})`,
-      date: timestamp,
-      auditorNotes: `Audit recorded by ${wizCampus}. Routed to ${peerAssignment.reviewerCampus} under Intra-KAM ${peerAssignment.kam} cluster for peer sign-off.`,
-      evidenceSnapshot: {
-        skillScore: calculatedSkillScore,
-        academicScore: calculatedAcadScore,
-        attendanceScore: calculatedAttScore,
-        proofLink: wizSkillProofLink,
-        remarks: wizSkillRemarks
+      const res = await fetch("/api/audit/campus-audits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(data.message || "Audit recorded and dispatched to peer reviewer.", "success");
+        await fetchCampusAudits();
+        setWizardStage(1);
+        setWizMentor("");
+        setWizMentorId("");
+        setWizDeptName("");
+        setWizDepartment("");
+        setWizSubject("");
+        setWizSkillProofLink("");
+        setWizSkillAssigned(0);
+        setWizSkillCompleted(0);
+        setWizSkillRemarks("");
+        setWizAcadRemarks("");
+        setWizAttRemarks("");
+        setWizAttBelow75(0);
+        setAuditSubmittedSuccess(true);
+        setActiveSubTab("record");
+      } else {
+        toast(data.message || "Failed to record audit.", "error");
       }
-    };
-
-    const newHistItem: PeerReviewHistoryRecord = {
-      pairKey: `${wizCampus.toLowerCase()}<->${peerAssignment.reviewerCampus.toLowerCase()}`,
-      submittedCampus: wizCampus,
-      submittedCM: userName,
-      reviewerCampus: peerAssignment.reviewerCampus,
-      reviewerCM: peerAssignment.reviewerCM,
-      kam: peerAssignment.kam,
-      region: peerAssignment.region,
-      monthKey: timestamp.slice(0, 7),
-      createdAt: new Date().toISOString()
-    };
-
-    const updatedSkills = [newSkill, ...skillRecords];
-    const updatedAcads = [newAcad, ...academicRecords];
-    const updatedAtts = [newAtt, ...attendanceRecords];
-    const updatedPeers = [newPeerAudit, ...peerAudits];
-    const updatedHist = [newHistItem, ...peerHistory];
-
-    setSkillRecords(updatedSkills);
-    setAcademicRecords(updatedAcads);
-    setAttendanceRecords(updatedAtts);
-    setPeerAudits(updatedPeers);
-    setPeerHistory(updatedHist);
-
-    persistAuditData(updatedSkills, updatedAcads, updatedAtts, updatedPeers, updatedHist);
-
-    toast(
-      `Audit recorded successfully! Routed to ${peerAssignment.reviewerCampus} for peer review under ${peerAssignment.kam} cluster.`,
-      "success"
-    );
-
-    // Reset wizard and show success state
-    setWizardStage(1);
-    setAuditSubmittedSuccess(true);
-    setActiveSubTab("record");
+    } catch (err) {
+      toast("Network error while submitting audit.", "error");
+    } finally {
+      setIsSubmittingAudit(false);
+    }
   };
 
   // --------------------------------------------------------------------------
-  // PEER REVIEW SIGN-OFF HANDLER (For audits assigned to this CM)
+  // PEER REVIEW SIGN-OFF HANDLER
   // --------------------------------------------------------------------------
-  const [selectedPeerAuditForReview, setSelectedPeerAuditForReview] = useState<PeerAuditRecord | null>(null);
+  const [selectedPeerAuditForReview, setSelectedPeerAuditForReview] = useState<CampusAuditDbRecord | null>(null);
   const [signOffNotes, setSignOffNotes] = useState("");
-  const [signOffWeeklyPlan, setSignOffWeeklyPlan] = useState<"Completed" | "In Progress" | "Not Completed">("Completed");
-  const [signOffSkillDev, setSignOffSkillDev] = useState<"Completed" | "In Progress" | "Not Completed">("Completed");
-  const [signOffAcademic, setSignOffAcademic] = useState<"Completed" | "In Progress" | "Not Completed">("Completed");
-
-  // Active campus normalized
-  const cNorm = (collegeName || "").trim().toLowerCase();
 
   // Incoming peer reviews assigned to this campus (Pending sign-off)
   const incomingPeerReviews = useMemo(() => {
-    return peerAudits.filter(
-      (a) =>
-        (a.reviewerCampus.trim().toLowerCase() === cNorm || cNorm.includes(a.reviewerCampus.trim().toLowerCase())) &&
-        a.overall !== "Completed"
-    );
-  }, [peerAudits, cNorm]);
+    return assignedAudits.filter((a) => a.peer_status !== "Completed");
+  }, [assignedAudits]);
 
   // Completed peer reviews assigned to this campus (Already signed off)
   const completedPeerReviews = useMemo(() => {
-    return peerAudits.filter(
-      (a) =>
-        (a.reviewerCampus.trim().toLowerCase() === cNorm || cNorm.includes(a.reviewerCampus.trim().toLowerCase())) &&
-        a.overall === "Completed"
-    );
-  }, [peerAudits, cNorm]);
+    return assignedAudits.filter((a) => a.peer_status === "Completed");
+  }, [assignedAudits]);
 
-  const handleSignOffPeerReview = () => {
+  const handleSignOffPeerReview = async () => {
     if (!selectedPeerAuditForReview) return;
     if (role === "kam") {
       toast("Policy Notice: Senior Managers (KAMs) cannot sign off on peer reviews. Peer sign-offs must be conducted by Campus Managers.", "error");
@@ -1313,33 +934,39 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
       return;
     }
 
-    const updatedPeers = peerAudits.map((a) => {
-      if (a.uid === selectedPeerAuditForReview.uid) {
-        return {
-          ...a,
-          weeklyPlan: signOffWeeklyPlan,
-          skillDev: signOffSkillDev,
-          academic: signOffAcademic,
-          overall: "Completed" as const,
-          auditorNotes: `${signOffNotes} (Signed off by ${userName} from ${collegeName})`
-        };
+    setIsSigningOffAudit(true);
+    try {
+      const res = await fetch("/api/audit/campus-audits", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedPeerAuditForReview.id,
+          signoff_notes: signOffNotes.trim(),
+          signed_by: userName,
+          user_role: role
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(`Official Peer Review signed off for ${selectedPeerAuditForReview.campus}!`, "success");
+        setSelectedPeerAuditForReview(null);
+        setSignOffNotes("");
+        await fetchCampusAudits();
+      } else {
+        toast(data.message || "Failed to sign off peer review.", "error");
       }
-      return a;
-    });
-
-    setPeerAudits(updatedPeers);
-    persistAuditData(skillRecords, academicRecords, attendanceRecords, updatedPeers, peerHistory);
-
-    toast(`Official Peer Review signed off for ${selectedPeerAuditForReview.campus}! Record published as Completed.`, "success");
-    setSelectedPeerAuditForReview(null);
-    setSignOffNotes("");
+    } catch (err) {
+      toast("Network error during peer sign-off.", "error");
+    } finally {
+      setIsSigningOffAudit(false);
+    }
   };
 
 
   return (
     <div className="space-y-6 font-sans">
       {/* ==================================================================== */}
-      {/* 1. TOP HEADER & STREAMLINED 2-TAB NAVIGATION                        */}
+      {/* 1. TOP HEADER & STREAMLINED 3-TAB NAVIGATION                        */}
       {/* ==================================================================== */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-4">
@@ -1357,9 +984,13 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                   <span>{collegeName}</span>
                 </span>
                 <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-extrabold flex items-center gap-1">
-                  <span>{activeKamInfo.region} Cluster</span>
-                  <span className="text-indigo-400">•</span>
-                  <span>KAM: {activeKamInfo.kam}</span>
+                  <span>{dynamicKAMInfo.kam || "KAM Cluster"}</span>
+                  {dynamicKAMInfo.campuses.length > 0 && (
+                    <>
+                      <span className="text-indigo-400">•</span>
+                      <span>{dynamicKAMInfo.campuses.length} Campuses</span>
+                    </>
+                  )}
                 </span>
               </div>
               <p className="text-[11.5px] text-slate-500 font-medium mt-0.5">
@@ -1371,25 +1002,19 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                setWizardStage(1);
-                setAuditSubmittedSuccess(false);
-                setActiveSubTab("record");
-              }}
-              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
-                activeSubTab === "record"
-                  ? "bg-emerald-600 text-white"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-              }`}
+              onClick={fetchCampusAudits}
+              disabled={loadingAudits}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-bold transition-all cursor-pointer shadow-xs"
+              title="Refresh audits list"
             >
-              <Send className="h-3.5 w-3.5" />
-              <span>+ Record New Audit</span>
+              <RefreshCw className={`h-3.5 w-3.5 ${loadingAudits ? "animate-spin" : ""}`} />
+              <span>Refresh</span>
             </button>
           </div>
         </div>
 
-        {/* Focused 2-Tab Navigation */}
-        <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+        {/* Dynamic Database-Driven Tab Navigation */}
+        <div className="flex items-center gap-2 pt-1 border-t border-slate-100 flex-wrap">
           <button
             type="button"
             onClick={() => setActiveSubTab("assigned")}
@@ -1412,6 +1037,26 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
 
           <button
             type="button"
+            onClick={() => setActiveSubTab("submitted")}
+            className={`px-4 py-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
+              activeSubTab === "submitted"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+            }`}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            <span>Our Campus Audits</span>
+            {submittedAudits.length > 0 && (
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                activeSubTab === "submitted" ? "bg-white text-emerald-800" : "bg-slate-200 text-slate-700"
+              }`}>
+                {submittedAudits.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => {
               setActiveSubTab("record");
               setAuditSubmittedSuccess(false);
@@ -1423,7 +1068,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
             }`}
           >
             <Send className="h-4 w-4" />
-            <span>Record Audit Form</span>
+            <span>+ Record New Audit</span>
           </button>
         </div>
       </div>
@@ -1477,7 +1122,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                   <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto" />
                   <h4 className="text-sm font-extrabold text-slate-800">Your Assigned Audits Queue is Clear</h4>
                   <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                    No incoming audits currently pending your sign-off. When peer colleges in your {activeKamInfo.region} cluster submit mentor audits for review, they will appear here automatically.
+                    No incoming audits currently pending your sign-off. When peer colleges in your {dynamicKAMInfo.kam || "KAM"} cluster submit mentor audits for review, they will appear here automatically.
                   </p>
                   <button
                     type="button"
@@ -1494,17 +1139,22 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {incomingPeerReviews.map((audit) => (
-                    <div key={audit.uid} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+                    <div key={audit.id || audit.uid} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
                       <div className="flex items-center justify-between border-b border-slate-150 pb-3">
                         <div>
                           <span className="font-mono text-[10px] text-slate-400 font-bold block">{audit.id}</span>
-                          <div className="font-extrabold text-slate-900 text-sm mt-0.5">{audit.mentor}</div>
+                          <div className="font-extrabold text-slate-900 text-sm mt-0.5">{audit.mentor_name || (audit as any).mentor}</div>
                           <div className="text-xs text-indigo-700 font-bold flex items-center gap-1 mt-0.5">
                             <Building2 className="h-3 w-3" />
                             <span>{audit.campus}</span>
                             <span>•</span>
-                            <span className="text-slate-500">{audit.deptName}</span>
+                            <span className="text-slate-500">{audit.dept_name || (audit as any).deptName || audit.department}</span>
                           </div>
+                          {audit.subject && (
+                            <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                              Subject: <span className="font-semibold text-slate-700">{audit.subject}</span>
+                            </div>
+                          )}
                         </div>
                         <span className="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black uppercase">
                           Pending Sign-Off
@@ -1517,22 +1167,22 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                         <div className="grid grid-cols-3 gap-2 text-center">
                           <div className="p-2 bg-white rounded-lg border border-slate-200">
                             <span className="text-[9px] text-slate-400 block font-bold">Skill Score</span>
-                            <span className="font-mono font-black text-xs text-indigo-600">{audit.evidenceSnapshot?.skillScore || 90}%</span>
+                            <span className="font-mono font-black text-xs text-indigo-600">{audit.skill_score ?? (audit as any).evidenceSnapshot?.skillScore ?? 0}%</span>
                           </div>
                           <div className="p-2 bg-white rounded-lg border border-slate-200">
                             <span className="text-[9px] text-slate-400 block font-bold">Coursework</span>
-                            <span className="font-mono font-black text-xs text-teal-600">{audit.evidenceSnapshot?.academicScore || 100}%</span>
+                            <span className="font-mono font-black text-xs text-teal-600">{audit.coursework_score ?? (audit as any).evidenceSnapshot?.academicScore ?? 0}%</span>
                           </div>
                           <div className="p-2 bg-white rounded-lg border border-slate-200">
                             <span className="text-[9px] text-slate-400 block font-bold">Attendance</span>
-                            <span className="font-mono font-black text-xs text-purple-600">{audit.evidenceSnapshot?.attendanceScore || 100}%</span>
+                            <span className="font-mono font-black text-xs text-purple-600">{audit.attendance_score ?? (audit as any).evidenceSnapshot?.attendanceScore ?? 0}%</span>
                           </div>
                         </div>
 
-                        {audit.evidenceSnapshot?.proofLink && (
+                        {(audit.skill_proof_link || (audit as any).evidenceSnapshot?.proofLink) && (
                           <div className="pt-1">
                             <a
-                              href={audit.evidenceSnapshot.proofLink}
+                              href={audit.skill_proof_link || (audit as any).evidenceSnapshot?.proofLink}
                               target="_blank"
                               rel="noreferrer"
                               className="text-xs text-indigo-600 font-bold underline inline-flex items-center gap-1 hover:text-indigo-800 transition-colors"
@@ -1543,9 +1193,9 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                           </div>
                         )}
 
-                        {audit.evidenceSnapshot?.remarks && (
+                        {(audit.skill_remarks || (audit as any).evidenceSnapshot?.remarks) && (
                           <p className="text-[11px] text-slate-600 italic bg-white p-2 rounded-lg border border-slate-150">
-                            &ldquo;{audit.evidenceSnapshot.remarks}&rdquo;
+                            &ldquo;{audit.skill_remarks || (audit as any).evidenceSnapshot?.remarks}&rdquo;
                           </p>
                         )}
                       </div>
@@ -1558,7 +1208,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                           </label>
                           <textarea
                             rows={2}
-                            value={selectedPeerAuditForReview?.uid === audit.uid ? signOffNotes : ""}
+                            value={selectedPeerAuditForReview?.id === audit.id ? signOffNotes : ""}
                             onChange={(e) => {
                               setSelectedPeerAuditForReview(audit);
                               setSignOffNotes(e.target.value);
@@ -1569,8 +1219,10 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                         </div>
 
                         <div className="flex items-center justify-end">
-                          <button
+                          <LoadingButton
                             type="button"
+                            isLoading={isSigningOffAudit && selectedPeerAuditForReview?.id === audit.id}
+                            loadingText="Signing Off..."
                             onClick={() => {
                               setSelectedPeerAuditForReview(audit);
                               handleSignOffPeerReview();
@@ -1579,7 +1231,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                           >
                             <Check className="h-4 w-4" />
                             <span>Sign Off Peer Review</span>
-                          </button>
+                          </LoadingButton>
                         </div>
                       </div>
                     </div>
@@ -1599,17 +1251,22 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {completedPeerReviews.map((audit) => (
-                    <div key={audit.uid} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
+                    <div key={audit.id || audit.uid} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
                       <div className="flex items-center justify-between border-b border-slate-150 pb-3">
                         <div>
                           <span className="font-mono text-[10px] text-slate-400 font-bold block">{audit.id}</span>
-                          <div className="font-extrabold text-slate-900 text-sm mt-0.5">{audit.mentor}</div>
+                          <div className="font-extrabold text-slate-900 text-sm mt-0.5">{audit.mentor_name || (audit as any).mentor}</div>
                           <div className="text-xs text-indigo-700 font-bold flex items-center gap-1 mt-0.5">
                             <Building2 className="h-3 w-3" />
                             <span>{audit.campus}</span>
                             <span>•</span>
-                            <span className="text-slate-500">{audit.deptName}</span>
+                            <span className="text-slate-500">{audit.dept_name || (audit as any).deptName || audit.department}</span>
                           </div>
+                          {audit.subject && (
+                            <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                              Subject: <span className="font-semibold text-slate-700">{audit.subject}</span>
+                            </div>
+                          )}
                         </div>
                         <span className="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-black uppercase flex items-center gap-1">
                           <CheckCircle2 className="h-3 w-3 text-emerald-600" />
@@ -1619,13 +1276,136 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
 
                       <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-1">
                         <span className="text-[10px] font-black uppercase text-emerald-800 block">Sign-Off Notes</span>
-                        <p className="text-xs text-emerald-950 font-medium">{audit.auditorNotes || "Peer audit verified and approved."}</p>
-                        <span className="text-[10px] text-slate-400 block mt-1">Audit Date: {audit.date}</span>
+                        <p className="text-xs text-emerald-950 font-medium">{audit.peer_signoff_notes || (audit as any).auditorNotes || "Peer audit verified and approved."}</p>
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
+                          <span>Audit Date: {audit.audit_date || (audit as any).date}</span>
+                          {audit.peer_signed_by && <span>Signed by: {audit.peer_signed_by}</span>}
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* VIEW 1B: OUR CAMPUS SUBMITTED AUDITS (LEDGER & PEER STATUS)          */}
+      {/* ==================================================================== */}
+      {activeSubTab === "submitted" && (
+        <div className="space-y-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-600" />
+              <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                Audits Recorded by {collegeName} ({submittedAudits.length})
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setWizardStage(1);
+                setAuditSubmittedSuccess(false);
+                setActiveSubTab("record");
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black cursor-pointer shadow-xs transition-colors flex items-center gap-1"
+            >
+              <Send className="h-3.5 w-3.5" />
+              <span>+ Record New Audit</span>
+            </button>
+          </div>
+
+          {submittedAudits.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-xs space-y-3">
+              <FileText className="h-12 w-12 text-slate-300 mx-auto" />
+              <h4 className="text-sm font-extrabold text-slate-800">No Campus Audits Recorded Yet</h4>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                Use the Record Audit Form wizard to evaluate mentor delivery, verify GitHub lab proofs, and automatically route to intra-KAM peers.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveSubTab("record");
+                  setWizardStage(1);
+                }}
+                className="mt-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-xs"
+              >
+                <Send className="h-3.5 w-3.5" />
+                <span>Launch Audit Wizard &rarr;</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {submittedAudits.map((audit) => (
+                <div key={audit.id || audit.uid} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-150 pb-3">
+                    <div>
+                      <span className="font-mono text-[10px] text-slate-400 font-bold block">{audit.id}</span>
+                      <div className="font-extrabold text-slate-900 text-sm mt-0.5">{audit.mentor_name}</div>
+                      <div className="text-xs text-slate-500 font-medium mt-0.5">
+                        {audit.dept_name} • {audit.subject}
+                      </div>
+                    </div>
+                    {audit.peer_status === "Completed" ? (
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-black uppercase flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                        <span>Peer Verified</span>
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black uppercase">
+                        Pending Peer Sign-Off
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Routing Details */}
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">Assigned Peer Reviewer</span>
+                      <span className="font-bold text-slate-800">{audit.reviewer_campus || "Intra-KAM Peer Campus"}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">KAM Cluster</span>
+                      <span className="font-semibold text-slate-700">{audit.kam_name || dynamicKAMInfo.kam}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>Conducted: {audit.audit_date}</span>
+                      <span>By: {audit.auditor_name || "Campus Manager"}</span>
+                    </div>
+                  </div>
+
+                  {/* Scores */}
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <span className="text-[9px] text-slate-400 block font-bold">Skill Score</span>
+                      <span className="font-mono font-black text-xs text-indigo-600">{audit.skill_score}%</span>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <span className="text-[9px] text-slate-400 block font-bold">Coursework</span>
+                      <span className="font-mono font-black text-xs text-teal-600">{audit.coursework_score}%</span>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                      <span className="text-[9px] text-slate-400 block font-bold">Attendance</span>
+                      <span className="font-mono font-black text-xs text-purple-600">{audit.attendance_score}%</span>
+                    </div>
+                  </div>
+
+                  {/* Peer Review Notes if Completed */}
+                  {audit.peer_status === "Completed" && audit.peer_signoff_notes && (
+                    <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-1">
+                      <span className="text-[10px] font-black uppercase text-emerald-800 block">Peer Sign-Off Inspection Notes</span>
+                      <p className="text-xs text-emerald-950 font-medium">&ldquo;{audit.peer_signoff_notes}&rdquo;</p>
+                      <div className="flex items-center justify-between text-[10px] text-emerald-700 pt-1">
+                        <span>Signed by: {audit.peer_signed_by || audit.reviewer_campus}</span>
+                        {audit.peer_signed_at && <span>{audit.peer_signed_at}</span>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -1724,24 +1504,93 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Mentor Name *</label>
-                  <input
-                    type="text"
-                    value={wizMentor}
-                    onChange={(e) => setWizMentor(e.target.value)}
-                    placeholder="e.g. Dr. K. Sangeetha"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">Mentor Name *</label>
+                    {collegeMentors.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWizMentorMode(wizMentorMode === "select" ? "custom" : "select");
+                          setWizMentor("");
+                          setWizMentorId("");
+                        }}
+                        className="text-[10.5px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer underline"
+                      >
+                        {wizMentorMode === "select" ? "Enter Custom Name" : "Choose from Mentors"}
+                      </button>
+                    )}
+                  </div>
+
+                  {wizMentorMode === "select" && collegeMentors.length > 0 ? (
+                    <select
+                      value={wizMentorId}
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        setWizMentorId(selectedId);
+                        const m = collegeMentors.find((item) => String(item.id) === selectedId);
+                        if (m) {
+                          setWizMentor(m.name || "");
+                          if ((m as any).department) {
+                            setWizDeptName((m as any).department);
+                            setWizDepartment((m as any).department);
+                          }
+                          if ((m as any).subject) {
+                            setWizSubject((m as any).subject);
+                          }
+                        } else {
+                          setWizMentor("");
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500 bg-white"
+                    >
+                      <option value="">Select Mentor ({collegeMentors.length} active)...</option>
+                      {collegeMentors.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} {(m as any).department ? `(${ (m as any).department })` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={wizMentor}
+                      onChange={(e) => setWizMentor(e.target.value)}
+                      placeholder="Enter mentor's full name"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+                    />
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Department / Course *</label>
-                  <input
-                    type="text"
-                    value={wizDeptName}
-                    onChange={(e) => setWizDeptName(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
-                  />
+                  {collegeDepartments.length > 0 ? (
+                    <select
+                      value={wizDeptName}
+                      onChange={(e) => {
+                        setWizDeptName(e.target.value);
+                        setWizDepartment(e.target.value);
+                      }}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500 bg-white"
+                    >
+                      <option value="">Select Department ({collegeDepartments.length} active)...</option>
+                      {collegeDepartments.map((deptName) => (
+                        <option key={deptName} value={deptName}>
+                          {deptName}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={wizDeptName}
+                      onChange={(e) => {
+                        setWizDeptName(e.target.value);
+                        setWizDepartment(e.target.value);
+                      }}
+                      placeholder="Enter department or course"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+                    />
+                  )}
                 </div>
 
                 <div>
@@ -1750,6 +1599,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                     type="text"
                     value={wizSubject}
                     onChange={(e) => setWizSubject(e.target.value)}
+                    placeholder="Enter subject or course module"
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
@@ -1765,7 +1615,14 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                 </div>
               </div>
 
-              <div className="pt-4 flex justify-end">
+              <div className="pt-4 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab("assigned")}
+                  className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  &larr; Cancel / Back
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -1978,32 +1835,31 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                 />
               </div>
 
-              {/* Automated Intra-KAM Peer Matching Preview Box */}
-              {(() => {
-                const preview = getIntraKAMPeerReviewer(wizCampus);
-                return (
-                  <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="h-4 w-4 text-emerald-700" />
-                      <span className="text-xs font-black text-emerald-900 uppercase tracking-wider">
-                        Automated Intra-KAM Peer Match Ready
-                      </span>
-                    </div>
-                    <p className="text-xs text-emerald-800">
-                      As soon as you submit, this audit will be automatically assigned to:
-                    </p>
-                    <div className="flex items-center gap-2 bg-white/80 p-2.5 rounded-lg border border-emerald-200 text-xs font-bold text-emerald-900">
-                      <Building2 className="h-4 w-4 text-emerald-600" />
-                      <span>{preview.reviewerCampus}</span>
-                      <span className="text-emerald-400">•</span>
-                      <span className="text-emerald-700">{preview.kam} Cluster ({preview.region})</span>
-                    </div>
-                    <span className="text-[10px] text-emerald-700 font-medium block">
-                      Enforces 6-audit pairing cooldown and queue load balancing with zero self-audits.
-                    </span>
-                  </div>
-                );
-              })()}
+              {/* Automated Database Intra-KAM Peer Matching Preview Box */}
+              <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-2">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-emerald-700" />
+                  <span className="text-xs font-black text-emerald-900 uppercase tracking-wider">
+                    Automated Database Intra-KAM Peer Dispatch
+                  </span>
+                </div>
+                <p className="text-xs text-emerald-800">
+                  Upon submission, the audit ledger automatically assigns this record to a peer campus managed under your KAM:
+                </p>
+                <div className="flex items-center gap-2 bg-white/80 p-2.5 rounded-lg border border-emerald-200 text-xs font-bold text-emerald-900">
+                  <Building2 className="h-4 w-4 text-emerald-600" />
+                  <span>KAM Cluster: {dynamicKAMInfo.kam || "Assigned KAM"}</span>
+                  <span className="text-emerald-400">•</span>
+                  <span className="text-emerald-700 font-medium">
+                    {dynamicKAMInfo.campuses.length > 1
+                      ? `Dynamic rotation across ${dynamicKAMInfo.campuses.length - 1} peer campus(es)`
+                      : "Dynamic intra-KAM peer campus rotation"}
+                  </span>
+                </div>
+                <span className="text-[10px] text-emerald-700 font-medium block">
+                  Enforces pairing cooldown and queue load balancing with strict zero self-audits.
+                </span>
+              </div>
 
               <div className="pt-4 flex justify-between">
                 <button
@@ -2013,14 +1869,16 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                 >
                   &larr; Back
                 </button>
-                <button
+                <LoadingButton
                   type="button"
+                  isLoading={isSubmittingAudit}
+                  loadingText="Submitting & Dispatching..."
                   onClick={handleCompleteWizard}
                   className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-xs"
                 >
                   <Send className="h-4 w-4" />
                   <span>Submit Audit &amp; Dispatch to Peer</span>
-                </button>
+                </LoadingButton>
               </div>
             </div>
           )}

@@ -1,12 +1,16 @@
 // Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
 export const preferredRegion = "bom1";
 export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { ensureMigration } from "@/lib/migrations";
 
 export async function GET(request: Request) {
   try {
+    await ensureMigration("academic_calendar_tables");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const collegeId = searchParams.get("college_id");
@@ -16,12 +20,12 @@ export async function GET(request: Request) {
     
     if (yearsRows.length === 0) {
       // Auto-seed default years
-      await db.run("INSERT INTO academic_years (year_name) VALUES ('2025-2026')");
-      await db.run("INSERT INTO academic_years (year_name) VALUES ('2026-2027')");
-      await db.run("INSERT INTO academic_years (year_name) VALUES ('2027-2028')");
+      await db.run("INSERT INTO academic_years (year_name) VALUES ('2025-2026')").catch(() => {});
+      await db.run("INSERT INTO academic_years (year_name) VALUES ('2026-2027')").catch(() => {});
+      await db.run("INSERT INTO academic_years (year_name) VALUES ('2027-2028')").catch(() => {});
       yearsRows = await db.all("SELECT year_name FROM academic_years");
     }
-    const academicYears = yearsRows.map(r => r.year_name);
+    const academicYears = yearsRows.map((r: any) => r.year_name);
 
     // Fetch campus-scoped academic events
     let academicEvents = [];
@@ -33,12 +37,14 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ success: true, academicYears, academicEvents });
   } catch (error: any) {
+    console.error("GET /api/academic-calendar error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
+    await ensureMigration("academic_calendar_tables");
     const db = await getDb();
     const body = await request.json();
     const { type, data } = body;
@@ -46,6 +52,8 @@ export async function POST(request: Request) {
     if (!type || !data) {
       return NextResponse.json({ success: false, message: "Missing type or data" }, { status: 400 });
     }
+
+    const isPg = (db as any).isPostgres;
 
     if (type === "year") {
       const { year_name } = data;
@@ -66,59 +74,7 @@ export async function POST(request: Request) {
       const eventId = id || "e_" + Date.now();
       const photosStr = typeof photos === "string" ? photos : (Array.isArray(photos) ? JSON.stringify(photos) : null);
 
-      await db.run(
-        `INSERT INTO academic_events (
-          id, name, date, end_date, "desc", category, department, audience, 
-          status, venue, college_id, photos, coordinator, chief_guest, registration_link
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (id) DO UPDATE SET
-          name = EXCLUDED.name,
-          date = EXCLUDED.date,
-          end_date = EXCLUDED.end_date,
-          "desc" = EXCLUDED."desc",
-          category = EXCLUDED.category,
-          department = EXCLUDED.department,
-          audience = EXCLUDED.audience,
-          status = EXCLUDED.status,
-          venue = EXCLUDED.venue,
-          college_id = EXCLUDED.college_id,
-          photos = EXCLUDED.photos,
-          coordinator = EXCLUDED.coordinator,
-          chief_guest = EXCLUDED.chief_guest,
-          registration_link = EXCLUDED.registration_link`,
-        [
-          eventId,
-          name,
-          date,
-          end_date || null,
-          desc || null,
-          category || "Coding Fest & Hackathon",
-          department || "All Departments",
-          audience || "All Campus",
-          status || "Upcoming",
-          venue || null,
-          college_id || null,
-          photosStr,
-          coordinator || null,
-          chief_guest || null,
-          registration_link || null
-        ]
-      );
-      return NextResponse.json({ 
-        success: true, 
-        event: { 
-          id: eventId, name, date, end_date, desc, category, department, audience, 
-          status, venue, college_id, photos: photosStr, coordinator, chief_guest, registration_link 
-        } 
-      });
-    } else if (type === "batch_events") {
-      const events = Array.isArray(data) ? data : [];
-      let count = 0;
-      for (const ev of events) {
-        if (!ev.name || !ev.date) continue;
-        const eventId = ev.id || "e_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
-        const photosStr = typeof ev.photos === "string" ? ev.photos : (Array.isArray(ev.photos) ? JSON.stringify(ev.photos) : null);
-
+      if (isPg) {
         await db.run(
           `INSERT INTO academic_events (
             id, name, date, end_date, "desc", category, department, audience, 
@@ -141,22 +97,157 @@ export async function POST(request: Request) {
             registration_link = EXCLUDED.registration_link`,
           [
             eventId,
-            ev.name,
-            ev.date,
-            ev.end_date || null,
-            ev.desc || null,
-            ev.category || "Coding Fest & Hackathon",
-            ev.department || "All Departments",
-            ev.audience || "All Campus",
-            ev.status || "Upcoming",
-            ev.venue || null,
-            ev.college_id || null,
+            name.trim(),
+            date,
+            end_date || null,
+            desc || null,
+            category || "Coding Fest & Hackathon",
+            department || "All Departments",
+            audience || "All Campus",
+            status || "Upcoming",
+            venue || null,
+            college_id || null,
             photosStr,
-            ev.coordinator || null,
-            ev.chief_guest || null,
-            ev.registration_link || null
+            coordinator || null,
+            chief_guest || null,
+            registration_link || null
           ]
         );
+      } else {
+        await db.run(
+          `INSERT INTO academic_events (
+            id, name, date, end_date, "desc", category, department, audience, 
+            status, venue, college_id, photos, coordinator, chief_guest, registration_link
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (id) DO UPDATE SET
+            name = excluded.name,
+            date = excluded.date,
+            end_date = excluded.end_date,
+            "desc" = excluded."desc",
+            category = excluded.category,
+            department = excluded.department,
+            audience = excluded.audience,
+            status = excluded.status,
+            venue = excluded.venue,
+            college_id = excluded.college_id,
+            photos = excluded.photos,
+            coordinator = excluded.coordinator,
+            chief_guest = excluded.chief_guest,
+            registration_link = excluded.registration_link`,
+          [
+            eventId,
+            name.trim(),
+            date,
+            end_date || null,
+            desc || null,
+            category || "Coding Fest & Hackathon",
+            department || "All Departments",
+            audience || "All Campus",
+            status || "Upcoming",
+            venue || null,
+            college_id || null,
+            photosStr,
+            coordinator || null,
+            chief_guest || null,
+            registration_link || null
+          ]
+        );
+      }
+
+      return NextResponse.json({ 
+        success: true, 
+        event: { 
+          id: eventId, name, date, end_date, desc, category, department, audience, 
+          status, venue, college_id, photos: photosStr, coordinator, chief_guest, registration_link 
+        } 
+      });
+    } else if (type === "batch_events") {
+      const events = Array.isArray(data) ? data : [];
+      let count = 0;
+      for (const ev of events) {
+        if (!ev.name || !ev.date) continue;
+        const eventId = ev.id || "e_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+        const photosStr = typeof ev.photos === "string" ? ev.photos : (Array.isArray(ev.photos) ? JSON.stringify(ev.photos) : null);
+
+        if (isPg) {
+          await db.run(
+            `INSERT INTO academic_events (
+              id, name, date, end_date, "desc", category, department, audience, 
+              status, venue, college_id, photos, coordinator, chief_guest, registration_link
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name,
+              date = EXCLUDED.date,
+              end_date = EXCLUDED.end_date,
+              "desc" = EXCLUDED."desc",
+              category = EXCLUDED.category,
+              department = EXCLUDED.department,
+              audience = EXCLUDED.audience,
+              status = EXCLUDED.status,
+              venue = EXCLUDED.venue,
+              college_id = EXCLUDED.college_id,
+              photos = EXCLUDED.photos,
+              coordinator = EXCLUDED.coordinator,
+              chief_guest = EXCLUDED.chief_guest,
+              registration_link = EXCLUDED.registration_link`,
+            [
+              eventId,
+              ev.name.trim(),
+              ev.date,
+              ev.end_date || null,
+              ev.desc || null,
+              ev.category || "Coding Fest & Hackathon",
+              ev.department || "All Departments",
+              ev.audience || "All Campus",
+              ev.status || "Upcoming",
+              ev.venue || null,
+              ev.college_id || null,
+              photosStr,
+              ev.coordinator || null,
+              ev.chief_guest || null,
+              ev.registration_link || null
+            ]
+          );
+        } else {
+          await db.run(
+            `INSERT INTO academic_events (
+              id, name, date, end_date, "desc", category, department, audience, 
+              status, venue, college_id, photos, coordinator, chief_guest, registration_link
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+              name = excluded.name,
+              date = excluded.date,
+              end_date = excluded.end_date,
+              "desc" = excluded."desc",
+              category = excluded.category,
+              department = excluded.department,
+              audience = excluded.audience,
+              status = excluded.status,
+              venue = excluded.venue,
+              college_id = excluded.college_id,
+              photos = excluded.photos,
+              coordinator = excluded.coordinator,
+              chief_guest = excluded.chief_guest,
+              registration_link = excluded.registration_link`,
+            [
+              eventId,
+              ev.name.trim(),
+              ev.date,
+              ev.end_date || null,
+              ev.desc || null,
+              ev.category || "Coding Fest & Hackathon",
+              ev.department || "All Departments",
+              ev.audience || "All Campus",
+              ev.status || "Upcoming",
+              ev.venue || null,
+              ev.college_id || null,
+              photosStr,
+              ev.coordinator || null,
+              ev.chief_guest || null,
+              ev.registration_link || null
+            ]
+          );
+        }
         count++;
       }
       return NextResponse.json({ success: true, count, message: `${count} events imported successfully` });
@@ -164,12 +255,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: false, message: "Invalid type" }, { status: 400 });
   } catch (error: any) {
+    console.error("POST /api/academic-calendar error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
 export async function DELETE(request: Request) {
   try {
+    await ensureMigration("academic_calendar_tables");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const type = searchParams.get("type");
@@ -189,6 +282,7 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: false, message: "Invalid type" }, { status: 400 });
   } catch (error: any) {
+    console.error("DELETE /api/academic-calendar error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

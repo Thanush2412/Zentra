@@ -37,11 +37,14 @@ import {
   Save,
   SlidersHorizontal,
   CheckSquare,
-  CalendarRange
+  CalendarRange,
+  GraduationCap
 } from "lucide-react";
 import { WeeklyPlanViewer } from "./WeeklyPlanStudio";
+import { SkillTrackerPanel } from "./SkillTrackerPanel";
+import { DemoEvalCriteriaPanel, EvaluationChecklist, ChecklistEntry } from "./DemoEvalCriteriaPanel";
 
-type TabKey = "overview" | "demo_list" | "weekly_plans" | "availability" | "reallocation" | "history" | "calendar" | "reallocation_hub";
+type TabKey = "overview" | "demo_list" | "weekly_plans" | "skill_approvals" | "availability" | "reallocation" | "history" | "calendar" | "reallocation_hub" | "eval_criteria";
 
 interface SMEDashboardProps {
   activeTab?: TabKey;
@@ -145,6 +148,8 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
   const [successMsg, setSuccessMsg] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
+  // Phase C: department compliance checklist entries for the open evaluation
+  const [checklistEntries, setChecklistEntries] = useState<ChecklistEntry[]>([]);
 
   // Read-only View Evaluation modal
   const [viewEvalSession, setViewEvalSession] = useState<any | null>(null);
@@ -320,7 +325,8 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
     return false;
   });
 
-  const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  // demo_sessions.dateStr is stored as YYYY-MM-DD (see /api/demo-sessions book + getWeekDates)
+  const todayStr = new Date().toISOString().slice(0, 10);
   const todayDemos = myDemos.filter(ds => ds.dateStr === todayStr);
 
   const confirmedDemos = myDemos.filter(ds => ds.status === "confirmed" || ds.status === "scheduled");
@@ -339,9 +345,10 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
     ? Math.round(completedDemos.reduce((sum, d) => sum + (d.marks || 0), 0) / completedCount)
     : 0;
 
-  // Inbound Reallocation Requests targeting this SME
+  // Inbound Reallocation Requests targeting this SME (proposed BY someone else —
+  // the SME's own outbound proposals must not appear here or they could self-approve)
   const pendingInboundRequests = demoSwapRequests?.filter(
-    (r: any) => (r.proposedSmeId === currentSME.id || r.smeId === currentSME.id) && (r.status === "pending" || r.status === "pending_sme")
+    (r: any) => r.smeId !== currentSME.id && r.proposedSmeId === currentSME.id && (r.status === "pending" || r.status === "pending_sme")
   ) || [];
 
   // Outbound Reallocation Requests sent by this SME
@@ -372,6 +379,8 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
     { id: "overview", label: "Dashboard", icon: Sparkles, count: 0 },
     { id: "demo_list", label: "My Demos", icon: ClipboardList, count: totalAssigned },
     { id: "weekly_plans", label: "Weekly Plans", icon: CalendarRange, count: 0 },
+    { id: "skill_approvals", label: "Skill Approvals", icon: GraduationCap, count: 0 },
+    { id: "eval_criteria", label: "Evaluation Criteria", icon: SlidersHorizontal, count: 0 },
     { id: "availability", label: "Availability", icon: Calendar, count: 0 },
     { id: "reallocation", label: "Reallocation", icon: RefreshCw, count: pendingInboundRequests.length + affectedCount },
     { id: "history", label: "History", icon: FileText, count: completedCount }
@@ -431,7 +440,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
     return filteredHistory.slice(startIndex, startIndex + historyPageSize);
   }, [filteredHistory, historyPage, historyPageSize]);
 
-  // CSV Export Utility
+  // CSV Export Utility for Demo Schedule
   const handleExportCSV = () => {
     if (filteredDemos.length === 0) {
       toast("No demos to export.", "error");
@@ -460,6 +469,35 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
     toast("SME demo schedule exported to CSV successfully!", "success");
   };
 
+  // CSV Export Utility for Evaluation History
+  const handleExportHistoryCSV = () => {
+    if (filteredHistory.length === 0) {
+      toast("No evaluation history records to export.", "error");
+      return;
+    }
+    const headers = ["Mentor Name", "College", "Department", "Subject", "Date", "Time Slot", "Marks Awarded (out of 100)", "Result", "Evaluation Feedback"];
+    const rows = filteredHistory.map(d => [
+      `"${d.mentorName || ''}"`,
+      `"${getMentorCollege(d.mentorId) || ''}"`,
+      `"${getMentorDept(d.mentorId) || ''}"`,
+      `"${d.subject || ''}"`,
+      `"${d.dateStr || ''}"`,
+      `"${d.timeSlot || ''}"`,
+      `"${d.marks ?? 'N/A'}"`,
+      `"${(d.marks ?? 0) >= 60 ? 'Passed' : 'Needs Improvement'}"`,
+      `"${(d.comments || '').replace(/"/g, '""')}"`
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `SME_Evaluation_History_${currentSME.name.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast("SME evaluation history exported to CSV successfully!", "success");
+  };
+
   // ── Handlers ──────────────────────────────────────────────────────
   const handleOpenEvaluate = (session: any) => {
     if (session.status === "completed") {
@@ -473,6 +511,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
     setEvaluationModalSession(session);
     setEvalScores({ ...DEFAULT_SCORES });
     setComments("");
+    setChecklistEntries([]);
     setSuccessMsg("");
     setErrorMsg("");
   };
@@ -575,7 +614,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
     if (!comments.trim()) { setErrorMsg("Please provide comments/feedback for the evaluation."); return; }
     setSubmitting(true); setErrorMsg(""); setSuccessMsg("");
     try {
-      const res = await evaluateDemoSession(evaluationModalSession.id, marks, comments);
+      const res = await evaluateDemoSession(evaluationModalSession.id, marks, comments, checklistEntries);
       if (res.success) { setSuccessMsg(`Evaluation submitted successfully for ${evaluationModalSession.mentorName}!`); setEvaluationModalSession(null); }
       else { setErrorMsg(res.message); }
     } catch (e: any) { setErrorMsg(e.message || "Failed to submit evaluation."); }
@@ -623,7 +662,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
               <p className="text-[9px] font-black uppercase tracking-widest text-pink-600 dark:text-pink-400 mb-1">SME Portal</p>
               <h2 className="text-base font-black text-slate-800 dark:text-white leading-tight">SME Workspace</h2>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
-                {currentSME.subject || "General"} Subject Expert
+                {currentSME.subject ? `${currentSME.subject} Expert` : "Subject Matter Expert"}
               </p>
             </div>
           ) : (
@@ -699,7 +738,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                   SME Dashboard
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                  Demo management, timetable availability tracking, and leave-reallocation request handling.
+                  Mentor demos, availability schedule, and reallocation requests.
                 </p>
               </div>
             </div>
@@ -1040,6 +1079,27 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
             />
           )}
 
+          {/* ═══════════════ TAB: SKILL APPROVALS (MENTOR SKILL DEVELOPMENT TRACKER — SME MARKING) ═══════════════ */}
+          {activeTab === "skill_approvals" && (
+            <SkillTrackerPanel
+              role="sme"
+              reviewerName={currentSME?.name || "Subject Matter Expert"}
+            />
+          )}
+
+          {/* ═══════════════ TAB: EVALUATION CRITERIA (PER-DEPARTMENT CRUD) ═══════════════ */}
+          {activeTab === "eval_criteria" && (
+            <DemoEvalCriteriaPanel
+              departments={Array.from(new Set([
+                currentSME.subject,
+                currentSME.head_subject_group,
+                currentSME.mentor_group,
+                "General"
+              ].filter(Boolean).map((s: string) => s.trim())))}
+              smeName={currentSME.name}
+            />
+          )}
+
           {/* ═══════════════ TAB 2: AVAILABILITY ═══════════════ */}
           {activeTab === "availability" && (
             <div className="space-y-6">
@@ -1164,14 +1224,6 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                                       className="px-2.5 py-1.5 bg-pink-100 text-pink-800 dark:bg-pink-950/40 dark:text-pink-300 border border-pink-200 dark:border-pink-800 rounded-lg text-[10px] font-black block cursor-pointer hover:scale-[1.02] transition-transform"
                                     >
                                       Demo ({demoOnSlot.mentorName?.split(" ")[0]})
-                                    </span>
-                                  </td>
-                                );
-                              } else if (slotOnSlot) {
-                                return (
-                                  <td key={w.dateStr} className="p-2">
-                                    <span className="px-2.5 py-1.5 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-extrabold block">
-                                      Class ({slotOnSlot.course})
                                     </span>
                                   </td>
                                 );
@@ -1350,10 +1402,11 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                   </div>
                   <button
                     type="button"
-                    onClick={handleExportCSV}
+                    onClick={handleExportHistoryCSV}
                     className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-black border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                    title="Export completed demo evaluations and scorecards"
                   >
-                    <Download className="h-3.5 w-3.5" /> Export CSV
+                    <Download className="h-3.5 w-3.5" /> Export Evaluation History
                   </button>
                 </div>
 
@@ -1542,6 +1595,14 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     <span className={`text-sm font-black ${marks >= 80 ? "text-emerald-600" : marks >= 60 ? "text-amber-600" : "text-rose-600"}`}>{marks} / 100</span>
                   </div>
 
+                  {/* Phase C: department compliance checklist (drives KAM/CM escalation mail) */}
+                  <EvaluationChecklist
+                    department={getMentorDept(evaluationModalSession.mentorId) || evaluationModalSession.stream || "General"}
+                    marks={marks}
+                    entries={checklistEntries}
+                    onChange={setChecklistEntries}
+                  />
+
                   <div>
                     <label className="text-[9px] font-black uppercase text-slate-400 block mb-1">
                       Pedagogical Comments & Feedback
@@ -1607,6 +1668,24 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Feedback Comments</span>
                     <p className="text-xs text-slate-600 dark:text-slate-300 italic">&quot;{viewEvalSession.comments || "No comments recorded."}&quot;</p>
                   </div>
+
+                  {(() => {
+                    let flagged: string[] = [];
+                    try {
+                      const list = typeof viewEvalSession.checklist === "string" ? JSON.parse(viewEvalSession.checklist) : viewEvalSession.checklist;
+                      if (Array.isArray(list)) flagged = list.filter((c: any) => c && c.met === false && c.label).map((c: any) => c.label);
+                    } catch (_) {}
+                    return flagged.length > 0 ? (
+                      <div className="p-3 bg-rose-50/30 dark:bg-rose-950/10 border border-rose-150 rounded-xl">
+                        <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Unmet Compliance Criteria (escalated)</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {flagged.map((label: string, i: number) => (
+                            <span key={i} className="px-2 py-0.5 bg-rose-100 text-rose-700 border border-rose-300 rounded-lg text-[9px] font-black">{label}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
 
                 <button

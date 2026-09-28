@@ -81,7 +81,7 @@ async function verifyToken(token: string | undefined | null): Promise<{ userId: 
 }
 
 /** Endpoints reachable without a session cookie. */
-const PUBLIC_PATHS = new Set<string>(["/api/login", "/api/signup", "/api/change-password", "/api/health"]);
+const PUBLIC_PATHS = new Set<string>(["/api/login", "/api/signup", "/api/change-password", "/api/health", "/api/student-feedback"]);
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

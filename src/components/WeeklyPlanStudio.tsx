@@ -46,7 +46,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
 import { useApp } from "@/context/AppContext";
-import { getCollegePeriodTimeSlots, isSubjectNameMatch, isCohortMatching } from "@/lib/utils";
+import { getCollegePeriodTimeSlots, isSubjectNameMatch, isCohortMatching, isSkillSubject } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 
 export interface DailySessionTask {
@@ -89,6 +89,15 @@ export interface WeeklyPlanRecord {
   verified_at?: string;
   created_at?: string;
   updated_at?: string;
+  /** Mentor Skill Development Tracker enrichment from /api/weekly-plan GET */
+  subject_type?: "Skill" | "Academic";
+  skill_verdict?: {
+    verdict: "pending" | "cleared" | "not_cleared" | "needs_revision";
+    score: number | null;
+    remarks: string | null;
+    verified_by: string | null;
+    verified_at: string | null;
+  };
 }
 
 export interface WeeklyPlanAuditSummary {
@@ -300,7 +309,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
   assignedSubjects = []
 }) => {
   const { toast } = useToast();
-  const { colleges, slots, timeSlots: ctxTimeSlots, daysOfWeek: ctxDaysOfWeek } = useApp();
+  const { colleges, slots, timeSlots: ctxTimeSlots, daysOfWeek: ctxDaysOfWeek, subjectsList } = useApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(false);
@@ -1231,6 +1240,48 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
           </div>
         </div>
 
+        {/* Skill Development Tracker Verdict Chip (skill subjects only) */}
+        {(() => {
+          const subj = subjectsList.find((s: any) => s.name.toLowerCase().trim() === selectedSubject.toLowerCase().trim());
+          const isSkill = (subj?.type || "").toLowerCase() === "skill" || isSkillSubject(subj || selectedSubject);
+          if (!isSkill) return null;
+          const verdict = plans.find(p => p.week_number === selectedWeek)?.skill_verdict;
+          if (!verdict || verdict.verdict === "pending") {
+            return (
+              <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2.5">
+                <Clock3 className="h-4 w-4 text-slate-400 shrink-0" />
+                <div className="text-xs text-slate-600">
+                  <span className="font-bold">Skill Development Verdict: </span>
+                  <span className="font-bold text-slate-700 uppercase">Pending SME Review</span>
+                  <span className="text-slate-400 font-medium"> — your demo outcome and SME sign-off will appear here.</span>
+                </div>
+              </div>
+            );
+          }
+          const styles: Record<string, string> = {
+            cleared: "bg-emerald-50/70 border-emerald-200 text-emerald-900",
+            not_cleared: "bg-rose-50/70 border-rose-200 text-rose-900",
+            needs_revision: "bg-amber-50/70 border-amber-200 text-amber-900"
+          };
+          const labels: Record<string, string> = {
+            cleared: "Cleared by SME",
+            not_cleared: "Not Cleared",
+            needs_revision: "Needs Revision"
+          };
+          return (
+            <div className={`mt-3 p-3 rounded-xl border flex items-start gap-2.5 ${styles[verdict.verdict] || styles.cleared}`}>
+              {verdict.verdict === "cleared" ? <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" /> : <AlertCircle className={`h-4 w-4 shrink-0 mt-0.5 ${verdict.verdict === "not_cleared" ? "text-rose-600" : "text-amber-600"}`} />}
+              <div className="text-xs flex-1">
+                <span className="font-black uppercase">Skill Development Verdict: </span>
+                <span className="font-black uppercase">{labels[verdict.verdict] || verdict.verdict}</span>
+                {verdict.score != null && <span className="font-bold"> — Score: {verdict.score}</span>}
+                {verdict.remarks && <div className="mt-0.5 font-medium italic">&ldquo;{verdict.remarks}&rdquo;</div>}
+                {verdict.verified_by && <div className="text-[10px] font-semibold opacity-75 mt-0.5">by {verdict.verified_by}</div>}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Status Alerts */}
         {currentStatus === "Needs Revision" && currentFeedback && (
           <div className="mt-3 p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
@@ -1673,6 +1724,9 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
   const [feedbackInput, setFeedbackInput] = useState<string>("");
   const [submittingReview, setSubmittingReview] = useState<boolean>(false);
 
+  // Skill Development Tracker: per-skill-plan verdict marking (SME)
+  const [skillVerdictBusy, setSkillVerdictBusy] = useState<boolean>(false);
+
   // Detail Drawer
   const [inspectingPlan, setInspectingPlan] = useState<WeeklyPlanRecord | null>(null);
 
@@ -1771,6 +1825,43 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
   const completionPercentage = plannedTopicsSum > 0
     ? Math.round((conductedTopicsSum / plannedTopicsSum) * 100)
     : 0;
+
+  // SME Skill Verdict for skill-subject plans (Mentor Skill Development Tracker)
+  const handleSkillVerdict = async (plan: WeeklyPlanRecord, verdict: "cleared" | "not_cleared") => {
+    if (!plan.skill_verdict || plan.skill_verdict.verdict === verdict) return;
+    setSkillVerdictBusy(true);
+    try {
+      const res = await fetch("/api/skill-tracker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mentorId: plan.mentor_id,
+          mentorName: plan.mentor_name,
+          collegeId: plan.college_id,
+          subject: plan.subject,
+          subjectType: plan.subject_type,
+          weekNumber: plan.week_number,
+          scope: "week",
+          weeklyPlanId: plan.id,
+          status: verdict,
+          remarks: feedbackInput || (plan.skill_verdict.remarks ?? ""),
+          verifiedBy: reviewerName || "Subject Matter Expert"
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(`Skill verdict recorded: ${verdict === "cleared" ? "Cleared" : "Not Cleared"}.`, "success");
+        setSelectedPlanForReview(null);
+        await fetchPlans();
+      } else {
+        toast(data.message || "Failed to record skill verdict", "error");
+      }
+    } catch (e: any) {
+      toast("Error recording skill verdict: " + e.message, "error");
+    } finally {
+      setSkillVerdictBusy(false);
+    }
+  };
 
   // SME Handle Review Action (Verify or Request Revision)
   const handleReviewAction = async (status: "Verified" | "Needs Revision") => {
@@ -2108,6 +2199,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                 <th className="p-3.5">Faculty / Mentor</th>
                 <th className="p-3.5">Class / Cohort</th>
                 <th className="p-3.5">Subject</th>
+                <th className="p-3.5 text-center">Type</th>
                 <th className="p-3.5 text-center">Periods Planned</th>
                 <th className="p-3.5 text-center">Conducted</th>
                 <th className="p-3.5 text-center">SME Status</th>
@@ -2117,7 +2209,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredPlans.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-400 italic">
+                  <td colSpan={10} className="p-8 text-center text-slate-400 italic">
                     No weekly plans found matching your filters.
                   </td>
                 </tr>
@@ -2156,7 +2248,18 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                       </td>
                       <td className="p-3.5 font-bold text-slate-800">{plan.subject}</td>
                       <td className="p-3.5 text-center">
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
+                        <span
+                          className={`px-2 py-0.5 rounded-lg text-[10px] font-black border ${
+                            (plan.subject_type || "Academic") === "Skill"
+                              ? "bg-purple-50 text-purple-700 border-purple-200"
+                              : "bg-slate-100 text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          {plan.subject_type || "Academic"}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-center">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-700`}>
                           {filledPeriodsCount} / {tasks.length || 6} Periods
                         </span>
                       </td>
@@ -2485,6 +2588,9 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                   <p className="text-xs text-slate-500 font-medium">
                     Faculty: {selectedPlanForReview.mentor_name} • Week {selectedPlanForReview.week_number} •{" "}
                     {selectedPlanForReview.subject}
+                    {(selectedPlanForReview.subject_type || "Academic") === "Skill" && (
+                      <span className="ml-1.5 px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 text-[9.5px] font-black uppercase">Skill</span>
+                    )}
                   </p>
                 </div>
                 <button
@@ -2541,6 +2647,28 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                 >
                   Request Revision
                 </button>
+                {(selectedPlanForReview.subject_type || "Academic") === "Skill" && (
+                  <button
+                    type="button"
+                    disabled={submittingReview || skillVerdictBusy}
+                    onClick={() => handleSkillVerdict(selectedPlanForReview, "not_cleared")}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-rose-700 bg-white hover:bg-rose-50 border border-rose-300 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    <span>Skill: Not Cleared</span>
+                  </button>
+                )}
+                {(selectedPlanForReview.subject_type || "Academic") === "Skill" && (
+                  <button
+                    type="button"
+                    disabled={submittingReview || skillVerdictBusy}
+                    onClick={() => handleSkillVerdict(selectedPlanForReview, "cleared")}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Award className="h-3.5 w-3.5" />
+                    <span>Skill: Cleared</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={submittingReview}
