@@ -645,17 +645,10 @@ export const SHIFT_TIME_SLOTS: Record<ShiftType, string[]> = {
 const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  let startLoading = (_msg?: string) => {};
-  let stopLoading = () => {};
-  let toastFn = (_msg: string, _type?: any) => {};
-  try {
-    const toastObj = useToast();
-    if (toastObj) {
-      startLoading = toastObj.startLoading;
-      stopLoading = toastObj.stopLoading;
-      toastFn = toastObj.toast;
-    }
-  } catch (_) {}
+  const toastCtx = useToast();
+  const startLoading = toastCtx?.startLoading || ((_msg?: string) => {});
+  const stopLoading = toastCtx?.stopLoading || (() => {});
+  const toastFn = toastCtx?.toast || ((_msg: string, _type?: any) => {});
   // All data starts empty — populated exclusively from database via API
   const [mentors, setMentors] = useState<Mentor[]>([]);
   const [hrList, setHrList] = useState<HRUser[]>([]);
@@ -1329,7 +1322,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       window.removeEventListener("ecampus_session_expired", handleSessionExpired);
     };
-  }, [logout]);
+  }, [logout, toastFn]);
 
   const setCurrentShift = (shift: ShiftType) => {
     localStorage.setItem("fp_current_shift", shift);
