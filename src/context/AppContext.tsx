@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { resolveClassGroupDetailsFromState, isCohortMatch } from "@/lib/utils";
 import { useToast } from "@/context/ToastContext";
+import { apiFetch, setClientCsrfToken } from "@/lib/apiFetch";
 
 export interface MentorGroup {
   id: string;
@@ -234,6 +235,7 @@ export interface HandoverRequest {
   timestamp: string;
   classGroup?: string;
   request_type?: "handover" | "swap_compensate" | "exam_marks_edit" | string;
+  reasonCategory?: string;
   compensates_handover_id?: string;
 }
 
@@ -817,11 +819,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       else if (role === "student") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_student_id") || localStorage.getItem("fp_user_id")) : "") || "";
       else if (role === "sme") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_sme_id") || localStorage.getItem("fp_user_id")) : "") || "";
 
-      const res = await fetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}&_t=${Date.now()}`, {
-        cache: "no-store",
-        headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" }
-      });
-      const data = await res.json();
+      const data = await apiFetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}`);
       if (data.success) {
         setDataLoadError(false);
         // D5: a newer refresh started while this one was in flight — discard this
@@ -908,11 +906,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const role = localStorage.getItem("fp_current_role") || "";
       const userId = localStorage.getItem("fp_cam_id") || localStorage.getItem("fp_admin_id") || localStorage.getItem("fp_mentor_id") || "";
       const colParam = targetCollegeId ? `&college_id=${encodeURIComponent(targetCollegeId)}` : "";
-      const res = await fetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}${colParam}&fields=attendance&_t=${Date.now()}`, {
-        cache: "no-store",
-        headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" }
-      });
-      const data = await res.json();
+      const data = await apiFetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}${colParam}&fields=attendance`);
       if (data.success && data.studentAttendance) {
         setStudentAttendance(data.studentAttendance);
       }
@@ -947,198 +941,176 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const initApp = async () => {
       document.documentElement.classList.remove("dark");
 
-      // Check if logged in first — avoid unauthenticated 24MB data downloads on login screen
-      if (typeof window !== "undefined") {
-        const loggedIn = localStorage.getItem("fp_logged_in") === "true";
-        if (!loggedIn) {
-          setCurrentRoleState("mentor");
-          setCurrentMentor(null);
-          setCurrentHR(null);
-          setCurrentCAM(null);
-          setCurrentKAM(null);
-          setCurrentAdmin(null);
-          setCurrentStudent(null);
-          setIsLoading(false);
-          return;
+      // 1. Authenticate with server using HttpOnly cookie & load live profile
+      let authUser: any = null;
+      try {
+        const authData = await apiFetch("/api/auth/me");
+        if (authData.success && authData.user) {
+          authUser = authData.user;
+          if (authData.csrfToken) {
+            setClientCsrfToken(authData.csrfToken);
+          }
         }
+      } catch (authErr) {
+        // Unauthenticated or idle session
+        authUser = null;
       }
 
-      // 1. Fetch data from DB only for authenticated sessions
-      const dbData = await refreshData();
+      if (!authUser) {
+        setCurrentRoleState("mentor");
+        setCurrentMentor(null);
+        setCurrentHR(null);
+        setCurrentCAM(null);
+        setCurrentKAM(null);
+        setCurrentAdmin(null);
+        setCurrentStudent(null);
+        setCurrentSME(null);
+        setIsLoading(false);
+        return;
+      }
 
-      // 2. Restore session from localStorage using DB-sourced user lists
-      if (typeof window !== "undefined") {
-
-        const storedRole = localStorage.getItem("fp_current_role") as Role | null;
-        const storedMentorId = localStorage.getItem("fp_mentor_id");
-        const storedCamId = localStorage.getItem("fp_cam_id");
-        const storedKamId = localStorage.getItem("fp_kam_id");
-        const storedAdminId = localStorage.getItem("fp_admin_id");
-        const storedStudentId = localStorage.getItem("fp_student_id");
-        const storedSmeId = localStorage.getItem("fp_sme_id");
-        const storedShift = localStorage.getItem("fp_current_shift") as ShiftType | null;
-        const parsedRole: Role = storedRole || "mentor";
-        setCurrentRoleState(parsedRole);
-        if (storedShift) {
-          setCurrentShiftState(storedShift);
+      // 2. Fast-path reference bootstrap (<30KB)
+      try {
+        const refData = await apiFetch("/api/data/reference");
+        if (refData.success) {
+          if (refData.colleges) setColleges(refData.colleges);
+          if (refData.subjects) setSubjectsList(refData.subjects);
+          if (refData.departments) setDepartmentsList(refData.departments);
+          if (refData.academicYears) setAcademicYears(refData.academicYears);
+          if (refData.systemSettings) setSystemSettings(prev => ({ ...prev, ...refData.systemSettings }));
         }
+      } catch (refErr) {
+        console.warn("Reference data bootstrap error:", refErr);
+      }
 
-        const getCachedSnapshot = () => {
-          try {
-            const cached = localStorage.getItem("fp_user_snapshot");
-            return cached ? JSON.parse(cached) : null;
-          } catch (_) {
-            return null;
-          }
+      // 3. Fetch live data silently in background
+      const dbData = await refreshData(true);
+
+      // 4. Restore session using authoritative server user
+      const parsedRole: Role = (authUser.role as Role) || "mentor";
+      setCurrentRoleState(parsedRole);
+
+      const storedShift = typeof window !== "undefined" ? (localStorage.getItem("fp_current_shift") as ShiftType | null) : null;
+      if (storedShift) {
+        setCurrentShiftState(storedShift);
+      }
+
+      const storedUserEmail = (authUser.email || "").toLowerCase().trim();
+      const storedUserId = authUser.reference_id || authUser.id || "";
+      const storedUserName = authUser.name || "";
+      const storedCollegeId = authUser.college_id || "";
+
+      if (parsedRole === "mentor") {
+        const m = (dbData.mentors || []).find((item: Mentor) => 
+          item.id === storedUserId ||
+          (item as any).user_id === storedUserId ||
+          (storedUserEmail && item.email?.toLowerCase().trim() === storedUserEmail)
+        ) || {
+          id: storedUserId,
+          name: storedUserName || "Mentor",
+          email: storedUserEmail,
+          college_id: storedCollegeId,
+          status: "active",
+          department: "",
+          expertise: [],
+          max_load: 20
         };
 
-        const storedUserEmail = (localStorage.getItem("fp_user_email") || "").toLowerCase().trim();
-        const storedUserId = localStorage.getItem("fp_user_id") || "";
-        const storedUserName = localStorage.getItem("fp_user_name") || "";
-        const storedCollegeId = localStorage.getItem("fp_user_college_id") || "";
-
-        if (parsedRole === "mentor") {
-          const m = (dbData.mentors || []).find((item: Mentor) => 
-            (storedMentorId && item.id === storedMentorId) ||
-            (storedUserId && (item.id === storedUserId || (item as any).user_id === storedUserId)) ||
-            (storedUserEmail && item.email?.toLowerCase().trim() === storedUserEmail)
-          ) || getCachedSnapshot() || (storedUserId ? {
-            id: storedMentorId || storedUserId,
-            name: storedUserName || "Mentor",
-            email: storedUserEmail,
-            college_id: storedCollegeId,
-            status: "active",
-            department: "",
-            expertise: [],
-            max_load: 20
-          } : null);
-
-          if (m) {
-            setCurrentMentor(m);
-            localStorage.setItem("fp_mentor_id", m.id);
-            localStorage.setItem("fp_user_snapshot", JSON.stringify(m));
-          }
-          setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
-        } else if (parsedRole === "cam") {
-          const targetCamId = storedCamId || storedUserId;
-          let camObj = getCachedSnapshot();
-          if (targetCamId) {
-            try {
-              const camRes = await fetch(`/api/cam?id=${encodeURIComponent(targetCamId)}`);
-              const camData = await camRes.json();
-              if (camData.success && camData.cam) {
-                camObj = camData.cam;
-              }
-            } catch (_) {}
-          }
-          if (!camObj && targetCamId) {
-            camObj = {
-              id: targetCamId,
-              name: storedUserName || "Campus Manager",
-              email: storedUserEmail,
-              college_id: storedCollegeId,
-              role: "cam"
-            };
-          }
-          if (camObj) {
-            setCurrentCAM({ ...camObj, role: "cam" });
-            localStorage.setItem("fp_cam_id", camObj.id);
-            localStorage.setItem("fp_user_snapshot", JSON.stringify(camObj));
-          }
-          setCurrentMentor(null); setCurrentHR(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
-        } else if (parsedRole === "kam") {
-          const targetKamId = storedKamId || storedUserId;
-          let kamObj = getCachedSnapshot();
-          if (targetKamId) {
-            try {
-              const kamRes = await fetch(`/api/kam?id=${encodeURIComponent(targetKamId)}`);
-              const kamData = await kamRes.json();
-              if (kamData.success && kamData.kam) {
-                kamObj = kamData.kam;
-              }
-            } catch (_) {}
-          }
-          if (!kamObj && targetKamId) {
-            kamObj = {
-              id: targetKamId,
-              name: storedUserName || "Key Account Manager",
-              email: storedUserEmail,
-              college_id: storedCollegeId,
-              role: "kam"
-            };
-          }
-          if (kamObj) {
-            setCurrentKAM({ ...kamObj, role: "kam" });
-            localStorage.setItem("fp_kam_id", kamObj.id);
-            localStorage.setItem("fp_user_snapshot", JSON.stringify(kamObj));
-          }
-          setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
-        } else if (parsedRole === "admin") {
-          const targetAdminId = storedAdminId || storedUserId || "admin_1";
-          let adminObj = getCachedSnapshot();
-          if (targetAdminId) {
-            try {
-              const adminRes = await fetch(`/api/admin?id=${encodeURIComponent(targetAdminId)}`);
-              const adminData = await adminRes.json();
-              if (adminData.success && adminData.admin) {
-                adminObj = adminData.admin;
-              }
-            } catch (_) {}
-          }
-          if (!adminObj && targetAdminId) {
-            adminObj = {
-              id: targetAdminId,
-              name: storedUserName || "Administrator",
-              email: storedUserEmail,
-              role: "admin"
-            };
-          }
-          if (adminObj) {
-            setCurrentAdmin({ ...adminObj, role: "admin" });
-            localStorage.setItem("fp_admin_id", adminObj.id);
-            localStorage.setItem("fp_user_snapshot", JSON.stringify(adminObj));
-          }
-          setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentStudent(null); setCurrentSME(null);
-        } else if (parsedRole === "student") {
-          const targetStudentId = storedStudentId || storedUserId;
-          const s = (dbData.students || []).find((item: Student) => 
-            (targetStudentId && item.id === targetStudentId) ||
-            (storedUserEmail && item.email?.toLowerCase().trim() === storedUserEmail)
-          ) || getCachedSnapshot() || (targetStudentId ? {
-            id: targetStudentId,
-            student_name: storedUserName || "Student",
-            email: storedUserEmail,
-            college_id: storedCollegeId,
-            role: "student"
-          } : null);
-
-          if (s) {
-            setCurrentStudent(s);
-            localStorage.setItem("fp_student_id", s.id);
-            localStorage.setItem("fp_user_snapshot", JSON.stringify(s));
-          }
-          setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentSME(null);
-        } else if (parsedRole === "sme") {
-          const targetSmeId = storedSmeId || storedUserId;
-          const s = (dbData.smes || []).find((item: any) => 
-            (targetSmeId && item.id === targetSmeId) ||
-            (storedUserEmail && item.email?.toLowerCase().trim() === storedUserEmail)
-          ) || getCachedSnapshot() || (targetSmeId ? {
-            id: targetSmeId,
-            name: storedUserName || "SME",
-            email: storedUserEmail,
-            role: "sme"
-          } : null);
-
-          if (s) {
-            setCurrentSME(s);
-            localStorage.setItem("fp_sme_id", s.id);
-            localStorage.setItem("fp_user_snapshot", JSON.stringify(s));
-          }
-          setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
-        } else if (parsedRole === "fee_manager" || parsedRole === "allocator") {
-          setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
+        if (m) {
+          setCurrentMentor(m as any);
         }
+        setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
+      } else if (parsedRole === "cam") {
+        let camObj = null;
+        if (storedUserId) {
+          try {
+            const camRes = await apiFetch(`/api/cam?id=${encodeURIComponent(storedUserId)}`).catch(() => null);
+            if (camRes?.success && camRes.cam) {
+              camObj = camRes.cam;
+            }
+          } catch (_) {}
+        }
+        if (!camObj) {
+          camObj = {
+            id: storedUserId,
+            name: storedUserName || "Campus Manager",
+            email: storedUserEmail,
+            college_id: storedCollegeId,
+            role: "cam"
+          };
+        }
+        setCurrentCAM({ ...camObj, role: "cam" });
+        setCurrentMentor(null); setCurrentHR(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
+      } else if (parsedRole === "kam") {
+        let kamObj = null;
+        if (storedUserId) {
+          try {
+            const kamRes = await apiFetch(`/api/kam?id=${encodeURIComponent(storedUserId)}`).catch(() => null);
+            const kamData = kamRes?.kam || kamRes?.cam;
+            if (kamRes?.success && kamData) {
+              kamObj = kamData;
+            }
+          } catch (_) {}
+        }
+        if (!kamObj) {
+          kamObj = {
+            id: storedUserId,
+            name: storedUserName || "Key Account Manager",
+            email: storedUserEmail,
+            college_id: storedCollegeId,
+            role: "kam"
+          };
+        }
+        setCurrentKAM({ ...kamObj, role: "kam" });
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
+      } else if (parsedRole === "admin") {
+        let adminObj = null;
+        if (storedUserId) {
+          try {
+            const adminRes = await apiFetch(`/api/admin?id=${encodeURIComponent(storedUserId)}`).catch(() => null);
+            if (adminRes?.success && adminRes.admin) {
+              adminObj = adminRes.admin;
+            }
+          } catch (_) {}
+        }
+        if (!adminObj) {
+          adminObj = {
+            id: storedUserId,
+            name: storedUserName || "Administrator",
+            email: storedUserEmail,
+            role: "admin"
+          };
+        }
+        setCurrentAdmin({ ...adminObj, role: "admin" });
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentStudent(null); setCurrentSME(null);
+      } else if (parsedRole === "student") {
+        const s = (dbData.students || []).find((item: Student) => 
+          item.id === storedUserId ||
+          (storedUserEmail && item.email?.toLowerCase().trim() === storedUserEmail)
+        ) || {
+          id: storedUserId,
+          name: storedUserName || "Student",
+          email: storedUserEmail,
+          college_id: storedCollegeId,
+          classGroup: "General",
+          role: "student"
+        };
+        setCurrentStudent(s as any);
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentSME(null);
+      } else if (parsedRole === "sme") {
+        const s = (dbData.smes || []).find((item: any) => 
+          item.id === storedUserId ||
+          (storedUserEmail && item.email?.toLowerCase().trim() === storedUserEmail)
+        ) || {
+          id: storedUserId,
+          name: storedUserName || "SME",
+          email: storedUserEmail,
+          role: "sme"
+        };
+        setCurrentSME(s);
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
+      } else if (parsedRole === "fee_manager" || parsedRole === "allocator") {
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
       }
 
       setIsLoading(false);

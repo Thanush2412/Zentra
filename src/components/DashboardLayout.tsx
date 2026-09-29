@@ -564,19 +564,48 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   // roles stay in sync without a manual reload.
   useEffect(() => {
     let debounce: ReturnType<typeof setTimeout> | null = null;
+    let lastFocusRefresh = Date.now();
+
     const scheduleRefresh = () => {
       if (debounce) clearTimeout(debounce);
       // Debounce bursts of mutations (imports, bulk ops) into a single refresh.
-      debounce = setTimeout(() => { refreshData(true); }, 800);
+      debounce = setTimeout(() => { refreshData(true); }, 500);
     };
+
+    const handleWindowFocus = () => {
+      // Throttle window focus revalidation to once every 15 seconds
+      const now = Date.now();
+      if (now - lastFocusRefresh > 15000) {
+        lastFocusRefresh = now;
+        scheduleRefresh();
+      }
+    };
+
     window.addEventListener("fp_data_changed", scheduleRefresh);
+    window.addEventListener("fp_attendance_updated", scheduleRefresh);
+    window.addEventListener("fp_interviews_updated", scheduleRefresh);
+    window.addEventListener("fp_audits_updated", scheduleRefresh);
+    window.addEventListener("fp_weekly_plan_updated", scheduleRefresh);
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        handleWindowFocus();
+      }
+    });
+
     const onStorage = (e: StorageEvent) => {
       if (e.key === "fp_data_changed" && e.newValue) scheduleRefresh();
     };
     window.addEventListener("storage", onStorage);
+
     return () => {
       if (debounce) clearTimeout(debounce);
       window.removeEventListener("fp_data_changed", scheduleRefresh);
+      window.removeEventListener("fp_attendance_updated", scheduleRefresh);
+      window.removeEventListener("fp_interviews_updated", scheduleRefresh);
+      window.removeEventListener("fp_audits_updated", scheduleRefresh);
+      window.removeEventListener("fp_weekly_plan_updated", scheduleRefresh);
+      window.removeEventListener("focus", handleWindowFocus);
       window.removeEventListener("storage", onStorage);
     };
   }, [refreshData]);

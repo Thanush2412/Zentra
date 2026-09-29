@@ -5,6 +5,7 @@ export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { verifyPassword, hashPassword } from "@/lib/auth";
+import { revokeAllUserSessions, createUserSession, buildSessionCookie, buildCsrfCookie } from "@/lib/session";
 
 export async function POST(request: Request) {
   try {
@@ -61,8 +62,7 @@ export async function POST(request: Request) {
     const hashedNewPass = hashPassword(trimmedNewPass);
     const nowStr = new Date().toISOString();
 
-    // Update main users table. plain_password is no longer written — the
-    // admin-visible plaintext column is deprecated (security audit item 5).
+    // Update main users table.
     try {
       await db.run(
         "UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
@@ -101,10 +101,23 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({
+    // Security: Global session revocation across all devices upon password reset
+    await revokeAllUserSessions(db, user.id, "password_changed");
+
+    // Re-issue a fresh session for the current client
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "127.0.0.1";
+    const userAgent = request.headers.get("user-agent") || "Web Browser";
+    const { rawToken, csrfToken } = await createUserSession(db, user.id, { ip, userAgent });
+
+    const response = NextResponse.json({
       success: true,
-      message: "Password updated successfully!"
+      message: "Password updated successfully!",
+      csrfToken
     });
+
+    response.headers.append("Set-Cookie", buildSessionCookie(rawToken));
+    response.headers.append("Set-Cookie", buildCsrfCookie(csrfToken));
+    return response;
   } catch (error: any) {
     console.error("API POST Change Password error:", error);
     return NextResponse.json({ success: false, message: error.message || "Server error updating password" }, { status: 500 });

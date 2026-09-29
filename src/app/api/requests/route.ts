@@ -1,11 +1,20 @@
 // Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
 export const preferredRegion = "bom1";
 export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { sendMail, renderHandoverRequestEmail } from "@/lib/mail";
 import { checkMentorAvailability } from "@/lib/availability";
+import { requireAuth } from "@/lib/authGuard";
+
+const noCacheHeaders = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+  "Pragma": "no-cache",
+  "Expires": "0",
+};
 
 export async function GET(request: Request) {
   try {
@@ -64,14 +73,20 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, requests: records });
+    return NextResponse.json({ success: true, requests: records }, { headers: noCacheHeaders });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: noCacheHeaders });
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["mentor", "cam", "kam", "admin", "student", "sme"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const body = await request.json();
     const { mentorId, slotId, dateStr, dateFormatted, targetStaffId, reason, subjectName, course, classGroup, targetStaffName, requestType } = body;

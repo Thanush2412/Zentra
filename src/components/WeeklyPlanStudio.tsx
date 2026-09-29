@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { apiFetch } from "@/lib/apiFetch";
 import {
   CalendarRange,
   Calendar,
@@ -372,8 +373,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
   // Fetch daily configs (CAM Day Orders and Holidays) - Normalizes both dateStr & datestr
   useEffect(() => {
     if (!collegeId) return;
-    fetch(`/api/daily-configs?college_id=${encodeURIComponent(collegeId)}`)
-      .then(res => res.json())
+    apiFetch(`/api/daily-configs?college_id=${encodeURIComponent(collegeId)}`)
       .then(data => {
         if (data.success && Array.isArray(data.configs)) {
           const map = new Map<string, any>();
@@ -410,14 +410,13 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
   }, [dailyConfigsMap]);
 
   // Fetch existing plans and audit for this mentor
-  const fetchPlans = useCallback(async () => {
+  const fetchPlans = useCallback(async (silent: boolean = false) => {
     if (!collegeId || !mentorId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
-      const res = await fetch(
+      const data = await apiFetch(
         `/api/weekly-plan?collegeId=${encodeURIComponent(collegeId)}&mentorId=${encodeURIComponent(mentorId)}&includeAudit=true`
       );
-      const data = await res.json();
       if (data.success && Array.isArray(data.plans)) {
         setPlans(data.plans);
         if (data.audit) {
@@ -427,13 +426,28 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
     } catch (e: any) {
       console.error("Error fetching weekly plans:", e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
       setPlansLoaded(true);
     }
   }, [collegeId, mentorId]);
 
   useEffect(() => {
     fetchPlans();
+  }, [fetchPlans]);
+
+  // Real-time synchronization: listen for weekly plan update events and window focus
+  useEffect(() => {
+    const handleSync = () => {
+      fetchPlans(true);
+    };
+
+    window.addEventListener("fp_weekly_plan_updated", handleSync);
+    window.addEventListener("focus", handleSync);
+
+    return () => {
+      window.removeEventListener("fp_weekly_plan_updated", handleSync);
+      window.removeEventListener("focus", handleSync);
+    };
   }, [fetchPlans]);
 
   // 1. Helper to generate default tasks for each working day in the week
@@ -1063,12 +1077,10 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
         status: statusToSave
       };
 
-      const res = await fetch("/api/weekly-plan", {
+      const data = await apiFetch("/api/weekly-plan", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: payload
       });
-      const data = await res.json();
 
       if (data.success) {
         isDirtyRef.current = false;
@@ -1079,6 +1091,9 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
           "success"
         );
         await fetchPlans();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_weekly_plan_updated"));
+        }
       } else {
         toast(data.message || "Failed to save weekly plan", "error");
       }
@@ -1739,15 +1754,14 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
     setCurrentPage(1);
   }, [selectedCollege, selectedWeek, selectedStatus, searchQuery]);
 
-  const fetchPlans = useCallback(async () => {
-    setLoading(true);
+  const fetchPlans = useCallback(async (silent: boolean = false) => {
+    if (!silent) setLoading(true);
     try {
       const q =
         selectedCollege && selectedCollege !== "all"
           ? `?collegeId=${encodeURIComponent(selectedCollege)}&includeAudit=true`
           : `?includeAudit=true`;
-      const res = await fetch(`/api/weekly-plan${q}`);
-      const data = await res.json();
+      const data = await apiFetch(`/api/weekly-plan${q}`);
       if (data.success && Array.isArray(data.plans)) {
         setPlans(data.plans);
         if (data.audit) {
@@ -1757,12 +1771,27 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
     } catch (e: any) {
       console.error("Error fetching weekly plans:", e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [selectedCollege]);
 
   useEffect(() => {
     fetchPlans();
+  }, [fetchPlans]);
+
+  // Real-time synchronization: listen for weekly plan update events and window focus
+  useEffect(() => {
+    const handleSync = () => {
+      fetchPlans(true);
+    };
+
+    window.addEventListener("fp_weekly_plan_updated", handleSync);
+    window.addEventListener("focus", handleSync);
+
+    return () => {
+      window.removeEventListener("fp_weekly_plan_updated", handleSync);
+      window.removeEventListener("focus", handleSync);
+    };
   }, [fetchPlans]);
 
   // Filtered plans
@@ -1831,10 +1860,9 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
     if (!plan.skill_verdict || plan.skill_verdict.verdict === verdict) return;
     setSkillVerdictBusy(true);
     try {
-      const res = await fetch("/api/skill-tracker", {
+      const data = await apiFetch("/api/skill-tracker", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           mentorId: plan.mentor_id,
           mentorName: plan.mentor_name,
           collegeId: plan.college_id,
@@ -1846,13 +1874,15 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
           status: verdict,
           remarks: feedbackInput || (plan.skill_verdict.remarks ?? ""),
           verifiedBy: reviewerName || "Subject Matter Expert"
-        })
+        }
       });
-      const data = await res.json();
       if (data.success) {
         toast(`Skill verdict recorded: ${verdict === "cleared" ? "Cleared" : "Not Cleared"}.`, "success");
         setSelectedPlanForReview(null);
         await fetchPlans();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_weekly_plan_updated"));
+        }
       } else {
         toast(data.message || "Failed to record skill verdict", "error");
       }
@@ -1868,23 +1898,24 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
     if (!selectedPlanForReview) return;
     setSubmittingReview(true);
     try {
-      const res = await fetch("/api/weekly-plan", {
+      const data = await apiFetch("/api/weekly-plan", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           id: selectedPlanForReview.id,
           status,
           smeRemarks: feedbackInput,
           camFeedback: feedbackInput,
           verifiedBy: reviewerName
-        })
+        }
       });
-      const data = await res.json();
       if (data.success) {
         toast(`Weekly plan marked as ${status}.`, "success");
         setSelectedPlanForReview(null);
         setFeedbackInput("");
         await fetchPlans();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_weekly_plan_updated"));
+        }
       } else {
         toast(data.message || "Failed to update review", "error");
       }
@@ -2022,7 +2053,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={fetchPlans}
+              onClick={() => fetchPlans()}
               disabled={loading}
               className="px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >

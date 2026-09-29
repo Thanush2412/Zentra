@@ -1,5 +1,8 @@
 // Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
 export const preferredRegion = "bom1";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
@@ -224,7 +227,16 @@ export async function GET(request: Request) {
       evaluations = await db.all("SELECT * FROM interview_evaluations ORDER BY created_at DESC");
     }
 
-    return NextResponse.json({ success: true, interviews: interviewsWithDetails, evaluations });
+    return NextResponse.json(
+      { success: true, interviews: interviewsWithDetails, evaluations },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0"
+        }
+      }
+    );
   } catch (error: any) {
     console.error("GET /api/interviews error:", error);
     return NextResponse.json({ success: false, message: error.message || "Failed to fetch interviews" }, { status: 500 });

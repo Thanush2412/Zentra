@@ -7,7 +7,8 @@ import { NextResponse } from "next/server";
 import { getDb, PostgresDbAdapter } from "@/lib/db";
 import { verifyPassword, hashPassword, needsRehash } from "@/lib/auth";
 import { SUPER_ADMIN_ROLE, roleGrantsSuperAdmin } from "@/lib/superadmin";
-import { createSessionToken, buildSessionCookie, buildClearSessionCookie } from "@/lib/session";
+import { createUserSession, revokeSession, buildSessionCookie, buildCsrfCookie, buildClearSessionCookies } from "@/lib/session";
+import { extractSessionToken } from "@/lib/authGuard";
 
 /** Profile tables that hold a display name for each role (whitelisted — never user input). */
 const ROLE_PROFILE_TABLES: Record<string, string> = {
@@ -102,6 +103,10 @@ export async function POST(request: Request) {
 
     if (body.action === "logout") {
       const { userId } = body;
+      const rawToken = extractSessionToken(request);
+      if (rawToken) {
+        await revokeSession(db, rawToken, "logout").catch(() => {});
+      }
       if (userId) {
         const lastSession = await db.get(
           "SELECT id FROM login_history WHERE user_id = ? AND logout_time IS NULL ORDER BY login_time DESC LIMIT 1",
@@ -112,7 +117,8 @@ export async function POST(request: Request) {
         }
       }
       const res = NextResponse.json({ success: true, message: "Logged out successfully." });
-      res.headers.append("Set-Cookie", buildClearSessionCookie());
+      const clearCookies = buildClearSessionCookies();
+      clearCookies.forEach(c => res.headers.append("Set-Cookie", c));
       return res;
     }
 
@@ -251,13 +257,17 @@ export async function POST(request: Request) {
     // Check if password change is explicitly enforced
     const mustChangePassword = user.must_change_password === 1;
 
+    // Client metadata for multi-device auditing (without brittle IP termination)
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "127.0.0.1";
+    const userAgent = request.headers.get("user-agent") || "Web Browser";
+
     // Record login history and update last_login concurrently without blocking response latency
     const nowStr = new Date().toISOString();
     const logId = "log_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
     Promise.all([
       db.run(
         "INSERT INTO login_history (id, user_id, login_time, ip, device) VALUES (?, ?, ?, ?, ?)",
-        [logId, user.id, nowStr, "127.0.0.1", "Web Browser"]
+        [logId, user.id, nowStr, ip, userAgent]
       ),
       db.run("UPDATE users SET last_login = ?, updated_at = ? WHERE id = ?", [nowStr, nowStr, user.id]),
       (user.role === 'student' && user.reference_id)
@@ -268,15 +278,10 @@ export async function POST(request: Request) {
         : Promise.resolve()
     ]).catch(() => {});
 
-    // Issue the HttpOnly session cookie — all /api/* routes are gated on this
-    // by src/middleware.ts. Identity lives ONLY in the signed token, so the
-    // client can no longer spoof role/userId via query params.
-    const sessionToken = createSessionToken({
-      userId: user.reference_id || user.id,
-      role: user.role,
-      email: user.email || lowerEmail,
-      collegeId: collegeId,
-      name: userName
+    // Create persistent opaque session in DB (storing only SHA-256 hash)
+    const { rawToken, csrfToken, expiresAt } = await createUserSession(db, user.id, {
+      ip,
+      userAgent
     });
 
     const response = NextResponse.json({
@@ -287,9 +292,12 @@ export async function POST(request: Request) {
       userEmail: user.email || lowerEmail,
       userName: userName,
       isSuperAdmin: isSuperAdmin,
-      mustChangePassword: !!mustChangePassword
+      mustChangePassword: !!mustChangePassword,
+      csrfToken: csrfToken,
+      expiresAt: expiresAt
     });
-    response.headers.append("Set-Cookie", buildSessionCookie(sessionToken));
+    response.headers.append("Set-Cookie", buildSessionCookie(rawToken));
+    response.headers.append("Set-Cookie", buildCsrfCookie(csrfToken));
     return response;
   } catch (error: any) {
     const isClientAbort =

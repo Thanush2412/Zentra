@@ -1,13 +1,11 @@
-"use client";
-
 import { useState, useMemo } from "react";
 import { useApp } from "@/context/AppContext";
-import { Clock, CheckCircle2, XCircle, Search, CalendarRange, MapPin, Inbox, ShieldCheck, FileText, ChevronRight, Check } from "lucide-react";
-import { toast } from "sonner";
-import { LoadingButton } from "@/components/LoadingButton";
+import { useToast } from "@/context/ToastContext";
+import { Clock, CheckCircle2, XCircle, Search, CalendarRange, MapPin, Inbox, ShieldCheck, FileText, ChevronRight, Check, Loader2 } from "lucide-react";
 
 export function CMApprovalsHub() {
-  const { requests, mentors, colleges, currentUser, approvedHandovers } = useApp();
+  const { requests, mentors, colleges, currentCAM, approvedHandovers } = useApp();
+  const { toast } = useToast();
   
   // Filter state
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
@@ -27,8 +25,7 @@ export function CMApprovalsHub() {
   const [customSubjName, setCustomSubjName] = useState("");
   const [selectedCoverMentorId, setSelectedCoverMentorId] = useState<string | null>(null);
 
-  // Get active campus manager
-  const currentCAM = mentors.find(m => m.email === currentUser?.email);
+  // Active college
   const activeCollegeId = currentCAM?.college_id;
   const activeCollege = colleges.find(c => c.id === activeCollegeId);
 
@@ -62,7 +59,7 @@ export function CMApprovalsHub() {
 
   const selectedRequest = pendingRequests.find((r: any) => r.id === selectedRequestId);
 
-  const getStatusIcon = (category: string) => {
+  const getStatusIcon = (category?: string) => {
     switch (category) {
       case "Substitution": return <ShieldCheck className="w-4 h-4" />;
       case "Late Attendance": return <Clock className="w-4 h-4" />;
@@ -71,7 +68,7 @@ export function CMApprovalsHub() {
     }
   };
 
-  const getStatusColor = (category: string) => {
+  const getStatusColor = (category?: string) => {
     switch (category) {
       case "Substitution": return "bg-indigo-50 text-indigo-700 border-indigo-200";
       case "Late Attendance": return "bg-amber-50 text-amber-700 border-amber-200";
@@ -124,11 +121,11 @@ export function CMApprovalsHub() {
       
       if (!res.ok) throw new Error("Failed to process request");
       
-      toast.success(`Request ${status} successfully.`);
+      toast(`Request ${status} successfully.`, "success");
       setSelectedRequestId(null);
       setReviewReason("");
     } catch (err: any) {
-      toast.error(err.message || "Error processing request");
+      toast(err.message || "Error processing request", "error");
     } finally {
       setActionLoading(prev => ({ ...prev, [id]: false }));
     }
@@ -392,22 +389,25 @@ export function CMApprovalsHub() {
                   </div>
 
                   <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
-                    <LoadingButton 
-                      isLoading={actionLoading[selectedRequest.id]}
+                    <button
+                      type="button"
+                      disabled={actionLoading[selectedRequest.id]}
                       onClick={() => handleRequestAction(selectedRequest.id, "approved")}
-                      className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-black shadow-sm transition-all"
+                      className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-black shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                     >
-                      <CheckCircle2 className="w-4 h-4 mr-2" /> Approve Request
-                    </LoadingButton>
+                      {actionLoading[selectedRequest.id] ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                      <span>Approve Request</span>
+                    </button>
                     
-                    <LoadingButton 
-                      isLoading={actionLoading[selectedRequest.id]}
-                      variant="danger"
+                    <button
+                      type="button"
+                      disabled={actionLoading[selectedRequest.id]}
                       onClick={() => handleRequestAction(selectedRequest.id, "rejected")}
-                      className="flex-1 py-3 rounded-xl text-sm font-black shadow-sm"
+                      className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-black shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                     >
-                      <XCircle className="w-4 h-4 mr-2" /> Decline Request
-                    </LoadingButton>
+                      {actionLoading[selectedRequest.id] ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                      <span>Decline Request</span>
+                    </button>
                   </div>
                 </div>
 

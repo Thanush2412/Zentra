@@ -18,7 +18,7 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    requireRole(request, "admin");
+    await requireRole(request, "admin");
     const db = await getDb();
     const body = await request.json();
     const { id, action, role, mappingType, selectedReferenceId, collegeId, group, classGroup } = body;

@@ -1,10 +1,17 @@
 export const preferredRegion = "bom1";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { ensureMigration } from "@/lib/migrations";
+
+const noCacheHeaders = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+  "Pragma": "no-cache",
+  "Expires": "0",
+};
 
 export async function GET(request: Request) {
   try {
@@ -98,12 +105,12 @@ export async function GET(request: Request) {
       activeKAMInfo,
       clusters,
       allColleges: collegesWithKAM
-    });
+    }, { headers: noCacheHeaders });
   } catch (error: any) {
     console.error("GET /api/audit/campus-audits error:", error);
     return NextResponse.json(
       { success: false, message: error?.message || "Failed to load campus audits" },
-      { status: 500 }
+      { status: 500, headers: noCacheHeaders }
     );
   }
 }

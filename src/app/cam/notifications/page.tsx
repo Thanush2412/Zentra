@@ -6,14 +6,14 @@ import { NotificationsView } from "@/components/NotificationsView";
 import { RedirectingLoader } from "@/components/RedirectingLoader";
 
 export default function CamNotificationsPage() {
-  const { user } = useApp();
+  const { currentCAM } = useApp();
   
-  if (!user) return <RedirectingLoader label="Authenticating..." />;
+  if (!currentCAM) return <RedirectingLoader label="Authenticating..." />;
 
   return (
-    <DashboardLayout activeTab="notifications" role="cam">
+    <DashboardLayout requiredRole="cam">
       <div className="p-4 md:p-8 min-h-screen bg-gray-50/50">
-        <NotificationsView userId={user.id} portalType="cam" />
+        <NotificationsView userId={currentCAM.id} portalType="cam" />
       </div>
     </DashboardLayout>
   );

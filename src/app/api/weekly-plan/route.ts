@@ -1,10 +1,19 @@
 // Pin to Mumbai (bom1) — co-located with Turso/Postgres DB
 export const preferredRegion = "bom1";
 export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { deriveSubjectType } from "@/lib/skillTracker";
+import { requireAuth } from "@/lib/authGuard";
+
+const noCacheHeaders = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+  "Pragma": "no-cache",
+  "Expires": "0",
+};
 
 async function ensureTable(db: any) {
   try {
@@ -242,18 +251,24 @@ export async function GET(request: Request) {
       success: true,
       plans: enrichedPlans,
       audit: auditSummary
-    });
+    }, { headers: noCacheHeaders });
   } catch (err: any) {
     console.error("GET /api/weekly-plan error:", err);
     return NextResponse.json(
       { success: false, message: err?.message || "Failed to fetch weekly plans" },
-      { status: 500 }
+      { status: 500, headers: noCacheHeaders }
     );
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["mentor", "sme", "cam", "kam", "admin"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     await ensureTable(db);
     const body = await request.json();
@@ -362,6 +377,12 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["mentor", "sme", "cam", "kam", "admin"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     await ensureTable(db);
     const body = await request.json();
@@ -420,6 +441,12 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["mentor", "sme", "cam", "kam", "admin"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     await ensureTable(db);
     const { searchParams } = new URL(request.url);

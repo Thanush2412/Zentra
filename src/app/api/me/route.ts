@@ -25,7 +25,7 @@ const PROFILE_TABLES: Record<string, string> = {
 
 export async function GET(request: Request) {
   try {
-    const session = requireSession(request);
+    const session = await requireSession(request);
     const role = normalizeRole(session.role);
     const userId = session.userId;
 

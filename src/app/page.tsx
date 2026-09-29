@@ -6,6 +6,7 @@ import { useApp } from "@/context/AppContext";
 import { ProfessionalLoader } from "@/components/DashboardLayout";
 import { LoadingButton } from "@/components/ui/LoadingButton";
 import { setSuperAdminSession } from "@/lib/superadmin";
+import { setClientCsrfToken } from "@/lib/apiFetch";
 
 import {
   User,
@@ -108,6 +109,9 @@ export default function Home() {
       const data = await res.json();
 
       if (data.success) {
+        if (data.csrfToken) {
+          setClientCsrfToken(data.csrfToken);
+        }
         localStorage.setItem("fp_logged_in", "true");
         localStorage.setItem("fp_user_id", data.userId || "");
         const resolvedName = data.userName || data.userEmail || email.trim();

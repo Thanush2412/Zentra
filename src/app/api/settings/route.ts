@@ -36,7 +36,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    requireRole(request, "admin");
+    await requireRole(request, "admin");
     const body = await request.json();
     const { key, value, updatedBy } = body;
 

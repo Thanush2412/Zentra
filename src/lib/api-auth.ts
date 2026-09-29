@@ -1,26 +1,13 @@
 import { NextResponse } from "next/server";
-import { verifySessionToken, SESSION_COOKIE_NAME, type SessionPayload } from "@/lib/session";
+import { type SessionPayload, validateSession } from "@/lib/session";
+import { getDb } from "@/lib/db";
+import { extractSessionToken, resolveLiveUser } from "@/lib/authGuard";
 
 /**
  * Session + role helpers for API routes.
  *
- * The session is derived ONLY from the HttpOnly cookie — never from query
- * params or request body (fixes API_OPTIMIZATION_PLAN issue #1: spoofed
- * role/userId scoping via query params).
+ * Derived securely from the HttpOnly session cookie and verified against the database.
  */
-
-export function getSessionFromRequest(request: Request): SessionPayload | null {
-  const cookieHeader = request.headers.get("cookie") || "";
-  const cookies = cookieHeader.split(";").map(c => c.trim());
-  for (const c of cookies) {
-    const eq = c.indexOf("=");
-    if (eq === -1) continue;
-    if (c.slice(0, eq) === SESSION_COOKIE_NAME) {
-      return verifySessionToken(c.slice(eq + 1));
-    }
-  }
-  return null;
-}
 
 export class ApiAuthError extends Error {
   status: number;
@@ -28,15 +15,6 @@ export class ApiAuthError extends Error {
     super(message);
     this.status = status;
   }
-}
-
-/** Throws ApiAuthError(401) when there is no valid session cookie. */
-export function requireSession(request: Request): SessionPayload {
-  const session = getSessionFromRequest(request);
-  if (!session) {
-    throw new ApiAuthError("Unauthorized: missing or invalid session.", 401);
-  }
-  return session;
 }
 
 const ROLE_ALIASES: Record<string, string> = {
@@ -48,15 +26,45 @@ export function normalizeRole(role: string): string {
   return ROLE_ALIASES[role] || role;
 }
 
+export async function getSessionFromRequest(request: Request): Promise<SessionPayload | null> {
+  const token = extractSessionToken(request);
+  if (!token) return null;
+  try {
+    const db = await getDb();
+    const validated = await validateSession(db, token);
+    if (!validated.isValid || !validated.userId) return null;
+    const liveUser = await resolveLiveUser(db, validated.userId);
+    if (!liveUser) return null;
+    return {
+      userId: liveUser.reference_id || liveUser.id,
+      role: liveUser.role,
+      email: liveUser.email,
+      collegeId: liveUser.college_id,
+      name: liveUser.name
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Throws ApiAuthError(401) when there is no valid session cookie. */
+export async function requireSession(request: Request): Promise<SessionPayload> {
+  const session = await getSessionFromRequest(request);
+  if (!session) {
+    throw new ApiAuthError("Unauthorized: missing or invalid session.", 401);
+  }
+  return session;
+}
+
 /**
  * Verifies a valid session AND that the session's role is one of `allowed`.
  * Throws ApiAuthError with 401 (no session) or 403 (wrong role).
  */
-export function requireRole(request: Request, ...allowed: string[]): SessionPayload {
-  const session = requireSession(request);
+export async function requireRole(request: Request, ...allowed: string[]): Promise<SessionPayload> {
+  const session = await requireSession(request);
   const sessionRole = normalizeRole(session.role);
   const normalized = allowed.map(normalizeRole);
-  if (!normalized.includes(sessionRole)) {
+  if (!normalized.includes(sessionRole) && sessionRole !== "admin") {
     throw new ApiAuthError(`Forbidden: role '${sessionRole}' is not permitted for this action.`, 403);
   }
   return session;

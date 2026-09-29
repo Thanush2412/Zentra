@@ -6,14 +6,14 @@ import { NotificationsView } from "@/components/NotificationsView";
 import { RedirectingLoader } from "@/components/RedirectingLoader";
 
 export default function MentorNotificationsPage() {
-  const { user } = useApp();
+  const { currentMentor } = useApp();
   
-  if (!user) return <RedirectingLoader label="Authenticating..." />;
+  if (!currentMentor) return <RedirectingLoader label="Authenticating..." />;
 
   return (
-    <DashboardLayout activeTab="notifications" role="mentor">
+    <DashboardLayout requiredRole="mentor">
       <div className="p-4 md:p-8 min-h-screen bg-gray-50/50">
-        <NotificationsView userId={user.id} portalType="mentor" />
+        <NotificationsView userId={currentMentor.id} portalType="mentor" />
       </div>
     </DashboardLayout>
   );

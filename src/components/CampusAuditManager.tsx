@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useToast } from "@/context/ToastContext";
 import { useApp } from "@/context/AppContext";
 import { LoadingButton } from "./ui/LoadingButton";
+import { apiFetch } from "@/lib/apiFetch";
 import {
   ShieldCheck,
   Building2,
@@ -308,20 +309,18 @@ export const ClassObservationView: React.FC<{
         satisfaction_status: fSatisfaction,
         satisfaction_remarks: fRemarks || null
       };
-      let res: Response;
+      let data: any;
       if (fPhoto) {
         const fd = new FormData();
         fd.append("photo", fPhoto);
         fd.append("payload", JSON.stringify(payload));
-        res = await fetch("/api/audit/observations", { method: "POST", body: fd });
+        data = await apiFetch("/api/audit/observations", { method: "POST", body: fd });
       } else {
-        res = await fetch("/api/audit/observations", {
+        data = await apiFetch("/api/audit/observations", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: payload
         });
       }
-      const data = await res.json();
       if (data.success) {
         toast(
           fSatisfaction === "not_satisfied"
@@ -332,6 +331,9 @@ export const ClassObservationView: React.FC<{
         resetForm();
         setShowForm(false);
         onRefresh();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_audits_updated"));
+        }
       } else {
         toast(data.message || "Failed to save observation.", "error");
       }
@@ -725,13 +727,12 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
     campuses: []
   });
 
-  const fetchCampusAudits = async () => {
-    setLoadingAudits(true);
+  const fetchCampusAudits = useCallback(async (silent: boolean = false) => {
+    if (!silent) setLoadingAudits(true);
     try {
-      const res = await fetch(
+      const data = await apiFetch(
         `/api/audit/campus-audits?collegeId=${encodeURIComponent(collegeId || "")}&collegeName=${encodeURIComponent(collegeName || "")}`
       );
-      const data = await res.json();
       if (data.success) {
         setAssignedAudits(data.assignedAudits || []);
         setSubmittedAudits(data.submittedAudits || []);
@@ -742,13 +743,28 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
     } catch (err) {
       console.error("Failed to fetch campus audits:", err);
     } finally {
-      setLoadingAudits(false);
+      if (!silent) setLoadingAudits(false);
     }
-  };
+  }, [collegeId, collegeName]);
 
   useEffect(() => {
     fetchCampusAudits();
-  }, [collegeId, collegeName]);
+  }, [fetchCampusAudits]);
+
+  // Real-time synchronization: listen for audit update events and window focus
+  useEffect(() => {
+    const handleSync = () => {
+      fetchCampusAudits(true);
+    };
+
+    window.addEventListener("fp_audits_updated", handleSync);
+    window.addEventListener("focus", handleSync);
+
+    return () => {
+      window.removeEventListener("fp_audits_updated", handleSync);
+      window.removeEventListener("focus", handleSync);
+    };
+  }, [fetchCampusAudits]);
 
   // --------------------------------------------------------------------------
   // RECORD AUDIT WIZARD FORM STATE (Clean, no hardcoded defaults)
@@ -873,15 +889,16 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
         attendance_remarks: wizAttRemarks
       };
 
-      const res = await fetch("/api/audit/campus-audits", {
+      const data = await apiFetch("/api/audit/campus-audits", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: payload
       });
-      const data = await res.json();
       if (data.success) {
         toast(data.message || "Audit recorded and dispatched to peer reviewer.", "success");
         await fetchCampusAudits();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_audits_updated"));
+        }
         setWizardStage(1);
         setWizMentor("");
         setWizMentorId("");
@@ -936,22 +953,23 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
 
     setIsSigningOffAudit(true);
     try {
-      const res = await fetch("/api/audit/campus-audits", {
+      const data = await apiFetch("/api/audit/campus-audits", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           id: selectedPeerAuditForReview.id,
           signoff_notes: signOffNotes.trim(),
           signed_by: userName,
           user_role: role
-        })
+        }
       });
-      const data = await res.json();
       if (data.success) {
         toast(`Official Peer Review signed off for ${selectedPeerAuditForReview.campus}!`, "success");
         setSelectedPeerAuditForReview(null);
         setSignOffNotes("");
         await fetchCampusAudits();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_audits_updated"));
+        }
       } else {
         toast(data.message || "Failed to sign off peer review.", "error");
       }
@@ -1002,7 +1020,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={fetchCampusAudits}
+              onClick={() => fetchCampusAudits()}
               disabled={loadingAudits}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-bold transition-all cursor-pointer shadow-xs"
               title="Refresh audits list"

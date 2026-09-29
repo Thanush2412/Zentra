@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const filterUserId = searchParams.get("userId");
 
-    const session = getSessionFromRequest(request);
+    const session = await getSessionFromRequest(request);
     if (!filterUserId && session && !["admin", "kam", "superadmin"].includes(normalizeRole(session.role))) {
       return NextResponse.json({ success: false, message: "Forbidden: admin or kam role required" }, { status: 403 });
     }
@@ -160,7 +160,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const session = getSessionFromRequest(request);
+    const session = await getSessionFromRequest(request);
     await ensureMigration("feedback_reports_table");
     const db = await getDb();
     const body = await request.json();
@@ -217,7 +217,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const session = getSessionFromRequest(request);
+    const session = await getSessionFromRequest(request);
     if (session && !["admin", "kam", "superadmin"].includes(normalizeRole(session.role))) {
       return NextResponse.json({ success: false, message: "Forbidden: admin or kam role required" }, { status: 403 });
     }

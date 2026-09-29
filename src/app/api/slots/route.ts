@@ -5,12 +5,21 @@ export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import { getDb, resolveClassGroupDetails, syncMentorSubjectsAndClasses } from "@/lib/db";
 import { isCohortMatch } from "@/lib/utils";
+import { requireAuth } from "@/lib/authGuard";
 
 export async function POST(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["admin", "cam", "kam", "mentor"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const body = await request.json();
-    const { mentorId, day, time, course, location, actorName, actorRole, shift, classGroup, college_id } = body;
+    const { mentorId, day, time, course, location, shift, classGroup, college_id } = body;
+    const actorName = auth?.user?.name || body.actorName || "System";
+    const actorRole = auth?.user?.role || body.actorRole || "User";
 
     if (!mentorId || !day || !time || !course || !location) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
@@ -130,13 +139,19 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["admin", "cam", "kam", "mentor"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     const classGroup = searchParams.get("classGroup");
-    const collegeId = searchParams.get("college_id") || searchParams.get("collegeId");
-    const actorName = searchParams.get("actorName") || "System";
-    const actorRole = searchParams.get("actorRole") || "User";
+    const collegeId = searchParams.get("college_id") || searchParams.get("collegeId") || auth?.user?.college_id;
+    const actorName = auth?.user?.name || searchParams.get("actorName") || "System";
+    const actorRole = auth?.user?.role || searchParams.get("actorRole") || "User";
 
     if (!id && !classGroup) {
       return NextResponse.json({ success: false, message: "Missing slot id or classGroup parameter" }, { status: 400 });
@@ -225,9 +240,17 @@ export async function DELETE(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["admin", "cam", "kam", "mentor"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const body = await request.json();
-    const { id, mentorId, day, time, course, location, actorName, actorRole, shift, classGroup, college_id } = body;
+    const { id, mentorId, day, time, course, location, shift, classGroup, college_id } = body;
+    const actorName = auth?.user?.name || body.actorName || "System";
+    const actorRole = auth?.user?.role || body.actorRole || "Mentor Header";
 
     if (!id || !mentorId || !day || !time || !course || !location) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });

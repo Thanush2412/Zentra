@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useApp, SHIFT_TIME_SLOTS, Slot, Mentor, AuditLog, College, Subject, Department } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { TabSkeleton } from "./TabSkeleton";
+import { apiFetch } from "@/lib/apiFetch";
 import {
   Building2,
   Users,
@@ -1187,16 +1188,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const fetchAdminDetails = async () => {
     try {
       setIsDataLoading(true);
-      const dataRes = await fetch("/api/data");
-      const dataJson = await dataRes.json();
-      if (dataJson.success) {
-        setCamList(dataJson.campusManagers || []);
-        setKamList(dataJson.kamUsers || []);
-        setAnnouncements(dataJson.announcements || []);
-        setHolidays(dataJson.holidays || []);
-        setLoginHistory(dataJson.loginHistory || []);
-        setUsersList(dataJson.users || []);
-        setNotifications(dataJson.notifications || []);
+      const [refData, loginData, usersData] = await Promise.all([
+        apiFetch("/api/data/reference").catch(() => ({})),
+        apiFetch("/api/admin/login-history").catch(() => ({})),
+        apiFetch("/api/users").catch(() => ({}))
+      ]);
+      if (loginData.success && loginData.loginHistory) {
+        setLoginHistory(loginData.loginHistory || []);
+      }
+      if (usersData.success && usersData.users) {
+        setUsersList(usersData.users || []);
+        setCamList((usersData.users || []).filter((u: any) => u.role === "cam"));
+        setKamList((usersData.users || []).filter((u: any) => u.role === "kam"));
       }
     } catch (e) {
       console.error("Failed to fetch admin stats:", e);

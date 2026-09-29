@@ -55,7 +55,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    requireRole(request, "admin", "kam", "cam");
+    await requireRole(request, "admin", "kam", "cam");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const college_id = searchParams.get("college_id");

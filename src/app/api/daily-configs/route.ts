@@ -1,10 +1,18 @@
 // Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
 export const preferredRegion = "bom1";
 export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { sendMail, formatZentraEmail } from "@/lib/mail";
+
+const noCacheHeaders = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+  "Pragma": "no-cache",
+  "Expires": "0",
+};
 
 export async function GET(request: Request) {
   try {
@@ -15,7 +23,7 @@ export async function GET(request: Request) {
     const search = searchParams.get("search");
 
     if (!collegeId) {
-      return NextResponse.json({ success: false, message: "college_id is required" }, { status: 400 });
+      return NextResponse.json({ success: false, message: "college_id is required" }, { status: 400, headers: noCacheHeaders });
     }
 
     let query = "SELECT * FROM campus_daily_configs WHERE college_id = ?";
@@ -32,9 +40,9 @@ export async function GET(request: Request) {
 
     const configs = await db.all(query, ...params);
 
-    return NextResponse.json({ success: true, configs });
+    return NextResponse.json({ success: true, configs }, { headers: noCacheHeaders });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: noCacheHeaders });
   }
 }
 

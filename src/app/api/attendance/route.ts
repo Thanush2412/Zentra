@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
 // ── Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1) ──
 // Without this, Vercel routes to iad1 (Washington DC) → ~200ms per DB call
 export const preferredRegion = "bom1";
 export const maxDuration = 60; // seconds — bulk imports need breathing room
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const noCacheHeaders = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+  "Pragma": "no-cache",
+  "Expires": "0",
+};
 
 export async function GET(request: Request) {
   try {
@@ -37,7 +46,7 @@ export async function GET(request: Request) {
       }
       sql += " ORDER BY sa.dateStr DESC LIMIT 15000";
       const records = await db.all(sql, args);
-      return NextResponse.json({ success: true, records, count: records.length });
+      return NextResponse.json({ success: true, records, count: records.length }, { headers: noCacheHeaders });
     }
 
     // ── 1. Student historical logs (for CAM correction modal) ─────────────
@@ -55,12 +64,12 @@ export async function GET(request: Request) {
         success: true,
         records,
         correctionCount: student ? (student.correction_count || 0) : 0
-      });
+      }, { headers: noCacheHeaders });
     }
 
     // ── 2. Single slot + date lookup ──────────────────────────────────────
     if (!slotId || !dateStr) {
-      return NextResponse.json({ success: false, message: "Missing slotId or dateStr" }, { status: 400 });
+      return NextResponse.json({ success: false, message: "Missing slotId or dateStr" }, { status: 400, headers: noCacheHeaders });
     }
 
     let records;
@@ -82,14 +91,20 @@ export async function GET(request: Request) {
       isMarked,
       count: records.length,
       records
-    });
+    }, { headers: noCacheHeaders });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: error.message }, { status: 500, headers: noCacheHeaders });
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["admin", "cam", "kam", "mentor", "student"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const body = await request.json();
     const { action } = body;
@@ -396,7 +411,8 @@ export async function POST(request: Request) {
       for (let i = 0; i < batchStatements.length; i += STMTS_PER_BATCH) {
         const batchChunk = batchStatements.slice(i, i + STMTS_PER_BATCH);
         try {
-          await db.client.batch(batchChunk, "write");        } catch (batchErr: any) {
+          await db.client.batch(batchChunk, "write");
+        } catch (batchErr: any) {
           console.error(`[Import] batch chunk ${Math.floor(i / STMTS_PER_BATCH) + 1} failed, falling back:`, batchErr?.message);
           // Fallback: run each statement individually (still uses multi-row INSERT, just 1 per HTTP call)
           let chunkFailed = 0;
@@ -552,9 +568,9 @@ export async function POST(request: Request) {
     // timestamp) so the client patches state instead of synthesizing fake ids.
     const storedRows = validItems.length > 0
       ? await db.all(
-          "SELECT * FROM student_attendance WHERE slotId = ? AND dateStr = ?",
-          [slotId, dateStr]
-        )
+        "SELECT * FROM student_attendance WHERE slotId = ? AND dateStr = ?",
+        [slotId, dateStr]
+      )
       : [];
 
     return NextResponse.json({ success: true, message: "Attendance marked successfully.", insertedCount, records: storedRows });

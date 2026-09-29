@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+const noCacheHeaders = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+  "Pragma": "no-cache",
+  "Expires": "0",
+};
 
 export async function GET(request: Request) {
   try {
@@ -17,7 +24,7 @@ export async function GET(request: Request) {
       // Fetch exam details first
       const exam = await db.get("SELECT * FROM exam_schedules WHERE id = ?", [examId]);
       if (!exam) {
-        return NextResponse.json({ success: false, message: "Exam not found" }, { status: 404 });
+        return NextResponse.json({ success: false, message: "Exam not found" }, { status: 404, headers: noCacheHeaders });
       }
 
       const classGroup = searchParams.get("class_group");
@@ -60,7 +67,7 @@ export async function GET(request: Request) {
         };
       });
 
-      return NextResponse.json({ success: true, exam, roster });
+      return NextResponse.json({ success: true, exam, roster }, { headers: noCacheHeaders });
     }
 
     if (studentId) {
@@ -73,7 +80,7 @@ export async function GET(request: Request) {
          ORDER BY es.exam_date DESC`,
         [studentId]
       );
-      return NextResponse.json({ success: true, marks: studentMarks || [] });
+      return NextResponse.json({ success: true, marks: studentMarks || [] }, { headers: noCacheHeaders });
     }
 
     // General list / CAM / KAM / Mentor query
@@ -106,17 +113,24 @@ export async function GET(request: Request) {
     allQuery += " ORDER BY es.exam_date DESC, s.name ASC LIMIT 500";
 
     const allMarks = await db.all(allQuery, allParams);
-    return NextResponse.json({ success: true, marks: allMarks || [] });
+    return NextResponse.json({ success: true, marks: allMarks || [] }, { headers: noCacheHeaders });
   } catch (error: any) {
     console.error("Error fetching marks:", error);
-    return NextResponse.json({ success: false, message: error.message || "Failed to fetch marks" }, { status: 500 });
+    return NextResponse.json({ success: false, message: error.message || "Failed to fetch marks" }, { status: 500, headers: noCacheHeaders });
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["mentor", "cam", "kam", "admin", "sme"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const body = await request.json();
-    const { exam_id, marks, evaluated_by } = body;
+    const { exam_id, marks } = body;
+    const evaluated_by = auth?.user?.name || body.evaluated_by || "Faculty Evaluator";
 
     if (!exam_id || !marks || !Array.isArray(marks)) {
       return NextResponse.json({ success: false, message: "Invalid payload. exam_id and marks array required" }, { status: 400 });

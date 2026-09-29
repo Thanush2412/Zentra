@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+const noCacheHeaders = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+  "Pragma": "no-cache",
+  "Expires": "0",
+};
 
 export async function GET(request: Request) {
   try {
@@ -47,10 +54,10 @@ export async function GET(request: Request) {
     query += " ORDER BY exam_date ASC, start_time ASC";
 
     const exams = await db.all(query, args);
-    return NextResponse.json({ success: true, exams: exams || [] });
+    return NextResponse.json({ success: true, exams: exams || [] }, { headers: noCacheHeaders });
   } catch (error: any) {
     console.error("Error fetching exams:", error);
-    return NextResponse.json({ success: false, message: error.message || "Failed to fetch exams" }, { status: 500 });
+    return NextResponse.json({ success: false, message: error.message || "Failed to fetch exams" }, { status: 500, headers: noCacheHeaders });
   }
 }
 
@@ -75,6 +82,12 @@ function formatToCanonicalTime12(timeStr?: string): string {
 
 export async function POST(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["admin", "cam", "kam"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const body = await request.json();
     const db = await getDb();
 
@@ -171,6 +184,12 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["admin", "cam", "kam"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     if (!id) {

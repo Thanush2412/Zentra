@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useApp } from "../context/AppContext";
 import { useToast } from "../context/ToastContext";
 import { getCollegePeriodTimeSlots, parseTimeToMinutes } from "@/lib/utils";
+import { apiFetch } from "@/lib/apiFetch";
 import {
   UserCheck, Award, BookOpen, Users, GraduationCap, CheckCircle2,
   AlertCircle, Clock, XCircle, Search, Plus, Minus, Video, Send, Check,
@@ -1377,8 +1378,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     if (colleges && colleges.length > 0) {
       setDbColleges(colleges);
     } else {
-      fetch("/api/colleges")
-        .then(res => res.json())
+      apiFetch("/api/data/reference")
         .then(data => {
           if (data.success && data.colleges) {
             setDbColleges(data.colleges);
@@ -1608,8 +1608,8 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   }, [isCM, defaultCollegeId, mentors]);
 
   // Fetch interviews
-  const fetchInterviews = async () => {
-    setIsLoading(true);
+  const fetchInterviews = useCallback(async (silent: boolean = false) => {
+    if (!silent) setIsLoading(true);
     try {
       const params = new URLSearchParams();
       params.set("role", currentUserRole);
@@ -1617,8 +1617,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       if (defaultCollegeId) params.set("collegeId", defaultCollegeId);
       if (currentKAM?.id) params.set("kamId", currentKAM.id);
 
-      const res = await fetch(`/api/interviews?${params}`);
-      const data = await res.json();
+      const data = await apiFetch(`/api/interviews?${params.toString()}`);
       if (data.success) {
         setInterviewsList(data.interviews || []);
         setEvaluationsList(data.evaluations || []);
@@ -1626,11 +1625,28 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     } catch (err) {
       console.error("fetchInterviews error:", err);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
-  };
+  }, [currentUserRole, currentMentor?.id, defaultCollegeId, currentKAM?.id]);
 
-  useEffect(() => { fetchInterviews(); }, [currentMentor?.id, defaultCollegeId, currentKAM?.id, currentUserRole]);
+  useEffect(() => {
+    fetchInterviews();
+  }, [fetchInterviews]);
+
+  // Real-time synchronization: listen for interview update events and window focus
+  useEffect(() => {
+    const handleSync = () => {
+      fetchInterviews(true);
+    };
+
+    window.addEventListener("fp_interviews_updated", handleSync);
+    window.addEventListener("focus", handleSync);
+
+    return () => {
+      window.removeEventListener("fp_interviews_updated", handleSync);
+      window.removeEventListener("focus", handleSync);
+    };
+  }, [fetchInterviews]);
 
   // Auto-select first subject/class
   useEffect(() => {
@@ -1778,10 +1794,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
     setIsSubmitting(true);
     try {
-      const res = await fetch("/api/interviews", {
+      const data = await apiFetch("/api/interviews", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           subject: selectedSubject,
           class_group: selectedClassGroup,
           type: activeMode,
@@ -1794,13 +1809,15 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           mentor_email: currentMentor?.email || "",
           origin_college_id: currentMentor?.college_id || defaultCollegeId || "",
           college_id: currentMentor?.college_id || defaultCollegeId || "",
-        }),
+        },
       });
-      const data = await res.json();
       if (data.success) {
         toast("Interview request raised & marked on calendar! CAM will schedule time slot based on mentor free periods.", "success");
         setTopics(""); setTargetDate("");
         fetchInterviews();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
+        }
         setActiveTab("myinterviews");
       } else {
         toast(data.message || "Failed to raise request.", "error");
@@ -1846,10 +1863,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       const metricsAvg = isAbsent ? 0 : ((commScore + contentScore + techScore + confidenceScore) / 4);
       const combinedScore = isAbsent ? 0 : Math.round((qAvg + metricsAvg) / 2);
 
-      const res = await fetch("/api/interviews/evaluate", {
+      const data = await apiFetch("/api/interviews/evaluate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           interview_id: expandedRequest,
           student_id: selectedStudent.id,
           student_name: selectedStudent.name,
@@ -1869,9 +1885,8 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           actual_start_time: isAbsent ? null : (actualStartTime || null),
           actual_end_time: isAbsent ? null : (actualEndTime || null),
           actual_duration_minutes: isAbsent ? 0 : actualDuration,
-        }),
+        },
       });
-      const data = await res.json();
       if (data.success) {
         toast(
           isAbsent
@@ -1881,6 +1896,10 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         );
         setSelectedStudent(null);
         fetchInterviews();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
+          window.dispatchEvent(new CustomEvent("fp_attendance_updated"));
+        }
       } else {
         toast(data.message || "Failed to save evaluation.", "error");
       }
@@ -1945,10 +1964,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
     setIsAssigning(true);
     try {
-      const res = await fetch("/api/interviews/assign", {
+      const data = await apiFetch("/api/interviews/assign", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           interview_id: interviewId,
           mapped_mentor_ids: activeMentorIds,
           student_count: effectiveStudentCount,
@@ -1957,15 +1975,17 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           cm_name: currentUserName,
           gmeet_link: targetReq?.type === "internal" ? "" : cmGmeetLink.trim(),
           selected_student_ids: selectedIds,
-        }),
+        },
       });
-      const data = await res.json();
       if (data.success) {
         toast("Flexible multi-period mentor schedule saved & marked on calendar! Notification emails dispatched.", "success");
         setExpandedAllocation(null);
         setMentorSlotConfigs({});
         setCmGmeetLink("");
         fetchInterviews();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
+        }
       } else {
         toast(data.message || "Failed to assign.", "error");
       }
@@ -1978,20 +1998,21 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
   const handleExternalAccept = async (interviewId: string, action: "accept" | "decline") => {
     try {
-      const res = await fetch("/api/interviews/external-accept", {
+      const data = await apiFetch("/api/interviews/external-accept", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           interview_id: interviewId,
           target_college_id: defaultCollegeId || "",
           action,
           cm_name: currentUserName,
-        }),
+        },
       });
-      const data = await res.json();
       if (data.success) {
         toast(data.message, "success");
         fetchInterviews();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
+        }
       } else {
         toast(data.message || "Failed to process.", "error");
       }
@@ -2004,10 +2025,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     setActiveSplitInterview(req);
     setIsLoadingSplit(true);
     try {
-      const res = await fetch("/api/interviews/priority-split", {
+      const data = await apiFetch("/api/interviews/priority-split", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           interview_id: req.id,
           origin_college_id: req.origin_college_id || req.college_id,
           target_date: req.target_date,
@@ -2015,9 +2035,8 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           student_count: req.student_count || 10,
           subject: req.subject,
           action: "preview"
-        })
+        }
       });
-      const data = await res.json();
       if (data.success) {
         setSplitPreviewResult(data.preview);
       } else {
@@ -2034,10 +2053,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     if (!activeSplitInterview) return;
     setIsLoadingSplit(true);
     try {
-      const res = await fetch("/api/interviews/priority-split", {
+      const data = await apiFetch("/api/interviews/priority-split", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           interview_id: activeSplitInterview.id,
           origin_college_id: activeSplitInterview.origin_college_id || activeSplitInterview.college_id,
           target_date: activeSplitInterview.target_date,
@@ -2045,14 +2063,16 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           student_count: activeSplitInterview.student_count || 10,
           subject: activeSplitInterview.subject,
           action: "save"
-        })
+        }
       });
-      const data = await res.json();
       if (data.success) {
         toast(data.message, "success");
         setActiveSplitInterview(null);
         setSplitPreviewResult(null);
         fetchInterviews();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
+        }
       } else {
         toast(data.message || "Failed to save split allocation", "error");
       }
@@ -2067,15 +2087,16 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
   const handleSendCapacityRequest = async (interviewId: string) => {
     try {
-      const res = await fetch("/api/interviews/capacity-request", {
+      const data = await apiFetch("/api/interviews/capacity-request", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ interview_id: interviewId, cm_name: currentUserName })
+        body: { interview_id: interviewId, cm_name: currentUserName }
       });
-      const data = await res.json();
       if (data.success) {
         toast(data.message, "success");
         fetchInterviews();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
+        }
       } else {
         toast(data.message || "Failed to send capacity request", "error");
       }
@@ -2086,21 +2107,22 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
   const handleCamCapacityResponse = async (interviewId: string, action: "accept_capacity" | "decline", capacity: number = 0) => {
     try {
-      const res = await fetch("/api/interviews/cam-capacity-response", {
+      const data = await apiFetch("/api/interviews/cam-capacity-response", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           interview_id: interviewId,
           college_id: defaultCollegeId || "",
           cam_name: currentUserName,
           action,
           accepted_student_capacity: capacity
-        })
+        }
       });
-      const data = await res.json();
       if (data.success) {
         toast(data.message, "success");
         fetchInterviews();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
+        }
       } else {
         toast(data.message || "Failed to submit capacity decision", "error");
       }
@@ -2111,21 +2133,22 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
   const handleFinalConfirm = async (interviewId: string, action: "cm_confirm" | "cam_confirm" | "cam_reject") => {
     try {
-      const res = await fetch("/api/interviews/final-confirm", {
+      const data = await apiFetch("/api/interviews/final-confirm", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           interview_id: interviewId,
           actor_role: currentUserRole,
           actor_name: currentUserName,
           action,
           college_id: defaultCollegeId || ""
-        })
+        }
       });
-      const data = await res.json();
       if (data.success) {
         toast(data.message, "success");
         fetchInterviews();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
+        }
       } else {
         toast(data.message || "Failed to submit final confirmation", "error");
       }
@@ -2137,19 +2160,20 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   const handleMarkComplete = async (interviewId: string) => {
     setIsMarkingComplete(interviewId);
     try {
-      const res = await fetch("/api/interviews", {
+      const data = await apiFetch("/api/interviews", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           interview_id: interviewId,
           status: "completed",
           cm_name: currentUserName,
-        }),
+        },
       });
-      const data = await res.json();
       if (data.success) {
         toast("Interview verified & completed. Students notified!", "success");
         fetchInterviews();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
+        }
       } else {
         toast(data.message || "Failed to mark complete.", "error");
       }
@@ -2163,13 +2187,15 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   const handleDeleteInterview = async (interviewId: string) => {
     if (!window.confirm("Are you sure you want to delete this interview record?")) return;
     try {
-      const res = await fetch(`/api/interviews?id=${encodeURIComponent(interviewId)}`, {
+      const data = await apiFetch(`/api/interviews?id=${encodeURIComponent(interviewId)}`, {
         method: "DELETE",
       });
-      const data = await res.json();
       if (data.success) {
         toast("Interview record deleted successfully.", "success");
         fetchInterviews();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
+        }
       } else {
         toast(data.message || "Failed to delete interview.", "error");
       }
@@ -2609,7 +2635,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
               <span>Export (.xlsx)</span>
             </button>
 
-            <button onClick={fetchInterviews} className="p-1.5 rounded-lg text-slate-400 hover:text-[#D528A2] hover:bg-white transition-all border border-transparent hover:border-slate-200 cursor-pointer" title="Refresh">
+            <button onClick={() => fetchInterviews()} className="p-1.5 rounded-lg text-slate-400 hover:text-[#D528A2] hover:bg-white transition-all border border-transparent hover:border-slate-200 cursor-pointer" title="Refresh">
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
