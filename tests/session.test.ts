@@ -46,7 +46,7 @@ function createMockDb() {
           created_at,
           last_activity_at,
           expires_at,
-          is_revoked: 0,
+          is_revoked: false,
           csrf_secret,
           ip_address,
           user_agent
@@ -57,20 +57,20 @@ function createMockDb() {
         if (s) {
           s.last_activity_at = last_activity_at;
         }
-      } else if (sql.includes("UPDATE user_sessions SET is_revoked = 1")) {
+      } else if (sql.includes("UPDATE user_sessions SET is_revoked = TRUE") || sql.includes("UPDATE user_sessions SET is_revoked = 1")) {
         if (sql.includes("WHERE session_id_hash = ?")) {
           // Can be called with [now, hash] or [hash]
           const hash = params[params.length - 1];
           const s = sessions.get(hash);
           if (s) {
-            s.is_revoked = 1;
+            s.is_revoked = true;
             s.revoked_reason = params.length > 1 ? params[0] : "revoked";
           }
         } else if (sql.includes("WHERE user_id = ?")) {
           const userId = params[params.length - 1];
           for (const s of sessions.values()) {
             if (s.user_id === userId) {
-              s.is_revoked = 1;
+              s.is_revoked = true;
               s.revoked_reason = params.length > 1 ? params[0] : "revoked";
             }
           }

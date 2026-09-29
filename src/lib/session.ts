@@ -107,7 +107,7 @@ export async function createUserSession(
     `INSERT INTO user_sessions (
       session_id_hash, user_id, created_at, last_activity_at, expires_at,
       is_revoked, csrf_secret, ip_address, user_agent
-    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, FALSE, ?, ?, ?)`,
     [sessionIdHash, userId, nowStr, nowStr, expiresAtStr, csrfSecret, ip, ua]
   );
 
@@ -158,7 +158,7 @@ export async function validateSession(
   // 1. Check absolute 7-day hard ceiling
   if (expiresAtMs <= nowMs) {
     await db.run(
-      "UPDATE user_sessions SET is_revoked = 1, revoked_at = ?, revoked_reason = 'expired' WHERE session_id_hash = ?",
+      "UPDATE user_sessions SET is_revoked = TRUE, revoked_at = ?, revoked_reason = 'expired' WHERE session_id_hash = ?",
       [new Date().toISOString(), hash]
     ).catch(() => {});
     return { isValid: false, reason: "expired" };
@@ -168,7 +168,7 @@ export async function validateSession(
   const lastActivityMs = new Date(session.last_activity_at).getTime();
   if (nowMs - lastActivityMs > SESSION_IDLE_TIMEOUT_MS) {
     await db.run(
-      "UPDATE user_sessions SET is_revoked = 1, revoked_at = ?, revoked_reason = 'idle_timeout' WHERE session_id_hash = ?",
+      "UPDATE user_sessions SET is_revoked = TRUE, revoked_at = ?, revoked_reason = 'idle_timeout' WHERE session_id_hash = ?",
       [new Date().toISOString(), hash]
     ).catch(() => {});
     return { isValid: false, reason: "idle_timeout" };
@@ -202,7 +202,7 @@ export async function revokeSession(
   await ensureSessionTable(db);
   const hash = hashSessionToken(rawToken.trim());
   await db.run(
-    "UPDATE user_sessions SET is_revoked = 1, revoked_at = ?, revoked_reason = ? WHERE session_id_hash = ?",
+    "UPDATE user_sessions SET is_revoked = TRUE, revoked_at = ?, revoked_reason = ? WHERE session_id_hash = ?",
     [new Date().toISOString(), reason, hash]
   ).catch(() => {});
 }
@@ -218,7 +218,7 @@ export async function revokeAllUserSessions(
   if (!userId) return;
   await ensureSessionTable(db);
   await db.run(
-    "UPDATE user_sessions SET is_revoked = 1, revoked_at = ?, revoked_reason = ? WHERE user_id = ? AND is_revoked = 0",
+    "UPDATE user_sessions SET is_revoked = TRUE, revoked_at = ?, revoked_reason = ? WHERE user_id = ? AND is_revoked = FALSE",
     [new Date().toISOString(), reason, userId]
   ).catch(() => {});
 }
