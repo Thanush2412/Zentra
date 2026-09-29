@@ -154,7 +154,7 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    requireRole(request, "admin");
+    await requireRole(request, "admin");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

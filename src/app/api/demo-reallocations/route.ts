@@ -227,9 +227,9 @@ export async function POST(request: Request) {
 
     // Role-based authorization
     if (action === "resolve") {
-      requireRole(request, "admin", "allocator", "head_sme");
+      await requireRole(request, "admin", "allocator", "head_sme");
     } else if (action === "propose") {
-      requireSession(request);
+      await requireSession(request);
     }
 
     // ── PROPOSE: mentor picks an alternative period → pending reservation ──

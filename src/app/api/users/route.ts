@@ -59,7 +59,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    requireRole(request, "admin");
+    await requireRole(request, "admin");
     const db = await getDb();
     const body = await request.json();
     const { userId, action, email, role, password, reference_id, status } = body;
@@ -208,7 +208,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    requireRole(request, "admin");
+    await requireRole(request, "admin");
     const db = await getDb();
     const body = await request.json();
     const { id, email, role, reference_id, status, newPassword } = body;
@@ -253,7 +253,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    requireRole(request, "admin");
+    await requireRole(request, "admin");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

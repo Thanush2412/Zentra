@@ -7,6 +7,7 @@
  * 3. Enforce "cache: no-store" and "Pragma: no-cache" headers.
  * 4. Automatically attaches the CSRF token (`x-csrf-token`) on state-changing requests (POST, PUT, DELETE, PATCH).
  * 5. Handles JSON serialization and safe response parsing.
+ * 6. Intercepts global fetch() so all legacy and newly created components benefit from automatic CSRF and anti-cache protection.
  */
 
 let memoryCsrfToken: string | null = null;
@@ -31,6 +32,69 @@ export function getClientCsrfToken(): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Transparent fetch interceptor that automatically attaches CSRF tokens,
+ * anti-cache headers, and catches 401 session expirations across all components.
+ */
+export function installFetchInterceptor() {
+  if (typeof window === "undefined") return;
+  if ((window as any).__ecampus_fetch_intercepted) return;
+  (window as any).__ecampus_fetch_intercepted = true;
+
+  const originalFetch = window.fetch;
+  window.fetch = async function (input: RequestInfo | URL, init?: RequestInit) {
+    let url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    const method = (init?.method || "GET").toUpperCase();
+    const isMutation = method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH";
+
+    // Only intercept internal /api/ calls
+    const isApiCall =
+      url.startsWith("/api/") ||
+      (typeof window !== "undefined" && url.startsWith(window.location.origin + "/api/"));
+
+    if (isApiCall) {
+      const headers = new Headers(init?.headers || {});
+
+      // Add CSRF token for mutations if not already present
+      if (isMutation && !headers.has("x-csrf-token")) {
+        const csrfToken = getClientCsrfToken();
+        if (csrfToken) {
+          headers.set("x-csrf-token", csrfToken);
+        }
+      }
+
+      // Add anti-cache headers
+      if (!headers.has("Pragma")) headers.set("Pragma", "no-cache");
+      if (!headers.has("Cache-Control")) headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+
+      init = {
+        ...init,
+        headers,
+        cache: init?.cache || "no-store"
+      };
+    }
+
+    const res = await originalFetch(input, init);
+
+    // Global session expiry interception: if 401 with SESSION_IDLE, SESSION_EXPIRED, or NO_SESSION
+    if (res.status === 401 && isApiCall && !url.includes("/api/login") && !url.includes("/api/auth/me")) {
+      try {
+        const cloned = res.clone();
+        const json = await cloned.json().catch(() => null);
+        if (json?.code === "SESSION_IDLE" || json?.code === "SESSION_EXPIRED" || json?.code === "NO_SESSION") {
+          window.dispatchEvent(new CustomEvent("ecampus_session_expired", { detail: json }));
+        }
+      } catch (_) {}
+    }
+
+    return res;
+  };
+}
+
+if (typeof window !== "undefined") {
+  installFetchInterceptor();
 }
 
 export interface ApiFetchOptions extends Omit<RequestInit, "body"> {

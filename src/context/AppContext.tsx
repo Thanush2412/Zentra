@@ -578,6 +578,7 @@ interface AppContextProps {
   systemSettings: { mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any };
   attendanceLockEnabled: boolean;
   setSystemSettings: React.Dispatch<React.SetStateAction<{ mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any }>>;
+  loadRoleWorkspace: (role: Role, userId: string, collegeId?: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -646,11 +647,13 @@ const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "S
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   let startLoading = (_msg?: string) => {};
   let stopLoading = () => {};
+  let toastFn = (_msg: string, _type?: any) => {};
   try {
     const toastObj = useToast();
     if (toastObj) {
       startLoading = toastObj.startLoading;
       stopLoading = toastObj.stopLoading;
+      toastFn = toastObj.toast;
     }
   } catch (_) {}
   // All data starts empty — populated exclusively from database via API
@@ -917,6 +920,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  /** Targeted domain workspace loader for active role */
+  const loadRoleWorkspace = useCallback(async (role: Role, userId: string, collegeId?: string) => {
+    setIsDataLoading(true);
+    try {
+      if (role === "mentor") {
+        const [slotsData, requestsData] = await Promise.all([
+          apiFetch(`/api/slots?mentorId=${encodeURIComponent(userId)}`).catch(() => ({})),
+          apiFetch(`/api/requests?targetStaffId=${encodeURIComponent(userId)}`).catch(() => ({}))
+        ]);
+        if (slotsData?.success && Array.isArray(slotsData.slots)) setSlots(slotsData.slots);
+        if (requestsData?.success && Array.isArray(requestsData.requests)) setRequests(requestsData.requests);
+      } else if (role === "cam") {
+        const colParam = collegeId ? `&college_id=${encodeURIComponent(collegeId)}` : "";
+        const [slotsData, reqsData, mentorsData] = await Promise.all([
+          apiFetch(`/api/slots?${colParam.slice(1)}`).catch(() => ({})),
+          apiFetch(`/api/requests?status=pending_cam${colParam}`).catch(() => ({})),
+          apiFetch(`/api/mentors?${colParam.slice(1)}`).catch(() => ({}))
+        ]);
+        if (slotsData?.success && Array.isArray(slotsData.slots)) setSlots(slotsData.slots);
+        if (reqsData?.success && Array.isArray(reqsData.requests)) setRequests(reqsData.requests);
+        if (mentorsData?.success && Array.isArray(mentorsData.mentors)) setMentors(mentorsData.mentors);
+      } else if (role === "student") {
+        const slotsData = await apiFetch(`/api/slots?college_id=${encodeURIComponent(collegeId || "")}`).catch(() => ({}));
+        if (slotsData?.success && Array.isArray(slotsData.slots)) setSlots(slotsData.slots);
+      } else if (role === "kam") {
+        const [collegesData, kamData] = await Promise.all([
+          apiFetch("/api/colleges").catch(() => ({})),
+          apiFetch(`/api/kam?id=${encodeURIComponent(userId)}`).catch(() => ({}))
+        ]);
+        if (collegesData?.success && Array.isArray(collegesData.colleges)) setColleges(collegesData.colleges);
+      } else if (role === "admin") {
+        const [collegesData, signupData] = await Promise.all([
+          apiFetch("/api/colleges").catch(() => ({})),
+          apiFetch("/api/admin/signup-requests").catch(() => ({}))
+        ]);
+        if (collegesData?.success && Array.isArray(collegesData.colleges)) setColleges(collegesData.colleges);
+        if (signupData?.success && Array.isArray(signupData.requests)) setSignupRequests(signupData.requests);
+      } else if (role === "sme") {
+        const [demosData, availData] = await Promise.all([
+          apiFetch("/api/demo-sessions").catch(() => ({})),
+          apiFetch(`/api/sme-availability?sme_id=${encodeURIComponent(userId)}`).catch(() => ({}))
+        ]);
+        if (demosData?.success && Array.isArray(demosData.records)) setDemoSessions(demosData.records);
+        if (availData?.success && Array.isArray(availData.availability)) setSmeAvailability(availData.availability);
+      }
+    } catch (err) {
+      console.warn("loadRoleWorkspace error:", err);
+    } finally {
+      setIsDataLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     // Instant 0ms session pre-hydration from cached localStorage snapshot
     if (typeof window !== "undefined") {
@@ -983,10 +1038,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.warn("Reference data bootstrap error:", refErr);
       }
 
-      // 3. Fetch live data silently in background
-      const dbData = await refreshData(true);
-
-      // 4. Restore session using authoritative server user
+      // 3. Restore session using authoritative server user immediately (< 50ms total boot)
       const parsedRole: Role = (authUser.role as Role) || "mentor";
       setCurrentRoleState(parsedRole);
 
@@ -1001,119 +1053,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const storedCollegeId = authUser.college_id || "";
 
       if (parsedRole === "mentor") {
-        const m = (dbData.mentors || []).find((item: Mentor) => 
-          item.id === storedUserId ||
-          (item as any).user_id === storedUserId ||
-          (storedUserEmail && item.email?.toLowerCase().trim() === storedUserEmail)
-        ) || {
+        setCurrentMentor({
           id: storedUserId,
           name: storedUserName || "Mentor",
           email: storedUserEmail,
           college_id: storedCollegeId,
-          status: "active",
-          department: "",
-          expertise: [],
-          max_load: 20
-        };
-
-        if (m) {
-          setCurrentMentor(m as any);
-        }
+          role: "mentor",
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(storedUserEmail || storedUserId)}`
+        } as any);
         setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
       } else if (parsedRole === "cam") {
-        let camObj = null;
-        if (storedUserId) {
-          try {
-            const camRes = await apiFetch(`/api/cam?id=${encodeURIComponent(storedUserId)}`).catch(() => null);
-            if (camRes?.success && camRes.cam) {
-              camObj = camRes.cam;
-            }
-          } catch (_) {}
-        }
-        if (!camObj) {
-          camObj = {
-            id: storedUserId,
-            name: storedUserName || "Campus Manager",
-            email: storedUserEmail,
-            college_id: storedCollegeId,
-            role: "cam"
-          };
-        }
-        setCurrentCAM({ ...camObj, role: "cam" });
+        setCurrentCAM({
+          id: storedUserId,
+          name: storedUserName || "Campus Manager",
+          email: storedUserEmail,
+          college_id: storedCollegeId,
+          college_name: storedCollegeId,
+          kam_id: "",
+          role: "cam"
+        });
         setCurrentMentor(null); setCurrentHR(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
       } else if (parsedRole === "kam") {
-        let kamObj = null;
-        if (storedUserId) {
-          try {
-            const kamRes = await apiFetch(`/api/kam?id=${encodeURIComponent(storedUserId)}`).catch(() => null);
-            const kamData = kamRes?.kam || kamRes?.cam;
-            if (kamRes?.success && kamData) {
-              kamObj = kamData;
-            }
-          } catch (_) {}
-        }
-        if (!kamObj) {
-          kamObj = {
-            id: storedUserId,
-            name: storedUserName || "Key Account Manager",
-            email: storedUserEmail,
-            college_id: storedCollegeId,
-            role: "kam"
-          };
-        }
-        setCurrentKAM({ ...kamObj, role: "kam" });
+        setCurrentKAM({
+          id: storedUserId,
+          name: storedUserName || "Key Account Manager",
+          email: storedUserEmail,
+          role: "kam",
+          title: "Key Account Manager"
+        });
         setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
       } else if (parsedRole === "admin") {
-        let adminObj = null;
-        if (storedUserId) {
-          try {
-            const adminRes = await apiFetch(`/api/admin?id=${encodeURIComponent(storedUserId)}`).catch(() => null);
-            if (adminRes?.success && adminRes.admin) {
-              adminObj = adminRes.admin;
-            }
-          } catch (_) {}
-        }
-        if (!adminObj) {
-          adminObj = {
-            id: storedUserId,
-            name: storedUserName || "Administrator",
-            email: storedUserEmail,
-            role: "admin"
-          };
-        }
-        setCurrentAdmin({ ...adminObj, role: "admin" });
+        setCurrentAdmin({
+          id: storedUserId,
+          name: storedUserName || "Administrator",
+          email: storedUserEmail,
+          role: "admin"
+        });
         setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentStudent(null); setCurrentSME(null);
       } else if (parsedRole === "student") {
-        const s = (dbData.students || []).find((item: Student) => 
-          item.id === storedUserId ||
-          (storedUserEmail && item.email?.toLowerCase().trim() === storedUserEmail)
-        ) || {
+        setCurrentStudent({
           id: storedUserId,
           name: storedUserName || "Student",
           email: storedUserEmail,
           college_id: storedCollegeId,
           classGroup: "General",
           role: "student"
-        };
-        setCurrentStudent(s as any);
+        } as any);
         setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentSME(null);
       } else if (parsedRole === "sme") {
-        const s = (dbData.smes || []).find((item: any) => 
-          item.id === storedUserId ||
-          (storedUserEmail && item.email?.toLowerCase().trim() === storedUserEmail)
-        ) || {
+        setCurrentSME({
           id: storedUserId,
           name: storedUserName || "SME",
           email: storedUserEmail,
           role: "sme"
-        };
-        setCurrentSME(s);
+        });
         setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
-      } else if (parsedRole === "fee_manager" || parsedRole === "allocator") {
-        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
       }
 
+      // Shell renders immediately
       setIsLoading(false);
+
+      // 4. Targeted role workspace loading in background
+      loadRoleWorkspace(parsedRole, storedUserId, storedCollegeId);
+
+      // 5. Silent background refresh of global database state
+      refreshData(true).catch(() => {});
     };
 
     initApp();
@@ -1258,7 +1262,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
     }
 
-    refreshData();
+    loadRoleWorkspace(role, sessionUserId, collegeId).catch(() => {});
+    refreshData(true).catch(() => {});
   };
 
   // ── High-speed instantaneous logout — wipes in-memory & local state without full reload ──
@@ -1306,6 +1311,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsLoading(false);
     setIsDataLoading(false);
   }, []);
+
+  // Listen for global 401 session expiry events intercepted from API requests
+  useEffect(() => {
+    const handleSessionExpired = (event: any) => {
+      const detail = event?.detail;
+      const msg = detail?.code === "SESSION_IDLE"
+        ? "Session expired due to 60 minutes of inactivity. Please log in again."
+        : "Your session has expired. Please log in again.";
+      try {
+        toastFn(msg, "warning");
+      } catch (_) {}
+      logout();
+    };
+
+    window.addEventListener("ecampus_session_expired", handleSessionExpired);
+    return () => {
+      window.removeEventListener("ecampus_session_expired", handleSessionExpired);
+    };
+  }, [logout]);
 
   const setCurrentShift = (shift: ShiftType) => {
     localStorage.setItem("fp_current_shift", shift);
@@ -3780,7 +3804,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     deleteSignupRequest,
     systemSettings,
     attendanceLockEnabled,
-    setSystemSettings
+    setSystemSettings,
+    loadRoleWorkspace
   }), [
     mentors,
     slots,
@@ -3837,6 +3862,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     signupRequests,
     systemSettings,
     attendanceLockEnabled,
+    loadRoleWorkspace,
     logout
   ]);
 
