@@ -34,6 +34,9 @@ import {
 export default function Home() {
   const router = useRouter();
   const {
+    currentUser,
+    isAuthenticated,
+    currentRole,
     setRole,
     isLoading: appLoading,
     mentors,
@@ -66,15 +69,12 @@ export default function Home() {
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
-    const loggedIn = localStorage.getItem("fp_logged_in") === "true";
-    if (loggedIn) {
-      const role = localStorage.getItem("fp_current_role");
-      if (role) {
-        setIsRedirecting(true);
-        const target = "/" + (role === "fee_manager" ? "fee-manager" : role);
-        router.replace(target);
-        return;
-      }
+    if (!appLoading && isAuthenticated && currentUser) {
+      const activeRole = currentRole || currentUser.role || "mentor";
+      setIsRedirecting(true);
+      const target = "/" + (activeRole === "fee_manager" ? "fee-manager" : activeRole);
+      router.replace(target);
+      return;
     }
     
     setIsRedirecting(false);
@@ -83,7 +83,7 @@ export default function Home() {
     if (typeof document !== "undefined") {
       document.documentElement.classList.remove("dark");
     }
-  }, [router]);
+  }, [appLoading, isAuthenticated, currentUser, currentRole, router]);
 
   // Master Role Access Modal — shown when the server reports a super-admin role
   const [showMasterRoleModal, setShowMasterRoleModal] = useState(false);
@@ -131,7 +131,12 @@ export default function Home() {
           return;
         }
 
-        setRole(data.role, data.userId, { collegeId: data.collegeId });
+        setRole(data.role, data.userId, {
+          collegeId: data.collegeId,
+          userEmail: data.userEmail || email.trim(),
+          userName: resolvedName,
+          isSuperAdmin
+        });
         if (data.mustChangePassword) {
           localStorage.setItem("fp_must_change_pass", "true");
         } else {
@@ -528,7 +533,7 @@ export default function Home() {
                     key={w.id}
                     type="button"
                     onClick={() => {
-                      setRole(w.id as any);
+                      setRole(w.id as any, undefined, { isSuperAdmin: true, userName: sessionUserName });
                       localStorage.setItem("fp_current_role", w.id);
                       localStorage.setItem("fp_logged_in", "true");
                       router.push(w.path);

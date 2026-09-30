@@ -1672,3 +1672,83 @@ export function calculateWeekOffsetForDate(targetDateStr: string, baseDateStr?: 
     return 0;
   }
 }
+
+/**
+ * Extracts and formats the operating day start and end time for a given college
+ * by evaluating shift_configs, custom_shift_params, or direct timings.
+ */
+export function getCollegeStartAndEndTime(college: any): { start: string; end: string } {
+  if (!college) return { start: "08:30 AM", end: "04:30 PM" };
+  if (college.start_time && college.end_time) {
+    return { start: college.start_time, end: college.end_time };
+  }
+  if (!college.shift_configs) return { start: "08:30 AM", end: "04:30 PM" };
+  try {
+    const parsed = typeof college.shift_configs === "string" ? JSON.parse(college.shift_configs) : college.shift_configs;
+    let minStart = Infinity;
+    let maxEnd = -Infinity;
+
+    // 1. Check custom_shift_params
+    if (parsed.custom_shift_params && typeof parsed.custom_shift_params === "object") {
+      Object.values(parsed.custom_shift_params).forEach((param: any) => {
+        if (!param) return;
+        if (param.startTime) {
+          const sMin = parseTimeToMinutes(param.startTime);
+          if (sMin && sMin < minStart) minStart = sMin;
+        }
+        if (param.mode === "fixed" && param.endTime) {
+          const eMin = parseTimeToMinutes(param.endTime);
+          if (eMin && eMin > maxEnd) maxEnd = eMin;
+        } else if (param.startTime && param.periodDuration && param.periodsCount) {
+          let curr = parseTimeToMinutes(param.startTime);
+          const breaks = Array.isArray(param.breaks) ? [...param.breaks].sort((a: any, b: any) => (a.afterPeriod || 0) - (b.afterPeriod || 0)) : [];
+          for (let p = 1; p <= param.periodsCount; p++) {
+            const dur = (param.customPeriodDurations && param.customPeriodDurations[p]) ? param.customPeriodDurations[p] : param.periodDuration;
+            curr += dur;
+            const brk = breaks.find((b: any) => b.afterPeriod === p);
+            if (brk && brk.duration) curr += brk.duration;
+          }
+          if (curr > maxEnd) maxEnd = curr;
+        }
+      });
+    }
+
+    // 2. Check slot arrays (general, shift_1, shift_2, etc.)
+    ["shift_1", "shift_2", "general"].forEach(key => {
+      const arr = parsed[key];
+      if (Array.isArray(arr) && arr.length > 0) {
+        const first = arr[0];
+        const last = arr[arr.length - 1];
+        if (typeof first === "string" && first.includes("-")) {
+          const sStr = first.split("-")[0].trim();
+          const sMin = parseTimeToMinutes(sStr);
+          if (sMin && sMin < minStart) minStart = sMin;
+        }
+        if (typeof last === "string" && last.includes("-")) {
+          const eStr = last.split("-")[1].trim();
+          const eMin = parseTimeToMinutes(eStr);
+          if (eMin && eMin > maxEnd) maxEnd = eMin;
+        }
+      }
+    });
+
+    if (minStart !== Infinity && maxEnd !== -Infinity) {
+      const formatTime = (totalMinutes: number): string => {
+        let hours = Math.floor(totalMinutes / 60) % 24;
+        const minutes = totalMinutes % 60;
+        const ampm = hours >= 12 ? "PM" : "AM";
+        let displayHours = hours % 12;
+        if (displayHours === 0) displayHours = 12;
+        const displayHoursStr = displayHours < 10 ? "0" + displayHours : String(displayHours);
+        const displayMinutesStr = minutes < 10 ? "0" + minutes : String(minutes);
+        return `${displayHoursStr}:${displayMinutesStr} ${ampm}`;
+      };
+
+      return {
+        start: formatTime(minStart),
+        end: formatTime(maxEnd)
+      };
+    }
+  } catch (_) {}
+  return { start: "08:30 AM", end: "04:30 PM" };
+}

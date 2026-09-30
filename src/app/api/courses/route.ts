@@ -529,7 +529,7 @@ export async function DELETE(request: Request) {
       
       if (slotIds.length > 0) {
         const placeholders = slotIds.map(() => "?").join(",");
-        await db.run(`DELETE FROM student_attendance WHERE slotId IN (${placeholders})`, ...slotIds);
+        await db.run(`UPDATE student_attendance SET slotId = NULL WHERE slotId IN (${placeholders})`, ...slotIds).catch(() => {});
         await db.run(`DELETE FROM handover_requests WHERE slotId IN (${placeholders})`, ...slotIds);
         await db.run(`DELETE FROM approved_handovers WHERE slotId IN (${placeholders})`, ...slotIds);
         await db.run(`DELETE FROM slots WHERE id IN (${placeholders})`, ...slotIds);

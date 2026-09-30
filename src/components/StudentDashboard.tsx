@@ -124,7 +124,30 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const { toast } = useToast();
 
   const [localActiveTab, setLocalActiveTab] = useState<"dashboard" | "schedule" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu">("dashboard");
-  const activeTab = propActiveTab || localActiveTab;
+
+  const studentTabAliases: Record<string, typeof localActiveTab> = {
+    "home": "dashboard",
+    "overview": "dashboard",
+    "dashboard": "dashboard",
+    "timetable": "schedule",
+    "schedule": "schedule",
+    "marks": "exams",
+    "exams": "exams",
+    "tasks": "tracker",
+    "submissions": "tracker",
+    "tracker": "tracker",
+    "interview": "interviews",
+    "interviews": "interviews",
+    "fee": "fees",
+    "fees": "fees",
+    "dues": "fees",
+    "books": "library",
+    "library": "library",
+    "profile": "profile",
+    "materials": "materials"
+  };
+  const resolvedPropTab = propActiveTab ? (studentTabAliases[propActiveTab] || propActiveTab) : undefined;
+  const activeTab = (resolvedPropTab || localActiveTab) as typeof localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
   const [highlightedDate, setHighlightedDate] = useState<string | null>(null);
@@ -668,7 +691,19 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     }
   };
 
-  if (!currentStudent) return null;
+  if (!currentStudent) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
+        <div className="h-12 w-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mb-4 animate-pulse">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+        <h3 className="text-base font-bold text-slate-900 mb-1">Loading Student Portal…</h3>
+        <p className="text-xs text-slate-500 max-w-sm">
+          Fetching your academic timetable, attendance history, and course records.
+        </p>
+      </div>
+    );
+  }
 
   // Helper: normalize a classGroup string for fuzzy comparison (Bug #1+#5 fix)
   const normalizeClassGroup = (cg: string): string => {

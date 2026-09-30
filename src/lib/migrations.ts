@@ -623,6 +623,15 @@ const migrations: Migration[] = [
       await db.exec("CREATE INDEX IF NOT EXISTS idx_mentor_fb_dept ON student_mentor_feedback(department)").catch(() => {});
       await db.exec("CREATE INDEX IF NOT EXISTS idx_mentor_fb_submitted ON student_mentor_feedback(submitted_at DESC)").catch(() => {});
     }
+  },
+  {
+    name: "preserve_student_attendance_on_slot_delete",
+    run: async (db) => {
+      // Ensure clearing timetables or deleting slots NEVER cascades to delete attendance records
+      await db.exec("ALTER TABLE student_attendance ALTER COLUMN slotid DROP NOT NULL;").catch(() => {});
+      await db.exec("ALTER TABLE student_attendance DROP CONSTRAINT IF EXISTS student_attendance_slotid_fkey;").catch(() => {});
+      await db.exec("ALTER TABLE student_attendance ADD CONSTRAINT student_attendance_slotid_fkey FOREIGN KEY (slotid) REFERENCES slots(id) ON DELETE SET NULL;").catch(() => {});
+    }
   }
 ];
 

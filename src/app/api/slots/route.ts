@@ -7,6 +7,45 @@ import { getDb, resolveClassGroupDetails, syncMentorSubjectsAndClasses } from "@
 import { isCohortMatch } from "@/lib/utils";
 import { requireAuth } from "@/lib/authGuard";
 
+export async function GET(request: Request) {
+  try {
+    const db = await getDb();
+    const { searchParams } = new URL(request.url);
+    const collegeId = searchParams.get("college_id") || searchParams.get("collegeId");
+    const mentorId = searchParams.get("mentorId");
+    const classGroup = searchParams.get("classGroup");
+    const day = searchParams.get("day");
+
+    let sql = "SELECT * FROM slots WHERE 1=1";
+    const params: any[] = [];
+
+    if (collegeId) {
+      sql += " AND college_id = ?";
+      params.push(collegeId);
+    }
+    if (mentorId) {
+      sql += " AND mentorId = ?";
+      params.push(mentorId);
+    }
+    if (classGroup) {
+      sql += " AND classGroup = ?";
+      params.push(classGroup);
+    }
+    if (day) {
+      sql += " AND day = ?";
+      params.push(day);
+    }
+
+    sql += " ORDER BY day, time ASC";
+
+    const slots = await db.all(sql, ...params);
+    return NextResponse.json({ success: true, slots: slots || [] });
+  } catch (error: any) {
+    console.error("API GET Slots error:", error);
+    return NextResponse.json({ success: false, error: error.message, slots: [] }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const { auth, errorResponse } = await requireAuth(request, {
@@ -194,6 +233,8 @@ export async function DELETE(request: Request) {
       }
 
       const placeholders = matchedSlotIds.map(() => "?").join(",");
+      // Safely detach student attendance slot references before slot deletion so historical attendance is never dropped
+      await db.run(`UPDATE student_attendance SET slotId = NULL WHERE slotId IN (${placeholders})`, matchedSlotIds).catch(() => {});
       await db.run(`DELETE FROM slots WHERE id IN (${placeholders})`, matchedSlotIds);
 
       const logDesc = `Cleared timetable for class group "${classGroup}" (${matchedSlotIds.length} slots)`;
@@ -217,6 +258,8 @@ export async function DELETE(request: Request) {
 
     const mentor = await db.get("SELECT name FROM mentors WHERE id = ?", slotToDelete.mentorId);
 
+    // Safely detach student attendance slot references before slot deletion
+    await db.run("UPDATE student_attendance SET slotId = NULL WHERE slotId = ?", id).catch(() => {});
     await db.run("DELETE FROM slots WHERE id = ?", id);
 
     // Log release

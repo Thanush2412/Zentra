@@ -18,7 +18,7 @@ import {
   AreaChart, Area, CartesianGrid, ReferenceLine
 } from "recharts";
 import dynamic from "next/dynamic";
-import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, isSameSemester, mapDayOrderToDayName, matchCanonicalCourse } from "../lib/utils";
+import { getSubjectsForDepartment, getDeptFromClassGroup, isSubjectNameMatch, isCohortMatching, isCohortMatch, normalizeClassGroup, isDeptSubjectMatch, isTimeSlotMatch, isMentorInProgram, calculateShiftSchedule, parseTimeToMinutes, getCollegeStartAndEndTime, resolveClassGroupDetailsFromState, parseDbDate, parseRoomsList, parseDateToYMD, formatDisplayDob, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, isSameSemester, mapDayOrderToDayName, matchCanonicalCourse } from "../lib/utils";
 import { ECAMPUS_LOGO_BASE64 } from "../lib/brandLogoBase64";
 import { isSuperAdminSession } from "@/lib/superadmin";
 
@@ -8810,6 +8810,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     createSubject,
     updateSubject,
     deleteSubject,
+    updateCollege,
     createCourse,
     updateCourse,
     deleteCourse,
@@ -10967,9 +10968,78 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     } else {
       setWorkingDays(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
     }
+    // Accurately extract and sync operating hours from college shift configuration
+    const computedHours = getCollegeStartAndEndTime(activeCollege);
+    setCollegeHours(computedHours);
+
+    // Sync academic year
+    if (activeCollege?.academic_year) {
+      setSelectedYear(activeCollege.academic_year);
+    }
   }, [activeCollegeId, colleges]);
 
   const [collegeHours, setCollegeHours] = useState({ start: "08:30 AM", end: "04:30 PM" });
+  const [isSavingCollegeHours, setIsSavingCollegeHours] = useState(false);
+
+  const handleSaveCollegeHoursAndDays = async () => {
+    const activeCollege = colleges.find(c => c.id === activeCollegeId);
+    if (!activeCollege) {
+      toast("No active college selected.", "error");
+      return;
+    }
+
+    const startMin = parseTimeToMinutes(collegeHours.start);
+    const endMin = parseTimeToMinutes(collegeHours.end);
+
+    if (!startMin || !endMin) {
+      toast("Please provide valid start and end times (e.g. 08:30 AM).", "warning");
+      return;
+    }
+
+    if (endMin <= startMin) {
+      toast("Day End Time must be later than Day Start Time.", "warning");
+      return;
+    }
+
+    setIsSavingCollegeHours(true);
+    try {
+      let updatedShiftConfigs = activeCollege.shift_configs || "";
+      if (updatedShiftConfigs) {
+        try {
+          const parsed = JSON.parse(updatedShiftConfigs);
+          if (parsed.custom_shift_params) {
+            const primaryKey = parsed.custom_shift_params.general ? "general" : (parsed.custom_shift_params.shift_1 ? "shift_1" : Object.keys(parsed.custom_shift_params)[0]);
+            if (primaryKey && parsed.custom_shift_params[primaryKey]) {
+              parsed.custom_shift_params[primaryKey].startTime = collegeHours.start;
+              const sched = calculateShiftSchedule(parsed.custom_shift_params[primaryKey]);
+              if (sched && sched.items && sched.items.length > 0) {
+                parsed[primaryKey] = sched.items.filter((i: any) => i.type === "period").map((i: any) => `${i.startTimeStr} - ${i.endTimeStr}`);
+              }
+            }
+          }
+          updatedShiftConfigs = JSON.stringify(parsed);
+        } catch (_) {}
+      }
+
+      const payload = {
+        ...activeCollege,
+        working_days: workingDays.length,
+        academic_year: selectedYear,
+        shift_configs: updatedShiftConfigs
+      };
+
+      const res = await updateCollege(payload);
+      if (res.success) {
+        toast("College operating hours & working days updated successfully.", "success");
+      } else {
+        toast(res.message || "Failed to update college hours.", "error");
+      }
+    } catch (err: any) {
+      toast("Error: " + err.message, "error");
+    } finally {
+      setIsSavingCollegeHours(false);
+    }
+  };
 
   // Daily Day Type & Day Order Config states
   const [dailyStartDateStr, setDailyStartDateStr] = useState(new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
@@ -15214,15 +15284,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                 {/* Hours configuration */}
                 <div className="space-y-4 bg-slate-50/50 p-5 rounded-xl border border-slate-200">
-                  <h3 className="text-xs font-black text-indigo-655 uppercase tracking-wider border-b border-slate-100 pb-2">Configure Working Days & Hours</h3>
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 className="text-xs font-black text-indigo-655 uppercase tracking-wider">Configure Working Days & Hours</h3>
+                    <span className="text-[10px] font-bold text-slate-400">
+                      Campus: {colleges.find(c => c.id === activeCollegeId)?.name || activeCollegeId}
+                    </span>
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <Input
                       label="Day Start Time"
+                      placeholder="e.g. 08:30 AM"
                       value={collegeHours.start}
                       onChange={e => setCollegeHours({ ...collegeHours, start: e.target.value })}
                     />
                     <Input
                       label="Day End Time"
+                      placeholder="e.g. 04:30 PM"
                       value={collegeHours.end}
                       onChange={e => setCollegeHours({ ...collegeHours, end: e.target.value })}
                     />
@@ -15230,7 +15307,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* Working days toggle */}
                   <div className="pt-2">
-                    <label className="text-slate-400 block mb-2 text-[9px] uppercase font-bold">College Active Days</label>
+                    <label className="text-slate-400 block mb-2 text-[9px] uppercase font-bold">College Active Days ({workingDays.length} Days)</label>
                     <div className="flex flex-wrap gap-2.5">
                       {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map(day => {
                         const active = workingDays.includes(day);
@@ -15252,6 +15329,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         );
                       })}
                     </div>
+
+                  <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-500 font-semibold">
+                      Configured Shift Hours: <strong className="text-indigo-600 font-bold">{collegeHours.start} – {collegeHours.end}</strong>
+                    </span>
+                    <LoadingButton
+                      variant="primary"
+                      isLoading={isSavingCollegeHours}
+                      disabled={readOnly}
+                      onClick={handleSaveCollegeHoursAndDays}
+                    >
+                      Save Working Days & Hours
+                    </LoadingButton>
+                  </div>
                   </div>
                 </div>
 

@@ -932,13 +932,13 @@ export async function seedDatabase() {
     CREATE TABLE IF NOT EXISTS student_attendance (
       id TEXT PRIMARY KEY,
       studentId TEXT NOT NULL,
-      slotId TEXT NOT NULL,
+      slotId TEXT,
       dateStr TEXT NOT NULL,
       status TEXT NOT NULL,
       markedBy TEXT,
       timestamp TEXT NOT NULL,
       FOREIGN KEY (studentId) REFERENCES students(id) ON DELETE CASCADE,
-      FOREIGN KEY (slotId) REFERENCES slots(id) ON DELETE CASCADE,
+      FOREIGN KEY (slotId) REFERENCES slots(id) ON DELETE SET NULL,
       UNIQUE(studentId, slotId, dateStr)
     );
 

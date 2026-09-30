@@ -4,6 +4,18 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { resolveClassGroupDetailsFromState, isCohortMatch } from "@/lib/utils";
 import { useToast } from "@/context/ToastContext";
 import { apiFetch, setClientCsrfToken } from "@/lib/apiFetch";
+import { roleGrantsSuperAdmin } from "@/lib/superadmin";
+
+export interface AuthenticatedUser {
+  id: string;
+  reference_id: string;
+  role: Role;
+  email: string;
+  name: string;
+  college_id?: string | null;
+  isSuperAdmin: boolean;
+  mustChangePassword?: boolean;
+}
 
 export interface MentorGroup {
   id: string;
@@ -393,7 +405,7 @@ interface AppContextProps {
   setCurrentShift: (shift: ShiftType) => void;
   shiftTimeSlots: Record<ShiftType, string[]>;
   getTimeSlots: (shift: string, semesterOrClassGroup?: string, targetCollegeId?: string) => string[];
-  setRole: (role: Role, userId?: string, extra?: { collegeId?: string }) => void;
+  setRole: (role: Role, userId?: string, extra?: { collegeId?: string; userEmail?: string; userName?: string; isSuperAdmin?: boolean }) => void;
   assignSlot: (mentorId: string, day: string, time: string, course: string, location: string, classGroup?: string) => Promise<void>;
   deleteSlot: (slotId: string) => Promise<void>;
   updateSlot: (
@@ -579,6 +591,12 @@ interface AppContextProps {
   attendanceLockEnabled: boolean;
   setSystemSettings: React.Dispatch<React.SetStateAction<{ mailing_enabled: boolean; attendance_lock_enabled: boolean; [key: string]: any }>>;
   loadRoleWorkspace: (role: Role, userId: string, collegeId?: string) => Promise<void>;
+  currentUser: AuthenticatedUser | null;
+  isAuthenticated: boolean;
+  isSuperAdmin: boolean;
+  currentCampusScope: string;
+  setCampusScope: (scope: string) => void;
+  lastSyncTime: string;
   logout: () => void;
 }
 
@@ -698,13 +716,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
   const attendanceLockEnabled = systemSettings.attendance_lock_enabled !== false;
 
-  const [currentRole, setCurrentRoleState] = useState<Role>(() => {
+  const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
+  const [currentCampusScope, setCurrentCampusScope] = useState<string>("all");
+  const [lastSyncTime, setLastSyncTime] = useState<string>(() => new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }));
+
+  const isAuthenticated = !!currentUser;
+  const isSuperAdmin = !!(currentUser?.isSuperAdmin || (currentUser?.role && roleGrantsSuperAdmin(currentUser.role)));
+
+  const setCampusScope = useCallback((scope: string) => {
+    setCurrentCampusScope(scope);
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("fp_current_role");
-      if (saved) return saved as Role;
+      window.dispatchEvent(new CustomEvent("fp_scope_changed", { detail: scope }));
     }
-    return "mentor";
-  });
+  }, []);
+
+  const [currentRole, setCurrentRoleState] = useState<Role>("mentor");
   const [currentMentor, setCurrentMentor] = useState<Mentor | null>(null);
   const [currentHR, setCurrentHR] = useState<HRUser | null>(null);
   const [currentCAM, setCurrentCAM] = useState<CampusManager | null>(null);
@@ -803,21 +829,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         startLoading("Fetching live database data…");
       }
     try {
-      let role = (typeof window !== "undefined" ? localStorage.getItem("fp_current_role") : null) || currentRole || "admin";
+      let role = currentRole || currentUser?.role || "admin";
       if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) {
         role = "admin";
       }
-      let userId = "";
-      if (role === "admin") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_admin_id") || localStorage.getItem("fp_user_id")) : "") || "admin_1";
-      else if (role === "kam") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_kam_id") || localStorage.getItem("fp_user_id")) : "") || "";
-      else if (role === "cam") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_cam_id") || localStorage.getItem("fp_user_id")) : "") || "";
-      else if (role === "mentor") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_mentor_id") || localStorage.getItem("fp_user_id")) : "") || "";
-      else if (role === "student") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_student_id") || localStorage.getItem("fp_user_id")) : "") || "";
-      else if (role === "sme") userId = (typeof window !== "undefined" ? (localStorage.getItem("fp_sme_id") || localStorage.getItem("fp_user_id")) : "") || "";
+      let userId = currentUser?.reference_id || currentUser?.id || "";
+      if (!userId) {
+        if (role === "admin") userId = currentAdmin?.id || "admin_1";
+        else if (role === "kam") userId = currentKAM?.id || "";
+        else if (role === "cam") userId = currentCAM?.id || "";
+        else if (role === "mentor") userId = currentMentor?.id || "";
+        else if (role === "student") userId = currentStudent?.id || "";
+        else if (role === "sme") userId = currentSME?.id || "";
+      }
 
       const data = await apiFetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}`);
       if (data.success) {
         setDataLoadError(false);
+        setLastSyncTime(new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }));
         // D5: a newer refresh started while this one was in flight — discard this
         // response instead of overwriting fresher state with stale data.
         if (seq !== refreshDataSeq.current) {
@@ -899,8 +928,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const refreshAttendance = async (targetCollegeId?: string) => {
     try {
       setIsDataLoading(true); // show the top sync progress line during the swap
-      const role = localStorage.getItem("fp_current_role") || "";
-      const userId = localStorage.getItem("fp_cam_id") || localStorage.getItem("fp_admin_id") || localStorage.getItem("fp_mentor_id") || "";
+      const role = currentRole || currentUser?.role || "";
+      const userId = currentUser?.reference_id || currentUser?.id || "";
       const colParam = targetCollegeId ? `&college_id=${encodeURIComponent(targetCollegeId)}` : "";
       const data = await apiFetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}${colParam}&fields=attendance`);
       if (data.success && data.studentAttendance) {
@@ -966,31 +995,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   useEffect(() => {
-    // Instant 0ms session pre-hydration from cached localStorage snapshot
-    if (typeof window !== "undefined") {
-      try {
-        const loggedIn = localStorage.getItem("fp_logged_in") === "true";
-        const storedRole = localStorage.getItem("fp_current_role") as Role | null;
-        const cachedSnap = localStorage.getItem("fp_user_snapshot");
-        if (loggedIn && storedRole && cachedSnap) {
-          const userObj = JSON.parse(cachedSnap);
-          if (storedRole === "mentor") setCurrentMentor(userObj);
-          else if (storedRole === "cam") setCurrentCAM(userObj);
-          else if (storedRole === "kam") setCurrentKAM(userObj);
-          else if (storedRole === "admin") setCurrentAdmin(userObj);
-          else if (storedRole === "student") setCurrentStudent(userObj);
-          else if (storedRole === "sme") setCurrentSME(userObj);
-          setCurrentRoleState(storedRole);
-          setIsLoading(false);
-        }
-      } catch (_) {}
-    }
-
     const initApp = async () => {
       document.documentElement.classList.remove("dark");
 
       // 1. Authenticate with server using HttpOnly cookie & load live profile
-      let authUser: any = null;
+      let authUser: AuthenticatedUser | null = null;
       try {
         const authData = await apiFetch("/api/auth/me");
         if (authData.success && authData.user) {
@@ -999,12 +1008,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setClientCsrfToken(authData.csrfToken);
           }
         }
-      } catch (authErr) {
-        // Unauthenticated or idle session
+      } catch {
         authUser = null;
       }
 
       if (!authUser) {
+        setCurrentUser(null);
         setCurrentRoleState("mentor");
         setCurrentMentor(null);
         setCurrentHR(null);
@@ -1016,6 +1025,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsLoading(false);
         return;
       }
+
+      setCurrentUser(authUser);
 
       // 2. Fast-path reference bootstrap (<30KB)
       try {
@@ -1034,10 +1045,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // 3. Restore session using authoritative server user immediately (< 50ms total boot)
       const parsedRole: Role = (authUser.role as Role) || "mentor";
       setCurrentRoleState(parsedRole);
-
-      const storedShift = typeof window !== "undefined" ? (localStorage.getItem("fp_current_shift") as ShiftType | null) : null;
-      if (storedShift) {
-        setCurrentShiftState(storedShift);
+      if (authUser.college_id) {
+        setCurrentCampusScope(authUser.college_id);
       }
 
       const storedUserEmail = (authUser.email || "").toLowerCase().trim();
@@ -1114,7 +1123,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     initApp();
-  }, []);
+  }, [loadRoleWorkspace]);
 
   useEffect(() => {
     const today = new Date();
@@ -1126,21 +1135,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [currentStudent, currentMentor, studentAttendance, slots]);
 
   // ── Set current role and user from DB data ─────────────────────────────────
-  const setRole = (role: Role, userId?: string, extra?: { collegeId?: string }) => {
-    localStorage.setItem("fp_current_role", role);
+  const setRole = (role: Role, userId?: string, extra?: { collegeId?: string; userEmail?: string; userName?: string; isSuperAdmin?: boolean }) => {
     setCurrentRoleState(role);
+    const userEmail = (extra?.userEmail || currentUser?.email || (typeof window !== "undefined" ? localStorage.getItem("fp_user_email") : "") || "").toLowerCase().trim();
+    const sessionUserId = userId || currentUser?.reference_id || currentUser?.id || (typeof window !== "undefined" ? localStorage.getItem("fp_user_id") : "") || "";
+    const userName = extra?.userName || currentUser?.name || (typeof window !== "undefined" ? localStorage.getItem("fp_user_name") : "") || "";
+    const collegeId = extra?.collegeId || currentUser?.college_id || (typeof window !== "undefined" ? localStorage.getItem("fp_user_college_id") : "") || "";
+    const isSuper = extra?.isSuperAdmin ?? currentUser?.isSuperAdmin ?? roleGrantsSuperAdmin(role);
 
-    const userEmail = (localStorage.getItem("fp_user_email") || "").toLowerCase().trim();
-    const sessionUserId = userId || localStorage.getItem("fp_user_id") || "";
-    if (sessionUserId) {
-      localStorage.setItem("fp_user_id", sessionUserId);
+    setCurrentUser({
+      id: sessionUserId || `user_${role}`,
+      reference_id: sessionUserId,
+      role: role,
+      email: userEmail,
+      name: userName || userEmail || "User",
+      college_id: collegeId,
+      isSuperAdmin: isSuper
+    });
+
+    if (collegeId) {
+      setCurrentCampusScope(collegeId);
     }
-    const userName = localStorage.getItem("fp_user_name") || "";
-    const collegeId = extra?.collegeId || localStorage.getItem("fp_user_college_id") || "";
 
     if (role === "mentor") {
-      const selectedId = userId || sessionUserId || localStorage.getItem("fp_mentor_id");
-      if (selectedId) localStorage.setItem("fp_mentor_id", selectedId);
+      const selectedId = userId || sessionUserId;
       const m = (selectedId ? mentors.find((item) => item.id === selectedId) : null)
         || (!!userEmail ? mentors.find((item) => String(item.email || "").toLowerCase() === userEmail) : null)
         || (selectedId ? {
@@ -1156,56 +1174,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (m) {
         setCurrentIdentityError(null);
         setCurrentMentor(m as any);
-        localStorage.setItem("fp_user_snapshot", JSON.stringify(m));
       }
       setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
     } else if (role === "cam") {
-      const targetCamId = userId || sessionUserId || localStorage.getItem("fp_cam_id");
+      const targetCamId = userId || sessionUserId;
       if (targetCamId) {
-        localStorage.setItem("fp_cam_id", targetCamId);
         const placeholderCam = { id: targetCamId, name: userName || "Campus Manager", email: userEmail, college_id: collegeId, role: "cam" as const };
         setCurrentCAM(placeholderCam as any);
         fetch(`/api/cam?id=${encodeURIComponent(targetCamId)}`).then(r => r.json()).then(d => {
           if (d.success && d.cam) {
             setCurrentCAM({ ...d.cam, role: "cam" as const });
-            localStorage.setItem("fp_user_snapshot", JSON.stringify(d.cam));
           }
         }).catch(() => {});
       }
       setCurrentMentor(null); setCurrentHR(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
     } else if (role === "kam") {
-      const targetKamId = userId || sessionUserId || localStorage.getItem("fp_kam_id");
+      const targetKamId = userId || sessionUserId;
       if (targetKamId) {
-        localStorage.setItem("fp_kam_id", targetKamId);
         const placeholderKam = { id: targetKamId, name: userName || "Key Account Manager", email: userEmail, college_id: collegeId, role: "kam" as const };
         setCurrentKAM(placeholderKam as any);
         fetch(`/api/kam?id=${encodeURIComponent(targetKamId)}`).then(r => r.json()).then(d => {
           const kamData = d.kam || d.cam;
           if (d.success && kamData) {
             setCurrentKAM({ ...kamData, role: "kam" as const });
-            localStorage.setItem("fp_user_snapshot", JSON.stringify(kamData));
           }
         }).catch(() => {});
       }
       setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
     } else if (role === "admin") {
-      const targetAdminId = userId || sessionUserId || localStorage.getItem("fp_admin_id") || "admin_1";
+      const targetAdminId = userId || sessionUserId || "admin_1";
       if (targetAdminId) {
-        localStorage.setItem("fp_admin_id", targetAdminId);
         const placeholderAdmin = { id: targetAdminId, name: userName || "Administrator", email: userEmail, role: "admin" as const };
         setCurrentAdmin(placeholderAdmin);
         fetch(`/api/admin?id=${encodeURIComponent(targetAdminId)}`).then(r => r.json()).then(d => {
           if (d.success && d.admin) {
             setCurrentAdmin({ ...d.admin, role: "admin" as const });
-            localStorage.setItem("fp_user_snapshot", JSON.stringify(d.admin));
           }
         }).catch(() => {});
       }
       setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentStudent(null); setCurrentSME(null);
     } else if (role === "student") {
-      const targetStudentId = userId || sessionUserId || localStorage.getItem("fp_student_id");
+      const targetStudentId = userId || sessionUserId;
       if (targetStudentId) {
-        localStorage.setItem("fp_student_id", targetStudentId);
         const s = (targetStudentId ? students.find((item) => item.id === targetStudentId) : null)
           || (!!userEmail ? students.find((item) => String(item.email || "").toLowerCase() === userEmail) : null)
           || (targetStudentId ? {
@@ -1218,14 +1228,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (s) {
           setCurrentIdentityError(null);
           setCurrentStudent(s as any);
-          localStorage.setItem("fp_user_snapshot", JSON.stringify(s));
         }
       }
       setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentSME(null);
     } else if (role === "sme") {
-      const targetSmeId = userId || sessionUserId || localStorage.getItem("fp_sme_id");
+      const targetSmeId = userId || sessionUserId;
       if (targetSmeId) {
-        localStorage.setItem("fp_sme_id", targetSmeId);
         const s = (targetSmeId ? smes.find((item) => item.id === targetSmeId) : null)
           || (!!userEmail ? smes.find((item) => String(item.email || "").toLowerCase() === userEmail) : null)
           || (targetSmeId ? {
@@ -1237,15 +1245,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (s) {
           setCurrentIdentityError(null);
           setCurrentSME(s as any);
-          localStorage.setItem("fp_user_snapshot", JSON.stringify(s));
         }
       }
       setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
     } else if (role === "fee_manager") {
-      localStorage.setItem("fp_current_role", "fee_manager");
       setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
     } else if (role === "allocator") {
-      localStorage.setItem("fp_current_role", "allocator");
       setCurrentMentor(null);
       setCurrentHR(hrList[0] || null);
       setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
@@ -1259,19 +1264,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     refreshData(true).catch(() => {});
   };
 
-  // ── High-speed instantaneous logout — wipes in-memory & local state without full reload ──
+  // ── High-speed instantaneous logout — wipes in-memory state without full reload ──
   const logout = useCallback(() => {
-    if (typeof window !== "undefined") {
-      const currentUid = localStorage.getItem("fp_user_id") || localStorage.getItem("fp_header_id");
-      if (currentUid) {
-        fetch("/api/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "logout", userId: currentUid }),
-          keepalive: true
-        }).catch(() => {});
-      }
+    const currentUid = currentUser?.reference_id || currentUser?.id;
+    if (currentUid) {
+      fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "logout", userId: currentUid }),
+        keepalive: true
+      }).catch(() => {});
+    }
 
+    if (typeof window !== "undefined") {
       localStorage.removeItem("fp_logged_in");
       localStorage.removeItem("fp_is_super_admin");
       localStorage.removeItem("fp_must_change_pass");
@@ -1292,6 +1297,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       sessionStorage.clear();
     }
 
+    setCurrentUser(null);
     setCurrentMentor(null);
     setCurrentHR(null);
     setCurrentCAM(null);
@@ -1303,7 +1309,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentRoleState("mentor");
     setIsLoading(false);
     setIsDataLoading(false);
-  }, []);
+  }, [currentUser]);
 
   // Listen for global 401 session expiry events intercepted from API requests
   useEffect(() => {
@@ -3798,7 +3804,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     systemSettings,
     attendanceLockEnabled,
     setSystemSettings,
-    loadRoleWorkspace
+    loadRoleWorkspace,
+    currentUser,
+    isAuthenticated,
+    isSuperAdmin,
+    currentCampusScope,
+    setCampusScope,
+    lastSyncTime
   }), [
     mentors,
     slots,
@@ -3856,6 +3868,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     systemSettings,
     attendanceLockEnabled,
     loadRoleWorkspace,
+    currentUser,
+    isAuthenticated,
+    isSuperAdmin,
+    currentCampusScope,
+    setCampusScope,
+    lastSyncTime,
     logout
   ]);
 

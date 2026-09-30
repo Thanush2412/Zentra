@@ -2925,7 +2925,33 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
   // Active Dashboard Tab State
   const [localActiveTab, setLocalActiveTab] = useState<"home" | "timetable" | "handovers" | "attendance" | "exams" | "profile" | "tracker" | "academic_tracker" | "materials" | "demo_evaluations" | "more_menu" | "leave_requests" | "interviews" | "weekly_plan" | "my_skill_tracker">("home");
-  const activeTab = propActiveTab || localActiveTab;
+
+  const mentorTabAliases: Record<string, typeof localActiveTab> = {
+    "dashboard": "home",
+    "schedule": "timetable",
+    "timetable": "timetable",
+    "leaves": "handovers",
+    "leave-approvals": "handovers",
+    "requests": "handovers",
+    "handovers": "handovers",
+    "marks": "exams",
+    "exams": "exams",
+    "attendance": "attendance",
+    "tracker": "tracker",
+    "tasks": "tracker",
+    "submissions": "tracker",
+    "interviews": "interviews",
+    "interview": "interviews",
+    "weekly-plan": "weekly_plan",
+    "weekly_plan": "weekly_plan",
+    "skill-tracker": "my_skill_tracker",
+    "my_skill_tracker": "my_skill_tracker",
+    "profile": "profile",
+    "academic-tracker": "academic_tracker",
+    "academic_tracker": "academic_tracker"
+  };
+  const resolvedPropTab = propActiveTab ? (mentorTabAliases[propActiveTab] || propActiveTab) : undefined;
+  const activeTab = (resolvedPropTab || localActiveTab) as typeof localActiveTab;
 
   // useTransition: marks tab switches as non-urgent so the current UI stays
   // responsive while React prepares the new tab content in the background.
@@ -3737,7 +3763,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
   }, [currentMentor, slots]);
 
-  if (!currentMentor) return null;
+  if (!currentMentor) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
+        <div className="h-12 w-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mb-4 animate-pulse">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+        <h3 className="text-base font-bold text-slate-900 mb-1">Loading Faculty Workspace…</h3>
+        <p className="text-xs text-slate-500 max-w-sm">
+          Preparing your timetable, classes, and teaching agenda.
+        </p>
+      </div>
+    );
+  }
 
   // ── Actual duration calculator ──────────────────────────────────────────
   const parseSlotMinutes = (timeStr: string): number => {

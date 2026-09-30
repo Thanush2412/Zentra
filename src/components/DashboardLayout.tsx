@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { isSuperAdminSession, SUPER_ADMIN_FLAG_KEY } from "@/lib/superadmin";
+import { isSuperAdminSession } from "@/lib/superadmin";
 import { useApp, Role } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
+import { UserProfileBar } from "./UserProfileBar";
 import {
   LogOut,
   ChevronDown,
@@ -49,6 +50,9 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps) {
   const router = useRouter();
   const {
+    currentUser,
+    isAuthenticated,
+    isSuperAdmin,
     currentRole,
     setRole,
     currentMentor,
@@ -64,40 +68,34 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     dataLoadError,
     retryDataLoad,
     refreshData,
+    currentCampusScope,
+    setCampusScope,
+    lastSyncTime,
     logout
   } = useApp();
   // ROLE_UI_AUDIT C3: toasts replace the old blocking alert() calls.
   const { toast: showToast } = useToast();
 
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
-
-  const storedUserEmail = typeof window !== "undefined" ? (localStorage.getItem("fp_user_email") || "") : "";
-  const storedUserName = typeof window !== "undefined" ? (localStorage.getItem("fp_user_name") || "") : "";
-  // Server-issued super-admin session flag (users.role === "admin") — no hardcoded identity
-  const isSuperAdmin = isSuperAdminSession();
-
-  const [selectedCampusScope, setSelectedCampusScope] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("fp_superadmin_campus_scope") || "all";
-    }
-    return "all";
-  });
   const [showCampusDropdown, setShowCampusDropdown] = useState(false);
 
   const handleSelectCampusScope = (scopeId: string) => {
-    setSelectedCampusScope(scopeId);
-    localStorage.setItem("fp_superadmin_campus_scope", scopeId);
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("storage"));
-      window.location.reload();
+    setCampusScope(scopeId);
+    setShowCampusDropdown(false);
+  };
+
+  const handleManualRefresh = async () => {
+    if (isManualRefreshing || isDataLoading) return;
+    setIsManualRefreshing(true);
+    try {
+      await refreshData(false);
+    } catch (_) {
+    } finally {
+      setIsManualRefreshing(false);
     }
   };
 
-  const isLoggedInClient = typeof window !== "undefined" && localStorage.getItem("fp_logged_in") === "true";
-  const storedRoleClient = typeof window !== "undefined" ? localStorage.getItem("fp_current_role") : null;
-  const isAuthorized = isLoggedInClient && (isSuperAdmin || currentRole === requiredRole || storedRoleClient === requiredRole);
-
-  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const isAuthorized = isAuthenticated && (isSuperAdmin || currentRole === requiredRole);
 
   /* ─── Notifications Bell ─── */
   const [showNotifications, setShowNotifications] = useState(false);
@@ -109,28 +107,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const [bellShake, setBellShake] = useState(false);
 
   const resolveCurrentUserId = () => {
-    if (typeof window === "undefined") return null;
-    const stored =
-      localStorage.getItem("fp_user_id") || localStorage.getItem("fp_header_id");
-    if (stored) return stored;
-    switch (currentRole) {
-      case "mentor":
-        return currentMentor?.id || null;
-      case "hr":
-        return currentHR?.id || null;
-      case "cam":
-        return currentCAM?.id || null;
-      case "kam":
-        return currentKAM?.id || null;
-      case "admin":
-        return currentAdmin?.id || null;
-      case "student":
-        return currentStudent?.id || null;
-      case "sme":
-        return currentSME?.id || null;
-      default:
-        return null;
-    }
+    return currentUser?.reference_id || currentUser?.id || currentMentor?.id || currentCAM?.id || currentKAM?.id || currentAdmin?.id || currentStudent?.id || currentSME?.id || null;
   };
 
   /* ─── Global Feedback Modal State & Reporter Resolution ─── */
@@ -141,9 +118,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   const getReporterDetails = () => {
-    let name = storedUserName || "";
-    let email = storedUserEmail || "";
-    let collegeId = "";
+    let name = currentUser?.name || "";
+    let email = currentUser?.email || "";
+    let collegeId = currentUser?.college_id || "";
     let collegeName = "";
     let department = "";
     let registerNumber = "";
@@ -152,21 +129,21 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     if (currentRole === "student" && currentStudent) {
       name = currentStudent.name || name;
       email = currentStudent.email || email;
-      collegeId = currentStudent.college_id || "";
+      collegeId = currentStudent.college_id || collegeId;
       department = currentStudent.department || "";
       registerNumber = currentStudent.register_number || (currentStudent as any).roll_no || "";
       contactInfo = (currentStudent as any).contact_number || (currentStudent as any).phone || "";
     } else if (currentRole === "mentor" && currentMentor) {
       name = currentMentor.name || name;
       email = currentMentor.email || email;
-      collegeId = currentMentor.college_id || "";
+      collegeId = currentMentor.college_id || collegeId;
       department = currentMentor.department || "";
       registerNumber = (currentMentor as any).employee_id || currentMentor.id || "";
       contactInfo = (currentMentor as any).phone || "";
     } else if (currentRole === "cam" && currentCAM) {
       name = currentCAM.name || name;
       email = currentCAM.email || email;
-      collegeId = currentCAM.college_id || "";
+      collegeId = currentCAM.college_id || collegeId;
     } else if (currentRole === "admin" && currentAdmin) {
       name = currentAdmin.name || name;
       email = currentAdmin.email || email;
@@ -176,17 +153,10 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     } else if (currentRole === "kam" && currentKAM) {
       name = currentKAM.name || name;
       email = currentKAM.email || email;
-      collegeId = (currentKAM as any).college_id || "";
+      collegeId = (currentKAM as any).college_id || collegeId;
     } else if (currentRole === "sme" && currentSME) {
       name = currentSME.name || name;
       email = currentSME.email || email;
-    }
-
-    if (!email && typeof window !== "undefined") {
-      email = localStorage.getItem("fp_user_email") || "";
-    }
-    if (!name && typeof window !== "undefined") {
-      name = localStorage.getItem("fp_user_name") || "";
     }
 
     if (collegeId && colleges?.length) {
@@ -481,7 +451,8 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   }, []);
 
   const currentUserEmail =
-    storedUserEmail ||
+    currentUser?.email ||
+    (typeof window !== "undefined" ? (localStorage.getItem("fp_user_email") || localStorage.getItem("user_email") || "") : "") ||
     (currentRole === "mentor" && currentMentor?.email) ||
     (currentRole === "hr" && currentHR?.email) ||
     (currentRole === "cam" && currentCAM?.email) ||
@@ -632,17 +603,12 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       if (!hasCompletedInitialLoad.current) return;
       if (isLoading || isDataLoading) return;
 
-      const isLoggedIn =
-        (typeof window !== "undefined" && localStorage.getItem("fp_logged_in") === "true") ||
-        (typeof window !== "undefined" && sessionStorage.getItem("fp_logged_in") === "true");
-
-      if (!isLoggedIn) {
+      if (!isAuthenticated) {
         router.replace("/");
         return;
       }
 
-      const storedRole = typeof window !== "undefined" ? (localStorage.getItem("fp_current_role") || sessionStorage.getItem("fp_current_role")) : null;
-      const activeRole = currentRole || storedRole;
+      const activeRole = currentRole || currentUser?.role;
 
       if (!isSuperAdmin && activeRole && activeRole !== requiredRole && !isLoading && !isDataLoading) {
         const targetPath = "/" + (activeRole === "fee_manager" ? "fee-manager" : activeRole);
@@ -655,7 +621,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
         clearTimeout(routeProtectionTimeoutRef.current);
       }
     };
-  }, [isLoading, isDataLoading, requiredRole, router, isSuperAdmin]);
+  }, [isLoading, isDataLoading, isAuthenticated, currentRole, currentUser, requiredRole, router, isSuperAdmin]);
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const handleLogout = () => {
@@ -720,19 +686,10 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
         {/* Right: Profile trigger + Logout */}
         <div className="flex items-center gap-2 sm:gap-3">
 
-          {/* Profile Dropdown trigger */}
           {/* Interactive Refresh Loader Button */}
           <button
             type="button"
-            onClick={async () => {
-              setIsManualRefreshing(true);
-              try {
-                await refreshData();
-              } catch (_) {}
-              finally {
-                setIsManualRefreshing(false);
-              }
-            }}
+            onClick={handleManualRefresh}
             disabled={isManualRefreshing || isDataLoading}
             className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-indigo-600 transition-all cursor-pointer shadow-xs disabled:opacity-70"
             title="Click to reload latest data from server"
@@ -743,11 +700,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             )}
             <span className="truncate max-w-[140px] sm:max-w-none">
-              {isManualRefreshing || isDataLoading ? "Syncing..." : `Synced: ${refreshedAtTime || "Just now"}`}
+              {isManualRefreshing || isDataLoading ? "Syncing..." : `Synced: ${lastSyncTime || "Just now"}`}
             </span>
           </button>
-
-
 
           {/* Master Global Region / Campus Scope Switcher (super-admin sessions only) */}
           {isSuperAdmin && (
@@ -760,9 +715,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
               >
                 <Globe className="h-3.5 w-3.5 text-indigo-600 animate-pulse" />
                 <span className="hidden sm:inline">
-                  {selectedCampusScope === "all"
+                  {currentCampusScope === "all"
                     ? "All Regions (Global)"
-                    : colleges.find(c => c.id === selectedCampusScope)?.name || "Selected Campus"}
+                    : colleges.find(c => c.id === currentCampusScope)?.name || "Selected Campus"}
                 </span>
                 <ChevronDown className={`h-3.5 w-3.5 opacity-80 transition-transform ${showCampusDropdown ? "rotate-180" : ""}`} />
               </button>
@@ -771,17 +726,16 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                 <div className="absolute right-0 mt-2.5 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl p-2 z-50 animate-fadeIn space-y-1 max-h-80 overflow-y-auto">
                   <div className="px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-indigo-600 border-b border-slate-100 flex items-center justify-between">
                     <span>Global Data Scope</span>
-                    <span className="text-[8px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold">{storedUserName || "Super Admin"}</span>
+                    <span className="text-[8px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold">{currentUser?.name || "Super Admin"}</span>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => {
-                      setShowCampusDropdown(false);
                       handleSelectCampusScope("all");
                     }}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-left ${
-                      selectedCampusScope === "all"
+                      currentCampusScope === "all"
                         ? "bg-indigo-50 text-indigo-700 font-extrabold border border-indigo-200 shadow-xs"
                         : "text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
                     }`}
@@ -793,19 +747,18 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                         <span className="text-[9px] text-slate-400 font-medium block">Aggregated real-time data</span>
                       </div>
                     </div>
-                    {selectedCampusScope === "all" && <Check className="h-4 w-4 text-indigo-600 shrink-0" />}
+                    {currentCampusScope === "all" && <Check className="h-4 w-4 text-indigo-600 shrink-0" />}
                   </button>
 
                   <div className="border-t border-slate-100 my-1 pt-1">
                     <span className="px-2.5 py-1 text-[9px] font-extrabold uppercase text-slate-400 block">Individual Campuses</span>
                     {colleges.map(c => {
-                      const isSelected = selectedCampusScope === c.id;
+                      const isSelected = currentCampusScope === c.id;
                       return (
                         <button
                           key={c.id}
                           type="button"
                           onClick={() => {
-                            setShowCampusDropdown(false);
                             handleSelectCampusScope(c.id);
                           }}
                           className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-left ${
@@ -834,7 +787,6 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
               type="button"
               onClick={() => {
                 setShowNotifications((p) => !p);
-                setShowProfileDropdown(false);
                 setShowCampusDropdown && setShowCampusDropdown(false);
                 if (!showNotifications) {
                   fetchNotifications(true);
@@ -1028,110 +980,16 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
           )}
           </div>
 
-          <div className="relative">
-            <button
-              onClick={() => setShowProfileDropdown((p) => !p)}
-              className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-gray-55 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
-            >
-              <div className="h-7 w-7 rounded-full btn-gradient flex items-center justify-center font-extrabold text-white text-[10px] shadow-sm shrink-0 overflow-hidden">
-                {currentRole === "mentor" ? (
-                  currentMentor?.avatar && currentMentor.avatar.startsWith("http") ? (
-                    <img src={currentMentor.avatar} alt="Mentor Avatar" className="h-full w-full object-cover" />
-                  ) : (
-                    (currentMentor?.name || "Faculty").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
-                  )
-                ) : null}
-                {currentRole === "hr" && "HR"}
-                {currentRole === "cam" && (currentCAM?.name || "Campus Manager").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
-                {currentRole === "kam" && (currentKAM?.name || "KAM Owner").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
-                {currentRole === "admin" && (currentAdmin?.name || "System Admin").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
-                {currentRole === "student" && (currentStudent?.name || "Student").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
-                {currentRole === "fee_manager" && "FM"}
-                {currentRole === "sme" && (currentSME?.name || "SME").split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}
-                {currentRole === "allocator" && "DA"}
-              </div>
-              <div className="text-left leading-none hidden sm:block">
-                <span className="text-xs font-bold text-gray-900 dark:text-white block leading-tight">
-                  {currentRole === "mentor" && (currentMentor?.name || "Faculty Mentor")}
-                  {currentRole === "hr" && (currentHR?.name || "HR Manager")}
-                  {currentRole === "cam" && (currentCAM?.name || "Campus Manager")}
-                  {currentRole === "kam" && (currentKAM?.name || "Key Account Manager")}
-                  {currentRole === "admin" && (currentAdmin?.name || "System Admin")}
-                  {currentRole === "student" && (currentStudent?.name || "Student")}
-                  {currentRole === "fee_manager" && ((typeof window !== "undefined" && localStorage.getItem("fp_user_name")) || "Fee Operations Manager")}
-                  {currentRole === "sme" && (currentSME?.name || "SME Evaluator")}
-                  {currentRole === "allocator" && ((typeof window !== "undefined" && localStorage.getItem("fp_user_name")) || "Demo Allocator Head")}
-                </span>
-                <span className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider block mt-0.5">
-                  {currentRole === "cam" ? "CM" : currentRole}
-                </span>
-              </div>
-              <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform duration-200 ${showProfileDropdown ? "rotate-180" : ""}`} />
-            </button>
- 
-            {/* Dropdown panel */}
-            {showProfileDropdown && (
-              <div className="absolute right-0 mt-2.5 w-60 bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden">
-                {/* User info */}
-                <div className="px-4 py-3.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50">
-                  <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
-                    {currentRole === "mentor" && (currentMentor?.name || "Faculty Mentor")}
-                    {currentRole === "hr" && (currentHR?.name || "HR Manager")}
-                    {currentRole === "cam" && (currentCAM?.name || "Campus Manager")}
-                    {currentRole === "kam" && (currentKAM?.name || "Key Account Manager")}
-                    {currentRole === "admin" && (currentAdmin?.name || "System Admin")}
-                    {currentRole === "student" && (currentStudent?.name || "Student")}
-                    {currentRole === "fee_manager" && ((typeof window !== "undefined" && localStorage.getItem("fp_user_name")) || "Fee Operations Manager")}
-                    {currentRole === "sme" && (currentSME?.name || "SME Evaluator")}
-                    {currentRole === "allocator" && ((typeof window !== "undefined" && localStorage.getItem("fp_user_name")) || "Demo Allocator Head")}
-                  </p>
-                  <p className="text-[10px] text-gray-400 font-mono truncate mt-0.5">
-                    {currentRole === "mentor" && (currentMentor?.email || "mentor@university.edu")}
-                    {currentRole === "hr" && (currentHR?.email || "hr@university.edu")}
-                    {currentRole === "cam" && (currentCAM?.email || "cam@university.edu")}
-                    {currentRole === "kam" && (currentKAM?.email || "kam@university.edu")}
-                    {currentRole === "admin" && (currentAdmin?.email || "admin@university.edu")}
-                    {currentRole === "student" && (currentStudent?.email || "student@university.edu")}
-                    {currentRole === "fee_manager" && (currentUserEmail || "fee.manager@zentra.edu")}
-                    {currentRole === "sme" && (currentSME?.email || "sme@zentra.edu")}
-                    {currentRole === "allocator" && (currentUserEmail || "allocator@zentra.edu")}
-                  </p>
-                  <span className="mt-2 inline-block text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-slate-700 text-indigo-650 dark:text-indigo-400 border border-indigo-100/50 dark:border-slate-600">
-                    {currentRole}
-                  </span>
-                </div>
-                {/* Actions */}
-                <div className="p-1.5 space-y-0.5">
-                  <button
-                    onClick={() => {
-                      setShowProfileDropdown(false);
-                      setPassError("");
-                      setPassSuccess("");
-                      setCurrentPassword("");
-                      setNewPassword("");
-                      setConfirmPassword("");
-                      setShowPasswordModal(true);
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all cursor-pointer"
-                  >
-                    <KeyRound className="h-3.5 w-3.5 text-indigo-500" />
-                    Change Password
-                  </button>
-                  <button
-                    id="logout-btn"
-                    onClick={() => { setShowProfileDropdown(false); handleLogout(); }}
-                    disabled={isLoggingOut}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait"
-                  >
-                    {isLoggingOut
-                      ? <span className="h-3.5 w-3.5 rounded-full border-2 border-rose-500 border-t-transparent animate-spin" />
-                      : <LogOut className="h-3.5 w-3.5" />}
-                    {isLoggingOut ? "Logging out…" : "Log out"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <UserProfileBar
+            onOpenChangePassword={() => {
+              setShowPasswordModal(true);
+              setPassError("");
+              setPassSuccess("");
+              setCurrentPassword("");
+              setNewPassword("");
+              setConfirmPassword("");
+            }}
+          />
 
         </div>
       </header>
