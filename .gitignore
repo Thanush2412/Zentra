@@ -161,3 +161,4 @@ ticketing-deploy-separate/1-student-portal
 ticketing-deploy-separate/2-admin-dashboard
 ticketing-deploy-separate/3-campus-eaudit
 backup/supabase_prod_backup_2026-09-30T04-54-37-252Z.json
+sample.env

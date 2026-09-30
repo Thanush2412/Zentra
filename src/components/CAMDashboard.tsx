@@ -10959,9 +10959,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const academicYears = dbAcademicYears;
   const [selectedYear, setSelectedYear] = useState("2026-2027");
   const [workingDays, setWorkingDays] = useState<string[]>(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
+  const [configCollegeId, setConfigCollegeId] = useState<string>("");
 
   useEffect(() => {
-    const activeCollege = colleges.find(c => c.id === activeCollegeId);
+    const targetId = configCollegeId || (activeCollegeId !== "all" ? activeCollegeId : (colleges[0]?.id || ""));
+    const activeCollege = colleges.find(c => c.id === targetId) || colleges[0];
     const daysCount = activeCollege?.working_days !== undefined ? Number(activeCollege.working_days) : 5;
     if (daysCount === 6) {
       setWorkingDays(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]);
@@ -10976,13 +10978,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     if (activeCollege?.academic_year) {
       setSelectedYear(activeCollege.academic_year);
     }
-  }, [activeCollegeId, colleges]);
+  }, [configCollegeId, activeCollegeId, colleges]);
 
   const [collegeHours, setCollegeHours] = useState({ start: "08:30 AM", end: "04:30 PM" });
   const [isSavingCollegeHours, setIsSavingCollegeHours] = useState(false);
 
   const handleSaveCollegeHoursAndDays = async () => {
-    const activeCollege = colleges.find(c => c.id === activeCollegeId);
+    const targetId = configCollegeId || (activeCollegeId !== "all" ? activeCollegeId : (colleges[0]?.id || ""));
+    const activeCollege = colleges.find(c => c.id === targetId) || colleges[0];
     if (!activeCollege) {
       toast("No active college selected.", "error");
       return;
@@ -15284,11 +15287,29 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                 {/* Hours configuration */}
                 <div className="space-y-4 bg-slate-50/50 p-5 rounded-xl border border-slate-200">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <h3 className="text-xs font-black text-indigo-655 uppercase tracking-wider">Configure Working Days & Hours</h3>
-                    <span className="text-[10px] font-bold text-slate-400">
-                      Campus: {colleges.find(c => c.id === activeCollegeId)?.name || activeCollegeId}
-                    </span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-2.5 gap-2">
+                    <div>
+                      <h3 className="text-xs font-black text-indigo-655 uppercase tracking-wider">Configure Working Days & Hours</h3>
+                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                        Configuring: <strong className="text-indigo-600">{colleges.find(c => c.id === (configCollegeId || activeCollegeId))?.name || (configCollegeId || activeCollegeId)}</strong>
+                      </p>
+                    </div>
+                    {colleges.length > 1 && (
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase shrink-0">Campus:</label>
+                        <select
+                          value={configCollegeId || (activeCollegeId !== "all" ? activeCollegeId : colleges[0]?.id || "")}
+                          onChange={e => setConfigCollegeId(e.target.value)}
+                          className="p-1 px-2.5 text-xs font-bold border border-slate-200 rounded-lg bg-white text-slate-800 focus:ring-1 focus:ring-indigo-500 outline-none shadow-xs"
+                        >
+                          {colleges.map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.name || c.id}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <Input
