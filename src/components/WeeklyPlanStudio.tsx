@@ -290,6 +290,20 @@ export function parseSessionPlan(raw: string | DailySessionTask[] | undefined): 
 /* =========================================================================
    1. MENTOR WEEKLY PLAN STUDIO (Spreadsheet-Grade Teaching Period Roadmap)
    ========================================================================= */
+
+// Helper to calculate semester week number from date
+const calculateWeekNumber = (dateStr: string): number => {
+  try {
+    const d = new Date(dateStr + "T00:00:00");
+    if (isNaN(d.getTime())) return 1;
+    const startOfYear = new Date(d.getFullYear(), 0, 1);
+    const pastDays = (d.getTime() - startOfYear.getTime()) / 86400000;
+    return Math.max(1, Math.ceil((pastDays + startOfYear.getDay() + 1) / 7));
+  } catch {
+    return 1;
+  }
+};
+
 export interface MentorWeeklyPlanStudioProps {
   mentorId: string;
   mentorName: string;
@@ -323,7 +337,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
   const isDirtyRef = useRef(false);
 
   // Selection state
-  const [selectedWeek, setSelectedWeek] = useState<number>(1);
+  const [selectedWeek, setSelectedWeek] = useState<number>(() => calculateWeekNumber(new Date().toISOString().slice(0, 10)));
   const [selectedClass, setSelectedClass] = useState<string>(assignedClasses[0] || "Default Cohort");
   const [selectedSubject, setSelectedSubject] = useState<string>(assignedSubjects[0] || "General Subject");
   const [startDate, setStartDate] = useState<string>("");
