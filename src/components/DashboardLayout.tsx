@@ -678,7 +678,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
               {currentRole === "student" && "Student Portal"}
               {currentRole === "fee_manager" && "Fee Collections"}
               {currentRole === "sme" && "SME Evaluation Hub"}
-              {currentRole === "allocator" && "L and D"}
+              {currentRole === "allocator" && "Learning & Development (L&D)"}
             </span>
           </div>
         </div>

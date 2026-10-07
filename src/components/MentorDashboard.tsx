@@ -705,7 +705,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
       });
       const json = await res.json();
       if (json.success) {
-        toast(`Alternative period reserved for ${demo.subject}. Awaiting Allocator approval.`, "success");
+        toast(`Alternative period reserved for ${demo.subject}. Awaiting L&D approval.`, "success");
         setReallocSubmittedIds(prev => new Set(prev).add(demo.id));
       } else {
         toast(json.message || "Failed to propose reallocation", "error");
@@ -1332,7 +1332,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                             Demo Reallocation Required ({impactedDemos.length} scheduled session{impactedDemos.length > 1 ? "s" : ""} impacted)
                           </div>
                           <p className="text-[10.5px] text-amber-700 font-medium">
-                            Your leave overlaps scheduled demo(s). Pick an alternative free period for each — the chosen period is reserved and sent to the Allocator for approval before your leave proceeds.
+                            Your leave overlaps scheduled demo(s). Pick an alternative free period for each — the chosen period is reserved and sent to L&amp;D for approval before your leave proceeds.
                           </p>
                         </div>
                       </div>
@@ -1362,7 +1362,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                                   </span>
                                   {isHandled && (
                                     <span className="px-1.5 py-0.5 rounded bg-emerald-100 border border-emerald-300 text-emerald-800 text-[9px] font-black uppercase">
-                                      ✓ Reserved — Pending Allocator
+                                      ✓ Reserved — Pending L&amp;D
                                     </span>
                                   )}
                                 </div>
@@ -1388,7 +1388,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                             {!isHandled && alts && (
                               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                                 {alts.length === 0 && (
-                                  <p className="text-[11px] text-rose-600 font-medium">No suitable alternative dates found in the next 3 weeks. Contact your Allocator.</p>
+                                  <p className="text-[11px] text-rose-600 font-medium">No suitable alternative dates found in the next 3 weeks. Contact the L&amp;D Team.</p>
                                 )}
                                 {alts.map(day => {
                                   const freeCount = day.periods.filter((p: any) => p.mutuallyFree).length;
@@ -1445,7 +1445,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                                   onClick={() => submitDemoReallocation(demo)}
                                   className="shrink-0 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10.5px] font-black transition-all cursor-pointer disabled:opacity-50"
                                 >
-                                  {loading ? "Reserving…" : "Reserve & Send to Allocator"}
+                                  {loading ? "Reserving…" : "Reserve & Send to L&D"}
                                 </button>
                               </div>
                             )}

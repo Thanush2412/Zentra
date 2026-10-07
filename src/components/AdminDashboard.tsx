@@ -6187,7 +6187,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     </td>
                                     <td className="p-3">
                                       <span className={`px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider ${roleColor}`}>
-                                        {user.role}
+                                        {user.role === "allocator" ? "L&D" : user.role}
                                       </span>
                                     </td>
                                     <td className="p-3 font-mono text-[10.5px] text-gray-600 font-semibold">
@@ -10231,7 +10231,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <option value="sme">SME (Subject Matter Expert)</option>
                     <option value="student">Student (Learner)</option>
                     <option value="fee_manager">Fee Manager (Fee Operations)</option>
-                    <option value="allocator">L and D</option>
+                    <option value="allocator">L&amp;D (Learning and Development)</option>
                     <option value="hr">HR (Human Resources)</option>
                   </select>
                 </div>

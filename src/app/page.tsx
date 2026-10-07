@@ -525,7 +525,7 @@ export default function Home() {
                 { id: "hr", label: "HR Audit Portal", desc: "Conduction & attendance logs", path: "/hr", icon: ClipboardList, color: "from-orange-600 to-amber-600" },
                 { id: "fee_manager", label: "Fee Collections", desc: "Student fee dues & receipts", path: "/fee-manager", icon: IndianRupee, color: "from-teal-600 to-emerald-600" },
                 { id: "sme", label: "SME Evaluation", desc: "Mock interviews & grading", path: "/sme", icon: Award, color: "from-rose-600 to-pink-600" },
-                { id: "allocator", label: "Learning and Development", desc: "Demo sessions & faculty slots", path: "/allocator", icon: Calendar, color: "from-amber-600 to-orange-600" },
+                { id: "allocator", label: "Learning & Development (L&D)", desc: "Demo sessions & faculty slots", path: "/allocator", icon: Calendar, color: "from-amber-600 to-orange-600" },
               ].map(w => {
                 const Icon = w.icon;
                 return (
