@@ -4,7 +4,7 @@ import { validateSession, SESSION_COOKIE_NAME, UserSessionRecord } from "@/lib/s
 import { verifyCsrfToken, CSRF_HEADER_NAME, generateCsrfToken } from "@/lib/csrf";
 import { roleGrantsSuperAdmin } from "@/lib/superadmin";
 
-export type Role = "admin" | "cam" | "mentor" | "student" | "kam" | "sme" | "fee_manager" | "allocator" | "hr";
+export type Role = "admin" | "cam" | "mentor" | "student" | "kam" | "sme" | "fee_manager" | "L and D" | "hr";
 
 export interface AuthenticatedUser {
   id: string;              // users.id

@@ -291,20 +291,6 @@ export function parseSessionPlan(raw: string | DailySessionTask[] | undefined): 
    1. MENTOR WEEKLY PLAN STUDIO (Spreadsheet-Grade Teaching Period Roadmap)
    ========================================================================= */
 
-// Helper to calculate semester week number from date
-const calculateWeekNumber = (dateStr: string): number => {
-  try {
-    const d = new Date(dateStr + "T00:00:00");
-    if (isNaN(d.getTime())) return 1;
-    const startOfYear = new Date(d.getFullYear(), 0, 1);
-    const pastDays = (d.getTime() - startOfYear.getTime()) / 86400000;
-    return Math.max(1, Math.ceil((pastDays + startOfYear.getDay() + 1) / 7));
-  } catch {
-    return 1;
-  }
-};
-
-
 export interface MentorWeeklyPlanStudioProps {
   mentorId: string;
   mentorName: string;
@@ -327,6 +313,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
   const { toast } = useToast();
   const { colleges, slots, timeSlots: ctxTimeSlots, daysOfWeek: ctxDaysOfWeek, subjectsList } = useApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const studioTopRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -337,8 +324,8 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
   const [plansLoaded, setPlansLoaded] = useState(false);
   const isDirtyRef = useRef(false);
 
-  // Selection state
-  const [selectedWeek, setSelectedWeek] = useState<number>(() => calculateWeekNumber(new Date().toISOString().slice(0, 10)));
+  // Selection state — sequential week purely based on submission history (1, 2, 3...)
+  const [selectedWeek, setSelectedWeek] = useState<number>(1);
   const [selectedClass, setSelectedClass] = useState<string>(assignedClasses[0] || "Default Cohort");
   const [selectedSubject, setSelectedSubject] = useState<string>(assignedSubjects[0] || "General Subject");
   const [startDate, setStartDate] = useState<string>("");
@@ -347,7 +334,8 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
   const [unitName, setUnitName] = useState<string>("Unit 1");
   const [showHistory, setShowHistory] = useState<boolean>(false);
   const [planUpdatedAt, setPlanUpdatedAt] = useState<string>("");
-
+  const [archiveFilterScope, setArchiveFilterScope] = useState<"current" | "all">("current");
+  const [archiveSearch, setArchiveSearch] = useState<string>("");
 
   // Dynamically resolve college working days and period slots from system configuration
   const activeCollege = useMemo(() => colleges.find(c => c.id === collegeId), [colleges, collegeId]);
@@ -384,6 +372,30 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
   const [currentFeedback, setCurrentFeedback] = useState<string>("");
   const [verifiedBy, setVerifiedBy] = useState<string>("");
   const [verifiedAt, setVerifiedAt] = useState<string>("");
+
+  // All plans for currently selected cohort + subject
+  const matchingPlans = useMemo(() => {
+    return plans
+      .filter(p => {
+        const classMatch = !selectedClass || selectedClass === "Default Cohort" || selectedClass === "All Classes" ||
+          p.class_group.toLowerCase().trim() === selectedClass.toLowerCase().trim() ||
+          isCohortMatching(p.class_group, selectedClass);
+        const subjectMatch = !selectedSubject || selectedSubject === "General Subject" || selectedSubject === "All Subjects" ||
+          p.subject.toLowerCase().trim() === selectedSubject.toLowerCase().trim() ||
+          isSubjectNameMatch(p.subject, selectedSubject);
+        return classMatch && subjectMatch;
+      })
+      .sort((a, b) => a.week_number - b.week_number);
+  }, [plans, selectedClass, selectedSubject]);
+
+  // Max week number and next sequential week
+  const maxExistingWeek = useMemo(() => {
+    return matchingPlans.length > 0 ? Math.max(...matchingPlans.map(p => p.week_number)) : 0;
+  }, [matchingPlans]);
+
+  const nextSequentialWeek = useMemo(() => {
+    return maxExistingWeek + 1;
+  }, [maxExistingWeek]);
 
   // Fetch daily configs (CAM Day Orders and Holidays) - Normalizes both dateStr & datestr
   useEffect(() => {
@@ -556,18 +568,22 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
     setDailyTasks(newTasks);
   }, [availableDays, resolvedPeriodSlots, resolveDayOrderDetailed, startDate, selectedWeek, workingDaysCount, slots, mentorId, collegeId, selectedSubject, selectedClass, dailyConfigsMap]);
 
-  // 2. Helper to load saved plan for a given (week, class, subject) selection
-  const loadPlanForSelection = useCallback((
+  // 2. Load plan for a specific week number, cohort, and subject
+  const loadPlanForWeek = useCallback((
     targetWeek: number,
-    targetClass: string,
-    targetSubject: string,
-    fallbackStartDate?: string
+    targetClass?: string,
+    targetSubject?: string,
+    plansList?: WeeklyPlanRecord[]
   ) => {
-    const match = plans.find(
+    const cls = targetClass ?? selectedClass;
+    const subj = targetSubject ?? selectedSubject;
+    const currentPlans = plansList ?? plans;
+
+    const match = currentPlans.find(
       p =>
         p.week_number === targetWeek &&
-        (p.class_group.toLowerCase().trim() === targetClass.toLowerCase().trim() || isCohortMatching(p.class_group, targetClass)) &&
-        (p.subject.toLowerCase().trim() === targetSubject.toLowerCase().trim() || isSubjectNameMatch(p.subject, targetSubject))
+        (!cls || cls === "Default Cohort" || cls === "All Classes" || p.class_group.toLowerCase().trim() === cls.toLowerCase().trim() || isCohortMatching(p.class_group, cls)) &&
+        (!subj || subj === "General Subject" || subj === "All Subjects" || p.subject.toLowerCase().trim() === subj.toLowerCase().trim() || isSubjectNameMatch(p.subject, subj))
     );
 
     if (match) {
@@ -577,16 +593,15 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       setVerifiedBy(match.verified_by || "");
       setVerifiedAt(match.verified_at || "");
       setPlanUpdatedAt(match.updated_at || match.created_at || "");
-      setStartDate(match.start_date || fallbackStartDate || "");
-      setEndDate(match.end_date || "");
-      setUnitName(match.unit || "Unit 1");
+      setStartDate(match.start_date || "");
+      setEndDate(match.end_date || (match.start_date ? computeEndDateFromStart(match.start_date, workingDaysCount) : ""));
+      setUnitName(match.unit || `Unit ${Math.min(5, Math.ceil(targetWeek / 3))}`);
 
       const loadedTasks = parseSessionPlan(match.session_plan);
       if (loadedTasks.length > 0) {
         setDailyTasks(
           loadedTasks.map(t => {
-            const date = t.date || getDateForDay(t.day, match.start_date || fallbackStartDate);
-            // Dynamically resolve Day Order against latest CAM daily configs for this date
+            const date = t.date || getDateForDay(t.day, match.start_date);
             const resolved = resolveDayOrderDetailed(date, t.day);
             const isCamFromConfig = resolved.source === "cam" && resolved.order && resolved.order !== "None";
             const isCamSaved = t.dayOrder && t.dayOrder !== "None" && (t.dayOrderSource === "cam" || (t as any).dayOrderSource === "cam");
@@ -600,44 +615,95 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
           })
         );
       } else {
-        generateDefaultTasksForWeek(match.start_date || fallbackStartDate);
+        generateDefaultTasksForWeek(match.start_date);
       }
     } else {
-      // No saved plan in DB yet for this combination
+      // New sequential week creation
       setCurrentPlanId(null);
       setCurrentStatus("Draft");
       setCurrentFeedback("");
       setVerifiedBy("");
       setVerifiedAt("");
       setPlanUpdatedAt("");
+      setUnitName(`Unit ${Math.min(5, Math.ceil(targetWeek / 3))}`);
 
-      generateDefaultTasksForWeek(fallbackStartDate);
-    }
-  }, [plans, resolveDayOrderDetailed, generateDefaultTasksForWeek]);
+      // Calculate start date relative to previous week's end date
+      const prevPlan = currentPlans.find(
+        p =>
+          p.week_number === targetWeek - 1 &&
+          (!cls || cls === "Default Cohort" || cls === "All Classes" || p.class_group.toLowerCase().trim() === cls.toLowerCase().trim() || isCohortMatching(p.class_group, cls)) &&
+          (!subj || subj === "General Subject" || subj === "All Subjects" || p.subject.toLowerCase().trim() === subj.toLowerCase().trim() || isSubjectNameMatch(p.subject, subj))
+      );
 
-  // Whenever dailyConfigsMap updates, refresh Day Orders on existing daily tasks
-  useEffect(() => {
-    if (dailyConfigsMap.size === 0) return;
-    setDailyTasks(prev => {
-      if (prev.length === 0) return prev;
-      let hasChange = false;
-      const updated = prev.map(t => {
-        const resolved = resolveDayOrderDetailed(t.date || "", t.day);
-        const newOrder = resolved.source === "cam" ? resolved.order : undefined;
-        const newSource = resolved.source === "cam" ? ("cam" as const) : undefined;
-        if (t.dayOrder !== newOrder || t.dayOrderSource !== newSource) {
-          hasChange = true;
-          return {
-            ...t,
-            dayOrder: newOrder,
-            dayOrderSource: newSource
-          };
+      let calculatedStart = "";
+      if (prevPlan?.end_date) {
+        const prevEnd = new Date(prevPlan.end_date + "T00:00:00");
+        if (!isNaN(prevEnd.getTime())) {
+          const nextDay = new Date(prevEnd);
+          const dow = prevEnd.getDay();
+          const addDays = dow === 6 ? 2 : dow === 0 ? 1 : 1;
+          nextDay.setDate(nextDay.getDate() + addDays);
+          calculatedStart = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, "0")}-${String(nextDay.getDate()).padStart(2, "0")}`;
         }
-        return t;
-      });
-      return hasChange ? updated : prev;
-    });
-  }, [dailyConfigsMap, resolveDayOrderDetailed]);
+      } else if (prevPlan?.start_date) {
+        const prevStart = new Date(prevPlan.start_date + "T00:00:00");
+        if (!isNaN(prevStart.getTime())) {
+          prevStart.setDate(prevStart.getDate() + 7);
+          calculatedStart = `${prevStart.getFullYear()}-${String(prevStart.getMonth() + 1).padStart(2, "0")}-${String(prevStart.getDate()).padStart(2, "0")}`;
+        }
+      }
+
+      if (!calculatedStart) {
+        calculatedStart = computeWeekWindow(targetWeek, undefined, workingDaysCount).start;
+      }
+
+      const calculatedEnd = computeEndDateFromStart(calculatedStart, workingDaysCount);
+      setStartDate(calculatedStart);
+      setEndDate(calculatedEnd);
+      generateDefaultTasksForWeek(calculatedStart);
+    }
+  }, [selectedClass, selectedSubject, plans, workingDaysCount, resolveDayOrderDetailed, generateDefaultTasksForWeek]);
+
+  // Handle explicit week switch by mentor
+  const handleSelectWeek = (targetWeek: number) => {
+    isDirtyRef.current = false;
+    setSelectedWeek(targetWeek);
+    loadPlanForWeek(targetWeek, selectedClass, selectedSubject, plans);
+  };
+
+  // Initial and reactive plan selection when plans load or selections change
+  useEffect(() => {
+    if (!plansLoaded) return;
+    if (isDirtyRef.current) return;
+
+    // Filter matching plans for current class and subject
+    const matched = plans.filter(p => {
+      const classMatch = !selectedClass || selectedClass === "Default Cohort" || selectedClass === "All Classes" ||
+        p.class_group.toLowerCase().trim() === selectedClass.toLowerCase().trim() ||
+        isCohortMatching(p.class_group, selectedClass);
+      const subjectMatch = !selectedSubject || selectedSubject === "General Subject" || selectedSubject === "All Subjects" ||
+        p.subject.toLowerCase().trim() === selectedSubject.toLowerCase().trim() ||
+        isSubjectNameMatch(p.subject, selectedSubject);
+      return classMatch && subjectMatch;
+    }).sort((a, b) => a.week_number - b.week_number);
+
+    if (matched.length === 0) {
+      setSelectedWeek(1);
+      loadPlanForWeek(1, selectedClass, selectedSubject, plans);
+    } else {
+      // If current selectedWeek is in matched plans, keep it and load it
+      const currentMatched = matched.find(p => p.week_number === selectedWeek);
+      if (currentMatched) {
+        loadPlanForWeek(selectedWeek, selectedClass, selectedSubject, plans);
+      } else {
+        // Prioritize draft/revision or pick the highest week
+        const activeDraft = matched.find(p => p.status === "Draft" || p.status === "Needs Revision");
+        const targetWeekNum = activeDraft ? activeDraft.week_number : matched[matched.length - 1].week_number;
+        setSelectedWeek(targetWeekNum);
+        loadPlanForWeek(targetWeekNum, selectedClass, selectedSubject, plans);
+      }
+    }
+  }, [plansLoaded, selectedClass, selectedSubject, plans, loadPlanForWeek]);
 
   // Keep dropdown options updated when props arrive
   useEffect(() => {
@@ -651,43 +717,6 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       setSelectedSubject(assignedSubjects[0]);
     }
   }, [assignedSubjects, selectedSubject]);
-
-  // Helper to resolve an anchor start date for calculating consecutive week offsets
-  const resolveAnchorDate = useCallback((targetWeek: number): string => {
-    // 1. Check if Week 1 plan exists for this cohort & subject with a start_date
-    const w1Plan = plans.find(
-      p => p.week_number === 1 &&
-        (p.class_group.toLowerCase().trim() === selectedClass.toLowerCase().trim() || isCohortMatching(p.class_group, selectedClass)) &&
-        (p.subject.toLowerCase().trim() === selectedSubject.toLowerCase().trim() || isSubjectNameMatch(p.subject, selectedSubject)) &&
-        p.start_date
-    );
-    if (w1Plan?.start_date) {
-      return computeWeekWindow(targetWeek, w1Plan.start_date, workingDaysCount).start;
-    }
-
-    // 2. Check if any week has a saved plan for this cohort & subject
-    const anyPlan = plans.find(
-      p => (p.class_group.toLowerCase().trim() === selectedClass.toLowerCase().trim() || isCohortMatching(p.class_group, selectedClass)) &&
-        (p.subject.toLowerCase().trim() === selectedSubject.toLowerCase().trim() || isSubjectNameMatch(p.subject, selectedSubject)) &&
-        p.start_date
-    );
-    if (anyPlan?.start_date) {
-      const diffWeeks = targetWeek - anyPlan.week_number;
-      const base = new Date(anyPlan.start_date + "T00:00:00");
-      base.setDate(base.getDate() + diffWeeks * 7);
-      const y = base.getFullYear();
-      const m = String(base.getMonth() + 1).padStart(2, "0");
-      const d = String(base.getDate()).padStart(2, "0");
-      return `${y}-${m}-${d}`;
-    }
-
-    // 3. Fallback: if user is on Week 1 and entered a startDate, calculate relative to that
-    if (selectedWeek === 1 && startDate) {
-      return computeWeekWindow(targetWeek, startDate, workingDaysCount).start;
-    }
-
-    return computeWeekWindow(targetWeek, undefined, workingDaysCount).start;
-  }, [plans, selectedClass, selectedSubject, selectedWeek, startDate, workingDaysCount]);
 
   // Date range conflict detection across weeks for this cohort and subject
   const dateConflict = useMemo(() => {
@@ -706,63 +735,62 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
     });
   }, [plans, currentPlanId, selectedWeek, selectedClass, selectedSubject, startDate, endDate]);
 
-  // Auto-assign week sequentially (1, 2, 3...) based on submitted plans
-  useEffect(() => {
-    if (!plansLoaded) return;
-    const matching = plans.filter(p => {
-      const classMatch = p.class_group.toLowerCase().trim() === selectedClass.toLowerCase().trim() || isCohortMatching(p.class_group, selectedClass);
-      const subjectMatch = p.subject.toLowerCase().trim() === selectedSubject.toLowerCase().trim() || isSubjectNameMatch(p.subject, selectedSubject);
-      return classMatch && subjectMatch;
-    });
-  }, [plans, currentPlanId, selectedWeek, selectedClass, selectedSubject, startDate, endDate]);
-
-  // Reactive plan loading when selections change or background data finishes loading
-  useEffect(() => {
-    if (!isDirtyRef.current) {
-      const calculatedStart = startDate || resolveAnchorDate(selectedWeek);
-      if (!startDate) {
-        setStartDate(calculatedStart);
-        setEndDate(computeEndDateFromStart(calculatedStart, workingDaysCount));
-      }
-      loadPlanForSelection(selectedWeek, selectedClass, selectedSubject, calculatedStart);
-    }
-  }, [selectedWeek, selectedClass, selectedSubject, workingDaysCount, plansLoaded, dailyConfigsLoaded, loadPlanForSelection, resolveAnchorDate]);
-
-  // When Week changes from the dropdown
-  const handleWeekChange = (newWeek: number) => {
-    isDirtyRef.current = false;
-    setSelectedWeek(newWeek);
-    const calculatedStart = resolveAnchorDate(newWeek);
-    const calculatedEnd = computeEndDateFromStart(calculatedStart, workingDaysCount);
-    setStartDate(calculatedStart);
-    setEndDate(calculatedEnd);
-    loadPlanForSelection(newWeek, selectedClass, selectedSubject, calculatedStart);
-  };
-
   // When Class changes
   const handleClassChange = (newClass: string) => {
     isDirtyRef.current = false;
     setSelectedClass(newClass);
-    loadPlanForSelection(selectedWeek, newClass, selectedSubject, startDate);
+    const matched = plans.filter(p => {
+      const classMatch = !newClass || newClass === "Default Cohort" || newClass === "All Classes" ||
+        p.class_group.toLowerCase().trim() === newClass.toLowerCase().trim() ||
+        isCohortMatching(p.class_group, newClass);
+      const subjectMatch = !selectedSubject || selectedSubject === "General Subject" || selectedSubject === "All Subjects" ||
+        p.subject.toLowerCase().trim() === selectedSubject.toLowerCase().trim() ||
+        isSubjectNameMatch(p.subject, selectedSubject);
+      return classMatch && subjectMatch;
+    }).sort((a, b) => a.week_number - b.week_number);
+
+    if (matched.length === 0) {
+      setSelectedWeek(1);
+      loadPlanForWeek(1, newClass, selectedSubject, plans);
+    } else {
+      const activeDraft = matched.find(p => p.status === "Draft" || p.status === "Needs Revision");
+      const targetWk = activeDraft ? activeDraft.week_number : matched[matched.length - 1].week_number;
+      setSelectedWeek(targetWk);
+      loadPlanForWeek(targetWk, newClass, selectedSubject, plans);
+    }
   };
 
   // When Subject changes
   const handleSubjectChange = (newSubject: string) => {
     isDirtyRef.current = false;
     setSelectedSubject(newSubject);
-    loadPlanForSelection(selectedWeek, selectedClass, newSubject, startDate);
+    const matched = plans.filter(p => {
+      const classMatch = !selectedClass || selectedClass === "Default Cohort" || selectedClass === "All Classes" ||
+        p.class_group.toLowerCase().trim() === selectedClass.toLowerCase().trim() ||
+        isCohortMatching(p.class_group, selectedClass);
+      const subjectMatch = !newSubject || newSubject === "General Subject" || newSubject === "All Subjects" ||
+        p.subject.toLowerCase().trim() === newSubject.toLowerCase().trim() ||
+        isSubjectNameMatch(p.subject, newSubject);
+      return classMatch && subjectMatch;
+    }).sort((a, b) => a.week_number - b.week_number);
+
+    if (matched.length === 0) {
+      setSelectedWeek(1);
+      loadPlanForWeek(1, selectedClass, newSubject, plans);
+    } else {
+      const activeDraft = matched.find(p => p.status === "Draft" || p.status === "Needs Revision");
+      const targetWk = activeDraft ? activeDraft.week_number : matched[matched.length - 1].week_number;
+      setSelectedWeek(targetWk);
+      loadPlanForWeek(targetWk, selectedClass, newSubject, plans);
+    }
   };
 
-  // When Start Date changes manually:
-  // Updates startDate, auto-calculates endDate, and refreshes existing tasks' dates and Day Orders
-  // NEVER wipes out user tasks or uploaded rows!
+  // When Start Date changes manually (Updates dates but preserves sequential week number!)
   const handleStartDateChange = (newStartDate: string) => {
     setStartDate(newStartDate);
     if (newStartDate) {
       const autoEnd = computeEndDateFromStart(newStartDate, workingDaysCount);
       setEndDate(autoEnd);
-      const newWeek = calculateWeekNumber(newStartDate);
-      setSelectedWeek(newWeek);
       isDirtyRef.current = true;
     }
     setDailyTasks(prev =>
@@ -1151,6 +1179,40 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
     toast("Plan reopened for editing. Re-submit when ready.", "info");
   };
 
+  // Load a plan from the history archive table
+  const handleOpenFromArchive = (plan: WeeklyPlanRecord) => {
+    setSelectedClass(plan.class_group);
+    setSelectedSubject(plan.subject);
+    setSelectedWeek(plan.week_number);
+    loadPlanForWeek(plan.week_number, plan.class_group, plan.subject, plans);
+    studioTopRef.current?.scrollIntoView({ behavior: "smooth" });
+    toast(`Loaded Week ${plan.week_number} plan for ${plan.subject}.`, "info");
+  };
+
+  // Filtered archive plans
+  const filteredArchivePlans = useMemo(() => {
+    return plans.filter(p => {
+      if (archiveFilterScope === "current") {
+        const classMatch = !selectedClass || selectedClass === "Default Cohort" || selectedClass === "All Classes" ||
+          p.class_group.toLowerCase().trim() === selectedClass.toLowerCase().trim() ||
+          isCohortMatching(p.class_group, selectedClass);
+        const subjectMatch = !selectedSubject || selectedSubject === "General Subject" || selectedSubject === "All Subjects" ||
+          p.subject.toLowerCase().trim() === selectedSubject.toLowerCase().trim() ||
+          isSubjectNameMatch(p.subject, selectedSubject);
+        if (!classMatch || !subjectMatch) return false;
+      }
+      if (archiveSearch.trim()) {
+        const q = archiveSearch.toLowerCase().trim();
+        const matchSubj = (p.subject || "").toLowerCase().includes(q);
+        const matchClass = (p.class_group || "").toLowerCase().includes(q);
+        const matchWeek = String(p.week_number).includes(q) || `week ${p.week_number}`.includes(q);
+        const matchRemarks = (p.sme_remarks || p.cam_feedback || "").toLowerCase().includes(q);
+        if (!matchSubj && !matchClass && !matchWeek && !matchRemarks) return false;
+      }
+      return true;
+    }).sort((a, b) => b.week_number - a.week_number);
+  }, [plans, archiveFilterScope, archiveSearch, selectedClass, selectedSubject]);
+
   // Synthesise submission history from available DB fields
   const submissionLog: Array<{ action: string; by: string; at: string; remarks?: string; color: string; icon: string }> =
     currentPlanId ? [
@@ -1173,7 +1235,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
   const hasLog = submissionLog.length > 0;
 
   return (
-    <div className="space-y-5 font-sans">
+    <div ref={studioTopRef} className="space-y-5 font-sans">
       {/* ─── Top Header Card with Non-Wrapping Single-Row Toolbar ─── */}
       <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -1192,16 +1254,18 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                     {collegeName}
                   </span>
                 )}
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-50 text-purple-700 border border-purple-200">
+                  Week {selectedWeek} Active
+                </span>
               </div>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Plan weekly teaching periods with Day Orders and submit to your Subject Matter Expert.
+                Plan weekly teaching periods sequentially (Week 1, Week 2...) and submit to your Subject Matter Expert.
               </p>
             </div>
           </div>
 
           {/* Context-aware Action Toolbar */}
           <div className="flex items-center gap-2 flex-wrap shrink-0">
-
             {/* Excel helpers: hidden when Verified */}
             {!isVerified && (
               <>
@@ -1210,6 +1274,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                   type="button"
                   onClick={handleDownloadTemplate}
                   className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  title="Download pre-filled Excel schedule template"
                 >
                   <Download className="h-3 w-3 text-indigo-500" />
                   <span>Template</span>
@@ -1218,6 +1283,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  title="Upload completed Excel sheet"
                 >
                   <Upload className="h-3 w-3 text-indigo-500" />
                   <span>Upload</span>
@@ -1225,7 +1291,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
               </>
             )}
 
-            {/* Save Draft: only when editing */}
+            {/* Save Draft */}
             {isEditable && (
               <button
                 type="button"
@@ -1238,7 +1304,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
               </button>
             )}
 
-            {/* Edit: only Submitted, never Verified */}
+            {/* Edit / Unlock: only Submitted */}
             {currentStatus === "Submitted" && (
               <button
                 type="button"
@@ -1246,7 +1312,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                 className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               >
                 <Edit2 className="h-3 w-3" />
-                <span>Edit</span>
+                <span>Edit / Re-open</span>
               </button>
             )}
 
@@ -1276,10 +1342,9 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                 className="px-4 py-1.5 rounded-lg text-[11px] font-black text-white bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap"
               >
                 <Send className="h-3 w-3" />
-                <span>{currentStatus === "Submitted" ? "Re-submit to SME" : "Submit to SME"}</span>
+                <span>{currentStatus === "Submitted" ? "Re-submit Week Plan" : `Submit Week ${selectedWeek} to SME`}</span>
               </button>
             )}
-
           </div>
         </div>
 
@@ -1336,7 +1401,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
           </div>
         )}
 
-        {/* SME Remarks Note (only when remarks exist) */}
+        {/* SME Remarks Note */}
         {isVerified && currentFeedback && (
           <div className="mt-3 p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-2.5">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -1403,50 +1468,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
         )}
 
         {/* ─── Context Configuration Panel ─── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-3.5 mt-3.5 border-t border-slate-100">
-          {/* Week & Calculated Dates */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                <CalendarRange className="h-3 w-3 text-indigo-500" />
-                <span>Teaching Dates</span>
-              </label>
-              <span className="text-[9.5px] font-bold text-slate-400">
-                {workingDaysCount}-Day Week
-              </span>
-            </div>
-            {/* Start Date & Auto End Date Controls */}
-            <div className="grid grid-cols-2 gap-1.5 mt-1.5 pt-1.5">
-              <div>
-                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-0.5">
-                  Start Date
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={e => handleStartDateChange(e.target.value)}
-                  className="w-full p-1 bg-white border border-slate-200 rounded-lg text-[10.5px] font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                  title="Change Start Date — End Date will automatically calculate"
-                />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-0.5">
-                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                    End Date
-                  </label>
-                  <span className="text-[7.5px] font-extrabold text-emerald-700 bg-emerald-100/80 px-1 py-0.2 rounded">Auto</span>
-                </div>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={e => setEndDate(e.target.value)}
-                  className="w-full p-1 bg-slate-50 border border-slate-200 rounded-lg text-[10.5px] font-semibold text-slate-700 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                  title="Auto-calculated from Start Date (+working days). Can be adjusted if needed."
-                />
-              </div>
-            </div>
-          </div>
-
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 pt-3.5 mt-3.5 border-t border-slate-100">
           {/* Cohort / Class Group */}
           <div>
             <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
@@ -1491,6 +1513,49 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
             </select>
           </div>
 
+          {/* Teaching Dates */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                <CalendarRange className="h-3 w-3 text-indigo-500" />
+                <span>Teaching Dates (Week {selectedWeek})</span>
+              </label>
+              <span className="text-[9.5px] font-bold text-slate-400">
+                {workingDaysCount}-Day Week
+              </span>
+            </div>
+            {/* Start Date & Auto End Date Controls */}
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <label className="block text-[8.5px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={e => handleStartDateChange(e.target.value)}
+                  className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-[10.5px] font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                  title="Teaching start date for this week"
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-[8.5px] font-bold uppercase tracking-wider text-slate-400">
+                    End Date
+                  </label>
+                  <span className="text-[7.5px] font-extrabold text-emerald-700 bg-emerald-100/80 px-1 py-0.2 rounded">Auto</span>
+                </div>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={e => setEndDate(e.target.value)}
+                  className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[10.5px] font-semibold text-slate-700 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                  title="Auto-calculated from Start Date (+working days)."
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Date Conflict Warning Alert */}
           {dateConflict && (
             <div className="sm:col-span-2 md:col-span-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5">
@@ -1503,13 +1568,100 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                   Dates <strong>{startDate}</strong> to <strong>{endDate}</strong> overlap with <strong>Week {dateConflict.week_number}</strong> ({dateConflict.start_date} to {dateConflict.end_date}) for {selectedClass}.
                 </span>
                 <span className="text-[11px] text-rose-600 block mt-0.5 font-medium">
-                  Each academic week must cover a distinct calendar date range. Please adjust the start date for Week {selectedWeek}.
+                  Each teaching week must cover distinct calendar dates. Please adjust the start date for Week {selectedWeek}.
                 </span>
               </div>
             </div>
           )}
         </div>
 
+        {/* ─── Sequential Week Navigation Bar (Read & Update Tabs) ─── */}
+        <div className="mt-4 pt-4 border-t border-slate-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-2.5">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-indigo-600 shrink-0" />
+              <span className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                Teaching Plan Weeks ({matchingPlans.length} Total)
+              </span>
+              <span className="text-[10px] text-slate-400 font-semibold">
+                Auto-sequenced based on submission history
+              </span>
+            </div>
+            <div className="text-[11px] font-bold text-slate-500">
+              Active: <span className="font-extrabold text-indigo-600">Week {selectedWeek}</span>
+              {currentStatus && (
+                <span className={`ml-1.5 px-2 py-0.5 rounded-full text-[9.5px] font-black uppercase ${
+                  currentStatus === "Verified" ? "bg-emerald-100 text-emerald-800" :
+                  currentStatus === "Needs Revision" ? "bg-rose-100 text-rose-800" :
+                  currentStatus === "Submitted" ? "bg-indigo-100 text-indigo-800" :
+                  "bg-slate-100 text-slate-600"
+                }`}>
+                  {currentStatus}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Week Tabs Carousel */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1.5 pt-0.5">
+            {matchingPlans.map(p => {
+              const isActive = p.week_number === selectedWeek;
+              const statusColors: Record<string, string> = {
+                Verified: "bg-emerald-100/90 text-emerald-800 border-emerald-200",
+                Submitted: "bg-indigo-100/90 text-indigo-800 border-indigo-200",
+                "Needs Revision": "bg-rose-100/90 text-rose-800 border-rose-200",
+                Draft: "bg-slate-100 text-slate-600 border-slate-200"
+              };
+
+              return (
+                <button
+                  key={p.id || p.week_number}
+                  type="button"
+                  onClick={() => handleSelectWeek(p.week_number)}
+                  className={`flex flex-col text-left px-3.5 py-2 rounded-xl border transition-all cursor-pointer shrink-0 min-w-[125px] ${
+                    isActive
+                      ? "bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs"
+                      : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1.5 w-full">
+                    <span className={`text-xs font-black ${isActive ? "text-indigo-900" : "text-slate-800"}`}>
+                      Week {p.week_number}
+                    </span>
+                    <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded border ${statusColors[p.status] || "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                      {p.status === "Verified" ? "Approved" : p.status}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-medium mt-1 truncate">
+                    {p.start_date && p.end_date ? `${p.start_date.slice(5)} to ${p.end_date.slice(5)}` : "No dates set"}
+                  </div>
+                </button>
+              );
+            })}
+
+            {/* Next Sequential Week Button (e.g. Week 2 if Week 1 exists, Week 1 if none) */}
+            {(!matchingPlans.some(p => p.week_number === nextSequentialWeek)) && (
+              <button
+                type="button"
+                onClick={() => handleSelectWeek(nextSequentialWeek)}
+                className={`flex flex-col text-left px-3.5 py-2 rounded-xl border border-dashed transition-all cursor-pointer shrink-0 min-w-[130px] ${
+                  selectedWeek === nextSequentialWeek && !currentPlanId
+                    ? "bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500/20"
+                    : "bg-slate-50/60 border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/40 text-slate-600"
+                }`}
+                title={`Start next sequential plan (Week ${nextSequentialWeek})`}
+              >
+                <div className="flex items-center gap-1.5 text-xs font-black text-indigo-700">
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>+ Week {nextSequentialWeek}</span>
+                </div>
+                <div className="text-[10px] text-indigo-500 font-semibold mt-1">
+                  New Sequence Plan
+                </div>
+              </button>
+            )}
+          </div>
+        </div>
 
       </div>
 
@@ -1519,10 +1671,13 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-100 bg-slate-50/70">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-              Upcoming Teaching Period Schedule ({dailyTasks.length} Sessions)
+              Teaching Periods for Week {selectedWeek} ({dailyTasks.length} Sessions)
             </h3>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
               Campus: {workingDaysCount} Working Days
+            </span>
+            <span className="text-xs text-slate-400 font-semibold">
+              • {selectedSubject} ({selectedClass})
             </span>
           </div>
 
@@ -1559,7 +1714,6 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
               <span>Export (.xlsx)</span>
             </button>
           )}
-
         </div>
 
         {/* Table */}
@@ -1601,14 +1755,14 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                       <span className="text-[11px] font-black text-indigo-700 whitespace-nowrap">Week {selectedWeek}</span>
                     </td>
 
-                    {/* Distinct Calendar Date (Auto-calculated) */}
+                    {/* Date */}
                     <td className="py-2.5 px-3">
                       <span className="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded-md border border-slate-200/70 whitespace-nowrap">
                         {task.date || "—"}
                       </span>
                     </td>
 
-                    {/* Day Order (only shown when CAM has actually assigned one) */}
+                    {/* Day Order */}
                     <td className="py-2.5 px-3">
                       {task.dayOrder ? (
                         <span
@@ -1631,7 +1785,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                       )}
                     </td>
 
-                    {/* Period Slot (Auto-derived from Timetable) */}
+                    {/* Period Slot */}
                     <td className="py-2.5 px-3">
                       <span
                         className="inline-flex items-center gap-1.5 font-bold text-slate-700 text-xs bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-lg whitespace-nowrap"
@@ -1653,7 +1807,6 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                           }`}>
                             {task.topic || "—"}
                           </span>
-                          {/* Pencil ONLY for Submitted, NEVER for Verified */}
                           {!isVerified && (
                             <button
                               type="button"
@@ -1676,7 +1829,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                       )}
                     </td>
 
-                    {/* Description — read-only when locked */}
+                    {/* Description */}
                     <td className="py-2 px-3">
                       {isLocked ? (
                         <span className={`block text-[11px] px-2 py-1.5 rounded-lg border ${
@@ -1696,7 +1849,8 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                         />
                       )}
                     </td>
-                    {/* SME Status — last column */}
+
+                    {/* SME Status */}
                     <td className="py-2.5 px-3 text-center">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase whitespace-nowrap ${
                         currentStatus === "Verified"       ? "bg-emerald-100 text-emerald-800" :
@@ -1707,9 +1861,150 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                         {currentStatus}
                       </span>
                     </td>
-
                   </tr>
                 ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ─── Mentor's Weekly Plan Archive & History (Read & Update All Plans) ─── */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+          <div>
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-indigo-600" />
+              <span>Weekly Teaching Plan Archive & History</span>
+            </h3>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Read past submitted plans, view SME verification feedback, or click to edit and update.
+            </p>
+          </div>
+
+          {/* Filter controls */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="inline-flex rounded-xl bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setArchiveFilterScope("current")}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  archiveFilterScope === "current"
+                    ? "bg-white text-indigo-700 shadow-xs font-black"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Current Subject ({matchingPlans.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setArchiveFilterScope("all")}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  archiveFilterScope === "all"
+                    ? "bg-white text-indigo-700 shadow-xs font-black"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                All Subjects ({plans.length})
+              </button>
+            </div>
+
+            <div className="relative">
+              <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={archiveSearch}
+                onChange={e => setArchiveSearch(e.target.value)}
+                placeholder="Search archive..."
+                className="pl-8 pr-3 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:ring-1 focus:ring-indigo-500 w-36"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Archive Table */}
+        <div className="overflow-x-auto mt-3">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                <th className="py-2.5 px-3">Week</th>
+                <th className="py-2.5 px-3">Class / Cohort</th>
+                <th className="py-2.5 px-3">Subject</th>
+                <th className="py-2.5 px-3">Date Range</th>
+                <th className="py-2.5 px-3 text-center">Sessions</th>
+                <th className="py-2.5 px-3 text-center">SME Status</th>
+                <th className="py-2.5 px-3">Remarks / Feedback</th>
+                <th className="py-2.5 px-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredArchivePlans.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-slate-400 italic font-medium">
+                    No weekly plans found in archive.
+                  </td>
+                </tr>
+              ) : (
+                filteredArchivePlans.map(p => {
+                  const tasks = parseSessionPlan(p.session_plan);
+                  const filledCount = tasks.filter(t => t.topic && t.topic.trim().length > 0).length;
+                  const isCurrent = p.week_number === selectedWeek &&
+                    p.class_group.toLowerCase().trim() === selectedClass.toLowerCase().trim() &&
+                    p.subject.toLowerCase().trim() === selectedSubject.toLowerCase().trim();
+
+                  return (
+                    <tr
+                      key={p.id}
+                      className={`hover:bg-slate-50/80 transition-colors ${
+                        isCurrent ? "bg-indigo-50/40 font-semibold" : ""
+                      }`}
+                    >
+                      <td className="py-2.5 px-3">
+                        <span className="font-black text-indigo-700 text-xs">Week {p.week_number}</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-800 font-bold">
+                        {p.class_group}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-800 font-medium">
+                        {p.subject}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
+                        {p.start_date && p.end_date ? `${p.start_date} to ${p.end_date}` : "—"}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
+                          {filledCount} / {tasks.length}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase whitespace-nowrap ${
+                          p.status === "Verified" ? "bg-emerald-100 text-emerald-800" :
+                          p.status === "Needs Revision" ? "bg-rose-100 text-rose-800" :
+                          p.status === "Submitted" ? "bg-indigo-100 text-indigo-800" :
+                          "bg-slate-100 text-slate-600"
+                        }`}>
+                          {p.status === "Verified" ? "Approved" : p.status}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600 text-xs max-w-xs truncate">
+                        {p.sme_remarks || p.cam_feedback || "—"}
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenFromArchive(p)}
+                          className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                            isCurrent
+                              ? "bg-indigo-600 text-white"
+                              : "bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700"
+                          }`}
+                        >
+                          {p.status === "Verified" ? "Read Plan" : "Read / Edit"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

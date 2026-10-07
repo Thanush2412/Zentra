@@ -227,7 +227,7 @@ export async function POST(request: Request) {
 
     // Role-based authorization
     if (action === "resolve") {
-      await requireRole(request, "admin", "allocator", "head_sme");
+      await requireRole(request, "admin", "L and D", "head_sme");
     } else if (action === "propose") {
       await requireSession(request);
     }

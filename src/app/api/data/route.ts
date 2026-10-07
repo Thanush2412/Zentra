@@ -159,7 +159,7 @@ export async function GET(request: Request) {
     }
 
     const isSME = role === "sme";
-    const isAllocator = role === "allocator";
+    const isAllocator = role === "L and D";
     const needsDemo = isAdmin || isSME || isAllocator || isCAM || isMentor;
 
     // Leave requests scoping

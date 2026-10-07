@@ -41,7 +41,7 @@ export async function GET(request: Request) {
         if (!profile && session.email) {
           profile = await db.get(`SELECT * FROM ${table} WHERE email = ? LIMIT 1`, session.email) || null;
         }
-        if (!profile && (role === "fee_manager" || role === "hr" || role === "allocator")) {
+        if (!profile && (role === "fee_manager" || role === "hr" || role === "L and D")) {
           profile = await db.get("SELECT * FROM users WHERE id = ? OR email = ? LIMIT 1", userId, session.email || "") || null;
         }
       } catch (err) {

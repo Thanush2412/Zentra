@@ -66,7 +66,7 @@ async function smeDemoWindowAllows(
  */
 export async function GET(request: Request) {
   try {
-    await requireRole(request, "admin", "allocator", "head_sme", "sme", "cam", "kam");
+    await requireRole(request, "admin", "L and D", "head_sme", "sme", "cam", "kam");
     const db = await getDb();
     const collegeId = new URL(request.url).searchParams.get("college_id");
     if (!collegeId) {
@@ -96,9 +96,9 @@ export async function POST(request: Request) {
 
     // Role-based authorization
     if (action === "book" || action === "bulk-book" || action === "update" || action === "swap") {
-      await requireRole(request, "admin", "allocator", "head_sme");
+      await requireRole(request, "admin", "L and D", "head_sme");
     } else if (action === "evaluate") {
-      await requireRole(request, "sme", "head_sme", "admin", "allocator");
+      await requireRole(request, "sme", "head_sme", "admin", "L and D");
     } else if (action === "reschedule") {
       await requireSession(request);
     }
@@ -620,7 +620,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    await requireRole(request, "admin", "allocator", "head_sme");
+    await requireRole(request, "admin", "L and D", "head_sme");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

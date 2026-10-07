@@ -6071,7 +6071,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           { id: "sme", label: "SME" },
                           { id: "student", label: "Student" },
                           { id: "fee_manager", label: "Fee Mgr" },
-                          { id: "allocator", label: "L&D" },
+                          { id: "L and D", label: "L&D" },
                           { id: "hr", label: "HR" }
                         ].map(r => (
                           <button
@@ -6169,7 +6169,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     ? "bg-sky-50 text-sky-700 border-sky-100"
                                     : user.role === "fee_manager"
                                     ? "bg-teal-50 text-teal-700 border-teal-100"
-                                    : user.role === "allocator"
+                                    : user.role === "L and D"
                                     ? "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-100"
                                     : user.role === "hr"
                                     ? "bg-rose-50 text-rose-700 border-rose-100"
@@ -6187,7 +6187,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     </td>
                                     <td className="p-3">
                                       <span className={`px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider ${roleColor}`}>
-                                        {user.role === "allocator" ? "L&D" : user.role}
+                                        {user.role === "L and D" ? "L&D" : user.role}
                                       </span>
                                     </td>
                                     <td className="p-3 font-mono text-[10.5px] text-gray-600 font-semibold">
@@ -10231,7 +10231,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <option value="sme">SME (Subject Matter Expert)</option>
                     <option value="student">Student (Learner)</option>
                     <option value="fee_manager">Fee Manager (Fee Operations)</option>
-                    <option value="allocator">L&D (Learning and Development)</option>
+                    <option value="L and D">L&D (Learning and Development)</option>
                     <option value="hr">HR (Human Resources)</option>
                   </select>
                 </div>

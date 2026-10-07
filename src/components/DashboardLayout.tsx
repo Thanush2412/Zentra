@@ -461,7 +461,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     (currentRole === "student" && currentStudent?.email) ||
     (currentRole === "fee_manager" && "fee.manager@zentra.edu") ||
     (currentRole === "sme" && currentSME?.email) ||
-    (currentRole === "allocator" && "allocator@zentra.edu") ||
+    (currentRole === "L and D" && "allocator@zentra.edu") ||
     "";
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -678,7 +678,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
               {currentRole === "student" && "Student Portal"}
               {currentRole === "fee_manager" && "Fee Collections"}
               {currentRole === "sme" && "SME Evaluation Hub"}
-              {currentRole === "allocator" && "Learning & Development (L&D)"}
+              {currentRole === "L and D" && "Learning & Development (L&D)"}
             </span>
           </div>
         </div>

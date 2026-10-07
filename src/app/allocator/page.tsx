@@ -17,7 +17,7 @@ const DemoAllocationDashboard = dynamic(() => import("@/components/DemoAllocatio
 
 export default function LearningAndDevelopmentPortalPage() {
   return (
-    <DashboardLayout requiredRole="allocator">
+    <DashboardLayout requiredRole="L and D">
       <DemoAllocationDashboard />
     </DashboardLayout>
   );

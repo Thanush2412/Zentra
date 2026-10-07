@@ -109,7 +109,7 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
         roleLabel = "Fee Operations Manager";
         shortRole = "FM";
         break;
-      case "allocator":
+      case "L and D":
         name = name || "L&D Head";
         roleLabel = "Learning & Development (L&D)";
         shortRole = "L&D";

@@ -1630,9 +1630,9 @@ async function seedCentralizedUsers(db: any) {
     );
   }
 
-  // 8. Allocator (Learning & Development) view users
+  // 8. L and D (Learning and Development) view users
   await db.run(
     "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    ["allocator_1", "allocator@zentra.edu", "password123", "allocator", "allocator_1", new Date().toISOString(), new Date().toISOString()]
+    ["allocator_1", "allocator@zentra.edu", "password123", "L and D", "allocator_1", new Date().toISOString(), new Date().toISOString()]
   );
 }

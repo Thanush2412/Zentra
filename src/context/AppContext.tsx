@@ -166,7 +166,7 @@ export interface Holiday {
   college_id: string;
 }
 
-export type Role = "mentor" | "hr" | "cam" | "kam" | "admin" | "student" | "fee_manager" | "sme" | "allocator";
+export type Role = "mentor" | "hr" | "cam" | "kam" | "admin" | "student" | "fee_manager" | "sme" | "L and D";
 export type ShiftType = "shift_1" | "shift_2" | "general";
 
 export interface WeeklyTask {
@@ -841,6 +841,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         else if (role === "mentor") userId = currentMentor?.id || "";
         else if (role === "student") userId = currentStudent?.id || "";
         else if (role === "sme") userId = currentSME?.id || "";
+        else if (role === "L and D") userId = "";
       }
 
       const data = await apiFetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}`);
@@ -1250,7 +1251,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
     } else if (role === "fee_manager") {
       setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
-    } else if (role === "allocator") {
+    } else if (role === "L and D") {
       setCurrentMentor(null);
       setCurrentHR(hrList[0] || null);
       setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
@@ -1746,7 +1747,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.success) {
         // Phase B: the API no longer moves the slot — it creates a pending request
         // for Learning and Development. Refresh so the "reallocation required" state and
-        // any allocator decision flow back into every dashboard.
+        // any L and D decision flow back into every dashboard.
         await refreshData();
         return { success: true, message: data.message || "Reschedule request sent to Learning and Development for approval." };
       }
